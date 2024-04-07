@@ -39,6 +39,8 @@
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
+#include <rocksdb/db.h>
+#include <rocksdb/options.h>
 
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/data_dirs.h"
@@ -944,7 +946,6 @@ TEST_P(FsManagerTestBase, TestOpenFailsWhenMissingImportantDir) {
   ASSERT_STR_CONTAINS(s.ToString(), "exists but is not a directory");
 }
 
-
 TEST_P(FsManagerTestBase, TestAddRemoveDataDirs) {
   if (FLAGS_block_manager == "file") {
     GTEST_SKIP() << "Skipping test, file block manager not supported";
@@ -1403,6 +1404,141 @@ TEST_P(FsManagerTestBase, TestFailToStartWithoutEncryptionKeys) {
   // Re-enable encryption and attempt to open the FS.
   FLAGS_encrypt_data_at_rest = true;
   ASSERT_TRUE(fs_manager()->Open().IsIllegalState());
+}
+
+TEST_P(FsManagerTestBase, TestOpenDirectoryWithRdbMissing) {
+  if (FLAGS_block_manager != "logr") {
+    GTEST_SKIP() << "Skipping 'logr'-specific test";
+  }
+
+  // Add a new data dir.
+  const string new_path = GetTestPath("new_path");
+  FsManagerOpts opts;
+  opts.wal_root = fs_root_;
+  opts.data_roots = { fs_root_, new_path };
+  ReinitFsManagerWithOpts(opts);
+  // Opening the fs manager succeeds, both of the 2 dirs are healthy.
+  ASSERT_OK(fs_manager()->Open());
+  ASSERT_EQ(2, fs_manager()->dd_manager()->GetDirs().size());
+  ASSERT_EQ(0, fs_manager()->dd_manager()->GetFailedDirs().size());
+
+  // Write some data and reopen the fs manager, then some *.sst files will be generated.
+  for (int i = 0; i < 1000; i++) {
+    TestReadWriteDataFile(Slice("test0"));
+  }
+  ReinitFsManagerWithOpts(opts);
+  ASSERT_OK(fs_manager()->Open());
+
+  // 1. Corrupt the content of the RocksDB directory (by removing one *.sst file) in 'new_path'.
+  {
+    const auto rdb_dir = JoinPathSegments(JoinPathSegments(new_path, kDataDirName),
+                                          kRocksDBDirName);
+    std::vector<std::string> children;
+    ASSERT_OK(GetEnv()->GetChildren(rdb_dir, &children));
+    ASSERT_FALSE(children.empty());
+    std::vector<std::string> sst_files;
+    for (const auto& child : children) {
+      if (HasSuffixString(child, ".sst")) {
+        sst_files.push_back(child);
+      }
+    }
+    ASSERT_FALSE(sst_files.empty());
+    // Delete a *.sst file to corrupt the RocksDB.
+    ASSERT_OK(GetEnv()->DeleteFile(JoinPathSegments(rdb_dir, sst_files[0])));
+
+    ReinitFsManagerWithOpts(opts);
+    // Opening the fs manager succeeds, but 1 dir is failed with RocksDB related error.
+    ASSERT_OK(fs_manager()->Open());
+    ASSERT_EQ(2, fs_manager()->dd_manager()->GetDirs().size());
+    ASSERT_EQ(1, fs_manager()->dd_manager()->GetFailedDirs().size());
+    const auto uuid_idx = *(fs_manager()->dd_manager()->GetFailedDirs().begin());
+    const auto* failed_dir = fs_manager()->dd_manager()->FindDirByUuidIndex(uuid_idx);
+    ASSERT_STR_CONTAINS(failed_dir->dir(), new_path);
+    ASSERT_STR_CONTAINS(failed_dir->instance()->health_status().ToString(),
+                        "Corruption: IO error: No such file or directory: "
+                        "While open a file for random read");
+  }
+
+  // 2. Remove all the content under RocksDB top-level directory in 'new_path'.
+  {
+    const auto rdb_dir = JoinPathSegments(JoinPathSegments(new_path, kDataDirName),
+                                          kRocksDBDirName);
+    ASSERT_OK(GetEnv()->DeleteRecursively(rdb_dir));
+    ASSERT_OK(GetEnv()->CreateDir(rdb_dir));
+    ReinitFsManagerWithOpts(opts);
+    // Opening the fs manager succeeds, but 1 dir is failed with RocksDB related error.
+    ASSERT_OK(fs_manager()->Open());
+    ASSERT_EQ(2, fs_manager()->dd_manager()->GetDirs().size());
+    ASSERT_EQ(1, fs_manager()->dd_manager()->GetFailedDirs().size());
+    const auto uuid_idx = *(fs_manager()->dd_manager()->GetFailedDirs().begin());
+    const auto* failed_dir = fs_manager()->dd_manager()->FindDirByUuidIndex(uuid_idx);
+    ASSERT_STR_CONTAINS(failed_dir->dir(), new_path);
+    ASSERT_STR_CONTAINS(failed_dir->instance()->health_status().ToString(),
+                        "rdb/CURRENT: does not exist (create_if_missing is false)");
+  }
+
+  // 3. Remove the RocksDB top-level directory in 'new_path'.
+  {
+    const auto rdb_dir = JoinPathSegments(JoinPathSegments(new_path, kDataDirName),
+                                          kRocksDBDirName);
+    ASSERT_OK(GetEnv()->DeleteRecursively(rdb_dir));
+    ReinitFsManagerWithOpts(opts);
+    // Opening the fs manager succeeds, but 1 dir is failed with RocksDB related error.
+    ASSERT_OK(fs_manager()->Open());
+    ASSERT_EQ(2, fs_manager()->dd_manager()->GetDirs().size());
+    ASSERT_EQ(1, fs_manager()->dd_manager()->GetFailedDirs().size());
+    const auto uuid_idx = *(fs_manager()->dd_manager()->GetFailedDirs().begin());
+    const auto* failed_dir = fs_manager()->dd_manager()->FindDirByUuidIndex(uuid_idx);
+    ASSERT_STR_CONTAINS(failed_dir->dir(), new_path);
+    ASSERT_STR_CONTAINS(failed_dir->instance()->health_status().ToString(),
+                        "rdb/CURRENT: does not exist (create_if_missing is false)");
+  }
+
+  // 4. Remove the RocksDB top-level directory in 'fs_root_' as well.
+  {
+    const auto rdb_dir = JoinPathSegments(JoinPathSegments(fs_root_, kDataDirName),
+                                          kRocksDBDirName);
+    ASSERT_OK(GetEnv()->DeleteRecursively(rdb_dir));
+    ReinitFsManagerWithOpts(opts);
+    // Opening the fs manager failed, both of the 2 dirs are failed with RocksDB related error.
+    const auto s = fs_manager()->Open();
+    ASSERT_TRUE(s.IsIOError()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "All data dirs failed to open");
+    ASSERT_EQ(2, fs_manager()->dd_manager()->GetDirs().size());
+    ASSERT_EQ(2, fs_manager()->dd_manager()->GetFailedDirs().size());
+    for (const auto &uuid_idx : fs_manager()->dd_manager()->GetFailedDirs()) {
+      const auto* failed_dir = fs_manager()->dd_manager()->FindDirByUuidIndex(uuid_idx);
+      ASSERT_STR_CONTAINS(failed_dir->instance()->health_status().ToString(),
+                          "rdb/CURRENT: does not exist (create_if_missing is false)");
+    }
+  }
+}
+
+// This test is similar to FsManagerTestBase.TestCannotUseNonEmptyFsRoot,
+// but this one is 'logr'-specific.
+TEST_P(FsManagerTestBase, TestInitialOpenDirectoryWithRdbPresent) {
+  if (FLAGS_block_manager != "logr") {
+    GTEST_SKIP() << "Skipping 'logr'-specific test";
+  }
+
+  // Use a new data dir.
+  const auto& new_path = GetTestPath("new_path");
+  ReinitFsManagerWithPaths(new_path, { new_path });
+
+  // Create the RocksDB dir before opening.
+  const auto rdb_dir = JoinPathSegments(new_path, kDataDirName);
+  ASSERT_OK(GetEnv()->CreateDir(new_path));
+  ASSERT_OK(GetEnv()->CreateDir(rdb_dir));
+  rocksdb::Options opts;
+  opts.create_if_missing = true;
+  opts.error_if_exists = true;
+  rocksdb::DB* db = nullptr;
+  ASSERT_OK(FromRdbStatus(rocksdb::DB::Open(opts, rdb_dir, &db)));
+  delete db;
+
+  auto s = fs_manager()->CreateInitialFileSystemLayout();
+  ASSERT_TRUE(s.IsAlreadyPresent()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "FSManager roots already exist");
 }
 
 class OpenFsTypeTest : public KuduTest,

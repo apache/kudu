@@ -3392,17 +3392,8 @@ void LogBlockManager::OpenDataDir(
     Status* result_status,
     std::atomic<int>* containers_processed,
     std::atomic<int>* containers_total) {
-  Status s = dir->Prepare();
-  if (!s.ok()) {
-    HANDLE_DISK_FAILURE(s, error_manager_->RunErrorNotificationCb(
-        ErrorHandlerType::DISK_ERROR, dir));
-    *result_status = s.CloneAndPrepend(Substitute(
-        "Could not initialize $0", dir->dir()));
-    return;
-  }
-
   vector<string> children;
-  s = env_->GetChildren(dir->dir(), &children);
+  Status s = env_->GetChildren(dir->dir(), &children);
   if (!s.ok()) {
     HANDLE_DISK_FAILURE(s, error_manager_->RunErrorNotificationCb(
         ErrorHandlerType::DISK_ERROR, dir, tenant_id()));

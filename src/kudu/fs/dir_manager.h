@@ -121,9 +121,6 @@ class Dir {
       std::unique_ptr<ThreadPool> pool);
   virtual ~Dir();
 
-  // Some preparatory work before opening the directory.
-  virtual Status Prepare() { return Status::OK(); }
-
   // Shuts down this dir's thread pool, waiting for any closures submitted via
   // ExecClosure() to finish first.
   virtual void Shutdown();
@@ -206,14 +203,10 @@ class RdbDir: public Dir {
   RdbDir(Env* env,
          DirMetrics* metrics,
          FsType fs_type,
+         bool newly_created,
          std::string dir,
          std::unique_ptr<DirInstanceMetadataFile> metadata_file,
          std::unique_ptr<ThreadPool> pool);
-
-  // Initialize the RocksDB instance for the directory.
-  //
-  // Returns Status::OK() if prepared successfully, otherwise returns non-OK.
-  Status Prepare() override;
 
   // Similar to Dir::Shutdown(), but close the RocksDB instance additionally.
   void Shutdown() override;
@@ -221,6 +214,13 @@ class RdbDir: public Dir {
   rocksdb::DB* rdb();
 
  private:
+  // Initialize the RocksDB instance for the directory.
+  //
+  // 'newly_created' indicates whether this is a newly created directory when
+  // opening DirManager.
+  // Returns Status::OK() if prepared successfully, otherwise returns non-OK.
+  Status InitRocksDBInstance(bool newly_created);
+
   // The shared RocksDB instance for this directory.
   std::unique_ptr<rocksdb::DB> db_;
   // The RocksDB full path.
@@ -467,6 +467,12 @@ class DirManager {
   // The canonicalized roots provided to the constructor, taken verbatim.
   // Common roots in the collections have been deduplicated.
   const CanonicalizedRootsList canonicalized_fs_roots_;
+
+  // Absolute paths of the FS directories created while opening the FSManager.
+  // This container is being populated when creating the initial file system
+  // layout with Create(), or by calling Open() on a newly added data directory.
+  // It's safe to use it after DirManager is opened completely.
+  std::set<std::string> created_fs_dir_paths_;
 
   // Directories tracked by this manager.
   std::vector<std::unique_ptr<Dir>> dirs_;

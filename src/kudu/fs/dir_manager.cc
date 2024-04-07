@@ -208,12 +208,31 @@ int Dir::reserved_bytes() {
 shared_ptr<rocksdb::Cache> RdbDir::s_block_cache_;
 RdbDir::RdbDir(Env* env, DirMetrics* metrics,
                FsType fs_type,
+               bool newly_created,
                string dir,
                unique_ptr<DirInstanceMetadataFile> metadata_file,
                unique_ptr<ThreadPool> pool)
-    : Dir(env, metrics, fs_type, std::move(dir), std::move(metadata_file), std::move(pool)) {}
+    : Dir(env, metrics, fs_type, std::move(dir), std::move(metadata_file), std::move(pool)) {
+  if (!metadata_file_->healthy()) {
+    LOG(WARNING) << Substitute("Skip initializing rocksdb instance for the non-healthy "
+                               "directory $0",
+                               dir_);
+    return;
+  }
 
-Status RdbDir::Prepare() {
+  // Initialize the directory only if it's healthy.
+  // Note: the unhealthy directories will be kept, but will be skipped when opening block manager.
+  auto s = InitRocksDBInstance(newly_created);
+  if (!s.ok()) {
+    s = s.CloneAndPrepend(Substitute("could not initialize $0", dir_));
+    LOG(WARNING) << s.ToString();
+    // Mark the directory as failed if it could not be initialized.
+    DCHECK(metadata_file_->healthy());
+    metadata_file_->SetInstanceFailed(s);
+  }
+}
+
+Status RdbDir::InitRocksDBInstance(bool newly_created) {
   DCHECK_STREQ(FLAGS_block_manager.c_str(), "logr");
   if (db_) {
     // Some unit tests (e.g. BlockManagerTest.PersistenceTest) reopen the block manager,
@@ -228,14 +247,15 @@ Status RdbDir::Prepare() {
   // https://github.com/facebook/rocksdb/blob/main/include/rocksdb/options.h
   rocksdb::Options opts;
   // A RocksDB instance is created if it does not exist when opening the Dir.
-  // TODO(yingchun): We should distinguish creating new data directory and opening existing data
-  //                 directory, and set proper options to avoid mishaps.
-  //                 When creating new data directory, set opts.error_if_exists = true.
-  //                 When opening existing data directory, set opts.create_if_missing = false.
-  opts.create_if_missing = true;
+  if (newly_created) {
+      opts.create_if_missing = true;
+      opts.error_if_exists = true;
+  } else {
+      opts.create_if_missing = false;
+      opts.error_if_exists = false;
+  }
   // TODO(yingchun): parameterize more rocksDB options, including:
   //  opts.use_fsync
-  //  opts.error_if_exists
   //  opts.db_log_dir
   //  opts.wal_dir
   //  opts.max_log_file_size
@@ -470,6 +490,8 @@ Status DirManager::CreateNewDirectoriesAndUpdateInstances(
 
   // Success: don't delete any files.
   deleter.cancel();
+  std::move(created_dirs.begin(), created_dirs.end(),
+            std::inserter(created_fs_dir_paths_, created_fs_dir_paths_.end()));
   return Status::OK();
 }
 
@@ -718,8 +740,8 @@ Status DirManager::Open() {
                   .set_max_threads(num_threads_per_dir_)
                   .set_trace_metric_prefix("dirs")
                   .Build(&pool));
-    unique_ptr<Dir> new_dir = CreateNewDir(env_, metrics_.get(), fs_type, dir, std::move(instance),
-                                           std::move(pool));
+    unique_ptr<Dir> new_dir = CreateNewDir(env_, metrics_.get(), fs_type, dir,
+                                           std::move(instance), std::move(pool));
     dirs.emplace_back(std::move(new_dir));
   }
 

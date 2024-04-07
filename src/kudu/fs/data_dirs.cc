@@ -205,7 +205,8 @@ std::unique_ptr<Dir> DataDirManager::CreateNewDir(
     std::string dir, std::unique_ptr<DirInstanceMetadataFile> metadata_file,
     std::unique_ptr<ThreadPool> pool) {
   if (FLAGS_block_manager == "logr") {
-    return std::make_unique<RdbDir>(env, metrics, fs_type, std::move(dir),
+    bool newly_created = ContainsKey(created_fs_dir_paths_, dir);
+    return std::make_unique<RdbDir>(env, metrics, fs_type, newly_created, std::move(dir),
                                     std::move(metadata_file), std::move(pool));
   }
   return std::make_unique<Dir>(env, metrics, fs_type, std::move(dir),
@@ -231,6 +232,10 @@ Status DataDirManager::OpenExistingForTests(Env* env,
   for (const auto& r : data_fs_roots) {
     roots.push_back({ r, Status::OK() });
   }
+
+  // Reset the existing DataDirManager before opening the new one to release resources
+  // (e.g. RocksDB 'LOCK' file when --block_manager=logr) held by the existing one.
+  dd_manager->reset();
   return DataDirManager::OpenExisting(env, std::move(roots), opts, dd_manager);
 }
 
