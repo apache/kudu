@@ -272,6 +272,7 @@ const char* const kDestMasterAddressesArgDesc = "Either comma-separated list of 
     "master addresses where each address is of form 'hostname:port', or a cluster name if it has "
     "been configured in ${KUDU_CONFIG}/kudurc";
 const char* const kTableNameArg = "table_name";
+const char* const kTableIdArg = "table_id";
 const char* const kTabletIdArg = "tablet_id";
 const char* const kTabletIdArgDesc = "Tablet Identifier";
 const char* const kTabletIdsCsvArg = "tablet_ids";

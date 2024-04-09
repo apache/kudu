@@ -826,7 +826,7 @@ Status SetRowCountLimit(const RunnerContext& context) {
 }
 
 Status RecallTable(const RunnerContext& context) {
-  const string& table_id = FindOrDie(context.required_args, kTabletIdArg);
+  const string& table_id = FindOrDie(context.required_args, kTableIdArg);
   client::sp::shared_ptr<KuduClient> client;
   RETURN_NOT_OK(CreateKuduClient(context, &client));
   return client->RecallTable(table_id, FLAGS_new_table_name);
@@ -1858,7 +1858,7 @@ unique_ptr<Mode> BuildTableMode() {
       ActionBuilder("recall", &RecallTable)
       .Description("Recall a deleted but still reserved table")
       .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
-      .AddRequiredParameter({ kTabletIdArg, "ID of the table to recall" })
+      .AddRequiredParameter({ kTableIdArg, "ID of the table to recall" })
       .AddOptionalParameter("new_table_name")
       .Build();
 
