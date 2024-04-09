@@ -69,6 +69,7 @@ extern const char* const kMasterAddressesArgDesc;
 extern const char* const kDestMasterAddressesArg;
 extern const char* const kDestMasterAddressesArgDesc;
 extern const char* const kTableNameArg;
+extern const char* const kTableIdArg;
 extern const char* const kTabletIdArg;
 extern const char* const kTabletIdArgDesc;
 extern const char* const kTabletIdsCsvArg;
