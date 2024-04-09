@@ -5428,7 +5428,8 @@ TEST_F(ClientTest, TestDeleteWithDeletedTableReserveSecondsWorks) {
   ASSERT_TRUE(tables.empty());
 
   // Test FLAGS_table_reserve_seconds.
-  SleepFor(MonoDelta::FromMilliseconds(5 * 1000));
+  // We allow a bit more time than reserved to avoid corner cases.
+  SleepFor(MonoDelta::FromMilliseconds(6 * 1000));
 
   // No tables left.
   ASSERT_OK(client_->ListTables(&tables));
