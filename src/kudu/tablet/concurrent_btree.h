@@ -1102,13 +1102,13 @@ class CBTree {
   // Note that this requires iterating through the entire tree,
   // so it is not very efficient.
   size_t count() const {
-    std::unique_ptr<CBTreeIterator<Traits>> iter(NewIterator());
+    CBTreeIterator<Traits> iter(this, frozen_);
     bool exact;
-    iter->SeekAtOrAfter(Slice(""), &exact);
+    iter.SeekAtOrAfter(Slice(""), &exact);
     size_t count = 0;
-    while (iter->IsValid()) {
-      count++;
-      iter->Next();
+    while (iter.IsValid()) {
+      ++count;
+      iter.Next();
     }
     return count;
   }
@@ -1855,11 +1855,11 @@ class CBTreeIterator {
     }
   }
 
-  const CBTree<Traits> *tree_;
+  const CBTree<Traits>* const tree_;
 
   // If true, the tree we are scanning is completely frozen and we don't
   // need to perform optimistic concurrency control or copies for safety.
-  bool tree_frozen_;
+  const bool tree_frozen_;
 
   bool seeked_;
   size_t idx_in_leaf_;
