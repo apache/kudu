@@ -466,15 +466,15 @@ endif()
 # kudu_test_main
 #######################################
 if(NOT NO_TESTS)
-  add_library(kudu_test_main
+  add_library(kudu_test_main STATIC
     test_main.cc)
   target_link_libraries(kudu_test_main
+    kudu_util
     ${KRB5_REALM_OVERRIDE}
     gflags
     glog
     gmock
     gtest
-    kudu_util
     kudu_test_util)
 
   if(NOT APPLE)
