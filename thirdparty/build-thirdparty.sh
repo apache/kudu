@@ -35,6 +35,9 @@
 #   * EXTRA_LIBS - additional libraries to link.
 #   * EXTRA_MAKEFLAGS - additional flags passed to make.
 #   * PARALLEL - parallelism to use when compiling (defaults to number of cores).
+#   * PORTABLE - whether to build portable libraries, otherwise build native libraries. Portable
+#                libraries may cause a slight performance degradation, it's recommend to disable
+#                portable option if there is no port requirements. (defaults to ON).
 
 set -ex
 
@@ -203,6 +206,9 @@ else
   echo Unsupported platform $OSTYPE
   exit 1
 fi
+
+### Build portable libraries by default.
+PORTABLE=${PORTABLE:-"ON"}
 
 ### Detect and enable 'ninja' instead of 'make' for faster builds.
 if which ninja-build > /dev/null ; then

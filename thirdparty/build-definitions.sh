@@ -1198,6 +1198,7 @@ build_rocksdb() {
     CXXFLAGS="$EXTRA_CXXFLAGS -fPIC" \
     cmake \
     -DROCKSDB_BUILD_SHARED=ON \
+    -DPORTABLE=$PORTABLE \
     -DWITH_SNAPPY=ON \
     -Dsnappy_ROOT_DIR=$PREFIX \
     -DUSE_RTTI=ON \
