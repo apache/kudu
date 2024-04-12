@@ -65,6 +65,9 @@ struct TabletMetrics {
   scoped_refptr<Counter> scanner_predicates_disabled;
   scoped_refptr<Counter> scans_started;
   scoped_refptr<AtomicGauge<size_t>> tablet_active_scanners;
+  scoped_refptr<Histogram> scan_duration_wall_time;
+  scoped_refptr<Histogram> scan_duration_system_time;
+  scoped_refptr<Histogram> scan_duration_user_time;
 
   // Probe stats.
   scoped_refptr<Counter> bloom_lookups;

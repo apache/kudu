@@ -165,8 +165,16 @@ struct CpuTimes {
     return static_cast<double>(user) / NANOS_PER_SECOND;
   }
 
+  double user_cpu_millis() const {
+    return static_cast<double>(user) / NANOS_PER_MILLISECOND;
+  }
+
   double system_cpu_seconds() const {
     return static_cast<double>(system) / NANOS_PER_SECOND;
+  }
+
+  double system_cpu_millis() const {
+    return static_cast<double>(system) / NANOS_PER_MILLISECOND;
   }
 };
 

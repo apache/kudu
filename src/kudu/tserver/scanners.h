@@ -407,6 +407,9 @@ class Scanner {
     return initted_.load(std::memory_order_acquire);
   }
 
+  // Store the scan request's timings in the tablet metrics.
+  void UpdateTabletMetrics(const CpuTimes& elapsed);
+
   // The unique ID of this scanner.
   const std::string id_;
 

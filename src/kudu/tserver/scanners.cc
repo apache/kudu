@@ -522,9 +522,22 @@ Scanner::~Scanner() {
   }
 }
 
+void Scanner::UpdateTabletMetrics(const CpuTimes& elapsed) {
+  if (tablet_replica_) {
+    auto tablet = tablet_replica_->shared_tablet();
+    if (tablet && tablet->metrics()) {
+      // Store scan request's timings.
+      tablet->metrics()->scan_duration_wall_time->Increment(elapsed.wall_millis());
+      tablet->metrics()->scan_duration_system_time->Increment(elapsed.system_cpu_millis());
+      tablet->metrics()->scan_duration_user_time->Increment(elapsed.user_cpu_millis());
+    }
+  }
+}
+
 void Scanner::AddTimings(const CpuTimes& elapsed) {
   std::lock_guard<RWMutex> l(cpu_times_lock_);
   cpu_times_.Add(elapsed);
+  UpdateTabletMetrics(elapsed);
 }
 
 void Scanner::Init(unique_ptr<RowwiseIterator> iter,

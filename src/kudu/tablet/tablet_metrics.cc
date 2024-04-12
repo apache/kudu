@@ -153,6 +153,27 @@ METRIC_DEFINE_gauge_size(tablet, tablet_active_scanners, "Active Scanners",
                          "Number of scanners that are currently active on this tablet",
                          kudu::MetricLevel::kInfo);
 
+METRIC_DEFINE_histogram(tablet, scan_duration_wall_time,
+                        "Scan Requests Wall Time",
+                        kudu::MetricUnit::kMilliseconds,
+                        "Duration of scan requests, wall time.",
+                        kudu::MetricLevel::kDebug,
+                        60000LU, 1);
+
+METRIC_DEFINE_histogram(tablet, scan_duration_system_time,
+                        "Scan Requests System Time",
+                        kudu::MetricUnit::kMilliseconds,
+                        "Duration of scan requests, system time.",
+                        kudu::MetricLevel::kDebug,
+                        60000LU, 1);
+
+METRIC_DEFINE_histogram(tablet, scan_duration_user_time,
+                        "Scan Requests User Time",
+                        kudu::MetricUnit::kMilliseconds,
+                        "Duration of scan requests, user time.",
+                        kudu::MetricLevel::kDebug,
+                        60000LU, 1);
+
 METRIC_DEFINE_counter(tablet, bloom_lookups, "Bloom Filter Lookups",
                       kudu::MetricUnit::kProbes,
                       "Number of times a bloom filter was consulted",
@@ -433,6 +454,9 @@ TabletMetrics::TabletMetrics(const scoped_refptr<MetricEntity>& entity)
     MINIT(scanner_predicates_disabled),
     MINIT(scans_started),
     GINIT(tablet_active_scanners),
+    MINIT(scan_duration_wall_time),
+    MINIT(scan_duration_system_time),
+    MINIT(scan_duration_user_time),
     MINIT(bloom_lookups),
     MINIT(key_file_lookups),
     MINIT(delta_file_lookups),
