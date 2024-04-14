@@ -225,9 +225,9 @@ class BlockManagerTest : public KuduTest {
     if (basename == kInstanceMetadataFileName) {
       return Status::OK();
     }
-    // Ignore the 'rdb' directory which contains the RocksDB related files.
+    // Ignore the 'kRocksDBDirName' directory which contains the RocksDB related files.
     string parent_dir = *SplitPath(dirname).rbegin();
-    if (parent_dir == "rdb") {
+    if (parent_dir == kRocksDBDirName) {
       return Status::OK();
     }
     if (type == Env::FILE_TYPE) {
@@ -237,7 +237,7 @@ class BlockManagerTest : public KuduTest {
   }
 
   // Utility function that counts the number of files within a directory
-  // hierarchy, ignoring '.', '..', 'rdb', and file 'kInstanceMetadataFileName'.
+  // hierarchy, ignoring '.', '..', 'kRocksDBDirName', and file 'kInstanceMetadataFileName'.
   Status CountFiles(const string& root, int* num_files) {
     *num_files = 0;
     return env_->Walk(
@@ -421,7 +421,7 @@ void BlockManagerTest<T>::RunMultipathTest(const vector<string>& paths) {
   } else {
     // (numPaths * 2) containers were created, each consisting of 1 file.
     // Thus, there should be a total of (numPaths * 2) files, ignoring '.',
-    // '..', 'rdb', and instance files.
+    // '..', 'kRocksDBDirName', and instance files.
     bool is_logr = std::is_same<T, LogBlockManagerRdbMeta>::value;
     ASSERT_TRUE(is_logr);
     ASSERT_EQ(paths.size() * 2, sum);

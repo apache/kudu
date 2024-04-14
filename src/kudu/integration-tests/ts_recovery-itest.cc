@@ -52,6 +52,7 @@
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/data_dirs.h"
+#include "kudu/fs/dir_manager.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/basictypes.h"
@@ -315,7 +316,7 @@ TEST_P(TsRecoveryITest, TestNoBlockIDReuseIfMissingBlocks) {
     ASSERT_OK(env_->GetChildren(data_dir, &children));
     for (const string& child : children) {
       if (child != "." && child != ".." &&
-          child != fs::kInstanceMetadataFileName && child != "rdb") {
+          child != fs::kInstanceMetadataFileName && child != fs::kRocksDBDirName) {
         ASSERT_OK(env_->DeleteFile(JoinPathSegments(data_dir, child)));
       }
     }

@@ -622,7 +622,7 @@ class LogBlockManagerRdbMeta : public LogBlockManager {
   FRIEND_TEST(LogBlockManagerRdbMetaTest, TestHalfPresentContainer);
 
   size_t EstimateContainerCount(size_t children_count) const override {
-    // TODO(yingchun): exclude the "rdb" directory when get the children count.
+    // TODO(yingchun): exclude the kRocksDBDirName directory when get the children count.
     return children_count;
   }
 

@@ -69,6 +69,7 @@ namespace fs {
 
 static const std::string kDefaultTenantName = "default_tenant_kudu";
 static const std::string kDefaultTenantID = "00000000000000000000000000000000";
+static const std::string kRocksDBDirName = "rdb";
 
 typedef std::unordered_map<int, std::string> UuidByUuidIndexMap;
 typedef std::unordered_map<std::string, int> UuidIndexByUuidMap;

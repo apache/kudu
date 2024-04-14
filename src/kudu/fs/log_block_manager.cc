@@ -903,7 +903,8 @@ class LogBlockContainerNativeMeta final : public LogBlockContainer {
 ////////////////////////////////////////////////////////////
 
 // The metadata part is stored in a directory-wide shared RocksDB instance, located in
-// "<dir>/rdb/", the keys are prefixed by "<id>.", where the "id" is the container's ID.
+// "<dir>/<kRocksDBDirName>/", the keys are prefixed by "<id>.", where the "id" is the container's
+// ID.
 class LogBlockContainerRdbMeta final : public LogBlockContainer {
  public:
   // Creates a new LogBlockContainer managed by 'block_manager' in 'dir', 'container' will be set as

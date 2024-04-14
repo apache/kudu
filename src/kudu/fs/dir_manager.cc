@@ -260,7 +260,7 @@ Status RdbDir::Prepare() {
   opts.prefix_extractor.reset(rocksdb::NewFixedPrefixTransform(ObjectIdGenerator::IdLength()));
   opts.memtable_prefix_bloom_size_ratio = 0.1;
 
-  rdb_dir_ = JoinPathSegments(dir_, "rdb");
+  rdb_dir_ = JoinPathSegments(dir_, kRocksDBDirName);
   rocksdb::DB* db_temp = nullptr;
   rocksdb::Status rdb_s = rocksdb::DB::Open(opts, *rdb_dir_, &db_temp);
   RETURN_NOT_OK_PREPEND(FromRdbStatus(rdb_s),

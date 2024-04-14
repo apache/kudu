@@ -4575,8 +4575,8 @@ TEST_F(ToolTest, TestLocalReplicaDelete) {
     if (FLAGS_block_manager == "logr") {
       // Exclude the RocksDB data size.
       uint64_t size_of_rdb;
-      ASSERT_OK(
-          env_->GetFileSizeOnDiskRecursively(JoinPathSegments(data_dir, "rdb"), &size_of_rdb));
+      ASSERT_OK(env_->GetFileSizeOnDiskRecursively(
+          JoinPathSegments(data_dir, fs::kRocksDBDirName), &size_of_rdb));
       *total_size -= size_of_rdb;
     }
   };
