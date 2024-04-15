@@ -86,6 +86,7 @@ struct TabletMetrics {
   scoped_refptr<Histogram> snapshot_read_inflight_wait_duration;
   scoped_refptr<Histogram> write_op_duration_client_propagated_consistency;
   scoped_refptr<Histogram> write_op_duration_commit_wait_consistency;
+  scoped_refptr<Histogram> alter_schema_duration;
 
   scoped_refptr<AtomicGauge<uint32_t> > flush_dms_running;
   scoped_refptr<AtomicGauge<uint32_t> > flush_mrs_running;

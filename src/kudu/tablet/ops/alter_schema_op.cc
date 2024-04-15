@@ -19,6 +19,7 @@
 
 #include <memory>
 #include <ostream>
+#include <type_traits>
 #include <utility>
 
 #include <glog/logging.h>
@@ -32,12 +33,17 @@
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet.pb.h"
+#include "kudu/tablet/tablet_metrics.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/tserver.pb.h"
+#include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/trace.h"
 
 namespace kudu {
@@ -116,6 +122,7 @@ Status AlterSchemaOp::Start() {
   DCHECK(!state_->has_timestamp());
   DCHECK(state_->consensus_round()->replicate_msg()->has_timestamp());
   state_->set_timestamp(Timestamp(state_->consensus_round()->replicate_msg()->timestamp()));
+  state_->set_start_time(MonoTime::Now());
   TRACE("START. Timestamp: $0", clock::HybridClock::GetPhysicalValueMicros(state_->timestamp()));
   return Status::OK();
 }
@@ -148,6 +155,16 @@ Status AlterSchemaOp::Apply(CommitMsg** commit_msg) {
 }
 
 void AlterSchemaOp::Finish(OpResult result) {
+  // Record the duration of the operation.
+  auto update_metrics = MakeScopedCleanup([&]() {
+    if (auto* metrics = state_->tablet_replica()->tablet()->metrics();
+        PREDICT_TRUE(metrics != nullptr && state_->start_time().Initialized())) {
+        uint64_t op_duration_usec =
+            (MonoTime::Now() - state_->start_time()).ToMicroseconds();
+        metrics->alter_schema_duration->Increment(op_duration_usec);
+    }
+  });
+
   if (PREDICT_FALSE(result == Op::ABORTED)) {
     TRACE("AlterSchemaCommitCallback: op aborted");
     state()->Finish();

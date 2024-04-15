@@ -27,6 +27,7 @@
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/tablet/ops/op.h"
+#include "kudu/tablet/tablet.pb.h"
 #include "kudu/tserver/tserver_admin.pb.h"
 #include "kudu/util/status.h"
 
@@ -36,7 +37,6 @@ class rw_semaphore;
 
 namespace tablet {
 
-class OperationResultPB;
 class TabletReplica;
 
 // Op Context for the AlterSchema operation.

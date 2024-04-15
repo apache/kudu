@@ -56,6 +56,7 @@
 #include "kudu/tablet/ops/write_op.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_metadata.h"
+#include "kudu/tablet/tablet_metrics.h"
 #include "kudu/tablet/tablet_replica-test-base.h"
 #include "kudu/tablet/tablet_replica_mm_ops.h"
 #include "kudu/tserver/tserver.pb.h"
@@ -79,6 +80,7 @@ DECLARE_int32(tablet_history_max_age_sec);
 METRIC_DECLARE_entity(tablet);
 
 METRIC_DECLARE_gauge_uint64(live_row_count);
+METRIC_DECLARE_histogram(alter_schema_duration);
 
 using kudu::consensus::CommitMsg;
 using kudu::consensus::ConsensusBootstrapInfo;
@@ -258,6 +260,26 @@ class DelayedApplyOp : public WriteOp {
   CountDownLatch* apply_continue_;
   DISALLOW_COPY_AND_ASSIGN(DelayedApplyOp);
 };
+
+TEST_F(TabletReplicaTest, TestAlterSchemaMetric) {
+  ConsensusBootstrapInfo info;
+  ASSERT_OK(StartReplicaAndWaitUntilLeader(info));
+  const int orig_schema_version = tablet()->metadata()->schema_version();
+
+  // Get the metric.
+  auto alter_schema_duration =
+    tablet_replica_->tablet()->metrics()->alter_schema_duration;
+  const auto before_cnt = alter_schema_duration->TotalCount();
+
+  // Add a new column.
+  SchemaBuilder builder(*tablet()->metadata()->schema());
+  ASSERT_OK(builder.AddColumn("new_col", INT32));
+  SchemaPB new_schema;
+  ASSERT_OK(SchemaToPB(builder.Build(), &new_schema));
+  ASSERT_OK(UpdateSchema(new_schema, orig_schema_version + 1));
+
+  ASSERT_EQ(before_cnt + 1, alter_schema_duration->TotalCount());
+}
 
 // Ensure that Log::GC() doesn't delete logs when the MRS has an anchor.
 TEST_F(TabletReplicaTest, TestMRSAnchorPreventsLogGC) {

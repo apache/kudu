@@ -224,6 +224,13 @@ METRIC_DEFINE_histogram(tablet, delta_file_lookups_per_op, "Delta File Lookups p
                         kudu::MetricLevel::kDebug,
                         20, 2);
 
+METRIC_DEFINE_histogram(tablet, alter_schema_duration,
+                        "Alter Schema Op Duration",
+                        kudu::MetricUnit::kMicroseconds,
+                        "Duration of alter schema ops to this tablet.",
+                        kudu::MetricLevel::kDebug,
+                        60000000LU, 2);
+
 METRIC_DEFINE_histogram(tablet, write_op_duration_client_propagated_consistency,
   "Write Op Duration with Propagated Consistency",
   kudu::MetricUnit::kMicroseconds,
@@ -441,6 +448,7 @@ TabletMetrics::TabletMetrics(const scoped_refptr<MetricEntity>& entity)
     MINIT(snapshot_read_inflight_wait_duration),
     MINIT(write_op_duration_client_propagated_consistency),
     MINIT(write_op_duration_commit_wait_consistency),
+    MINIT(alter_schema_duration),
     GINIT(flush_dms_running),
     GINIT(flush_mrs_running),
     GINIT(compact_rs_running),
