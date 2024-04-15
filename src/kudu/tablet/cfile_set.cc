@@ -460,7 +460,7 @@ Status CFileSet::Iterator::OptimizePKPredicates(ScanSpec* spec) {
   }
 
   if (modify_lower_bound_key || modify_upper_bound_key) {
-    spec->UnifyPrimaryKeyBoundsAndColumnPredicates(tablet_schema, &arena_, true);
+    spec->OptimizeScan(tablet_schema, &arena_, true);
   }
   return Status::OK();
 }
