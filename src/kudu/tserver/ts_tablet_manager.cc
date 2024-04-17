@@ -69,6 +69,7 @@
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/flag_validators.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/scoped_cleanup.h"
@@ -266,6 +267,20 @@ METRIC_DEFINE_gauge_int64(server, tablets_opening_time_startup,
                           "Time taken to start the tablets during server startup",
                           kudu::MetricLevel::kDebug);
 
+METRIC_DEFINE_histogram(server, create_tablet_run_time,
+                        "Create Tablet Operation Run Time",
+                        kudu::MetricUnit::kMicroseconds,
+                        "The runtime of the create tablet operation.",
+                        kudu::MetricLevel::kDebug,
+                        10000000, 2);
+
+METRIC_DEFINE_histogram(server, delete_tablet_run_time,
+                        "Delete Tablet Operation Run Time",
+                        kudu::MetricUnit::kMicroseconds,
+                        "The runtime of the delete tablet operation.",
+                        kudu::MetricLevel::kDebug,
+                        10000000, 2);
+
 DECLARE_int32(heartbeat_interval_ms);
 
 using kudu::consensus::ConsensusMetadata;
@@ -379,6 +394,11 @@ TSTabletManager::TSTabletManager(TabletServer* server)
 
   tablets_num_opened_startup_ = METRIC_tablets_num_opened_startup.Instantiate(
       server->metric_entity(), 0);
+
+  create_tablet_run_time_ =
+      METRIC_create_tablet_run_time.Instantiate(server->metric_entity());
+  delete_tablet_run_time_ =
+      METRIC_delete_tablet_run_time.Instantiate(server->metric_entity());
 }
 
 // Base class for tasks submitted against TSTabletManager threadpools whose
@@ -633,6 +653,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
 
   // Set the initial opid_index for a RaftConfigPB to -1.
   config.set_opid_index(consensus::kInvalidOpIdIndex);
+  MonoTime time_started = MonoTime::Now();
 
   scoped_refptr<TransitionInProgressDeleter> deleter;
   {
@@ -686,6 +707,10 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
   if (replica) {
     *replica = new_replica;
   }
+
+  create_tablet_run_time_->Increment(
+      (MonoTime::Now() - time_started).ToMicroseconds());
+
   return Status::OK();
 }
 
@@ -1118,6 +1143,7 @@ Status TSTabletManager::DeleteTablet(
   }
 
   TRACE("Deleting tablet $0", tablet_id);
+  MonoTime time_started = MonoTime::Now();
 
   if (PREDICT_FALSE(FLAGS_delete_tablet_inject_latency_ms > 0)) {
     LOG(WARNING) << "Injecting " << FLAGS_delete_tablet_inject_latency_ms
@@ -1139,6 +1165,8 @@ Status TSTabletManager::DeleteTablet(
   // If a tablet is already tombstoned, then a request to tombstone
   // the same tablet should become a no-op.
   if (delete_type == TABLET_DATA_TOMBSTONED && data_state == TABLET_DATA_TOMBSTONED) {
+    delete_tablet_run_time_->Increment(
+        (MonoTime::Now() - time_started).ToMicroseconds());
     return Status::OK();
   }
 
@@ -1197,6 +1225,8 @@ Status TSTabletManager::DeleteTablet(
     CHECK_EQ(1, tablet_map_.erase(tablet_id)) << tablet_id;
     InsertOrDie(&perm_deleted_tablet_ids_, tablet_id);
   }
+  delete_tablet_run_time_->Increment(
+      (MonoTime::Now() - time_started).ToMicroseconds());
 
   return Status::OK();
 }

@@ -501,6 +501,10 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
   // ensures we do not attempt to collect metrics while calling the destructor.
   FunctionGaugeDetacher metric_detacher_;
 
+  // Track the creation and deletion time of tablets on the node.
+  scoped_refptr<Histogram> create_tablet_run_time_;
+  scoped_refptr<Histogram> delete_tablet_run_time_;
+
   DISALLOW_COPY_AND_ASSIGN(TSTabletManager);
 };
 

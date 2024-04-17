@@ -51,6 +51,7 @@
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/oid_generator.h"
@@ -68,6 +69,9 @@ DECLARE_bool(tablet_bootstrap_skip_opening_tablet_for_testing);
 DECLARE_int32(tablet_metadata_load_inject_latency_ms);
 DECLARE_int32(update_tablet_metrics_interval_ms);
 
+METRIC_DECLARE_histogram(create_tablet_run_time);
+METRIC_DECLARE_histogram(delete_tablet_run_time);
+
 #define ASSERT_REPORT_HAS_UPDATED_TABLET(report, tablet_id) \
   NO_FATALS(AssertReportHasUpdatedTablet(report, tablet_id))
 
@@ -81,6 +85,7 @@ using kudu::master::TabletReportPB;
 using kudu::pb_util::SecureShortDebugString;
 using kudu::tablet::LocalTabletWriter;
 using kudu::tablet::Tablet;
+using kudu::tablet::TabletDataState;
 using kudu::tablet::TabletReplica;
 using std::nullopt;
 using std::optional;
@@ -182,6 +187,42 @@ class TsTabletManagerTest : public KuduTest {
   Schema schema_;
   RaftConfigPB config_;
 };
+
+class TestCreateAndDeleteMetrics :
+    public TsTabletManagerTest,
+    public ::testing::WithParamInterface<TabletDataState> {
+};
+
+INSTANTIATE_TEST_SUITE_P(Params, TestCreateAndDeleteMetrics,
+                         ::testing::Values(TabletDataState::TABLET_DATA_DELETED,
+                                           TabletDataState::TABLET_DATA_TOMBSTONED));
+
+TEST_P(TestCreateAndDeleteMetrics, TestCreateAndDifferentModeDeleteMetrics) {
+  TabletDataState data_state = GetParam();
+  scoped_refptr<Histogram> create_tablet_run_time =
+    METRIC_create_tablet_run_time.Instantiate(mini_server_->server()->metric_entity());
+  ASSERT_EQ(0, create_tablet_run_time->TotalCount());
+
+  scoped_refptr<Histogram> delete_tablet_run_time =
+    METRIC_delete_tablet_run_time.Instantiate(mini_server_->server()->metric_entity());
+  ASSERT_EQ(0, delete_tablet_run_time->TotalCount());
+
+  string test_tablet = "ffffffffffffffffffffffffffffffff";
+  scoped_refptr<TabletReplica> test_replica;
+
+  // Create a new tablet.
+  ASSERT_OK(CreateNewTablet(test_tablet, schema_, true, nullopt, nullopt, &test_replica));
+  ASSERT_EQ(test_tablet, test_replica->tablet()->tablet_id());
+  // Metrics should be incremented.
+  ASSERT_EQ(1, create_tablet_run_time->TotalCount());
+
+  ASSERT_EQ(0, delete_tablet_run_time->TotalCount());
+  ASSERT_OK(tablet_manager_->DeleteTablet(test_tablet,
+                                          data_state,
+                                          nullopt));
+  // Metrics should be incremented.
+  ASSERT_EQ(1, delete_tablet_run_time->TotalCount());
+}
 
 TEST_F(TsTabletManagerTest, TestCreateTablet) {
   string tablet1 = "0fffffffffffffffffffffffffffffff";

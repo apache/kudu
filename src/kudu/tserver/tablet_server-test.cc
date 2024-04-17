@@ -238,6 +238,7 @@ METRIC_DECLARE_gauge_size(slow_scans);
 METRIC_DECLARE_histogram(flush_dms_duration);
 METRIC_DECLARE_histogram(op_apply_queue_length);
 METRIC_DECLARE_histogram(op_apply_queue_time);
+METRIC_DECLARE_histogram(delete_tablet_run_time);
 
 
 namespace kudu {
@@ -4051,6 +4052,9 @@ TEST_F(TabletServerTest, TestDeleteTablet) {
 }
 
 TEST_F(TabletServerTest, TestDeleteTablet_TabletNotCreated) {
+  scoped_refptr<Histogram> delete_tablet_run_time =
+      METRIC_delete_tablet_run_time.Instantiate(mini_server_->server()->metric_entity());
+  ASSERT_EQ(0, delete_tablet_run_time->TotalCount());
   DeleteTabletRequestPB req;
   DeleteTabletResponsePB resp;
   RpcController rpc;
@@ -4067,6 +4071,9 @@ TEST_F(TabletServerTest, TestDeleteTablet_TabletNotCreated) {
     ASSERT_TRUE(resp.has_error());
     ASSERT_EQ(TabletServerErrorPB::TABLET_NOT_FOUND, resp.error().code());
   }
+
+  // Check that the histogram is not populated.
+  ASSERT_EQ(0, delete_tablet_run_time->TotalCount());
 }
 
 TEST_F(TabletServerTest, TestDeleteTabletBenchmark) {
