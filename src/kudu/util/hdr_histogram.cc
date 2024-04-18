@@ -32,6 +32,7 @@
 
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/bits.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/status.h"
 
@@ -57,7 +58,8 @@ HdrHistogram::HdrHistogram(uint64_t highest_trackable_value, int num_significant
     total_count_(0),
     total_sum_(0),
     min_value_(std::numeric_limits<Atomic64>::max()),
-    max_value_(0) {
+    max_value_(0),
+    last_value_(0) {
   Init();
 }
 
@@ -73,7 +75,8 @@ HdrHistogram::HdrHistogram(const HdrHistogram& other)
     total_count_(0),
     total_sum_(0),
     min_value_(std::numeric_limits<Atomic64>::max()),
-    max_value_(0) {
+    max_value_(0),
+    last_value_(0) {
   Init();
 
   // Not a consistent snapshot but we try to roughly keep it close.
@@ -92,6 +95,8 @@ HdrHistogram::HdrHistogram(const HdrHistogram& other)
   NoBarrier_Store(&max_value_, NoBarrier_Load(&other.max_value_));
   // We must ensure the total is consistent with the copied counts.
   NoBarrier_Store(&total_count_, total_copied_count);
+  // At last, copy the most recent value.
+  NoBarrier_Store(&last_value_, NoBarrier_Load(&other.last_value_));
 }
 
 bool HdrHistogram::IsValidHighestTrackableValue(uint64_t highest_trackable_value) {
@@ -186,6 +191,8 @@ void HdrHistogram::IncrementBy(int64_t value, int64_t count) {
   NoBarrier_AtomicIncrement(&counts_[counts_index], count);
   NoBarrier_AtomicIncrement(&total_count_, count);
   NoBarrier_AtomicIncrement(&total_sum_, value * count);
+
+  NoBarrier_Store(&last_value_, value);
 
   UpdateMinMax(value, value);
 }
@@ -294,6 +301,10 @@ uint64_t HdrHistogram::MaxValue() const {
   return NoBarrier_Load(&max_value_);
 }
 
+uint64_t HdrHistogram::LastValue() const {
+  return NoBarrier_Load(&last_value_);
+}
+
 double HdrHistogram::MeanValue() const {
   uint64_t count = TotalCount();
   if (PREDICT_FALSE(count == 0)) return 0.0;
@@ -329,6 +340,7 @@ uint64_t HdrHistogram::ValueAtPercentile(double percentile) const {
 void HdrHistogram::DumpHumanReadable(std::ostream* out) const {
   *out << "Count: " << TotalCount() << endl;
   *out << "Mean: " << MeanValue() << endl;
+  *out << "Last: " << LastValue() << endl;
   *out << "Percentiles:" << endl;
   *out << "   0%  (min) = " << MinValue() << endl;
   *out << "  25%        = " << ValueAtPercentile(25) << endl;
@@ -339,7 +351,7 @@ void HdrHistogram::DumpHumanReadable(std::ostream* out) const {
   *out << "  99.9%      = " << ValueAtPercentile(99.9) << endl;
   *out << "  99.99%     = " << ValueAtPercentile(99.99) << endl;
   *out << "  100% (max) = " << MaxValue() << endl;
-  if (MaxValue() >= highest_trackable_value()) {
+  if (PREDICT_FALSE(MaxValue() >= highest_trackable_value())) {
     *out << "*NOTE: some values were greater than highest trackable value" << endl;
   }
 }
@@ -364,6 +376,10 @@ void HdrHistogram::MergeFrom(const HdrHistogram& other) {
     if (count > 0) {
       NoBarrier_AtomicIncrement(&counts_[i], count);
     }
+  }
+  // Just a convention: the other histogram provides the most recent value.
+  if (other.TotalCount() != 0) {
+    NoBarrier_Store(&last_value_, other.last_value_);
   }
 }
 

@@ -1183,6 +1183,7 @@ Status Histogram::GetHistogramSnapshotPB(HistogramSnapshotPB* snapshot_pb,
     snapshot_pb->set_percentile_99_9(0);
     snapshot_pb->set_percentile_99_99(0);
     snapshot_pb->set_max(0);
+    snapshot_pb->set_last(0);
   } else {
     HdrHistogram snapshot(*histogram_);
     snapshot_pb->set_total_count(snapshot.TotalCount());
@@ -1195,6 +1196,7 @@ Status Histogram::GetHistogramSnapshotPB(HistogramSnapshotPB* snapshot_pb,
     snapshot_pb->set_percentile_99_9(snapshot.ValueAtPercentile(99.9));
     snapshot_pb->set_percentile_99_99(snapshot.ValueAtPercentile(99.99));
     snapshot_pb->set_max(snapshot.MaxValue());
+    snapshot_pb->set_last(snapshot.LastValue());
 
     if (opts.include_raw_histograms) {
       RecordedValuesIterator iter(&snapshot);

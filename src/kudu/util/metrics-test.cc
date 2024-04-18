@@ -631,11 +631,13 @@ TEST_F(MetricsTest, SimpleHistogramMergeTest) {
   ASSERT_EQ(2, hist->histogram()->MinValue());
   ASSERT_EQ(4, hist->histogram()->MeanValue());
   ASSERT_EQ(6, hist->histogram()->MaxValue());
+  ASSERT_EQ(6, hist->histogram()->LastValue());
   ASSERT_EQ(2, hist->histogram()->TotalCount());
   ASSERT_EQ(8, hist->histogram()->TotalSum());
   ASSERT_EQ(1, hist_for_merge->histogram()->MinValue());
   ASSERT_EQ(3, hist_for_merge->histogram()->MeanValue());
   ASSERT_EQ(6, hist_for_merge->histogram()->MaxValue());
+  ASSERT_EQ(6, hist_for_merge->histogram()->LastValue());
   ASSERT_EQ(6, hist_for_merge->histogram()->TotalCount());
   ASSERT_EQ(18, hist_for_merge->histogram()->TotalSum());
   ASSERT_EQ(1, hist_for_merge->histogram()->ValueAtPercentile(20.0));

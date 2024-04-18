@@ -35,21 +35,27 @@ TEST_F(HdrHistogramTest, SimpleTest) {
 
   HdrHistogram hist(highest_val, kSigDigits);
   ASSERT_EQ(0, hist.CountInBucketForValue(1));
+  ASSERT_EQ(0, hist.LastValue());
   hist.Increment(1);
   ASSERT_EQ(1, hist.CountInBucketForValue(1));
+  ASSERT_EQ(1, hist.LastValue());
   hist.IncrementBy(1, 3);
   ASSERT_EQ(4, hist.CountInBucketForValue(1));
+  ASSERT_EQ(1, hist.LastValue());
   hist.Increment(10);
   ASSERT_EQ(1, hist.CountInBucketForValue(10));
+  ASSERT_EQ(10, hist.LastValue());
   hist.Increment(20);
   ASSERT_EQ(1, hist.CountInBucketForValue(20));
   ASSERT_EQ(0, hist.CountInBucketForValue(1000));
+  ASSERT_EQ(20, hist.LastValue());
   hist.Increment(1000);
   hist.Increment(1001);
   ASSERT_EQ(2, hist.CountInBucketForValue(1000));
 
   ASSERT_EQ(1 + 1 * 3 + 10 + 20 + 1000 + 1001,
             hist.TotalSum());
+  ASSERT_EQ(1001, hist.LastValue());
 }
 
 TEST_F(HdrHistogramTest, TestCoordinatedOmission) {
@@ -111,6 +117,7 @@ TEST_F(HdrHistogramTest, PercentileAndCopyTest) {
   NO_FATALS(validate_percentiles(&copy, specified_max));
 
   ASSERT_EQ(hist.TotalSum(), copy.TotalSum());
+  ASSERT_EQ(hist.LastValue(), copy.LastValue());
 }
 
 void PopulateHistogram(HdrHistogram* histogram, uint64_t low, uint64_t high) {
@@ -126,7 +133,9 @@ TEST_F(HdrHistogramTest, MergeTest) {
   HdrHistogram other(highest_val, kSigDigits);
 
   PopulateHistogram(&hist, 1, 100);
+  ASSERT_EQ(100, hist.LastValue());
   PopulateHistogram(&other, 101, 250);
+  ASSERT_EQ(250, other.LastValue());
   HdrHistogram old(hist);
   hist.MergeFrom(other);
 
@@ -134,6 +143,8 @@ TEST_F(HdrHistogramTest, MergeTest) {
   ASSERT_EQ(hist.TotalSum(), old.TotalSum() + other.TotalSum());
   ASSERT_EQ(hist.MinValue(), 1);
   ASSERT_EQ(hist.MaxValue(), 250);
+  ASSERT_EQ(100, old.LastValue());
+  ASSERT_EQ(other.LastValue(), hist.LastValue());
   ASSERT_NEAR(hist.MeanValue(), (1 + 250) / 2.0, 1e3);
   ASSERT_EQ(hist.ValueAtPercentile(100.0), 250);
   ASSERT_NEAR(hist.ValueAtPercentile(99.0), 250 * 99.0 / 100, 1e3);

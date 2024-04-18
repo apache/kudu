@@ -54,7 +54,6 @@
 
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/port.h"
 
 namespace kudu {
 
@@ -152,6 +151,9 @@ class HdrHistogram {
   // Get the exact maximum value (may lie outside the histogram).
   uint64_t MaxValue() const;
 
+  // Get the most recent (last seen) value.
+  uint64_t LastValue() const;
+
   // Get the exact mean value of all recorded values in the histogram.
   double MeanValue() const;
 
@@ -203,6 +205,7 @@ class HdrHistogram {
   base::subtle::Atomic64 total_sum_;
   base::subtle::Atomic64 min_value_;
   base::subtle::Atomic64 max_value_;
+  base::subtle::Atomic64 last_value_;
   std::unique_ptr<base::subtle::Atomic64[]> counts_;
 
   HdrHistogram& operator=(const HdrHistogram& other); // Disable assignment operator.
