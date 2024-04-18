@@ -39,8 +39,8 @@
 #
 #   KUDU_FLAKY_TEST_ATTEMPTS  Default: 1
 #     If more than 1, will fetch the list of known flaky tests
-#     from the kudu-test jenkins job, and allow those tests to
-#     be flaky in this build.
+#     from the jenkins jobs matching the "%jenkins-%" pattern, and allow those
+#     tests to be flaky in this build.
 #
 #   TEST_RESULT_SERVER  Default: none
 #     The host:port pair of a server running test_result_server.py.
@@ -183,8 +183,11 @@ mkdir -p $BUILD_ROOT
 # Same for the Java tests, which aren't inside BUILD_ROOT
 rm -rf $SOURCE_ROOT/java/*/build
 
+# The build_pattern is %jenkins-% because we are interested in two types of runs:
+# 1. As of now build_and_test pipeline job which is triggered by the pre-commit pipeline job.
+# 2. Any other job which is used to run the flaky tests only.
 list_flaky_tests() {
-  local url="http://$TEST_RESULT_SERVER/list_failed_tests?num_days=3&build_pattern=%25kudu-test%25"
+  local url="http://$TEST_RESULT_SERVER/list_failed_tests?num_days=3&build_pattern=%25jenkins-%25"
   >&2 echo Fetching flaky test list from "$url" ...
   curl -s --show-error "$url"
   return $?
