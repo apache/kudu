@@ -1728,6 +1728,55 @@ TEST_F(ToolTest, TestActionMissingRequiredArg) {
                                         "peers", /* variadic */ true));
 }
 
+
+class CreateEmptyPartitionTableTest :
+    public ToolTest,
+    public ::testing::WithParamInterface<bool> {
+};
+
+INSTANTIATE_TEST_SUITE_P(, CreateEmptyPartitionTableTest, ::testing::Bool());
+TEST_P(CreateEmptyPartitionTableTest, TestCreateEmptyPartitionTable) {
+  const string& kTableName = "test";
+  bool allow_empty_partition = GetParam();
+  shared_ptr<KuduClient> client;
+  NO_FATALS(StartExternalMiniCluster());
+  cluster_->CreateClient(nullptr, &client);
+  unique_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
+  KuduSchema schema = KuduSchema::FromSchema(GetSimpleTestSchema());
+  table_creator->table_name(kTableName)
+                    .schema(&schema)
+                    .set_range_partition_columns({"key"})
+                    .num_replicas(1)
+                    .set_allow_empty_partition(allow_empty_partition)
+                    .Create();
+  vector<string> src_schema;
+  string stdout;
+  NO_FATALS(RunActionStdoutString(
+      Substitute("table describe $0 $1",
+                 cluster_->master()->bound_rpc_addr().ToString(),
+                 kTableName), &stdout));
+  if (allow_empty_partition) {
+    ASSERT_STR_CONTAINS(stdout, "RANGE (key) ()");
+  } else {
+    ASSERT_STR_CONTAINS(stdout, "PARTITION UNBOUNDED");
+  }
+  // Create a new partition.
+  if (allow_empty_partition) {
+    unique_ptr<KuduPartialRow> lower_bound(schema.NewRow());
+    ASSERT_OK(lower_bound->SetInt32("key", 0));
+    unique_ptr<KuduPartialRow> upper_bound(schema.NewRow());
+    ASSERT_OK(upper_bound->SetInt32("key", 1));
+    unique_ptr<KuduTableAlterer> table_alterer(client->NewTableAlterer(kTableName));
+    table_alterer->AddRangePartition(lower_bound.release(), upper_bound.release());
+    ASSERT_OK(table_alterer->Alter());
+    NO_FATALS(RunActionStdoutString(
+      Substitute("table describe $0 $1",
+                 cluster_->master()->bound_rpc_addr().ToString(),
+                 kTableName), &stdout));
+    ASSERT_STR_CONTAINS(stdout, "PARTITION 0 <= VALUES < 1");
+  }
+}
+
 TEST_F(ToolTest, TestFsCheck) {
   const string kTestDir = GetTestPath("test");
   const string kTabletId = "ffffffffffffffffffffffffffffffff";

@@ -2037,7 +2037,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   } else {
     // Create partitions based on specified partition schema and split rows.
     RETURN_NOT_OK(partition_schema.CreatePartitions(
-        split_rows, range_bounds, schema, &partitions));
+        split_rows, range_bounds, schema, &partitions, req.allow_empty_partition()));
   }
 
   // Check the restriction on the same number of hash dimensions across all the
@@ -2047,7 +2047,6 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   // TODO(aserbin): remove the restriction once the rest of the code is ready
   //                to handle range partitions with arbitrary number of hash
   //                dimensions in hash schemas
-  CHECK(!partitions.empty());
   const auto hash_dimensions_num = partition_schema.hash_schema().size();
   for (const auto& p : partitions) {
     if (p.hash_buckets().size() != hash_dimensions_num) {

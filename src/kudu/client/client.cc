@@ -935,6 +935,12 @@ KuduTableCreator& KuduTableCreator::set_comment(const string& comment) {
   return *this;
 }
 
+KuduTableCreator& KuduTableCreator::set_allow_empty_partition(
+    bool allow_empty_partition) {
+  data_->allow_empty_partition_ = allow_empty_partition;
+  return *this;
+}
+
 KuduTableCreator& KuduTableCreator::split_rows(const vector<const KuduPartialRow*>& rows) {
   for (const KuduPartialRow* row : rows) {
     data_->range_partition_splits_.emplace_back(const_cast<KuduPartialRow*>(row));
@@ -1021,6 +1027,10 @@ Status KuduTableCreator::Create() {
   if (data_->comment_) {
     req.set_comment(*data_->comment_);
   }
+  if (data_->allow_empty_partition_) {
+    req.set_allow_empty_partition(*data_->allow_empty_partition_);
+  }
+
   RETURN_NOT_OK_PREPEND(SchemaToPB(*data_->schema_->schema_, req.mutable_schema(),
                                    SCHEMA_PB_WITHOUT_WRITE_DEFAULT),
                         "Invalid schema");
@@ -1053,7 +1063,6 @@ Status KuduTableCreator::Create() {
 
   auto* partition_schema = req.mutable_partition_schema();
   partition_schema->CopyFrom(data_->partition_schema_);
-
   for (const auto& p : data_->range_partitions_) {
     const auto* range = p->data_;
     if (!range->lower_bound_ || !range->upper_bound_) {

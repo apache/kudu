@@ -358,11 +358,14 @@ class PartitionSchema {
   // of resulting partitions is the product of the number of hash buckets for
   // each hash bucket component, multiplied by
   // (split_rows.size() + max(1, range_bounds.size())).
+  // Parameter 'allow_empty_partition' is used to whether allow creating
+  // a table with empty partition.
   Status CreatePartitions(
       const std::vector<KuduPartialRow>& split_rows,
       const std::vector<std::pair<KuduPartialRow, KuduPartialRow>>& range_bounds,
       const Schema& schema,
-      std::vector<Partition>* partitions) const WARN_UNUSED_RESULT;
+      std::vector<Partition>* partitions,
+      bool allow_empty_partition = false) const WARN_UNUSED_RESULT;
 
   // Create the set of partitions given the specified ranges with per-range
   // hash schemas. The 'partitions' output parameter must be non-null.
@@ -689,11 +692,14 @@ class PartitionSchema {
   // inserts them into 'bounds_with_hash_schemas' in sorted order. The hash schemas
   // per range are stored within 'range_hash_schemas'. If 'range_hash_schemas' is empty,
   // it indicates that the table wide hash schema will be used per range.
+  // Parameter 'allow_empty_partition' is used to indicate whether allow creating
+  // a table with empty partition.
   Status EncodeRangeBounds(
       const std::vector<std::pair<KuduPartialRow, KuduPartialRow>>& range_bounds,
       const std::vector<HashSchema>& range_hash_schemas,
       const Schema& schema,
-      RangesWithHashSchemas* bounds_with_hash_schemas) const;
+      RangesWithHashSchemas* bounds_with_hash_schemas,
+      bool allow_empty_partition = false) const;
 
   // Splits the encoded range bounds by the split points. The splits and bounds within
   // 'bounds_with_hash_schemas' must be sorted. If `bounds_with_hash_schemas` is empty,

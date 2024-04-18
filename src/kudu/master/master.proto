@@ -573,6 +573,9 @@ message CreateTableRequestPB {
 
   // The comment on the table.
   optional string comment = 13;
+
+  // Allow creating a table with empty partition.
+  optional bool allow_empty_partition = 14 [ default = false ];
 }
 
 message CreateTableResponsePB {

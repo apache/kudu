@@ -1393,6 +1393,14 @@ class KUDU_EXPORT KuduTableCreator {
   /// @return Reference to the modified table creator.
   KuduTableCreator& set_comment(const std::string& comment);
 
+
+  /// Set allow creating empty partition.
+  ///
+  /// @param [in] allow_empty_partition
+  ///   Allow creating a table with empty partition.
+  /// @return Reference to the modified table creator.
+  KuduTableCreator& set_allow_empty_partition(bool allow_empty_partition);
+
   /// @deprecated Use @c add_range_partition_split() instead.
   ///
   /// @param [in] split_rows

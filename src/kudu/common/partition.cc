@@ -503,12 +503,15 @@ Status PartitionSchema::EncodeRangeBounds(
     const vector<pair<KuduPartialRow, KuduPartialRow>>& range_bounds,
     const vector<HashSchema>& range_hash_schemas,
     const Schema& schema,
-    RangesWithHashSchemas* bounds_with_hash_schemas) const {
+    RangesWithHashSchemas* bounds_with_hash_schemas,
+    bool allow_create_partition) const {
   DCHECK(bounds_with_hash_schemas);
   auto& bounds_whs = *bounds_with_hash_schemas;
   DCHECK(bounds_whs.empty());
   if (range_bounds.empty()) {
-    bounds_whs.emplace_back(RangeWithHashSchema{"", "", hash_schema_});
+    if (!allow_create_partition) {
+      bounds_whs.emplace_back(RangeWithHashSchema{"", "", hash_schema_});
+    }
     return Status::OK();
   }
 
@@ -621,14 +624,16 @@ Status PartitionSchema::CreatePartitions(
     const vector<KuduPartialRow>& split_rows,
     const vector<pair<KuduPartialRow, KuduPartialRow>>& range_bounds,
     const Schema& schema,
-    vector<Partition>* partitions) const {
+    vector<Partition>* partitions,
+    bool allow_empty_partition) const {
   DCHECK(partitions);
 
   RETURN_NOT_OK(CheckRangeSchema(schema));
 
   RangesWithHashSchemas bounds_with_hash_schemas;
   RETURN_NOT_OK(EncodeRangeBounds(range_bounds, {}, schema,
-                                  &bounds_with_hash_schemas));
+                                  &bounds_with_hash_schemas,
+                                  allow_empty_partition));
   vector<string> splits;
   RETURN_NOT_OK(EncodeRangeSplits(split_rows, schema, &splits));
   RETURN_NOT_OK(SplitRangeBounds(schema, splits, &bounds_with_hash_schemas));

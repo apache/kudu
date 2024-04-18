@@ -75,6 +75,8 @@ class KuduTableCreator::Data {
 
   std::optional<std::string> comment_;
 
+  std::optional<bool> allow_empty_partition_;
+
   std::optional<int> num_replicas_;
 
   std::optional<std::string> dimension_label_;
