@@ -629,7 +629,3 @@ Kudu has a few known security limitations:
 
 External PKI:: Kudu does not support externally-issued certificates for internal
 wire encryption (server to server and client to server).
-
-On-disk Encryption:: Kudu does not have built-in on-disk encryption. However,
-Kudu can be used with whole-disk encryption tools such as dm-crypt.
-
