@@ -649,24 +649,30 @@ TEST_F(MetricsTest, SimpleHistogramMergeTest) {
 }
 
 TEST_F(MetricsTest, HistogramPrometheusTest) {
+  constexpr const char* const kExpectedOutput =
+      "# HELP test_hist foo\n"
+      "# TYPE test_hist summary\n"
+      "test_hist{unit_type=\"milliseconds\", quantile=\"0\"} 1\n"
+      "test_hist{unit_type=\"milliseconds\", quantile=\"0.75\"} 2\n"
+      "test_hist{unit_type=\"milliseconds\", quantile=\"0.95\"} 3\n"
+      "test_hist{unit_type=\"milliseconds\", quantile=\"0.99\"} 4\n"
+      "test_hist{unit_type=\"milliseconds\", quantile=\"0.999\"} 5\n"
+      "test_hist{unit_type=\"milliseconds\", quantile=\"0.9999\"} 5\n"
+      "test_hist{unit_type=\"milliseconds\", quantile=\"1\"} 5\n"
+      "test_hist_sum 1460\n"
+      "test_hist_count 1000\n";
+
   scoped_refptr<Histogram> hist = METRIC_test_hist.Instantiate(entity_);
+  hist->IncrementBy(1, 700);
+  hist->IncrementBy(2, 200);
+  hist->IncrementBy(3, 50);
+  hist->IncrementBy(4, 40);
+  hist->IncrementBy(5, 10);
 
   ostringstream output;
   PrometheusWriter writer(&output);
   ASSERT_OK(hist->WriteAsPrometheus(&writer, {}));
-
-  const string expected_output = "# HELP test_hist foo\n"
-                                 "# TYPE test_hist histogram\n"
-                                 "test_hist_bucket{unit_type=\"milliseconds\", le=\"0.75\"} 0\n"
-                                 "test_hist_bucket{unit_type=\"milliseconds\", le=\"0.95\"} 0\n"
-                                 "test_hist_bucket{unit_type=\"milliseconds\", le=\"0.99\"} 0\n"
-                                 "test_hist_bucket{unit_type=\"milliseconds\", le=\"0.999\"} 0\n"
-                                 "test_hist_bucket{unit_type=\"milliseconds\", le=\"0.9999\"} 0\n"
-                                 "test_hist_bucket{unit_type=\"milliseconds\", le=\"+Inf\"} 0\n"
-                                 "test_hist_sum{unit_type=\"milliseconds\"} 0\n"
-                                 "test_hist_count{unit_type=\"milliseconds\"} 0\n";
-
-  ASSERT_EQ(expected_output, output.str());
+  ASSERT_EQ(kExpectedOutput, output.str());
 }
 
 TEST_F(MetricsTest, JsonPrintTest) {

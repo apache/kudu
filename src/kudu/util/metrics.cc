@@ -749,9 +749,18 @@ void MetricPrototype::WriteFields(JsonWriter* writer,
 
 void MetricPrototype::WriteHelpAndType(PrometheusWriter* writer,
                                        const string& prefix) const {
+  static constexpr const char* const kSummary = "summary";
+
+  // The way how HdrHistogram-backed stats are presented in Kudu metrics
+  // corresponds to a 'summary' metric in Prometheus, not a 'histogram' one [1].
+  //
+  // [1] https://prometheus.io/docs/concepts/metric_types/#summary
+  const auto m_type = type();
+  const char* const metric_type_str =
+      m_type == MetricType::kHistogram ? kSummary : MetricType::Name(m_type);
   writer->WriteEntry(Substitute("# HELP $0$1 $2\n# TYPE $3$4 $5\n",
                                 prefix, name(), description(),
-                                prefix, name(), MetricType::Name(type())));
+                                prefix, name(), metric_type_str));
 }
 
 //
@@ -988,19 +997,20 @@ void MeanGauge::WriteValue(JsonWriter* writer) const {
   writer->Double(total_count());
 }
 
-void MeanGauge::WriteValue(PrometheusWriter* writer, const std::string& prefix) const {
-  auto output = Substitute("$0$1{unit_type=\"$2\"} $3\n", prefix, prototype_->name(),
-                           MetricUnit::Name(prototype_->unit()), value());
+void MeanGauge::WriteValue(PrometheusWriter* writer, const string& prefix) const {
+  static constexpr const char* const kFmt = "$0$1$2{unit_type=\"$3\"} $4\n";
 
-  SubstituteAndAppend(&output, "$0$1$2{unit_type=\"$3\"} $4\n",
-                       prefix, prototype_->name(), "_count",
-                       MetricUnit::Name(prototype_->unit()), total_count());
+  const char* const name = prototype_->name();
+  DCHECK(name);
+  const char* const unit = MetricUnit::Name(prototype_->unit());
+  DCHECK(unit);
 
-  SubstituteAndAppend(&output, "$0$1$2{unit_type=\"$3\"} $4\n",
-                       prefix, prototype_->name(), "_sum",
-                       MetricUnit::Name(prototype_->unit()), total_sum());
+  string out;
+  SubstituteAndAppend(&out, kFmt, prefix, name, "", unit, value());
+  SubstituteAndAppend(&out, kFmt, prefix, name, "_count", unit, total_count());
+  SubstituteAndAppend(&out, kFmt, prefix, name, "_sum", unit, total_sum());
 
-  writer->WriteEntry(output);
+  writer->WriteEntry(out);
 }
 
 //
@@ -1104,55 +1114,41 @@ Status Histogram::WriteAsJson(JsonWriter* writer,
   return Status::OK();
 }
 
-Status Histogram::WriteAsPrometheus(PrometheusWriter* writer, const string& prefix) const {
-  // Snapshot is taken to preserve the consistency across metrics and
-  // requirements given by Prometheus. The value for the _bucket in +Inf
-  // quantile needs to be equal to the total _count
-  HistogramSnapshotPB snapshot;
-  RETURN_NOT_OK(GetHistogramSnapshotPB(&snapshot, {}));
+Status Histogram::WriteAsPrometheus(PrometheusWriter* writer,
+                                    const string& prefix) const {
+  static constexpr struct QuantileInfo {
+    const char* const tag;
+    const double quantile;
+  } kQuantiles[] = {
+    { "0.75",   75.0  },
+    { "0.95",   95.0  },
+    { "0.99",   99.0  },
+    { "0.999",  99.9  },
+    { "0.9999", 99.99 },
+  };
+  static constexpr const char* const kFmt =
+      "$0$1{unit_type=\"$2\", quantile=\"$3\"} $4\n";
 
-  auto output = Substitute("$0$1$2{unit_type=\"$3\", le=\"0.75\"} $4\n",
-                           prefix, prototype_->name(), "_bucket",
-                           MetricUnit::Name(prototype_->unit()),
-                           snapshot.percentile_75());
+  const char* const name = prototype_->name();
+  DCHECK(name);
+  const char* const unit = MetricUnit::Name(prototype_->unit());
+  DCHECK(unit);
 
-  SubstituteAndAppend(&output, "$0$1$2{unit_type=\"$3\", le=\"0.95\"} $4\n",
-                       prefix, prototype_->name(), "_bucket",
-                       MetricUnit::Name(prototype_->unit()),
-                       snapshot.percentile_95());
+  // A snapshot is taken to have more consistent statistics while generating
+  // the output.
+  const HdrHistogram h(*histogram_);
+  string out;
+  SubstituteAndAppend(&out, kFmt, prefix, name, unit, "0", h.MinValue());
+  for (const auto& [tag, q] : kQuantiles) {
+    SubstituteAndAppend(&out, kFmt, prefix, name, unit, tag, h.ValueAtPercentile(q));
+  }
+  SubstituteAndAppend(&out, kFmt, prefix, name, unit, "1", h.MaxValue());
 
-  SubstituteAndAppend(&output, "$0$1$2{unit_type=\"$3\", le=\"0.99\"} $4\n",
-                       prefix, prototype_->name(), "_bucket",
-                       MetricUnit::Name(prototype_->unit()),
-                       snapshot.percentile_99());
-
-  SubstituteAndAppend(&output, "$0$1$2{unit_type=\"$3\", le=\"0.999\"} $4\n",
-                       prefix, prototype_->name(), "_bucket",
-                       MetricUnit::Name(prototype_->unit()),
-                       snapshot.percentile_99_9());
-
-  SubstituteAndAppend(&output, "$0$1$2{unit_type=\"$3\", le=\"0.9999\"} $4\n",
-                       prefix, prototype_->name(), "_bucket",
-                       MetricUnit::Name(prototype_->unit()),
-                       snapshot.percentile_99_99());
-
-  SubstituteAndAppend(&output, "$0$1$2{unit_type=\"$3\", le=\"+Inf\"} $4\n",
-                       prefix, prototype_->name(), "_bucket",
-                       MetricUnit::Name(prototype_->unit()),
-                       snapshot.total_count());
-
-  SubstituteAndAppend(&output, "$0$1$2{unit_type=\"$3\"} $4\n",
-                       prefix, prototype_->name(), "_sum",
-                       MetricUnit::Name(prototype_->unit()),
-                       snapshot.total_sum());
-
-  SubstituteAndAppend(&output, "$0$1$2{unit_type=\"$3\"} $4\n",
-                       prefix, prototype_->name(), "_count",
-                       MetricUnit::Name(prototype_->unit()),
-                       snapshot.total_count());
+  SubstituteAndAppend(&out, "$0$1_sum $2\n", prefix, name, h.TotalSum());
+  SubstituteAndAppend(&out, "$0$1_count $2\n", prefix, name, h.TotalCount());
 
   prototype_->WriteHelpAndType(writer, prefix);
-  writer->WriteEntry(output);
+  writer->WriteEntry(out);
 
   return Status::OK();
 }
