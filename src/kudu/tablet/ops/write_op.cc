@@ -63,6 +63,7 @@
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/trace.h"
@@ -157,7 +158,6 @@ Status WriteAuthorizationContext::CheckPrivileges() const {
 WriteOp::WriteOp(unique_ptr<WriteOpState> state, DriverType type)
   : Op(type, Op::WRITE_OP),
   state_(std::move(state)) {
-  start_time_ = MonoTime::Now();
 }
 
 void WriteOp::NewReplicateMsg(unique_ptr<ReplicateMsg>* replicate_msg) {
@@ -270,6 +270,7 @@ Status WriteOp::Start() {
   TRACE("Start()");
   DCHECK(!state_->has_timestamp());
   DCHECK(state_->consensus_round()->replicate_msg()->has_timestamp());
+  state_->set_start_time(MonoTime::Now());
   state_->set_timestamp(Timestamp(state_->consensus_round()->replicate_msg()->timestamp()));
   state_->tablet_replica()->tablet()->StartOp(state_.get());
   TRACE("Timestamp: $0", state_->tablet_replica()->clock()->Stringify(state_->timestamp()));
@@ -358,7 +359,7 @@ void WriteOp::Finish(OpResult result) {
         metrics->commit_wait_duration->Increment(op_m.commit_wait_duration_usec);
       }
       uint64_t op_duration_usec =
-          (MonoTime::Now() - start_time_).ToMicroseconds();
+          (MonoTime::Now() - state_->start_time()).ToMicroseconds();
       switch (state()->external_consistency_mode()) {
         case CLIENT_PROPAGATED:
           metrics->write_op_duration_client_propagated_consistency->Increment(op_duration_usec);
@@ -374,8 +375,7 @@ void WriteOp::Finish(OpResult result) {
 }
 
 string WriteOp::ToString() const {
-  MonoTime now(MonoTime::Now());
-  MonoDelta d = now - start_time_;
+  MonoDelta d = MonoTime::Now() - state_->start_time();
   WallTime abs_time = WallTime_Now() - d.ToSeconds();
   string abs_time_formatted;
   StringAppendStrftime(&abs_time_formatted, "%Y-%m-%d %H:%M:%S", (time_t)abs_time, true);

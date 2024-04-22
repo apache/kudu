@@ -40,6 +40,7 @@
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/memory/arena.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 
 namespace google {
@@ -267,6 +268,11 @@ class OpState {
     return request_id_;
   }
 
+  // Get the startup time of this op.
+  MonoTime start_time() const { return start_time_; }
+  // Set the startup time of this op.
+  void set_start_time(MonoTime start_time) { start_time_ = start_time; }
+
  protected:
   explicit OpState(TabletReplica* tablet_replica);
   virtual ~OpState();
@@ -306,6 +312,10 @@ class OpState {
 
   // The defined consistency mode for this op.
   ExternalConsistencyMode external_consistency_mode_;
+
+  // Use to record the op's start time.
+  // 'set_start_time()' needs to be called at the beginning of the op to initialize it.
+  MonoTime start_time_;
 };
 
 // A parent class for the callback that gets called when ops

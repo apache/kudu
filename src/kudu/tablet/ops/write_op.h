@@ -41,7 +41,6 @@
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/bitset.h"
 #include "kudu/util/locks.h"
-#include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -399,9 +398,6 @@ class WriteOp : public Op {
   // corresponding error information in the response. The former is for
   // successfully written rows, the latter is for failed ones.
   void UpdatePerRowMetricsAndErrors();
-
-  // this op's start time
-  MonoTime start_time_;
 
   std::unique_ptr<WriteOpState> state_;
 
