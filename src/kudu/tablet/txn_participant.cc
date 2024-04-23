@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <ostream>
+#include <shared_mutex>
 #include <type_traits>
 #include <unordered_map>
 #include <utility>
@@ -35,6 +36,7 @@ DECLARE_bool(enable_txn_partition_lock);
 
 using kudu::log::LogAnchorRegistry;
 using kudu::tserver::TabletServerErrorPB;
+using std::shared_lock;
 using std::vector;
 
 namespace kudu {

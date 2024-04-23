@@ -24,6 +24,7 @@
 #include <optional>
 #include <ostream>
 #include <set>
+#include <shared_mutex>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -299,6 +300,7 @@ using std::make_shared;
 using std::nullopt;
 using std::optional;
 using std::set;
+using std::shared_lock;
 using std::shared_ptr;
 using std::string;
 using std::vector;

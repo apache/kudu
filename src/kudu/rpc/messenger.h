@@ -21,7 +21,9 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <shared_mutex>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -437,7 +439,7 @@ class Messenger {
   }
 
   bool closing() const {
-    shared_lock<rw_spinlock> l(lock_.get_lock());
+    std::shared_lock<rw_spinlock> l(lock_.get_lock());
     return state_ == kClosing;
   }
 

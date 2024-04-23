@@ -23,6 +23,7 @@
 #include <mutex>
 #include <ostream>
 #include <set>
+#include <shared_mutex>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -79,6 +80,7 @@ using kudu::security::SignedTokenPB;
 using kudu::tserver::TabletServerAdminServiceProxy;
 using kudu::tserver::TabletServerServiceProxy;
 using std::set;
+using std::shared_lock;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;

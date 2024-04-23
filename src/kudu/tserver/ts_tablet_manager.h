@@ -23,9 +23,11 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <shared_mutex>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <type_traits>
 #include <vector>
 
 #include <gtest/gtest_prod.h>
@@ -386,7 +388,7 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
                                  int64_t last_logged_term);
 
   TSTabletManagerStatePB state() const {
-    shared_lock<RWMutex> l(lock_);
+    std::shared_lock<RWMutex> l(lock_);
     return state_;
   }
 

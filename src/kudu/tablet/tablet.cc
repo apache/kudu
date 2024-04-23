@@ -26,6 +26,7 @@
 #include <optional>
 #include <ostream>
 #include <random>
+#include <shared_mutex>
 #include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
@@ -100,12 +101,6 @@
 #include "kudu/util/throttler.h"
 #include "kudu/util/trace.h"
 #include "kudu/util/url-coding.h"
-
-namespace kudu {
-namespace tablet {
-class RowSetMetadata;
-}  // namespace tablet
-}  // namespace kudu
 
 DEFINE_bool(prevent_kudu_2233_corruption, true,
             "Whether or not to prevent KUDU-2233 corruptions. Used for testing only!");
@@ -274,13 +269,13 @@ using std::nullopt;
 using std::optional;
 using std::ostream;
 using std::pair;
+using std::shared_lock;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
 using std::unordered_set;
 using std::vector;
 using strings::Substitute;
-
 
 namespace {
 
@@ -318,6 +313,8 @@ namespace kudu {
 struct IteratorStats;
 
 namespace tablet {
+
+class RowSetMetadata;
 
 ////////////////////////////////////////////////////////////
 // TabletComponents

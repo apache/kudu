@@ -18,19 +18,21 @@
 #include <cstdint>
 #include <mutex>
 #include <ostream>
+#include <shared_mutex>
 #include <thread>
+#include <type_traits>
 #include <vector>
 
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/util/atomic.h"
-#include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/rw_mutex.h"
 #include "kudu/util/test_util.h"
 
 using std::lock_guard;
+using std::shared_lock;
 using std::thread;
 using std::try_to_lock;
 using std::unique_lock;

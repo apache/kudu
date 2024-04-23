@@ -24,7 +24,9 @@
 #include <limits>
 #include <map>
 #include <memory>
+#include <shared_mutex>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include <glog/logging.h>
@@ -162,7 +164,7 @@ class SegmentAllocator {
   FRIEND_TEST(LogTest, TestAutoStopIdleAppendThread);
   FRIEND_TEST(LogTest, TestWriteAndReadToAndFromInProgressSegment);
   SegmentAllocationState allocation_state() {
-    shared_lock<RWMutex> l(allocation_lock_);
+    std::shared_lock<RWMutex> l(allocation_lock_);
     return allocation_state_;
   }
 

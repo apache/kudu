@@ -33,6 +33,7 @@
 #include <mutex>
 #include <optional>
 #include <ostream>
+#include <shared_mutex>
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -90,6 +91,7 @@
 using kudu::security::ca::CertRequestGenerator;
 using std::nullopt;
 using std::optional;
+using std::shared_lock;
 using std::string;
 using std::unique_lock;
 using std::vector;

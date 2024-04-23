@@ -22,6 +22,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <shared_mutex>
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -320,7 +321,7 @@ class WriteOpState : public OpState {
 
   // A lock held on the tablet's schema. Prevents concurrent schema change
   // from racing with a write.
-  shared_lock<rw_semaphore> schema_lock_;
+  std::shared_lock<rw_semaphore> schema_lock_;
 
   // The Schema of the tablet when the op was first decoded. This is verified
   // at APPLY time to ensure we don't have races against schema change.
@@ -337,7 +338,7 @@ class WriteOpState : public OpState {
 
   // Lock protecting the transaction's state, ensuring it remains open for the
   // duration of this write.
-  shared_lock<rw_semaphore> txn_lock_;
+  std::shared_lock<rw_semaphore> txn_lock_;
 
   DISALLOW_COPY_AND_ASSIGN(WriteOpState);
 };

@@ -25,6 +25,7 @@
 #include <map>
 #include <mutex> // for unique_lock
 #include <ostream>
+#include <shared_mutex>
 #include <string>
 #include <tuple>
 #include <type_traits>
@@ -62,6 +63,7 @@ TAG_FLAG(rpc_duration_too_long_ms, advanced);
 TAG_FLAG(rpc_duration_too_long_ms, runtime);
 
 using std::pair;
+using std::shared_lock;
 using std::string;
 using std::vector;
 using std::unique_ptr;

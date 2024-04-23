@@ -24,7 +24,9 @@
 #include <new>
 #include <optional>
 #include <ostream>
+#include <shared_mutex>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include <boost/container/small_vector.hpp>
@@ -62,7 +64,6 @@
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/pb_util.h"
-#include "kudu/util/rw_semaphore.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/trace.h"
 
@@ -81,6 +82,7 @@ TAG_FLAG(tablet_inject_latency_on_prepare_write_op_ms, runtime);
 DECLARE_bool(enable_txn_partition_lock);
 
 using std::optional;
+using std::shared_lock;
 using std::string;
 using std::unique_ptr;
 using std::vector;

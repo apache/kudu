@@ -22,6 +22,7 @@
 #include <optional>
 #include <ostream>
 #include <set>
+#include <shared_mutex>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -71,24 +72,25 @@ DEFINE_uint64(all_delete_op_delta_file_cnt_for_compaction, 1,
               "Otherwise, it is recommended to keep the default value to release "
               "storage space efficiently.");
 
-namespace kudu {
-
-class RowChangeList;
-
-namespace tablet {
-
-using cfile::ReaderOptions;
-using fs::CreateBlockOptions;
-using fs::IOContext;
-using fs::ReadableBlock;
-using fs::WritableBlock;
-using log::LogAnchorRegistry;
+using kudu::cfile::ReaderOptions;
+using kudu::fs::CreateBlockOptions;
+using kudu::fs::IOContext;
+using kudu::fs::ReadableBlock;
+using kudu::fs::WritableBlock;
+using kudu::log::LogAnchorRegistry;
 using std::set;
+using std::shared_lock;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
+
+namespace kudu {
+
+class RowChangeList;
+
+namespace tablet {
 
 Status DeltaTracker::Open(const shared_ptr<RowSetMetadata>& rowset_metadata,
                           LogAnchorRegistry* log_anchor_registry,

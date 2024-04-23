@@ -74,7 +74,7 @@ class RWMutex {
   void AssertAcquiredForWriting() const {}
 #endif
 
-  // Aliases for use with std::lock_guard and kudu::shared_lock.
+  // Aliases for use with std::lock_guard and std::shared_lock.
   void lock() { WriteLock(); }
   void unlock() { WriteUnlock(); }
   bool try_lock() { return TryWriteLock(); }

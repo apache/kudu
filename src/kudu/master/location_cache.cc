@@ -19,7 +19,9 @@
 
 #include <cstdio>
 #include <mutex>
+#include <shared_mutex>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -48,6 +50,7 @@ METRIC_DEFINE_counter(server, location_mapping_cache_queries,
                       "Number of queries to the location mapping cache",
                       kudu::MetricLevel::kDebug);
 
+using std::shared_lock;
 using std::string;
 using std::vector;
 using strings::Substitute;

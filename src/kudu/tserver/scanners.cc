@@ -23,6 +23,7 @@
 #include <mutex>
 #include <numeric>
 #include <ostream>
+#include <shared_mutex>
 #include <type_traits>
 
 #include <gflags/gflags.h>
@@ -43,7 +44,6 @@
 #include "kudu/tserver/scanner_metrics.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/flag_validators.h"
-#include "kudu/util/locks.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
@@ -100,6 +100,7 @@ METRIC_DEFINE_gauge_size(server, slow_scans,
 
 using kudu::rpc::RemoteUser;
 using kudu::tablet::TabletReplica;
+using std::shared_lock;
 using std::string;
 using std::unique_ptr;
 using std::unordered_map;
@@ -331,7 +332,7 @@ vector<SharedScanDescriptor> ScannerManager::ListScans() const {
   }
 
   {
-    kudu::shared_lock<rw_spinlock> l(completed_scans_lock_.get_lock());
+    shared_lock<rw_spinlock> l(completed_scans_lock_.get_lock());
     // A scanner in 'scans' may have completed between the above loop and here.
     // As we'd rather have the finalized descriptor of the completed scan,
     // update over the old descriptor in this case.
@@ -363,7 +364,7 @@ vector<SharedScanDescriptor> ScannerManager::ListSlowScans() const {
   // Get all the scans first.
   unordered_map<string, SharedScanDescriptor> scans;
   {
-    kudu::shared_lock<rw_spinlock> l(slow_scans_lock_.get_lock());
+    shared_lock<rw_spinlock> l(slow_scans_lock_.get_lock());
     for (const auto& scan : slow_scans_) {
       InsertOrUpdate(&scans, scan->scanner_id, scan);
     }

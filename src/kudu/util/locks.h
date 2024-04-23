@@ -147,7 +147,7 @@ class rw_spinlock {
 //
 //   // Lock shared:
 //   {
-//     kudu::shared_lock<rw_spinlock> lock(mylock.get_lock());
+//     std::shared_lock<rw_spinlock> lock(mylock.get_lock());
 //     ...
 //   }
 //
@@ -245,53 +245,6 @@ class percpu_rwlock {
 
   int n_cpus_;
   padded_lock *locks_;
-};
-
-// Simple implementation of the std::shared_lock API, which is not available in
-// the standard library until C++14. Defers error checking to the underlying
-// mutex.
-
-template <typename Mutex>
-class shared_lock {
- public:
-  shared_lock()
-      : m_(nullptr) {
-  }
-
-  explicit shared_lock(Mutex& m)
-      : m_(&m) {
-    m_->lock_shared();
-  }
-
-  shared_lock(Mutex& m, std::try_to_lock_t t)
-      : m_(nullptr) {
-    if (m.try_lock_shared()) {
-      m_ = &m;
-    }
-  }
-
-  bool owns_lock() const {
-    return m_;
-  }
-
-  void swap(shared_lock& other) {
-    std::swap(m_, other.m_);
-  }
-
-  shared_lock& operator=(shared_lock&& other) noexcept {
-    swap(other);
-    return *this;
-  }
-
-  ~shared_lock() {
-    if (m_ != nullptr) {
-      m_->unlock_shared();
-    }
-  }
-
- private:
-  Mutex* m_;
-  DISALLOW_COPY_AND_ASSIGN(shared_lock<Mutex>);
 };
 
 } // namespace kudu

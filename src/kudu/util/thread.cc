@@ -32,7 +32,9 @@
 #include <cstring>
 #include <memory>
 #include <mutex>
+#include <shared_mutex>
 #include <sstream>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -66,6 +68,7 @@
 using std::atomic;
 using std::ostringstream;
 using std::pair;
+using std::shared_lock;
 using std::shared_ptr;
 using std::string;
 using std::vector;

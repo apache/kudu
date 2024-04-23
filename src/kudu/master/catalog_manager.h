@@ -28,7 +28,9 @@
 #include <mutex>
 #include <optional>
 #include <set>
+#include <shared_mutex>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -392,7 +394,7 @@ class TableInfo : public RefCountedThreadSafe<TableInfo> {
 
   // Returns a snapshot copy of the table info's tablet map.
   TabletInfoMap tablet_map() const {
-    shared_lock<rw_spinlock> l(lock_);
+    std::shared_lock<rw_spinlock> l(lock_);
     TabletInfoMap ret;
     for (const auto& e : tablet_map_) {
       ret.emplace(e.first, make_scoped_refptr(e.second));
@@ -402,7 +404,7 @@ class TableInfo : public RefCountedThreadSafe<TableInfo> {
 
   // Returns the number of tablets.
   int num_tablets() const {
-    shared_lock<rw_spinlock> l(lock_);
+    std::shared_lock<rw_spinlock> l(lock_);
     return tablet_map_.size();
   }
 
@@ -615,7 +617,7 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
 
    private:
     CatalogManager* catalog_;
-    shared_lock<RWMutex> leader_shared_lock_;
+    std::shared_lock<RWMutex> leader_shared_lock_;
     Status catalog_status_;
     Status leader_status_;
     int64_t initial_term_;

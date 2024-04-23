@@ -23,6 +23,7 @@
 #include <memory>
 #include <mutex>
 #include <ostream>
+#include <shared_mutex>
 #include <type_traits>
 #include <utility>
 
@@ -179,6 +180,7 @@ DEFINE_validator(log_min_segments_to_retain, &ValidateLogsToRetain);
 using kudu::consensus::CommitMsg;
 using kudu::consensus::OpId;
 using kudu::consensus::ReplicateRefPtr;
+using std::shared_lock;
 using std::string;
 using std::unique_ptr;
 using std::vector;

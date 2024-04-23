@@ -24,7 +24,9 @@
 #include <mutex>
 #include <optional>
 #include <set>
+#include <shared_mutex>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <vector>
 
@@ -305,12 +307,12 @@ class DirManager {
   bool IsTabletInFailedDir(const std::string& tablet_id) const;
 
   std::set<int> GetFailedDirs() const {
-    shared_lock<rw_spinlock> group_lock(dir_group_lock_.get_lock());
+    std::shared_lock<rw_spinlock> group_lock(dir_group_lock_.get_lock());
     return failed_dirs_;
   }
 
   bool AreAllDirsFailed() const {
-    shared_lock<rw_spinlock> group_lock(dir_group_lock_.get_lock());
+    std::shared_lock<rw_spinlock> group_lock(dir_group_lock_.get_lock());
     return failed_dirs_.size() == dirs_.size();
   }
 

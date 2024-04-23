@@ -29,6 +29,7 @@
 #include <numeric>
 #include <optional>
 #include <ostream>
+#include <shared_mutex>
 #include <string>
 #include <type_traits>
 #include <typeinfo>
@@ -74,6 +75,7 @@ template <class T> struct compare;
 
 using std::deque;
 using std::get;
+using std::shared_lock;
 using std::sort;
 using std::string;
 using std::unique_ptr;

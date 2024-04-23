@@ -21,7 +21,9 @@
 #include <iterator>
 #include <mutex>
 #include <ostream>
+#include <shared_mutex>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -32,11 +34,11 @@
 #include "kudu/gutil/walltime.h"
 #include "kudu/security/token.pb.h"
 #include "kudu/security/token_signing_key.h"
-#include "kudu/util/locks.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/status.h"
 
 using std::lock_guard;
+using std::shared_lock;
 using std::string;
 using std::transform;
 using std::unique_ptr;

@@ -21,6 +21,7 @@
 #include <mutex>
 #include <optional>
 #include <ostream>
+#include <shared_mutex>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -55,6 +56,7 @@ TAG_FLAG(tserver_last_replica_creations_halflife_ms, hidden);
 using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
 using std::optional;
+using std::shared_lock;
 using std::shared_ptr;
 using std::string;
 using std::vector;

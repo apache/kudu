@@ -21,6 +21,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <shared_mutex>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -324,7 +325,7 @@ class TxnStatusManager final : public tablet::TxnCoordinator {
 
    private:
     TxnStatusManager* txn_status_manager_;
-    shared_lock<RWMutex> leader_shared_lock_;
+    std::shared_lock<RWMutex> leader_shared_lock_;
 
     // General status of the transaction status manager. If not OK (e.g. the tablet
     // replica is still being initialized), all operations are illegal.

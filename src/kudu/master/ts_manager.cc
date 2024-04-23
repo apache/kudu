@@ -25,6 +25,7 @@
 #include <mutex>
 #include <optional>
 #include <ostream>
+#include <shared_mutex>
 #include <type_traits>
 #include <utility>
 
@@ -63,6 +64,7 @@ METRIC_DEFINE_gauge_int32(server, cluster_replica_skew,
 using kudu::pb_util::SecureShortDebugString;
 using std::lock_guard;
 using std::unordered_set;
+using std::shared_lock;
 using std::shared_ptr;
 using std::string;
 using strings::Substitute;

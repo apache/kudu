@@ -21,6 +21,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <shared_mutex>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -107,7 +108,7 @@ class Txn : public RefCountedThreadSafe<Txn> {
   // driven via an op driver, lock acquisition is expected to be serialized in
   // a single thread.
   void AcquireWriteLock(std::unique_lock<rw_semaphore>* txn_lock);
-  void AcquireReadLock(shared_lock<rw_semaphore>* txn_lock);
+  void AcquireReadLock(std::shared_lock<rw_semaphore>* txn_lock);
 
   // Adopts the input partition lock, maintaining it until the transaction is
   // complete (aborted or finalized). Rather than maintaining multiple

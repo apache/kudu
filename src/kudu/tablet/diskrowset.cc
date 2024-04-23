@@ -21,6 +21,7 @@
 #include <map>
 #include <optional>
 #include <ostream>
+#include <shared_mutex>
 #include <vector>
 
 #include <gflags/gflags.h>
@@ -56,7 +57,6 @@
 #include "kudu/util/compression/compression.pb.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/flag_tags.h"
-#include "kudu/util/locks.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/scoped_cleanup.h"
@@ -90,6 +90,7 @@ using kudu::fs::IOContext;
 using kudu::fs::WritableBlock;
 using kudu::log::LogAnchorRegistry;
 using std::optional;
+using std::shared_lock;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;

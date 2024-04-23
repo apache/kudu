@@ -19,12 +19,13 @@
 
 #include <cstdint>
 #include <optional>
+#include <shared_mutex>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include "kudu/gutil/port.h"
 #include "kudu/security/cert.h" // IWYU pragma: keep
-#include "kudu/util/locks.h"
 #include "kudu/util/openssl_util.h"
 #include "kudu/util/rw_mutex.h"
 #include "kudu/util/status.h"
@@ -89,7 +90,7 @@ class TlsContext {
   // Returns true if this TlsContext has been configured with a cert and key for
   // use with TLS-encrypted connections.
   bool has_cert() const {
-    shared_lock<RWMutex> lock(lock_);
+    std::shared_lock<RWMutex> lock(lock_);
     return has_cert_;
   }
 
@@ -97,13 +98,13 @@ class TlsContext {
   // cert and key for use with TLS-encrypted connections. If this method returns
   // true, then 'has_trusted_cert' will also return true.
   bool has_signed_cert() const {
-    shared_lock<RWMutex> lock(lock_);
+    std::shared_lock<RWMutex> lock(lock_);
     return has_cert_ && !csr_;
   }
 
   // Returns true if this TlsContext has at least one certificate in its trust store.
   bool has_trusted_cert() const {
-    shared_lock<RWMutex> lock(lock_);
+    std::shared_lock<RWMutex> lock(lock_);
     return trusted_cert_count_ > 0;
   }
 
@@ -174,7 +175,7 @@ class TlsContext {
   // Return the number of certs that have been marked as trusted.
   // Used by tests.
   int trusted_cert_count_for_tests() const {
-    shared_lock<RWMutex> lock(lock_);
+    std::shared_lock<RWMutex> lock(lock_);
     return trusted_cert_count_;
   }
 

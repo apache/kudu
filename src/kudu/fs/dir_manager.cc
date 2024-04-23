@@ -17,14 +17,14 @@
 
 #include "kudu/fs/dir_manager.h"
 
-#include <errno.h>
-
 #include <algorithm>
+#include <cerrno>
 #include <functional>
 #include <iterator>
 #include <memory>
 #include <ostream>
 #include <set>
+#include <shared_mutex>
 #include <string>
 #include <unordered_set>
 #include <utility>
@@ -58,6 +58,7 @@
 #include "kudu/util/threadpool.h"
 
 using std::set;
+using std::shared_lock;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;

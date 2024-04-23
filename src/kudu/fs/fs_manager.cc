@@ -23,6 +23,8 @@
 #include <initializer_list>
 #include <iostream>
 #include <mutex>
+#include <shared_mutex>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -186,6 +188,7 @@ using kudu::security::DefaultKeyProvider;
 using kudu::security::RangerKMSKeyProvider;
 using std::optional;
 using std::ostream;
+using std::shared_lock;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
@@ -730,8 +733,7 @@ Status FsManager::InitAndOpenBlockManager(FsReport* report,
   return Status::OK();
 }
 
-void FsManager::CopyMetadata(
-    unique_ptr<InstanceMetadataPB>* metadata) {
+void FsManager::CopyMetadata(unique_ptr<InstanceMetadataPB>* metadata) {
   shared_lock<rw_spinlock> md_lock(metadata_rwlock_.get_lock());
   (*metadata)->CopyFrom(*metadata_);
 }

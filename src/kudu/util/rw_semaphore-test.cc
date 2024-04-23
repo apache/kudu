@@ -17,16 +17,18 @@
 
 #include <cstdint>
 #include <mutex>
+#include <shared_mutex>
 #include <thread>
+#include <type_traits>
 #include <vector>
 
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/rw_semaphore.h"
 
+using std::shared_lock;
 using std::thread;
 using std::vector;
 

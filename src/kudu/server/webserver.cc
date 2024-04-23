@@ -32,8 +32,10 @@
 #include <functional>
 #include <map>
 #include <mutex>
+#include <shared_mutex>
 #include <sstream>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -77,6 +79,7 @@ typedef sig_t sighandler_t;
 using mustache::RenderTemplate;
 using std::ostringstream;
 using std::pair;
+using std::shared_lock;
 using std::stringstream;
 using std::string;
 using std::unordered_set;

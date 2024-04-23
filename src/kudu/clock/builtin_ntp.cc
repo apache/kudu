@@ -31,7 +31,9 @@
 #include <memory>
 #include <mutex>
 #include <ostream>
+#include <shared_mutex>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -150,6 +152,7 @@ using kudu::clock::internal::kIntervalNone;
 using kudu::clock::internal::RecordedResponse;
 using std::deque;
 using std::lock_guard;
+using std::shared_lock;
 using std::string;
 using std::unique_ptr;
 using std::vector;

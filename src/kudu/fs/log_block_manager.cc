@@ -31,6 +31,7 @@
 #include <optional>
 #include <ostream>
 #include <set>
+#include <shared_mutex>
 #include <string>
 #include <type_traits>
 #include <unordered_map>
@@ -228,6 +229,7 @@ using std::accumulate;
 using std::map;
 using std::optional;
 using std::set;
+using std::shared_lock;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;

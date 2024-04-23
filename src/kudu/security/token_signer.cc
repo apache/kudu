@@ -22,6 +22,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <shared_mutex>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -37,7 +38,6 @@
 #include "kudu/security/token_signing_key.h"
 #include "kudu/security/token_verifier.h"
 #include "kudu/util/flag_tags.h"
-#include "kudu/util/locks.h"
 #include "kudu/util/status.h"
 
 DEFINE_int32(tsk_num_rsa_bits, 2048,
@@ -46,6 +46,7 @@ TAG_FLAG(tsk_num_rsa_bits, experimental);
 
 using std::lock_guard;
 using std::map;
+using std::shared_lock;
 using std::shared_ptr;
 using std::string;
 using std::unique_lock;

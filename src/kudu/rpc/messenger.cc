@@ -21,6 +21,7 @@
 #include <functional>
 #include <mutex>
 #include <ostream>
+#include <shared_mutex>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -66,6 +67,7 @@ METRIC_DEFINE_gauge_int32(server, rpc_pending_connections,
 using kudu::security::RpcAuthentication;
 using kudu::security::RpcEncryption;
 using std::string;
+using std::shared_lock;
 using std::shared_ptr;
 using std::unique_ptr;
 using strings::Substitute;

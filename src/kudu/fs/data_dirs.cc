@@ -26,7 +26,9 @@
 #include <ostream>
 #include <random>
 #include <set>
+#include <shared_mutex>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -126,14 +128,9 @@ METRIC_DEFINE_gauge_uint64(server, data_dirs_full,
 DECLARE_bool(enable_data_block_fsync);
 DECLARE_string(block_manager);
 
-namespace kudu {
-
-namespace fs {
-
-using internal::DataDirGroup;
+using kudu::fs::internal::DataDirGroup;
 using std::default_random_engine;
-using std::pair;
-using std::set;
+using std::shared_lock;
 using std::shuffle;
 using std::string;
 using std::unique_ptr;
@@ -143,6 +140,8 @@ using std::vector;
 using strings::Substitute;
 using strings::SubstituteAndAppend;
 
+namespace kudu {
+namespace fs {
 
 ////////////////////////////////////////////////////////////
 // DataDirMetrics

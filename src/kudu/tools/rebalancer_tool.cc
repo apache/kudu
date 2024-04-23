@@ -29,6 +29,7 @@
 #include <optional>
 #include <random>
 #include <set>
+#include <shared_mutex>
 #include <string>
 #include <tuple>
 #include <type_traits>
@@ -87,6 +88,7 @@ using std::pair;
 using std::nullopt;
 using std::optional;
 using std::set;
+using std::shared_lock;
 using std::shared_ptr;
 using std::sort;
 using std::string;
