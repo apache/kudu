@@ -286,8 +286,10 @@ class AlterTableTest : public KuduTest {
     kEnable = 0,
     kDisable
   };
-  void VerifyTabletReplicaCount(int32_t replication_factor, VerifyRowCount verify_row_count) {
-    ASSERT_EVENTUALLY([&] {
+  void VerifyTabletReplicaCount(int32_t replication_factor,
+                                VerifyRowCount verify_row_count,
+                                const MonoDelta& timeout = MonoDelta::FromSeconds(30)) {
+    AssertEventually([&] {
       ASSERT_EQ(replication_factor, tablet_replica_->consensus()->CommittedConfig().peers().size());
 
       scoped_refptr<TabletReplica> first_node_replica;
@@ -322,7 +324,8 @@ class AlterTableTest : public KuduTest {
         ++actual_replica_count;
       }
       ASSERT_EQ(replication_factor, actual_replica_count);
-    });
+    }, timeout);
+    NO_PENDING_FATALS();
   }
 
   enum VerifyPattern {
@@ -2392,7 +2395,7 @@ TEST_F(ReplicatedAlterTableTest, AlterReplicationFactorWhileWriting) {
   workload.StopAndJoin();
   ASSERT_EVENTUALLY([&] {
     tablet_replica_ = LookupLeaderTabletReplica();
-    NO_FATALS(VerifyTabletReplicaCount(3, VerifyRowCount::kEnable));
+    NO_FATALS(VerifyTabletReplicaCount(3, VerifyRowCount::kEnable,MonoDelta::FromSeconds(60)));
     ASSERT_EQ(1, tablet_replica_->tablet()->metadata()->schema_version());
   });
 
