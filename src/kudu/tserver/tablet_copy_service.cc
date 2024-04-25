@@ -428,6 +428,7 @@ Status TabletCopyServiceImpl::DoEndTabletCopySessionUnlocked(
   sessions_lock_.AssertAcquired();
   scoped_refptr<RemoteTabletCopySourceSession> session;
   RETURN_NOT_OK(FindSessionUnlocked(session_id, app_error, &session));
+  session->UpdateTabletMetrics();
   // Remove the session from the map.
   // It will get destroyed once there are no outstanding refs.
   LOG_WITH_PREFIX(INFO) << "ending tablet copy session " << session_id << " on tablet "

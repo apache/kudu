@@ -172,6 +172,13 @@ METRIC_DEFINE_gauge_int32(server, tablet_copy_open_client_sessions,
                           "Number of currently open tablet copy client sessions on this server",
                           kudu::MetricLevel::kInfo);
 
+METRIC_DEFINE_histogram(server, tablet_copy_duration,
+                        "Tablet Copy Duration",
+                        kudu::MetricUnit::kMilliseconds,
+                        "Duration of tablet copying as destination.",
+                        kudu::MetricLevel::kDebug,
+                        3600000LU, 1);
+
 // RETURN_NOT_OK_PREPEND() with a remote-error unwinding step.
 #define RETURN_NOT_OK_UNWIND_PREPEND(status, controller, msg) \
   RETURN_NOT_OK_PREPEND(UnwindRemoteError(status, controller), msg)
@@ -206,7 +213,8 @@ namespace tserver {
 
 TabletCopyClientMetrics::TabletCopyClientMetrics(const scoped_refptr<MetricEntity>& metric_entity)
     : bytes_fetched(METRIC_tablet_copy_bytes_fetched.Instantiate(metric_entity)),
-      open_client_sessions(METRIC_tablet_copy_open_client_sessions.Instantiate(metric_entity, 0)) {
+      open_client_sessions(METRIC_tablet_copy_open_client_sessions.Instantiate(metric_entity, 0)),
+      copy_duration(METRIC_tablet_copy_duration.Instantiate(metric_entity)) {
 }
 
 TabletCopyClient::TabletCopyClient(
@@ -559,6 +567,10 @@ Status TabletCopyClient::Finish() {
   // Now that we've finished everything, complete.
   revert_activate_superblock.cancel();
   state_ = kFinished;
+  if (dst_tablet_copy_metrics_) {
+    int64_t dur = GetCurrentTimeMicros() - start_time_micros_;
+    dst_tablet_copy_metrics_->copy_duration->Increment(dur / 1000);
+  }
   return Status::OK();
 }
 
@@ -576,6 +588,10 @@ Status TabletCopyClient::Abort() {
   SCOPED_CLEANUP({
     DCHECK_EQ(tablet::TABLET_DATA_TOMBSTONED, meta_->tablet_data_state());
     state_ = kFinished;
+    if (dst_tablet_copy_metrics_) {
+      int64_t dur = GetCurrentTimeMicros() - start_time_micros_;
+      dst_tablet_copy_metrics_->copy_duration->Increment(dur / 1000);
+    }
   });
 
   // Load the in-progress superblock in-memory so that when we delete the

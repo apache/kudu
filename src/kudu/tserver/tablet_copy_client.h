@@ -77,6 +77,7 @@ struct TabletCopyClientMetrics {
 
   scoped_refptr<Counter> bytes_fetched;
   scoped_refptr<AtomicGauge<int32_t>> open_client_sessions;
+  scoped_refptr<Histogram> copy_duration;
 };
 
 // Client class for using tablet copy to copy a tablet from another host.

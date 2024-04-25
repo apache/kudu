@@ -149,6 +149,8 @@ METRIC_DECLARE_counter(glog_error_messages);
 METRIC_DECLARE_counter(rows_inserted);
 METRIC_DECLARE_counter(tablet_copy_bytes_fetched);
 METRIC_DECLARE_counter(tablet_copy_bytes_sent);
+METRIC_DECLARE_histogram(tablet_copy_duration);
+METRIC_DECLARE_histogram(tablet_copy_source_duration);
 METRIC_DECLARE_gauge_int32(tablet_copy_open_client_sessions);
 METRIC_DECLARE_gauge_int32(tablet_copy_open_source_sessions);
 METRIC_DECLARE_gauge_uint64(log_block_manager_blocks_under_management);
@@ -1649,6 +1651,30 @@ int64_t TabletCopyBytesFetched(ExternalTabletServer* ets) {
   return ret;
 }
 
+int64_t TabletCopySourceDurationTotalCount(ExternalTabletServer* ets) {
+  int64_t ret;
+  CHECK_OK(GetInt64Metric(
+      ets->bound_http_hostport(),
+      &METRIC_ENTITY_server,
+      "kudu.tabletserver",
+      &METRIC_tablet_copy_source_duration,
+      "total_count",
+      &ret));
+  return ret;
+}
+
+int64_t TabletCopyDurationTotalCount(ExternalTabletServer* ets) {
+  int64_t ret;
+  CHECK_OK(GetInt64Metric(
+      ets->bound_http_hostport(),
+      &METRIC_ENTITY_server,
+      "kudu.tabletserver",
+      &METRIC_tablet_copy_duration,
+      "total_count",
+      &ret));
+  return ret;
+}
+
 int64_t TabletCopyOpenSourceSessions(ExternalTabletServer* ets) {
   int64_t ret;
   CHECK_OK(GetInt64Metric(
@@ -1713,6 +1739,14 @@ TEST_F(TabletCopyITest, TestTabletCopyMetrics) {
   follower_index = (leader_index + 1) % cluster_->num_tablet_servers();
   follower_ts = ts_map_[cluster_->tablet_server(follower_index)->uuid()];
 
+  // Before we start the tablet copy, the metrics count should be zero.
+  int64_t copy_source_duration_cnt_before =
+      TabletCopySourceDurationTotalCount(cluster_->tablet_server(leader_index));
+  int64_t copy_duration_cnt_before =
+      TabletCopyDurationTotalCount(cluster_->tablet_server(follower_index));
+  ASSERT_EQ(0, copy_source_duration_cnt_before);
+  ASSERT_EQ(0, copy_duration_cnt_before);
+
   LOG(INFO) << "Tombstoning follower tablet " << tablet_id
             << " on TS " << follower_ts->uuid();
   ASSERT_OK(DeleteTablet(follower_ts, tablet_id, TABLET_DATA_TOMBSTONED, kTimeout));
@@ -1743,6 +1777,13 @@ TEST_F(TabletCopyITest, TestTabletCopyMetrics) {
   // new replica to catch up then check there are no open sessions.
   ASSERT_OK(WaitForServersToAgree(kTimeout, ts_map_, tablet_id,
                                   workload.batches_completed()));
+
+  // After copying, the metrics count should be greater than zero.
+  int64_t copy_source_duration_cnt =
+      TabletCopySourceDurationTotalCount(cluster_->tablet_server(leader_index));
+  int64_t copy_duration_cnt = TabletCopyDurationTotalCount(cluster_->tablet_server(follower_index));
+  ASSERT_GT(copy_source_duration_cnt, 0);
+  ASSERT_GT(copy_duration_cnt, 0);
 
   ASSERT_EQ(0, TabletCopyOpenSourceSessions(cluster_->tablet_server(leader_index)));
   ASSERT_EQ(0, TabletCopyOpenClientSessions(cluster_->tablet_server(follower_index)));

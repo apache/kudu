@@ -37,6 +37,7 @@
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tserver/tablet_copy.pb.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/once.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
@@ -58,6 +59,7 @@ struct TabletCopySourceMetrics {
 
   scoped_refptr<Counter> bytes_sent;
   scoped_refptr<AtomicGauge<int32_t>> open_source_sessions;
+  scoped_refptr<Histogram> copy_duration;
 };
 
 // Caches file size and holds a shared_ptr reference to a RWFile.
@@ -245,12 +247,17 @@ class RemoteTabletCopySourceSession : public TabletCopySourceSession {
   // Unregister log anchor, if it's registered.
   Status UnregisterAnchorIfNeededUnlocked();
 
+  // Update tablet metrics.
+  void UpdateTabletMetrics();
+
  private:
   Status InitOnce() override;
 
   scoped_refptr<tablet::TabletReplica> tablet_replica_;
   const std::string session_id_;
   const std::string requestor_uuid_;
+  // this session's start time
+  MonoTime start_time_;
 };
 
 // Copy replica from local file system.

@@ -73,6 +73,13 @@ METRIC_DEFINE_gauge_int32(server, tablet_copy_open_source_sessions,
                           "Number of currently open tablet copy source sessions on this server",
                           kudu::MetricLevel::kInfo);
 
+METRIC_DEFINE_histogram(server, tablet_copy_source_duration,
+                        "Source Tablet Copy Duration",
+                        kudu::MetricUnit::kMilliseconds,
+                        "Duration of tablet copying as source.",
+                        kudu::MetricLevel::kDebug,
+                        3600000LU, 1);
+
 DEFINE_int32(tablet_copy_session_inject_latency_on_init_ms, 0,
              "How much latency (in ms) to inject when a tablet copy session is initialized. "
              "(For testing only!)");
@@ -96,7 +103,8 @@ using tablet::TabletReplica;
 
 TabletCopySourceMetrics::TabletCopySourceMetrics(const scoped_refptr<MetricEntity>& metric_entity)
     : bytes_sent(METRIC_tablet_copy_bytes_sent.Instantiate(metric_entity)),
-      open_source_sessions(METRIC_tablet_copy_open_source_sessions.Instantiate(metric_entity, 0)) {
+      open_source_sessions(METRIC_tablet_copy_open_source_sessions.Instantiate(metric_entity, 0)),
+      copy_duration(METRIC_tablet_copy_source_duration.Instantiate(metric_entity)) {
 }
 
 TabletCopySourceSession::TabletCopySourceSession(
@@ -124,6 +132,8 @@ Status TabletCopySourceSession::Init() {
 }
 
 Status RemoteTabletCopySourceSession::InitOnce() {
+  start_time_ = MonoTime::Now();
+
   // Inject latency during Init() for testing purposes.
   if (PREDICT_FALSE(FLAGS_tablet_copy_session_inject_latency_on_init_ms > 0)) {
     TRACE("Injecting $0ms of latency due to --tablet_copy_session_inject_latency_on_init_ms",
@@ -502,6 +512,13 @@ RemoteTabletCopySourceSession::~RemoteTabletCopySourceSession() {
 
 Status RemoteTabletCopySourceSession::UnregisterAnchorIfNeededUnlocked() {
   return tablet_replica_->log_anchor_registry()->UnregisterIfAnchored(&log_anchor_);
+}
+
+void RemoteTabletCopySourceSession::UpdateTabletMetrics() {
+  if (PREDICT_TRUE(start_time_.Initialized())) {
+    tablet_copy_metrics_->copy_duration->Increment(
+        (MonoTime::Now() - start_time_).ToMilliseconds());
+  }
 }
 
 LocalTabletCopySourceSession::LocalTabletCopySourceSession(
