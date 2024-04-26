@@ -95,6 +95,7 @@ DEFINE_uint32(merge_benchmark_num_rowsets, 3,
 DEFINE_uint32(merge_benchmark_num_rows_per_rowset, 500000,
               "Number of rowsets as input to the merge");
 
+DECLARE_bool(rowset_compaction_enforce_preset_factor);
 DECLARE_bool(rowset_compaction_memory_estimate_enabled);
 DECLARE_bool(rowset_compaction_ancient_delta_threshold_enabled);
 DECLARE_double(rowset_compaction_delta_memory_factor);
@@ -880,6 +881,7 @@ void TestCompaction::AddUpdateAndDelete(
 void TestCompaction::TestRowSetCompactionWithOrWithoutBudgetingConstraints(
     bool budgeting_constraints_applied) {
   FLAGS_rowset_compaction_memory_estimate_enabled = true;
+  FLAGS_rowset_compaction_enforce_preset_factor = true;
   FLAGS_rowset_compaction_ancient_delta_threshold_enabled = true;
 
   // Ensure memory budgeting applies
