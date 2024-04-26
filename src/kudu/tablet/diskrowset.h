@@ -494,9 +494,10 @@ class DiskRowSet :
   Status Open(const fs::IOContext* io_context);
 
   // Create a new major delta compaction object to compact the specified columns.
+  // TODO(aserbin): use the move semantics for RowIteratorOptions
   Status NewMajorDeltaCompaction(const std::vector<ColumnId>& col_ids,
+                                 const RowIteratorOptions& opts,
                                  HistoryGcOpts history_gc_opts,
-                                 const fs::IOContext* io_context,
                                  std::unique_ptr<MajorDeltaCompaction>* out) const;
 
   // Major compacts all the delta files for the specified columns.

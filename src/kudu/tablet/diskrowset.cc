@@ -578,10 +578,19 @@ Status DiskRowSet::MajorCompactDeltaStoresWithColumnIds(const vector<ColumnId>& 
   std::lock_guard<Mutex> l(*mutable_delta_tracker()->compact_flush_lock());
   RETURN_NOT_OK(mutable_delta_tracker()->CheckWritableUnlocked());
 
+  // Keep a reference to the tablet's schema. This is to prevent race condition
+  // when concurrently running Tablet::AlterSchema() destroys the underlying
+  // Schema object by calling TabletMetadata::SetSchema().
+  //
   // TODO(todd): do we need to lock schema or anything here?
+  SchemaPtr schema_ptr = rowset_metadata_->tablet_schema();
+
+  RowIteratorOptions opts;
+  opts.projection = schema_ptr.get();
+  opts.io_context = io_context;
   unique_ptr<MajorDeltaCompaction> compaction;
-  RETURN_NOT_OK(NewMajorDeltaCompaction(col_ids, std::move(history_gc_opts),
-                                        io_context, &compaction));
+  RETURN_NOT_OK(NewMajorDeltaCompaction(
+      col_ids, opts, std::move(history_gc_opts), &compaction));
 
   RETURN_NOT_OK(compaction->Compact(io_context));
 
@@ -627,24 +636,19 @@ Status DiskRowSet::MajorCompactDeltaStoresWithColumnIds(const vector<ColumnId>& 
 }
 
 Status DiskRowSet::NewMajorDeltaCompaction(const vector<ColumnId>& col_ids,
+                                           const RowIteratorOptions& opts,
                                            HistoryGcOpts history_gc_opts,
-                                           const IOContext* io_context,
                                            unique_ptr<MajorDeltaCompaction>* out) const {
   DCHECK(open_);
   shared_lock<rw_spinlock> l(component_lock_);
 
-  const SchemaPtr schema_ptr = rowset_metadata_->tablet_schema();
-
-  RowIteratorOptions opts;
-  opts.projection = schema_ptr.get();
-  opts.io_context = io_context;
   vector<shared_ptr<DeltaStore>> included_stores;
   unique_ptr<DeltaIterator> delta_iter;
   RETURN_NOT_OK(delta_tracker_->NewDeltaFileIterator(
       opts, REDO, &included_stores, &delta_iter));
 
   out->reset(new MajorDeltaCompaction(rowset_metadata_->fs_manager(),
-                                      *schema_ptr,
+                                      *opts.projection,
                                       base_data_.get(),
                                       std::move(delta_iter),
                                       std::move(included_stores),
