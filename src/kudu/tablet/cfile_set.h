@@ -36,7 +36,6 @@
 #include "kudu/common/schema.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
-#include "kudu/gutil/port.h"
 #include "kudu/tablet/rowset_metadata.h" // IWYU pragma: keep
 #include "kudu/util/make_shared.h"
 #include "kudu/util/memory/arena.h"
