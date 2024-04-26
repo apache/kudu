@@ -431,18 +431,29 @@ Status CFileSet::Iterator::OptimizePKPredicates(ScanSpec* spec) {
   EncodedKey* implicit_ub_key = nullptr;
   bool modify_lower_bound_key = false;
   bool modify_upper_bound_key = false;
-  const Schema& tablet_schema = *base_data_->tablet_schema();
+
+  // Keep a reference to the current tablet schema to use in this scope. That's
+  // preventing data races when a concurrently running Tablet::AlterSchema()
+  // is destroying the underlying Schema object in TabletMetadata::SetSchema().
+  // Since the only information required from the schema in this context
+  // is primary key-related, any snapshot of the tablet's schema is good enough
+  // since primary key information is immutable for an existing Kudu table.
+  //
+  // NOTE: it's not possible to use the projection returned by
+  //       CFileSet::Iterator::schema() because it might not contain information
+  //       on primary key columns in case of non-FT scans.
+  SchemaPtr tablet_schema(base_data_->tablet_schema());
 
   if (!lb_key || lb_key->encoded_key() < base_data_->min_encoded_key_) {
     RETURN_NOT_OK(EncodedKey::DecodeEncodedString(
-        tablet_schema, &arena_, base_data_->min_encoded_key_, &implicit_lb_key));
+        *tablet_schema, &arena_, base_data_->min_encoded_key_, &implicit_lb_key));
     spec->SetLowerBoundKey(implicit_lb_key);
     modify_lower_bound_key = true;
   }
 
   RETURN_NOT_OK(EncodedKey::DecodeEncodedString(
-      tablet_schema, &arena_, base_data_->max_encoded_key_, &implicit_ub_key));
-  Status s = EncodedKey::IncrementEncodedKey(tablet_schema, &implicit_ub_key, &arena_);
+      *tablet_schema, &arena_, base_data_->max_encoded_key_, &implicit_ub_key));
+  Status s = EncodedKey::IncrementEncodedKey(*tablet_schema, &implicit_ub_key, &arena_);
   // Reset the exclusive_upper_bound_key only when we can get a valid and smaller upper bound key.
   // In the case IncrementEncodedKey return ERROR status due to allocation fails or no
   // lexicographically greater key exists, we fall back to scan the rowset without optimizing the
@@ -453,7 +464,7 @@ Status CFileSet::Iterator::OptimizePKPredicates(ScanSpec* spec) {
   }
 
   if (modify_lower_bound_key || modify_upper_bound_key) {
-    spec->OptimizeScan(tablet_schema, &arena_, true);
+    spec->OptimizeScan(*tablet_schema, &arena_, true);
   }
   return Status::OK();
 }
