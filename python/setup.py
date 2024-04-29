@@ -174,8 +174,11 @@ CLASSIFIERS = [
     'Programming Language :: Python :: 2',
     'Programming Language :: Python :: 3',
     'Programming Language :: Python :: 2.7',
-    'Programming Language :: Python :: 3.4',
-    'Programming Language :: Python :: 3.5',
+    'Programming Language :: Python :: 3.6',
+    'Programming Language :: Python :: 3.7',
+    'Programming Language :: Python :: 3.8',
+    'Programming Language :: Python :: 3.9',
+    'Programming Language :: Python :: 3.10',
     'Programming Language :: Cython'
 ]
 
@@ -191,24 +194,22 @@ setup(
         'clean': clean,
         'build_ext': build_ext
     },
-    # pytest-runner 5.3.0 [1] started requiring python 3.6 or later.
-    #
-    # 1. https://github.com/pytest-dev/pytest-runner/blob/v5.3.0/CHANGES.rst
-    setup_requires=['pytest-runner <5.3.0'],
+    setup_requires=['pytest-runner <5.3.0; python_version == "2.7"',
+                    'pytest-runner ==5.3.2; python_version >= "3.6"'],
 
     # Note: dependencies in tests_require should also be listed in
     # requirements.txt so that dependencies aren't downloaded at test-time
     # (when it's more difficult to override various pip installation options).
-    #
-    # pytest 3.3 [1] and pytest-timeout 1.2.1 [2] dropped
-    # support for python 2.6.
-    #
-    # 1. https://docs.pytest.org/en/latest/changelog.html#id164
-    # 2. https://pypi.org/project/pytest-timeout/#id5
-    tests_require=['pytest >=2.8,<3.3',
-                   'pytest-timeout >=1.1.0,<1.2.1'],
+    tests_require=['pytest ==4.6.11; python_version == "2.7"',
+                   'pytest ==6.2.5; python_version >= "3.6"',
+                   'pytest-timeout ==1.4.2; python_version == "2.7"',
+                   'pytest-timeout ==2.1.0; python_version >= "3.6"',
+                   'unittest2 ==1.1.0'],
 
-    install_requires=['cython >= 0.21', 'pytz', 'six'],
+    install_requires=['cython ==0.29.14; python_version == "2.7"',
+                      'cython ==0.29.37; python_version >= "3.6"',
+                      'six ==1.16.0',
+                      'pytz ==2024.1'],
     description=DESCRIPTION,
     long_description=LONG_DESCRIPTION,
     license='Apache License, Version 2.0',
