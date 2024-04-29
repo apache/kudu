@@ -1,22 +1,16 @@
-# pytest 3.3 dropped support for python 2.6.
-#
-# See https://docs.pytest.org/en/latest/changelog.html#id164 for more details.
-pytest >=2.8,<3.3
+pytest ==4.6.11; python_version == "2.7"
+pytest ==6.2.5; python_version >= "3.6"
 
-# pytest-timeout 1.2.1 dropped support for python 2.6.
-#
-# See https://pypi.org/project/pytest-timeout/#id5 for more details.
-pytest-timeout >=1.1.0,<1.2.1
+pytest-timeout ==1.4.2; python_version == "2.7"
+pytest-timeout ==2.1.0; python_version >= "3.6"
 
-cython ==0.29.14
-six
-unittest2
-pytz
+pytest-runner <5.3.0; python_version == "2.7"
+pytest-runner ==5.3.2; python_version >= "3.6"
 
-# This is a dependency of pytest, but if we don't list it here, python 2.6
-# virtualenvs will fail in build_ext with this exception:
-#
-#   pkg_resources.DistributionNotFound: The 'setuptools_scm>=1.15.0' distribution was not found and is required by the application
-#
-# See https://github.com/pypa/setuptools_scm/issues/209 for more details.
-setuptools_scm
+unittest2 ==1.1.0
+
+cython ==0.29.14; python_version == "2.7"
+cython ==0.29.37; python_version >= "3.6"
+
+six ==1.16.0
+pytz ==2024.1
