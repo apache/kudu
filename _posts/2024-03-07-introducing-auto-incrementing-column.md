@@ -53,7 +53,6 @@ SELECT \*, auto_incrementing_id FROM &lt;tablename&gt;
 #### Examples
 
 Create a table with two columns and two hash partitions:
-
 ```
 default> CREATE TABLE demo_table(id INT NON UNIQUE PRIMARY KEY, name STRING) PARTITION BY HASH (id) PARTITIONS 2 STORED AS KUDU;
 Query: CREATE TABLE demo_table(id INT NON UNIQUE PRIMARY KEY, name STRING) PARTITION BY HASH (id) PARTITIONS 2 STORED AS KUDU
@@ -66,7 +65,6 @@ Fetched 1 row(s) in 3.94s
 ```
 
 Describe the table:
-
 ```
 default> DESCRIBE demo_table;
 Query: DESCRIBE demo_table
@@ -79,16 +77,15 @@ Query: DESCRIBE demo_table
 +----------------------+--------+---------+-------------+------------+----------+---------------+---------------+---------------------+------------+
 ```
 
-<br/>Insert rows with duplicate partial primary key column values:
-
+Insert rows with duplicate partial primary key column values:
 ```
 default> INSERT INTO demo_table VALUES (1, 'John'), (2, 'Bob'), (3, 'Mary'), (1, 'Joe');
 Query: INSERT INTO demo_table VALUES (1, 'John'), (2, 'Bob'), (3, 'Mary'), (1, 'Joe')
 ..
 Modified 4 row(s), 0 row error(s) in 0.41s
 ```
-<br/>Scan the table (notice the duplicate values in the 'id' column):
 
+Scan the table (notice the duplicate values in the 'id' column):
 ```
 default> SELECT * FROM demo_table;
 Query: SELECT * FROM demo_table
@@ -132,6 +129,7 @@ default> DELETE FROM demo_table where id=2;
 Query: DELETE FROM demo_table where id=2;
 Modified 1 row(s), 0 row error(s) in 1.40s
 ```
+
 Scan all the columns of the table:
 ```
 default> SELECT *, auto_incrementing_id FROM demo_table;
@@ -146,12 +144,13 @@ Query: SELECT *, auto_incrementing_id FROM demo_table
 +----+------+----------------------+
 Fetched 3 row(s) in 0.20s
 ```
+
 #### Limitations
 
 Impala doesn’t support UPSERT operations on tables with the auto-incrementing column as of writing
 this article.
 
-### Kudu clients(Java, C++, Python)
+### Kudu clients (Java, C++, Python)
 
 Unlike in Impala, scanning the table fetches all the table data including the auto incrementing column.
 There is no need to explicitly request the auto-incrementing column.
@@ -166,7 +165,7 @@ regular UPDATE operation. If the row is not present, it is considered an INSERT 
 
 <https://github.com/apache/kudu/blob/master/examples/python/basic-python-example/non_unique_primary_key.py>
 
-##Backup and Restore
+## Backup and Restore
 
 The Kudu backup tool from Kudu 1.17 and later supports backing up tables with the
 auto-incrementing column. The prior backup tools will fail with an error message -
