@@ -1283,7 +1283,8 @@ find_package(Rocksdb REQUIRED)
 include_directories(SYSTEM ${ROCKSDB_INCLUDE_DIR})
 ADD_THIRDPARTY_LIB(rocksdb
         STATIC_LIB "${ROCKSDB_STATIC_LIB}"
-        SHARED_LIB "${ROCKSDB_SHARED_LIB}")
+        SHARED_LIB "${ROCKSDB_SHARED_LIB}"
+        DEPS snappy)
 
 ############################################################
 # Enable sized deallocation where supported.
