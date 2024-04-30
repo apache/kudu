@@ -232,7 +232,7 @@ TabletCopyClient::TabletCopyClient(
   if (dst_tablet_copy_metrics_) {
     dst_tablet_copy_metrics_->open_client_sessions->Increment();
   }
-  CHECK_OK(ThreadPoolBuilder("tablet-download-pool-" + tablet_id)
+  CHECK_OK(ThreadPoolBuilder("tablet-download-pool-" + tablet_id_)
                .set_max_threads(FLAGS_tablet_copy_download_threads_nums_per_session)
                .set_min_threads(FLAGS_tablet_copy_download_threads_nums_per_session)
                .Build(&tablet_download_pool_));
