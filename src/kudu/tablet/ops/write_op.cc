@@ -375,12 +375,20 @@ void WriteOp::Finish(OpResult result) {
 }
 
 string WriteOp::ToString() const {
-  MonoDelta d = MonoTime::Now() - state_->start_time();
-  WallTime abs_time = WallTime_Now() - d.ToSeconds();
-  string abs_time_formatted;
-  StringAppendStrftime(&abs_time_formatted, "%Y-%m-%d %H:%M:%S", (time_t)abs_time, true);
+  const auto& start_time = state_->start_time();
+  string start_time_str = "n/a";
+  if (start_time.Initialized()) {
+    const auto d = MonoTime::Now() - start_time;
+    const WallTime abs_time = WallTime_Now() - d.ToSeconds();
+    string abs_time_formatted;
+    StringAppendStrftime(&abs_time_formatted,
+                         "%Y-%m-%d %H:%M:%S",
+                         static_cast<time_t>(abs_time),
+                         true);
+    start_time_str = std::move(abs_time_formatted);
+  }
   return Substitute("WriteOp [type=$0, start_time=$1, state=$2]",
-                    DriverType_Name(type()), abs_time_formatted, state_->ToString());
+                    DriverType_Name(type()), start_time_str, state_->ToString());
 }
 
 WriteOpState::WriteOpState(TabletReplica* tablet_replica,
