@@ -89,7 +89,7 @@ METRIC_DEFINE_counter(tablet, scanner_rows_returned, "Scanner Rows Returned",
                       "Number of rows returned by scanners to clients. This count "
                       "is measured after predicates are applied, and thus is not "
                       "a reflection of the amount of work being done by scanners.",
-                      kudu::MetricLevel::kDebug);
+                      kudu::MetricLevel::kInfo);
 METRIC_DEFINE_counter(tablet, scanner_cells_returned, "Scanner Cells Returned",
                       kudu::MetricUnit::kCells,
                       "Number of table cells returned by scanners to clients. This count "
@@ -109,7 +109,7 @@ METRIC_DEFINE_counter(tablet, scanner_predicates_disabled, "Scanner Column Predi
                       "This count measures the number of disableable column predicates like "
                       "Bloom filter predicate that are automatically disabled if determined to "
                       "be ineffective.",
-                      kudu::MetricLevel::kInfo);
+                      kudu::MetricLevel::kDebug);
 
 METRIC_DEFINE_counter(tablet, scanner_rows_scanned, "Scanner Rows Scanned",
                       kudu::MetricUnit::kRows,
@@ -118,7 +118,7 @@ METRIC_DEFINE_counter(tablet, scanner_rows_scanned, "Scanner Rows Scanned",
                       "or MVCC-based filtering. Thus, this is a better measure of actual "
                       "table rows that have been processed by scan operations compared "
                       "to the Scanner Rows Returned metric.",
-                      kudu::MetricLevel::kDebug);
+                      kudu::MetricLevel::kInfo);
 
 METRIC_DEFINE_counter(tablet, scanner_cells_scanned_from_disk, "Scanner Cells Scanned From Disk",
                       kudu::MetricUnit::kCells,
@@ -147,11 +147,11 @@ METRIC_DEFINE_counter(tablet, scanner_bytes_scanned_from_disk, "Scanner Bytes Sc
 METRIC_DEFINE_counter(tablet, scans_started, "Scans Started",
                       kudu::MetricUnit::kScanners,
                       "Number of scanners which have been started on this tablet",
-                      kudu::MetricLevel::kDebug);
+                      kudu::MetricLevel::kInfo);
 METRIC_DEFINE_gauge_size(tablet, tablet_active_scanners, "Active Scanners",
                          kudu::MetricUnit::kScanners,
                          "Number of scanners that are currently active on this tablet",
-                         kudu::MetricLevel::kDebug);
+                         kudu::MetricLevel::kInfo);
 
 METRIC_DEFINE_counter(tablet, bloom_lookups, "Bloom Filter Lookups",
                       kudu::MetricUnit::kProbes,
@@ -195,7 +195,7 @@ METRIC_DEFINE_counter(tablet, ops_timed_out_in_prepare_queue,
                       "corresponding operations were waiting in the tablet's "
                       "prepare queue, and thus were not started but "
                       "acknowledged with TimedOut error status.",
-                      kudu::MetricLevel::kInfo);
+                      kudu::MetricLevel::kWarn);
 
 METRIC_DEFINE_histogram(tablet, bloom_lookups_per_op, "Bloom Lookups per Operation",
                         kudu::MetricUnit::kProbes,
@@ -221,7 +221,7 @@ METRIC_DEFINE_histogram(tablet, delta_file_lookups_per_op, "Delta File Lookups p
                         "operation. A single operation may perform several delta file "
                         "lookups if the tablet is not fully compacted. High frequency of "
                         "high values may indicate that compaction is falling behind.",
-                        kudu::MetricLevel::kInfo,
+                        kudu::MetricLevel::kDebug,
                         20, 2);
 
 METRIC_DEFINE_histogram(tablet, write_op_duration_client_propagated_consistency,
@@ -311,63 +311,63 @@ METRIC_DEFINE_histogram(tablet, flush_dms_duration,
   "DeltaMemStore Flush Duration",
   kudu::MetricUnit::kMilliseconds,
   "Time spent flushing DeltaMemStores.",
-  kudu::MetricLevel::kInfo,
+  kudu::MetricLevel::kDebug,
   60000LU, 1);
 
 METRIC_DEFINE_histogram(tablet, flush_mrs_duration,
   "MemRowSet Flush Duration",
   kudu::MetricUnit::kMilliseconds,
   "Time spent flushing MemRowSets.",
-  kudu::MetricLevel::kInfo,
+  kudu::MetricLevel::kDebug,
   60000LU, 1);
 
 METRIC_DEFINE_histogram(tablet, compact_rs_duration,
   "RowSet Compaction Duration",
   kudu::MetricUnit::kMilliseconds,
   "Time spent compacting RowSets.",
-  kudu::MetricLevel::kInfo,
+  kudu::MetricLevel::kDebug,
   60000LU, 1);
 
 METRIC_DEFINE_histogram(tablet, delta_minor_compact_rs_duration,
   "Minor Delta Compaction Duration",
   kudu::MetricUnit::kMilliseconds,
   "Time spent minor delta compacting.",
-  kudu::MetricLevel::kInfo,
+  kudu::MetricLevel::kDebug,
   60000LU, 1);
 
 METRIC_DEFINE_histogram(tablet, delta_major_compact_rs_duration,
   "Major Delta Compaction Duration",
   kudu::MetricUnit::kSeconds,
   "Seconds spent major delta compacting.",
-  kudu::MetricLevel::kInfo,
+  kudu::MetricLevel::kDebug,
   60000000LU, 2);
 
 METRIC_DEFINE_histogram(tablet, undo_delta_block_gc_init_duration,
   "Undo Delta Block GC Init Duration",
   kudu::MetricUnit::kMilliseconds,
   "Time spent initializing ancient UNDO delta blocks.",
-  kudu::MetricLevel::kInfo,
+  kudu::MetricLevel::kDebug,
   60000LU, 1);
 
 METRIC_DEFINE_histogram(tablet, undo_delta_block_gc_delete_duration,
   "Undo Delta Block GC Delete Duration",
   kudu::MetricUnit::kMilliseconds,
   "Time spent deleting ancient UNDO delta blocks.",
-  kudu::MetricLevel::kInfo,
+  kudu::MetricLevel::kDebug,
   60000LU, 1);
 
 METRIC_DEFINE_histogram(tablet, undo_delta_block_gc_perform_duration,
   "Undo Delta Block GC Perform Duration",
   kudu::MetricUnit::kMilliseconds,
   "Time spent running the maintenance operation to GC ancient UNDO delta blocks.",
-  kudu::MetricLevel::kInfo,
+  kudu::MetricLevel::kDebug,
   60000LU, 1);
 
 METRIC_DEFINE_histogram(tablet, compact_rs_mem_usage,
   "Peak Memory Usage for CompactRowSetsOp",
   kudu::MetricUnit::kBytes,
   "Peak memory usage of rowset merge compaction operations (CompactRowSetsOp)",
-  kudu::MetricLevel::kInfo,
+  kudu::MetricLevel::kDebug,
   60000LU, 1);
 
 METRIC_DEFINE_histogram(tablet, compact_rs_mem_usage_to_deltas_size_ratio,
@@ -375,14 +375,14 @@ METRIC_DEFINE_histogram(tablet, compact_rs_mem_usage_to_deltas_size_ratio,
   kudu::MetricUnit::kUnits,
   "Ratio of the peak memory usage to the estimated on-disk size of all deltas "
   "for rowsets involved in rowset merge compaction (CompactRowSetsOp)",
-  kudu::MetricLevel::kInfo,
+  kudu::MetricLevel::kDebug,
   60000LU, 1);
 
 METRIC_DEFINE_histogram(tablet, deleted_rowset_gc_duration,
   "Deleted Rowset GC Duration",
   kudu::MetricUnit::kMilliseconds,
   "Time spent running the maintenance operation to GC deleted rowsets.",
-  kudu::MetricLevel::kInfo,
+  kudu::MetricLevel::kDebug,
   60000LU, 1);
 
 METRIC_DEFINE_counter(tablet, leader_memory_pressure_rejections,
