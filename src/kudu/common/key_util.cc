@@ -118,7 +118,7 @@ bool DecrementIntCell(void* cell_ptr) {
     // Signed overflow is undefined in C. So, we'll use a branch here
     // instead of counting on undefined behavior.
     if (orig == MathLimits<cpp_type>::kMin) {
-      dec = MathLimits<cpp_type>::kMax;
+      return false;
     } else {
       dec = orig - 1;
     }
