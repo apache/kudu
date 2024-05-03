@@ -1332,7 +1332,7 @@ set(KUDU_MIN_TEST_LIBS ${KUDU_BASE_LIBS} kudu_test_main kudu_test_util)
 # Prepend SANITIZER_OPTIONS_OVERRIDE if this is a sanitizer build.
 # SANITIZER_OPTIONS_OVERRIDE needs to be linked first so that it is statically
 # linked to the test binaries directly. Otherwise the weakly linked default
-# implementations coul be be used when running tests.
+# implementations could be be used when running tests.
 if ("${KUDU_USE_ASAN}" OR "${KUDU_USE_TSAN}" OR "${KUDU_USE_UBSAN}")
   list(INSERT KUDU_MIN_TEST_LIBS 0 ${SANITIZER_OPTIONS_OVERRIDE})
 endif()
