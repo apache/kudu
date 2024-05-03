@@ -232,9 +232,17 @@ TabletCopyClient::TabletCopyClient(
   if (dst_tablet_copy_metrics_) {
     dst_tablet_copy_metrics_->open_client_sessions->Increment();
   }
-  CHECK_OK(ThreadPoolBuilder("tablet-download-pool-" + tablet_id_)
+
+  // These thread pools are ephemeral, and there might be multiple pools with
+  // the same name "tablet-download-pool" running at the same time. They are not
+  // differentiated by 'tablet_id' or other dynamic information -- that's to
+  // avoid registering too many entries in the trace metrics dictionary
+  // (see trace_metrics.{h,cc} for details). So, all the trace metrics for
+  // these thread pools will be accumulated under a few thread pool metrics
+  // for all the tablet copying clients ever spawned.
+  CHECK_OK(ThreadPoolBuilder("tablet-download-pool")
+               .set_min_threads(1)
                .set_max_threads(FLAGS_tablet_copy_download_threads_nums_per_session)
-               .set_min_threads(FLAGS_tablet_copy_download_threads_nums_per_session)
                .Build(&tablet_download_pool_));
 }
 
