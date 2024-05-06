@@ -28,6 +28,8 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+DECLARE_string(rpc_authentication);
+
 using gflags::SetCommandLineOption;
 using kudu::cluster::ExternalMiniCluster;
 using kudu::cluster::ExternalMiniClusterOptions;
@@ -43,7 +45,17 @@ TEST_F(SecurityFlagsTest, CheckRpcAuthnFlagsGroupValidator) {
   // set them to the required values instead to verify the functionality
   // of the corresponding group flag validator.
   ASSERT_NE("", SetCommandLineOption("unlock_experimental_flags", "true"));
+
   ASSERT_NE("", SetCommandLineOption("rpc_authentication", "required"));
+  // This check has two purposes. The first purpose is that it verifies that the
+  // flag is set up correctly. The second purpose is that linker can omit whole
+  // library files when no function or variable is used in them. This can happen
+  // even if the variable's constructor has some side effects. This happenned
+  // with the command line arguments in release build in some cases. As a
+  // solution, FLAGS_rpc_authentication is used and as a consequence, all the
+  // global variable constructors are called.
+  ASSERT_EQ("required", FLAGS_rpc_authentication);
+
   ASSERT_NE("", SetCommandLineOption("keytab_file", ""));
   ASSERT_NE("", SetCommandLineOption("rpc_certificate_file", ""));
   ASSERT_DEATH({ ValidateFlags(); },
