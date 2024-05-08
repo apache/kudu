@@ -4275,6 +4275,14 @@ void CatalogManager::GetAllTables(vector<scoped_refptr<TableInfo>>* tables) {
   AppendValuesFromMap(table_ids_map_, tables);
 }
 
+void CatalogManager::GetNormalizedTables(vector<scoped_refptr<TableInfo>>* tables) {
+  leader_lock_.AssertAcquiredForReading();
+
+  tables->clear();
+  shared_lock<LockType> l(lock_);
+  AppendValuesFromMap(normalized_table_names_map_, tables);
+}
+
 void CatalogManager::GetAllTabletsForTests(vector<scoped_refptr<TabletInfo>>* tablets) {
   leader_lock_.AssertAcquiredForReading();
 

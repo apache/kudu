@@ -87,6 +87,11 @@ DEFINE_uint32(leader_rebalancing_max_moves_per_round, 10,
 TAG_FLAG(leader_rebalancing_max_moves_per_round, advanced);
 TAG_FLAG(leader_rebalancing_max_moves_per_round, runtime);
 
+DEFINE_bool(leader_rebalancing_ignore_soft_deleted_tables, false,
+            "Whether to ignore rebalancing the soft deleted tables");
+TAG_FLAG(leader_rebalancing_ignore_soft_deleted_tables, advanced);
+TAG_FLAG(leader_rebalancing_ignore_soft_deleted_tables, runtime);
+
 DECLARE_bool(auto_leader_rebalancing_enabled);
 
 namespace kudu {
@@ -431,7 +436,11 @@ Status AutoLeaderRebalancerTask::RunLeaderRebalancer() {
   {
     CatalogManager::ScopedLeaderSharedLock leader_lock(catalog_manager_);
     RETURN_NOT_OK(leader_lock.first_failed_status());
-    catalog_manager_->GetAllTables(&table_infos);
+    if (FLAGS_leader_rebalancing_ignore_soft_deleted_tables) {
+      catalog_manager_->GetNormalizedTables(&table_infos);
+    } else {
+      catalog_manager_->GetAllTables(&table_infos);
+    }
   }
   for (const auto& table_info : table_infos) {
     RunLeaderRebalanceForTable(table_info, tserver_uuids, exclude_dest_uuids);

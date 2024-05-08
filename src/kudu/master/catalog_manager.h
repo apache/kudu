@@ -872,6 +872,14 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // NOTE: This should only be used by tests or web-ui
   void GetAllTables(std::vector<scoped_refptr<TableInfo>>* tables);
 
+  // Retrieve all tables from the normalized_table_names_map_.
+  // The normalized_table_names_map_ inherently does not contain soft-deleted
+  // or not running tables, so no manual exclusion is needed. May fail if
+  // the catalog manager is not yet running. Caller must hold leader_lock_.
+  //
+  // NOTE: This should only be used by tests or web-ui
+  void GetNormalizedTables(std::vector<scoped_refptr<TableInfo>>* tables);
+
   // Check if a table exists by name, setting 'exist' appropriately. May fail
   // if the catalog manager is not yet running. Caller must hold leader_lock_.
   //

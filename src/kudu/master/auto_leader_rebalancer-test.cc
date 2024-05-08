@@ -60,6 +60,7 @@ class AutoRebalancerTask;
 }  // namespace master
 }  // namespace kudu
 
+using kudu::client::KuduTable;
 using kudu::cluster::InternalMiniCluster;
 using kudu::cluster::InternalMiniClusterOptions;
 using kudu::tserver::ListTabletsResponsePB;
@@ -69,10 +70,12 @@ using kudu::consensus::LeaderStepDownResponsePB;
 using kudu::rpc::RpcController;
 using std::string;
 using std::unique_ptr;
+using kudu::client::sp::shared_ptr;
 using std::vector;
 
 DECLARE_bool(auto_leader_rebalancing_enabled);
 DECLARE_bool(auto_rebalancing_enabled);
+DECLARE_bool(leader_rebalancing_ignore_soft_deleted_tables);
 DECLARE_int32(heartbeat_interval_ms);
 DECLARE_uint32(auto_leader_rebalancing_interval_seconds);
 DECLARE_uint32(auto_rebalancing_interval_seconds);
@@ -140,17 +143,21 @@ class LeaderRebalancerTest : public KuduTest {
   }
 
   // Get the leader numbers of each tablet server.
-  void GetLeaderDistribution(std::map<string, int32_t>* leader_map) {
+  void GetLeaderDistribution(std::map<string, int32_t>* leader_map,
+                             const string& table_name) {
     leader_map->clear();
-    scoped_refptr<TableInfo> table;
+    shared_ptr<KuduTable> table;
+    workload_->client()->OpenTable(table_name, &table);
+
+    scoped_refptr<TableInfo> table_info;
     master::Master* master = cluster_->mini_master()->master();
     master::CatalogManager* catalog_manager = master->catalog_manager();
     {
       CatalogManager::ScopedLeaderSharedLock leaderlock(catalog_manager);
-      catalog_manager->GetTableInfoByName(table_name(), &table);
+      catalog_manager->GetTableInfo(table->id(), &table_info);
     }
     std::vector<string> leader_list;
-    for (const auto& tablet : table->tablet_map()) {
+    for (const auto& tablet : table_info->tablet_map()) {
       client::KuduTablet* ptr;
       workload_->client()->GetTablet(tablet.second->id(), &ptr);
       unique_ptr<client::KuduTablet> tablet_ptr(ptr);
@@ -172,7 +179,8 @@ class LeaderRebalancerTest : public KuduTest {
   }
 
   // Make the leader distribution as the vector passed in.
-  Status MakeLeaderDistribution(std::vector<int32_t> leader_distribution) {
+  Status MakeLeaderDistribution(std::vector<int32_t> leader_distribution,
+                                const string table_name) {
     master::Master* master = cluster_->mini_master()->master();
     TSDescriptorVector descriptors;
     master->ts_manager()->GetAllDescriptors(&descriptors);
@@ -185,7 +193,7 @@ class LeaderRebalancerTest : public KuduTest {
     master::CatalogManager* catalog_manager = master->catalog_manager();
     {
       CatalogManager::ScopedLeaderSharedLock leaderlock(catalog_manager);
-      catalog_manager->GetTableInfoByName(table_name(), &table);
+      catalog_manager->GetTableInfoByName(table_name, &table);
     }
 
     if (std::accumulate(leader_distribution.begin(), leader_distribution.end(), 0) !=
@@ -253,11 +261,11 @@ TEST_F(LeaderRebalancerTest, FunctionalTestForDivided) {
 
   // Simulate the leader distribution.
   std::vector<int32_t> leader_distribution = {4, 4, 1};
-  MakeLeaderDistribution(leader_distribution);
+  MakeLeaderDistribution(leader_distribution, table_name());
 
   SleepFor(MonoDelta::FromMilliseconds(3000));
   std::map<string, int32_t> leader_map;
-  GetLeaderDistribution(&leader_map);
+  GetLeaderDistribution(&leader_map, table_name());
   LOG(INFO) << "The leader distribution is " << '\n';
   for (const auto& leader : leader_map) {
     std::cout << leader.first << "  " << leader.second << '\n';
@@ -276,7 +284,7 @@ TEST_F(LeaderRebalancerTest, FunctionalTestForDivided) {
   // Check the leader numbers of each tablet server. It should always be floor(avg)
   // or ceil(avg), where the parameter avg is (tablet num) / (tablet server num).
   double expected_leader_num = static_cast<double>(kNumTablets) / 3;
-  GetLeaderDistribution(&leader_map);
+  GetLeaderDistribution(&leader_map, table_name());
   LOG(INFO) << "The leader distribution is " << '\n';
   for (const auto& leader : leader_map) {
     std::cout << leader.first << "  " << leader.second << '\n';
@@ -288,10 +296,10 @@ TEST_F(LeaderRebalancerTest, FunctionalTestForDivided) {
 
   // Try different leader distribution.
   std::vector<int32_t> leader_distribution2 = {0, 8, 1};
-  MakeLeaderDistribution(leader_distribution2);
+  MakeLeaderDistribution(leader_distribution2, table_name());
 
   SleepFor(MonoDelta::FromMilliseconds(3000));
-  GetLeaderDistribution(&leader_map);
+  GetLeaderDistribution(&leader_map, table_name());
   LOG(INFO) << "The leader distribution is " << '\n';
   for (const auto& leader : leader_map) {
     std::cout << leader.first << "  " << leader.second << '\n';
@@ -302,7 +310,7 @@ TEST_F(LeaderRebalancerTest, FunctionalTestForDivided) {
     SleepFor(MonoDelta::FromMilliseconds(FLAGS_heartbeat_interval_ms));
   }
 
-  GetLeaderDistribution(&leader_map);
+  GetLeaderDistribution(&leader_map, table_name());
   LOG(INFO) << "The leader distribution is " << '\n';
   for (const auto& leader : leader_map) {
     std::cout << leader.first << "  " << leader.second << '\n';
@@ -323,11 +331,11 @@ TEST_F(LeaderRebalancerTest, FunctionalTestForNotDivided) {
 
   // Simulate the leader distribution.
   std::vector<int32_t> leader_distribution = {5, 4, 1};
-  MakeLeaderDistribution(leader_distribution);
+  MakeLeaderDistribution(leader_distribution, table_name());
 
   SleepFor(MonoDelta::FromMilliseconds(3000));
   std::map<string, int32_t> leader_map;
-  GetLeaderDistribution(&leader_map);
+  GetLeaderDistribution(&leader_map, table_name());
   LOG(INFO) << "The leader distribution is " << '\n';
   for (const auto& leader : leader_map) {
     std::cout << leader.first << "  " << leader.second << '\n';
@@ -346,7 +354,7 @@ TEST_F(LeaderRebalancerTest, FunctionalTestForNotDivided) {
   // Check the leader numbers of each tablet server. It should always be floor(avg)
   // or ceil(avg), where the parameter avg is (tablet num) / (tablet server num).
   double expected_leader_num = static_cast<double>(kNumTablets) / 3;
-  GetLeaderDistribution(&leader_map);
+  GetLeaderDistribution(&leader_map, table_name());
   LOG(INFO) << "The leader distribution is " << '\n';
   for (const auto& leader : leader_map) {
     std::cout << leader.first << "  " << leader.second << '\n';
@@ -358,10 +366,10 @@ TEST_F(LeaderRebalancerTest, FunctionalTestForNotDivided) {
 
   // Try different leader distribution.
   std::vector<int32_t> leader_distribution2 = {8, 1, 1};
-  MakeLeaderDistribution(leader_distribution2);
+  MakeLeaderDistribution(leader_distribution2, table_name());
 
   SleepFor(MonoDelta::FromMilliseconds(3000));
-  GetLeaderDistribution(&leader_map);
+  GetLeaderDistribution(&leader_map, table_name());
   LOG(INFO) << "The leader distribution is " << '\n';
   for (const auto& leader : leader_map) {
     std::cout << leader.first << "  " << leader.second << '\n';
@@ -372,7 +380,7 @@ TEST_F(LeaderRebalancerTest, FunctionalTestForNotDivided) {
     SleepFor(MonoDelta::FromMilliseconds(FLAGS_heartbeat_interval_ms));
   }
 
-  GetLeaderDistribution(&leader_map);
+  GetLeaderDistribution(&leader_map, table_name());
   LOG(INFO) << "The leader distribution is " << '\n';
   for (const auto& leader : leader_map) {
     std::cout << leader.first << "  " << leader.second << '\n';
@@ -520,6 +528,76 @@ TEST_F(LeaderRebalancerTest, TestMaintenanceMode) {
     ASSERT_FALSE(resp.status_and_schema().empty());
     for (const auto& replica : resp.status_and_schema()) {
       ASSERT_NE(consensus::RaftPeerPB::LEADER, replica.role());
+    }
+  }
+}
+
+class FilterSoftDeletedTableTest :
+    public LeaderRebalancerTest,
+    public ::testing::WithParamInterface<bool> {
+};
+
+INSTANTIATE_TEST_SUITE_P(, FilterSoftDeletedTableTest, ::testing::Bool());
+TEST_P(FilterSoftDeletedTableTest, TestFilterSofteDeletedTable) {
+  FLAGS_leader_rebalancing_ignore_soft_deleted_tables = GetParam();
+
+  constexpr const int kNumTServers = 3;
+  constexpr const int kNumTablets = 9;
+  constexpr const int kNumReplicas = 3;
+  constexpr const char* const soft_deleted_table = "soft_deleted_table";
+
+  cluster_opts_.num_tablet_servers = kNumTServers;
+  ASSERT_OK(CreateAndStartCluster());
+
+  CreateWorkloadTable(kNumTablets, /*num_replicas*/ kNumReplicas);
+
+  // Simulate the leader distribution.
+  std::vector<int32_t> leader_distribution = {4, 4, 1};
+  MakeLeaderDistribution(leader_distribution, table_name());
+  SleepFor(MonoDelta::FromMilliseconds(3000));
+
+  string first_table = table_name();
+
+  // Create a new table.
+  workload_.reset(new TestWorkload(cluster_.get()));
+  workload_->set_table_name(soft_deleted_table);
+  workload_->set_num_tablets(kNumTablets);
+  workload_->set_num_replicas(kNumReplicas);
+  workload_->Setup();
+
+  // Simulate the leader distribution.
+  MakeLeaderDistribution(leader_distribution, soft_deleted_table);
+  SleepFor(MonoDelta::FromMilliseconds(3000));
+
+  // Delete the table 'soft_deleted_table'.
+  workload_->client()->SoftDeleteTable(soft_deleted_table, 3600);
+
+  // Try to run leader rebalance for 10 times.
+  int32_t retries = 10;
+  master::Master* master = cluster_->mini_master()->master();
+  master::AutoLeaderRebalancerTask* leader_rebalancer =
+      master->catalog_manager()->auto_leader_rebalancer();
+  for (int i = 0; i < retries; i++) {
+    leader_rebalancer->RunLeaderRebalancer();
+    SleepFor(MonoDelta::FromMilliseconds(FLAGS_heartbeat_interval_ms));
+  }
+
+  std::map<string, int32_t> leader_map;
+  // The first table is leader rebalanced.
+  GetLeaderDistribution(&leader_map, first_table);
+  for (const auto& leader: leader_map) {
+    ASSERT_EQ(leader.second, 3);
+  }
+
+  GetLeaderDistribution(&leader_map, soft_deleted_table);
+  // The soft deleted table is not leader rebalanced.
+  if (FLAGS_leader_rebalancing_ignore_soft_deleted_tables) {
+    for (const auto& leader: leader_map) {
+      ASSERT_NE(leader.second, 3);
+    }
+  } else {
+    for (const auto& leader: leader_map) {
+      ASSERT_EQ(leader.second, 3);
     }
   }
 }
