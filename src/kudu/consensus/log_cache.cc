@@ -125,7 +125,7 @@ void LogCache::Init(const OpId& preceding_op) {
 }
 
 void LogCache::TruncateOpsAfter(int64_t index) {
-  std::unique_lock<simple_spinlock> l(lock_);
+  std::lock_guard<simple_spinlock> l(lock_);
   TruncateOpsAfterUnlocked(index);
 }
 

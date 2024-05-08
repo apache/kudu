@@ -527,7 +527,7 @@ int Webserver::LogMessageCallbackStatic(const struct sq_connection* /*connection
     // the squeasel server uses the log callback to report on errors.
     {
       static simple_spinlock kErrMsgLock_;
-      std::unique_lock<simple_spinlock> l(kErrMsgLock_);
+      std::lock_guard<simple_spinlock> l(kErrMsgLock_);
       kWebserverLastErrMsg = message;
     }
     LOG(ERROR) << "Webserver: " << message;

@@ -77,7 +77,7 @@ inline void TraceMetrics::Increment(const char* name, int64_t amount) {
 }
 
 inline std::map<const char*, int64_t> TraceMetrics::Get() const {
-  std::unique_lock<simple_spinlock> l(lock_);
+  std::lock_guard<simple_spinlock> l(lock_);
   return counters_;
 }
 

@@ -2893,8 +2893,10 @@ double Tablet::GetPerfImprovementForBestDeltaCompact(RowSet::DeltaCompactionType
 
 double Tablet::GetPerfImprovementForBestDeltaCompactUnlocked(RowSet::DeltaCompactionType type,
                                                              shared_ptr<RowSet>* rs) const {
+#ifndef NDEBUG
   std::unique_lock<std::mutex> cs_lock(compact_select_lock_, std::try_to_lock);
-  DCHECK(!cs_lock.owns_lock());
+  CHECK(!cs_lock.owns_lock());
+#endif
   scoped_refptr<TabletComponents> comps;
   GetComponents(&comps);
   double worst_delta_perf = 0;

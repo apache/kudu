@@ -523,7 +523,7 @@ Scanner::~Scanner() {
 }
 
 void Scanner::AddTimings(const CpuTimes& elapsed) {
-  std::unique_lock<RWMutex> l(cpu_times_lock_);
+  std::lock_guard<RWMutex> l(cpu_times_lock_);
   cpu_times_.Add(elapsed);
 }
 

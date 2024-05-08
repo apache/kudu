@@ -17,6 +17,8 @@
 
 #include "kudu/tablet/lock_manager.h"
 
+#include <sys/types.h>
+
 #include <cstddef>
 #include <limits>
 #include <memory>
@@ -47,7 +49,6 @@
 
 using kudu::tserver::TabletServerErrorPB;
 using std::string;
-using std::unique_lock;
 using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
@@ -197,7 +198,7 @@ vector<LockEntry*> LockTable::GetLockEntries(ArrayView<Slice> keys) {
 
   // TODO(todd) prefetch the hash buckets
   {
-    unique_lock<simple_spinlock> l(lock_);
+    std::lock_guard<simple_spinlock> l(lock_);
     for (int i = 0; i < entries.size(); i++) {
       LockEntry* new_entry = entries[i];
       Bucket* bucket = FindBucket(new_entry->key_hash_);
@@ -250,10 +251,10 @@ void LockTable::ReleaseLockEntries(ArrayView<LockEntry*> entries) {
   };
 
   {
-    unique_lock<simple_spinlock> l(lock_);
+    std::lock_guard<simple_spinlock> l(lock_);
 
-    auto it = entries.begin();
-    int rem = entries.size();
+    const auto* it = entries.cbegin();
+    ssize_t rem = entries.size();
 
     // Manually block the loop into a series of constant-sized batches
     // followed by one last variable-sized batch for the remainder.

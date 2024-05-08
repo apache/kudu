@@ -207,7 +207,7 @@ void MethodSampler::GetSamplePBs(RpczMethodPB* method_pb) {
     }
 
     auto* sample_pb = method_pb->add_samples();
-    std::unique_lock<simple_spinlock> lock(bucket.sample_lock);
+    std::lock_guard<simple_spinlock> lock(bucket.sample_lock);
     sample_pb->mutable_header()->CopyFrom(bucket.sample.header);
     sample_pb->set_trace(bucket.sample.trace->DumpToString(Trace::INCLUDE_TIME_DELTAS));
 

@@ -351,7 +351,7 @@ void MaintenanceManager::RunSchedulerThread() {
     MaintenanceOp* op = nullptr;
     string op_note;
     {
-      std::unique_lock<Mutex> guard(lock_);
+      std::lock_guard<Mutex> guard(lock_);
       // Upon each iteration, we should have dropped and reacquired 'lock_'.
       // Register any ops that may have been buffered for registration while the
       // lock was last held.

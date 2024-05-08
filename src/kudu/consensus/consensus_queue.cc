@@ -459,7 +459,7 @@ void PeerMessageQueue::TruncateOpsAfter(int64_t index) {
                               LogPrefixUnlocked(),
                               index));
   {
-    std::unique_lock<simple_spinlock> lock(queue_lock_);
+    std::lock_guard<simple_spinlock> lock(queue_lock_);
     DCHECK(op.IsInitialized());
     queue_state_.last_appended = op;
   }
@@ -467,13 +467,13 @@ void PeerMessageQueue::TruncateOpsAfter(int64_t index) {
 }
 
 OpId PeerMessageQueue::GetLastOpIdInLog() const {
-  std::unique_lock<simple_spinlock> lock(queue_lock_);
+  std::lock_guard<simple_spinlock> lock(queue_lock_);
   DCHECK(queue_state_.last_appended.IsInitialized());
   return queue_state_.last_appended;
 }
 
 OpId PeerMessageQueue::GetNextOpId() const {
-  std::unique_lock<simple_spinlock> lock(queue_lock_);
+  std::lock_guard<simple_spinlock> lock(queue_lock_);
   DCHECK(queue_state_.last_appended.IsInitialized());
   return MakeOpId(queue_state_.current_term,
                   queue_state_.last_appended.index() + 1);
@@ -958,7 +958,7 @@ void PeerMessageQueue::UpdateLastIndexAppendedToLeader(int64_t last_idx_appended
 void PeerMessageQueue::UpdatePeerStatus(const string& peer_uuid,
                                         PeerStatus ps,
                                         const Status& status) {
-  std::unique_lock<simple_spinlock> l(queue_lock_);
+  std::lock_guard<simple_spinlock> l(queue_lock_);
   TrackedPeer* peer = FindPtrOrNull(peers_map_, peer_uuid);
   if (PREDICT_FALSE(peer == nullptr || queue_state_.mode == NON_LEADER)) {
     VLOG(1) << LogPrefixUnlocked() << "peer " << peer_uuid

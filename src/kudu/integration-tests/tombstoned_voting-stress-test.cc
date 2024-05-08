@@ -138,7 +138,7 @@ string TombstonedVotingStressTest::State_Name(State state) {
 }
 
 TombstonedVotingStressTest::State TombstonedVotingStressTest::GetState() {
-  unique_lock<Mutex> l(lock_);
+  std::lock_guard<Mutex> l(lock_);
   bool blocked = false;
   if (block_workers_) {
     num_workers_blocked_++;
@@ -160,7 +160,7 @@ void TombstonedVotingStressTest::SetState(State state) {
   // 3. Change state.
   // 4. Unblock workers.
   LOG(INFO) << "setting state to " << State_Name(state);
-  unique_lock<Mutex> l(lock_);
+  std::lock_guard<Mutex> l(lock_);
   block_workers_ = true;
   while (num_workers_blocked_ != num_workers_) {
     cond_all_workers_blocked_.Wait();

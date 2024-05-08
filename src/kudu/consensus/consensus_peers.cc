@@ -24,6 +24,7 @@
 #include <mutex>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include <gflags/gflags.h>
@@ -334,7 +335,7 @@ void Peer::StartElection() {
 
 void Peer::ProcessResponse() {
   // Note: This method runs on the reactor thread.
-  std::unique_lock<simple_spinlock> lock(peer_lock_);
+  std::lock_guard<simple_spinlock> lock(peer_lock_);
   if (PREDICT_FALSE(closed_)) {
     return;
   }
@@ -416,7 +417,7 @@ void Peer::DoProcessResponse() {
       queue_->ResponseFromPeer(peer_pb_.permanent_uuid(), response_);
 
   {
-    std::unique_lock<simple_spinlock> lock(peer_lock_);
+    std::lock_guard<simple_spinlock> lock(peer_lock_);
     CHECK(request_pending_);
     failed_attempts_ = 0;
     request_pending_ = false;
@@ -457,12 +458,13 @@ void Peer::ProcessTabletCopyResponse() {
     queue_->UpdatePeerStatus(peer_pb_.permanent_uuid(), PeerStatus::OK, Status::OK());
   } else if (!tc_response_.has_error() ||
               tc_response_.error().code() != TabletServerErrorPB::TabletServerErrorPB::THROTTLED) {
+    const auto& response_str = controller_status.ok()
+        ? SecureShortDebugString(tc_response_) : controller_status.ToString();
+    lock.unlock();
     // THROTTLED is a common response after a tserver with many replicas fails;
     // logging it would generate a great deal of log spam.
     LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Unable to start Tablet Copy on peer: "
-                                      << (controller_status.ok() ?
-                                          SecureShortDebugString(tc_response_) :
-                                          controller_status.ToString());
+                                      << response_str;
   }
 }
 
