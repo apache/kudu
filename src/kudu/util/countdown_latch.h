@@ -14,8 +14,10 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_UTIL_COUNTDOWN_LATCH_H
-#define KUDU_UTIL_COUNTDOWN_LATCH_H
+
+#pragma once
+
+#include <mutex>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/util/condition_variable.h"
@@ -42,7 +44,7 @@ class CountDownLatch {
   // Otherwise, returns true.
   bool CountDown(int amount) {
     DCHECK_GE(amount, 0);
-    MutexLock lock(lock_);
+    std::lock_guard lock(lock_);
     if (count_ == 0) {
       return false;
     }
@@ -72,7 +74,7 @@ class CountDownLatch {
   // If the count is already zero, this returns immediately.
   void Wait() const {
     ThreadRestrictions::AssertWaitAllowed();
-    MutexLock lock(lock_);
+    std::lock_guard lock(lock_);
     while (count_ > 0) {
       cond_.Wait();
     }
@@ -82,7 +84,7 @@ class CountDownLatch {
   // Returns true if the count became zero, false otherwise.
   bool WaitUntil(const MonoTime& when) const {
     ThreadRestrictions::AssertWaitAllowed();
-    MutexLock lock(lock_);
+    std::lock_guard lock(lock_);
     while (count_ > 0) {
       if (!cond_.WaitUntil(when)) {
         return false;
@@ -101,7 +103,7 @@ class CountDownLatch {
   // the latch. If 'count' is 0, and there are currently waiters, those waiters
   // will be triggered as if you counted down to 0.
   void Reset(uint64_t count) {
-    MutexLock lock(lock_);
+    std::lock_guard lock(lock_);
     count_ = count;
     if (count_ == 0) {
       // Awake any waiters if we reset to 0.
@@ -110,7 +112,7 @@ class CountDownLatch {
   }
 
   uint64_t count() const {
-    MutexLock lock(lock_);
+    std::lock_guard lock(lock_);
     return count_;
   }
 
@@ -137,4 +139,3 @@ class CountDownOnScopeExit {
 };
 
 } // namespace kudu
-#endif

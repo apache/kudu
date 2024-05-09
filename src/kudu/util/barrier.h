@@ -16,6 +16,8 @@
 // under the License.
 #pragma once
 
+#include <mutex>
+
 #include "kudu/gutil/macros.h"
 #include "kudu/util/condition_variable.h"
 #include "kudu/util/mutex.h"
@@ -42,7 +44,7 @@ class Barrier {
   // to the initial count.
   void Wait() {
     ThreadRestrictions::AssertWaitAllowed();
-    MutexLock l(mutex_);
+    std::lock_guard l(mutex_);
     if (--count_ == 0) {
       count_ = initial_count_;
       cycle_count_++;

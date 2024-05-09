@@ -599,7 +599,7 @@ Status TableScanner::ScanData(const vector<KuduScanToken*>& tokens,
 
     if (FLAGS_report_scanner_stats && out_) {
       auto& out = *out_;
-      MutexLock l(output_lock_);
+      std::lock_guard l(output_lock_);
       out << Substitute("T $0 scanned $1 rows in $2 seconds\n",
                         token->tablet().id(), count, sw.elapsed().wall_seconds());
       const auto& metrics = scanner->GetResourceMetrics();
@@ -617,7 +617,7 @@ void TableScanner::ScanTask(const vector<KuduScanToken*>& tokens, Status* thread
   DCHECK(thread_status);
   *thread_status = ScanData(tokens, [&](const KuduScanBatch& batch) {
     if (out_ && FLAGS_show_values) {
-      MutexLock l(output_lock_);
+      std::lock_guard l(output_lock_);
       for (const auto& row : batch) {
         *out_ << row.ToString() << "\n";
       }

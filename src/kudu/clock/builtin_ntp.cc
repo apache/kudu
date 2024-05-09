@@ -548,7 +548,7 @@ BuiltInNtp::~BuiltInNtp() {
 }
 
 Status BuiltInNtp::Init() {
-  MutexLock l(state_lock_);
+  std::lock_guard l(state_lock_);
   CHECK_EQ(kUninitialized, state_);
 
   RETURN_NOT_OK(InitImpl());
@@ -669,13 +669,13 @@ Status BuiltInNtp::PopulateServers(std::vector<HostPort> servers) {
 }
 
 bool BuiltInNtp::is_shutdown() const {
-  MutexLock l(state_lock_);
+  std::lock_guard l(state_lock_);
   return state_ == kShutdown;
 }
 
 void BuiltInNtp::Shutdown() {
   {
-    MutexLock l(state_lock_);
+    std::lock_guard l(state_lock_);
     if (state_ == kShutdown) {
       return;
     }
@@ -1116,7 +1116,7 @@ Status BuiltInNtp::CombineClocks() {
 
   // We got a valid clock result, so wake up Init() that we are ready to be used.
   {
-    MutexLock l(state_lock_);
+    std::lock_guard l(state_lock_);
     if (state_ == kStarting) {
       state_ = kStarted;
     }

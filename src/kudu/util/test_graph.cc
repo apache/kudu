@@ -20,6 +20,7 @@
 #include <mutex>
 #include <ostream>
 #include <thread>
+#include <type_traits>
 #include <utility>
 
 #include <glog/logging.h>
@@ -57,7 +58,7 @@ TimeSeriesCollector::~TimeSeriesCollector() {
 }
 
 shared_ptr<TimeSeries> TimeSeriesCollector::GetTimeSeries(const string& key) {
-  MutexLock l(series_lock_);
+  std::lock_guard l_(series_lock_);
   SeriesMap::const_iterator it = series_map_.find(key);
   if (it != series_map_.end()) {
     return (*it).second;
@@ -103,7 +104,7 @@ void TimeSeriesCollector::DumperThread() {
 
 void TimeSeriesCollector::BuildMetricsString(
   WallTime time_since_start, faststring* dst_buf) const {
-  MutexLock l(series_lock_);
+  std::lock_guard l_(series_lock_);
 
   dst_buf->append(StringPrintf("{ \"scope\": \"%s\", \"time\": %.3f",
                                scope_.c_str(), time_since_start));

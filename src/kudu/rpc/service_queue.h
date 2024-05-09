@@ -144,7 +144,7 @@ class LifoServiceQueue final {
     }
 
     void Post(InboundCall* call) {
-      MutexLock l(lock_);
+      std::lock_guard l(lock_);
       DCHECK(!call_);
       call_ = call;
       should_wake_ = true;
@@ -152,7 +152,7 @@ class LifoServiceQueue final {
     }
 
     InboundCall* Wait() {
-      MutexLock l(lock_);
+      std::lock_guard l(lock_);
       while (!should_wake_) {
         cond_.Wait();
       }

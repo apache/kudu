@@ -620,7 +620,7 @@ void Heartbeater::Thread::RunThread() {
     // Wait for either the heartbeat interval to elapse, or for an "ASAP" heartbeat,
     // or for the signal to shut down.
     {
-      MutexLock l(mutex_);
+      std::lock_guard l(mutex_);
       while (next_heartbeat > MonoTime::Now() &&
           !heartbeat_asap_ &&
           should_run_) {
@@ -730,7 +730,7 @@ Status Heartbeater::Thread::Stop() {
   }
 
   {
-    MutexLock l(mutex_);
+    std::lock_guard l(mutex_);
     should_run_ = false;
     cond_.Signal();
   }
@@ -740,7 +740,7 @@ Status Heartbeater::Thread::Stop() {
 }
 
 void Heartbeater::Thread::TriggerASAP() {
-  MutexLock l(mutex_);
+  std::lock_guard l(mutex_);
   heartbeat_asap_ = true;
   cond_.Signal();
 }

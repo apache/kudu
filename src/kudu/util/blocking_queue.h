@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <deque>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -83,13 +84,13 @@ class BlockingQueue {
   // - TimedOut if the deadline passed
   // - Aborted if the queue shut down
   Status BlockingGet(T* out, MonoTime deadline = {}) {
-    MutexLock l(lock_);
+    std::unique_lock l(lock_);
     while (true) {
       if (!queue_.empty()) {
         *out = std::move(queue_.front());
         queue_.pop_front();
         decrement_size_unlocked(*out);
-        l.Unlock();
+        l.unlock();
         not_full_.Signal();
         return Status::OK();
       }
@@ -118,7 +119,7 @@ class BlockingQueue {
   // - TimedOut if the deadline passed
   // - Aborted if the queue shut down
   Status BlockingDrainTo(std::vector<T>* out, MonoTime deadline = {}) {
-    MutexLock l(lock_);
+    std::unique_lock l(lock_);
     while (true) {
       if (!queue_.empty()) {
         out->reserve(queue_.size());
@@ -127,7 +128,7 @@ class BlockingQueue {
         }
         std::move(queue_.begin(), queue_.end(), std::back_inserter(*out));
         queue_.clear();
-        l.Unlock();
+        l.unlock();
         not_full_.Signal();
         return Status::OK();
       }
@@ -153,7 +154,7 @@ class BlockingQueue {
   // https://en.cppreference.com/w/cpp/utility/forward for details.
   template<typename U>
   QueueStatus Put(U&& val) {
-    MutexLock l(lock_);
+    std::unique_lock l(lock_);
     if (PREDICT_FALSE(shutdown_)) {
       return QUEUE_SHUTDOWN;
     }
@@ -162,7 +163,7 @@ class BlockingQueue {
     }
     increment_size_unlocked(val);
     queue_.emplace_back(std::forward<U>(val));
-    l.Unlock();
+    l.unlock();
     not_empty_.Signal();
     return QUEUE_SUCCESS;
   }
@@ -187,7 +188,7 @@ class BlockingQueue {
     if (PREDICT_FALSE(deadline.Initialized() && MonoTime::Now() > deadline)) {
       return Status::TimedOut("");
     }
-    MutexLock l(lock_);
+    std::unique_lock l(lock_);
     while (true) {
       if (PREDICT_FALSE(shutdown_)) {
         return Status::Aborted("");
@@ -195,7 +196,7 @@ class BlockingQueue {
       if (size_ < max_size_) {
         increment_size_unlocked(val);
         queue_.emplace_back(std::forward<U>(val));
-        l.Unlock();
+        l.unlock();
         not_empty_.Signal();
         return Status::OK();
       }
@@ -215,14 +216,14 @@ class BlockingQueue {
   // Existing elements will drain out of it, and then BlockingGet will start
   // returning false.
   void Shutdown() {
-    MutexLock l(lock_);
+    std::lock_guard l(lock_);
     shutdown_ = true;
     not_full_.Broadcast();
     not_empty_.Broadcast();
   }
 
   bool empty() const {
-    MutexLock l(lock_);
+    std::lock_guard l(lock_);
     return queue_.empty();
   }
 
@@ -231,14 +232,14 @@ class BlockingQueue {
   }
 
   size_t size() const {
-    MutexLock l(lock_);
+    std::lock_guard l(lock_);
     return size_;
   }
 
   std::string ToString() const {
     std::string ret;
 
-    MutexLock l(lock_);
+    std::lock_guard l(lock_);
     for (const T& t : queue_) {
       ret.append(t->ToString());
       ret.append("\n");

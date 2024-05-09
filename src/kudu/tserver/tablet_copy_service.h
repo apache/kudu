@@ -123,7 +123,7 @@ class TabletCopyServiceImpl : public TabletCopyServiceIf {
   TabletReplicaLookupIf* tablet_replica_lookup_;
 
   // Protects sessions_ map.
-  mutable Mutex sessions_lock_;
+  Mutex sessions_lock_;
   SessionMap sessions_;
   ThreadSafeRandom rand_;
 

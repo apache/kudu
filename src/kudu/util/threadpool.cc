@@ -21,6 +21,7 @@
 #include <functional>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <ostream>
 #include <string>
 #include <utility>
@@ -142,7 +143,7 @@ void SchedulerThread::RunLoop() {
     MonoTime now = MonoTime::Now();
     vector<SchedulerTask> pending_tasks;
     {
-      MutexLock auto_lock(mutex_);
+      std::lock_guard auto_lock(mutex_);
       auto upper_it = future_tasks_.upper_bound(now);
       for (auto it = future_tasks_.begin(); it != upper_it; it++) {
         pending_tasks.emplace_back(std::move(it->second));
@@ -198,7 +199,7 @@ Status ThreadPoolToken::Submit(std::function<void()> f) {
 }
 
 void ThreadPoolToken::Shutdown() {
-  MutexLock unique_lock(pool_->lock_);
+  std::unique_lock lock(pool_->lock_);
   pool_->CheckNotPoolThreadUnlocked();
 
   // Clear the queue under the lock, but defer the releasing of the tasks
@@ -249,7 +250,7 @@ void ThreadPoolToken::Shutdown() {
   }
 
   // Finally release the queued tasks, outside the lock.
-  unique_lock.Unlock();
+  lock.unlock();
   for (auto& t : to_release) {
     if (t.trace) {
       t.trace->Release();
@@ -266,7 +267,7 @@ Status ThreadPoolToken::Schedule(std::function<void()> f, int64_t delay_ms) {
 }
 
 void ThreadPoolToken::Wait() {
-  MutexLock unique_lock(pool_->lock_);
+  std::lock_guard unique_lock(pool_->lock_);
   pool_->CheckNotPoolThreadUnlocked();
   while (IsActive()) {
     not_running_cond_.Wait();
@@ -274,7 +275,7 @@ void ThreadPoolToken::Wait() {
 }
 
 bool ThreadPoolToken::WaitUntil(const MonoTime& until) {
-  MutexLock unique_lock(pool_->lock_);
+  std::lock_guard unique_lock(pool_->lock_);
   pool_->CheckNotPoolThreadUnlocked();
   while (IsActive()) {
     if (!not_running_cond_.WaitUntil(until)) {
@@ -415,14 +416,14 @@ Status ThreadPool::Init() {
 
 void ThreadPool::Shutdown() {
   {
-    MutexLock l(scheduler_lock_);
+    std::lock_guard l(scheduler_lock_);
     if (scheduler_) {
       delete scheduler_;
       scheduler_ = nullptr;
     }
   }
 
-  MutexLock unique_lock(lock_);
+  std::unique_lock lock(lock_);
   CheckNotPoolThreadUnlocked();
   // Note: this is the same error seen at submission if the pool is at
   // capacity, so clients can't tell them apart. This isn't really a practical
@@ -478,7 +479,7 @@ void ThreadPool::Shutdown() {
   }
 
   // Finally release the queued tasks, outside the lock.
-  unique_lock.Unlock();
+  lock.unlock();
   for (auto& token : to_release) {
     for (auto& t : token) {
       if (t.trace) {
@@ -494,7 +495,7 @@ unique_ptr<ThreadPoolToken> ThreadPool::NewToken(ExecutionMode mode) {
 
 unique_ptr<ThreadPoolToken> ThreadPool::NewTokenWithMetrics(
     ExecutionMode mode, ThreadPoolMetrics metrics) {
-  MutexLock guard(lock_);
+  std::lock_guard guard(lock_);
   unique_ptr<ThreadPoolToken> t(new ThreadPoolToken(this,
                                                     mode,
                                                     std::move(metrics)));
@@ -514,7 +515,7 @@ bool ThreadPool::QueueOverloaded(MonoDelta* overloaded_time,
 }
 
 void ThreadPool::ReleaseToken(ThreadPoolToken* t) {
-  MutexLock guard(lock_);
+  std::lock_guard guard(lock_);
   CHECK(!t->IsActive()) << Substitute("Token with state $0 may not be released",
                                       ThreadPoolToken::StateToString(t->state()));
   CHECK_EQ(1, tokens_.erase(t));
@@ -527,7 +528,7 @@ Status ThreadPool::Submit(std::function<void()> f) {
 Status ThreadPool::Schedule(ThreadPoolToken* token,
                             std::function<void()> f,
                             MonoTime execute_time) {
-  MutexLock l(scheduler_lock_);
+  std::lock_guard l(scheduler_lock_);
   if (!scheduler_) {
     return Status::IllegalState("scheduler thread has been shutdown");
   }
@@ -539,7 +540,7 @@ Status ThreadPool::DoSubmit(std::function<void()> f, ThreadPoolToken* token) {
   DCHECK(token);
   const MonoTime submit_time = MonoTime::Now();
 
-  MutexLock guard(lock_);
+  std::unique_lock guard(lock_);
   if (PREDICT_FALSE(!pool_status_.ok())) {
     return pool_status_;
   }
@@ -632,7 +633,7 @@ Status ThreadPool::DoSubmit(std::function<void()> f, ThreadPoolToken* token) {
     token->metrics_.queue_length_histogram->Increment(length_at_submit);
   }
 
-  guard.Unlock();
+  guard.unlock();
 
   if (metrics_.queue_length_histogram) {
     metrics_.queue_length_histogram->Increment(length_at_submit);
@@ -641,7 +642,7 @@ Status ThreadPool::DoSubmit(std::function<void()> f, ThreadPoolToken* token) {
   if (need_a_thread) {
     Status status = CreateThread();
     if (!status.ok()) {
-      guard.Lock();
+      guard.lock();
       num_threads_pending_start_--;
       if (num_threads_ + num_threads_pending_start_ == 0) {
         // If we have no threads, we can't do any work.
@@ -658,7 +659,7 @@ Status ThreadPool::DoSubmit(std::function<void()> f, ThreadPoolToken* token) {
 }
 
 void ThreadPool::Wait() {
-  MutexLock unique_lock(lock_);
+  std::lock_guard guard(lock_);
   CheckNotPoolThreadUnlocked();
   while (total_queued_tasks_ > 0 || active_threads_ > 0) {
     idle_cond_.Wait();
@@ -666,7 +667,7 @@ void ThreadPool::Wait() {
 }
 
 bool ThreadPool::WaitUntil(const MonoTime& until) {
-  MutexLock unique_lock(lock_);
+  std::lock_guard guard(lock_);
   CheckNotPoolThreadUnlocked();
   while (total_queued_tasks_ > 0 || active_threads_ > 0) {
     if (!idle_cond_.WaitUntil(until)) {
@@ -681,7 +682,7 @@ bool ThreadPool::WaitFor(const MonoDelta& delta) {
 }
 
 void ThreadPool::DispatchThread() {
-  MutexLock unique_lock(lock_);
+  std::unique_lock lock(lock_);
   InsertOrDie(&threads_, Thread::current_thread());
   DCHECK_GT(num_threads_pending_start_, 0);
   num_threads_++;
@@ -749,7 +750,7 @@ void ThreadPool::DispatchThread() {
     const MonoDelta queue_time = now - task.submit_time;
     NotifyLoadMeterUnlocked(queue_time);
 
-    unique_lock.Unlock();
+    lock.unlock();
 
     // Release the reference which was held by the queued item.
     ADOPT_TRACE(task.trace);
@@ -793,7 +794,7 @@ void ThreadPool::DispatchThread() {
     // In the worst case, the destructor might even try to do something
     // with this threadpool, and produce a deadlock.
     task.func = nullptr;
-    unique_lock.Lock();
+    lock.lock();
 
     // Possible states:
     // 1. The token was shut down while we ran its task. Transition to QUIESCED.
@@ -829,7 +830,7 @@ void ThreadPool::DispatchThread() {
   // It's important that we hold the lock between exiting the loop and dropping
   // num_threads_. Otherwise it's possible someone else could come along here
   // and add a new task just as the last running thread is about to exit.
-  CHECK(unique_lock.OwnsLock());
+  CHECK(lock.owns_lock());
 
   CHECK_EQ(threads_.erase(Thread::current_thread()), 1);
   num_threads_--;

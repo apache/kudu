@@ -742,13 +742,13 @@ class CatalogManagerBgTasks {
   void Shutdown();
 
   void Wake() {
-    MutexLock lock(lock_);
+    std::lock_guard lock(lock_);
     pending_updates_ = true;
     cond_.Broadcast();
   }
 
   void Wait(int msec) {
-    MutexLock lock(lock_);
+    std::lock_guard lock(lock_);
     if (closing_) return;
     if (!pending_updates_) {
       cond_.WaitFor(MonoDelta::FromMilliseconds(msec));

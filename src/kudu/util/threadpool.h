@@ -200,12 +200,12 @@ public:
   void Schedule(ThreadPoolToken* token,
                 std::function<void()> f,
                 const MonoTime& execute_time) {
-    MutexLock unique_lock(mutex_);
+    std::lock_guard lock(mutex_);
     future_tasks_.insert({execute_time, SchedulerTask({token, std::move(f)})});
   }
 
   bool empty() const {
-    MutexLock unique_lock(mutex_);
+    std::lock_guard lock(mutex_);
     return future_tasks_.empty();
   }
 
@@ -317,7 +317,7 @@ class ThreadPool {
   // Return the number of threads currently running (or in the process of starting up)
   // for this thread pool.
   int num_threads() const {
-    MutexLock l(lock_);
+    std::lock_guard l(lock_);
     return num_threads_ + num_threads_pending_start_;
   }
 
@@ -514,7 +514,7 @@ class ThreadPool {
   // Return the number of threads currently running for this thread pool.
   // Used by tests to avoid tsan test case down.
   int num_active_threads() {
-    MutexLock l(lock_);
+    std::lock_guard l(lock_);
     return active_threads_;
   }
 

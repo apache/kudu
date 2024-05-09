@@ -17,6 +17,8 @@
 
 #include "kudu/util/rwc_lock.h"
 
+#include <mutex>  // IWYU pragma: keep
+
 #include <glog/logging.h>
 
 #ifndef NDEBUG
@@ -47,12 +49,12 @@ RWCLock::~RWCLock() {
 }
 
 void RWCLock::ReadLock() {
-  MutexLock l(lock_);
+  std::lock_guard l(lock_);
   reader_count_++;
 }
 
 void RWCLock::ReadUnlock() {
-  MutexLock l(lock_);
+  std::lock_guard l(lock_);
   DCHECK(HasReadersUnlocked());
   reader_count_--;
   if (reader_count_ == 0) {
@@ -61,7 +63,7 @@ void RWCLock::ReadUnlock() {
 }
 
 bool RWCLock::HasReaders() const {
-  MutexLock l(lock_);
+  std::lock_guard l(lock_);
   return HasReadersUnlocked();
 }
 
@@ -71,7 +73,7 @@ bool RWCLock::HasReadersUnlocked() const {
 }
 
 bool RWCLock::HasWriteLock() const {
-  MutexLock l(lock_);
+  std::lock_guard l(lock_);
   return HasWriteLockUnlocked();
 }
 
@@ -85,7 +87,7 @@ bool RWCLock::HasWriteLockUnlocked() const {
 }
 
 void RWCLock::WriteLock() {
-  MutexLock l(lock_);
+  std::lock_guard l(lock_);
   // Wait for any other mutations to finish.
   while (write_locked_) {
     no_mutators_.Wait();
@@ -99,7 +101,7 @@ void RWCLock::WriteLock() {
 }
 
 void RWCLock::WriteUnlock() {
-  MutexLock l(lock_);
+  std::lock_guard l(lock_);
   DCHECK(HasWriteLockUnlocked());
   write_locked_ = false;
 #ifndef NDEBUG

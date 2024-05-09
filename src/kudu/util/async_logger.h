@@ -16,11 +16,10 @@
 // under the License.
 #pragma once
 
-#include "kudu/gutil/macros.h"
-
 #include <cstdint>
 #include <ctime>
 #include <memory>
+#include <mutex>  // IWYU pragma: keep
 #include <string>
 #include <thread>
 #include <utility>
@@ -28,6 +27,7 @@
 
 #include <glog/logging.h>
 
+#include "kudu/gutil/macros.h"
 #include "kudu/util/condition_variable.h"
 #include "kudu/util/mutex.h"
 
@@ -100,7 +100,7 @@ class AsyncLogger final : public google::base::Logger {
   // blocked due to the buffers being full and the writer thread
   // not keeping up.
   int app_threads_blocked_count_for_tests() const {
-    MutexLock l(lock_);
+    std::lock_guard l(lock_);
     return app_threads_blocked_count_for_tests_;
   }
 

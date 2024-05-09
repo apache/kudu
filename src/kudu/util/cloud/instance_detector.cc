@@ -61,7 +61,7 @@ InstanceDetector::~InstanceDetector() {
 Status InstanceDetector::Detect(unique_ptr<InstanceMetadata>* metadata) {
   {
     // An extra sanity check.
-    MutexLock lock(mutex_);
+    std::lock_guard lock(mutex_);
     CHECK_EQ(0, num_running_detectors_);
     CHECK_EQ(kNoIdx, result_detector_idx_);
     num_running_detectors_ = detectors_.size();
@@ -85,7 +85,7 @@ Status InstanceDetector::Detect(unique_ptr<InstanceMetadata>* metadata) {
   // Spurious wakeups are ignored by the virtue of checking the value of the
   // 'result_detector_idx_' field.
   {
-    MutexLock lock(mutex_);
+    std::lock_guard lock(mutex_);
     while (result_detector_idx_ == kNoIdx && num_running_detectors_ > 0) {
       cv_.Wait();
     }
@@ -103,7 +103,7 @@ void InstanceDetector::GetInstanceInfo(InstanceMetadata* imd, size_t idx) {
   DCHECK(imd);
   const auto s = imd->Init();
   {
-    MutexLock lock(mutex_);
+    std::lock_guard lock(mutex_);
     --num_running_detectors_;
     if (s.ok()) {
       CHECK_EQ(kNoIdx, result_detector_idx_)

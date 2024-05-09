@@ -172,7 +172,7 @@ class ScannerManager {
   // If true, removal thread should shut itself down. Protected
   // by 'shutdown_lock_' and 'shutdown_cv_'.
   bool shutdown_;
-  mutable Mutex shutdown_lock_;
+  Mutex shutdown_lock_;
   ConditionVariable shutdown_cv_;
 
   std::vector<ScannerMapStripe*> scanner_maps_;

@@ -60,7 +60,7 @@ PstackWatcher::~PstackWatcher() {
 
 void PstackWatcher::Shutdown() {
   {
-    MutexLock guard(lock_);
+    std::lock_guard guard(lock_);
     running_ = false;
     cond_.Broadcast();
   }
@@ -71,19 +71,19 @@ void PstackWatcher::Shutdown() {
 }
 
 bool PstackWatcher::IsRunning() const {
-  MutexLock guard(lock_);
+  std::lock_guard guard(lock_);
   return running_;
 }
 
 void PstackWatcher::Wait() const {
-  MutexLock lock(lock_);
+  std::lock_guard guard(lock_);
   while (running_) {
     cond_.Wait();
   }
 }
 
 void PstackWatcher::Run() {
-  MutexLock guard(lock_);
+  std::lock_guard guard(lock_);
   if (!running_) return;
   cond_.WaitFor(timeout_);
   if (!running_) return;

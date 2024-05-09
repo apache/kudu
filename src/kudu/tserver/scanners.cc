@@ -160,7 +160,7 @@ ScannerManager::ScannerManager(const scoped_refptr<MetricEntity>& metric_entity)
 
 ScannerManager::~ScannerManager() {
   {
-    MutexLock l(shutdown_lock_);
+    std::lock_guard l(shutdown_lock_);
     shutdown_ = true;
     shutdown_cv_.Broadcast();
   }
@@ -181,7 +181,7 @@ void ScannerManager::RunCollectAndRemovalThread() {
   while (true) {
     // Loop until we are shutdown.
     {
-      MutexLock l(shutdown_lock_);
+      std::lock_guard l(shutdown_lock_);
       if (shutdown_) {
         return;
       }

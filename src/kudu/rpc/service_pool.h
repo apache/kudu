@@ -99,7 +99,7 @@ class ServicePool : public RpcService {
   scoped_refptr<Counter> rpcs_timed_out_in_queue_;
   scoped_refptr<Counter> rpcs_queue_overflow_;
 
-  mutable Mutex shutdown_lock_;
+  Mutex shutdown_lock_;
   bool closing_;
 
   std::function<void(void)> too_busy_hook_;

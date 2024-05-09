@@ -611,7 +611,7 @@ Status TabletMetadata::Flush() {
   TRACE_EVENT1("tablet", "TabletMetadata::Flush",
                "tablet_id", tablet_id_);
 
-  MutexLock l_flush(flush_lock_);
+  std::unique_lock l_flush(flush_lock_);
   BlockIdContainer orphaned;
   TabletSuperBlockPB pb;
   vector<unique_ptr<MinLogIndexAnchorer>> anchors_needing_flush;
@@ -639,7 +639,7 @@ Status TabletMetadata::Flush() {
   pre_flush_callback_();
   RETURN_NOT_OK(ReplaceSuperBlockUnlocked(pb));
   TRACE("Metadata flushed");
-  l_flush.Unlock();
+  l_flush.unlock();
 
   // Now that we've flushed, we can unanchor our WALs by destructing our
   // anchors.
@@ -692,7 +692,7 @@ Status TabletMetadata::UpdateUnlocked(
 
 Status TabletMetadata::ReplaceSuperBlock(const TabletSuperBlockPB &pb) {
   {
-    MutexLock l(flush_lock_);
+    std::lock_guard l(flush_lock_);
     RETURN_NOT_OK_PREPEND(ReplaceSuperBlockUnlocked(pb), "Unable to replace superblock");
     fs_manager_->dd_manager()->DeleteDataDirGroup(tablet_id_);
   }
@@ -719,7 +719,7 @@ Status TabletMetadata::ReplaceSuperBlockUnlocked(const TabletSuperBlockPB &pb) {
 }
 
 void TabletMetadata::SetPreFlushCallback(StatusClosure callback) {
-  MutexLock l_flush(flush_lock_);
+  std::lock_guard l(flush_lock_);
   pre_flush_callback_ = std::move(callback);
 }
 

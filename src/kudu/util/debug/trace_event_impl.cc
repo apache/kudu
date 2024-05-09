@@ -1569,7 +1569,7 @@ void TraceLog::Flush(const TraceLog::OutputCallback& cb) {
   {
     // Holding the active threads lock ensures that no thread will exit and
     // delete its own PerThreadInfo object.
-    MutexLock l(active_threads_lock_);
+    std::lock_guard l(active_threads_lock_);
     for (const ActiveThreadMap::value_type& entry : active_threads_) {
       int64_t tid = entry.first;
       PerThreadInfo* thr_info = entry.second;
@@ -1729,7 +1729,7 @@ TraceLog::PerThreadInfo* TraceLog::SetupThreadLocalBuffer() {
   threadlocal::internal::AddDestructor(&TraceLog::ThreadExitingCB, this);
 
   {
-    MutexLock lock(active_threads_lock_);
+    std::lock_guard lock_(active_threads_lock_);
     InsertOrDie(&active_threads_, cur_tid, thr_info);
   }
   return thr_info;
@@ -1759,7 +1759,7 @@ void TraceLog::ThreadExiting() {
   delete buf;
 
   {
-    MutexLock lock(active_threads_lock_);
+    std::lock_guard lock_(active_threads_lock_);
     active_threads_.erase(cur_tid);
   }
   delete thr_info;

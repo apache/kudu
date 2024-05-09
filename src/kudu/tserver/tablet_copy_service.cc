@@ -154,7 +154,7 @@ void TabletCopyServiceImpl::BeginTabletCopySession(
   scoped_refptr<RemoteTabletCopySourceSession> session;
   bool new_session;
   {
-    MutexLock l(sessions_lock_);
+    std::lock_guard l(sessions_lock_);
     const SessionEntry* session_entry = FindOrNull(sessions_, session_id);
     new_session = session_entry == nullptr;
     if (new_session) {
@@ -189,7 +189,7 @@ void TabletCopyServiceImpl::BeginTabletCopySession(
   // fails, then remove it from the sessions map.
   Status status = session->Init();
   if (!status.ok()) {
-    MutexLock l(sessions_lock_);
+    std::lock_guard l(sessions_lock_);
     SessionEntry* session_entry = FindOrNull(sessions_, session_id);
     // Identity check the session to ensure that other interleaved threads have
     // not already removed the failed session, and replaced it with a new one.
@@ -227,7 +227,7 @@ void TabletCopyServiceImpl::BeginTabletCopySession(
     LOG_WITH_PREFIX(WARNING) << "Timing out tablet copy session due to flag "
                              << "--tablet_copy_early_session_timeout_prob "
                              << "being set to " << timeout_prob;
-    MutexLock l(sessions_lock_);
+    std::lock_guard l(sessions_lock_);
     TabletCopyErrorPB::Code app_error;
     WARN_NOT_OK(TabletCopyServiceImpl::DoEndTabletCopySessionUnlocked(session_id, &app_error),
                 Substitute("Unable to forcibly end tablet copy session $0", session_id));
@@ -244,7 +244,7 @@ void TabletCopyServiceImpl::CheckSessionActive(
 
   // Look up and validate tablet copy session.
   scoped_refptr<RemoteTabletCopySourceSession> session;
-  MutexLock l(sessions_lock_);
+  std::lock_guard l(sessions_lock_);
   TabletCopyErrorPB::Code app_error;
   Status status = FindSessionUnlocked(session_id, &app_error, &session);
   if (status.ok()) {
@@ -273,7 +273,7 @@ void TabletCopyServiceImpl::FetchData(const FetchDataRequestPB* req,
   // Look up and validate tablet copy session.
   scoped_refptr<RemoteTabletCopySourceSession> session;
   {
-    MutexLock l(sessions_lock_);
+    std::lock_guard l(sessions_lock_);
     TabletCopyErrorPB::Code app_error = TabletCopyErrorPB::UNKNOWN_ERROR;
     RPC_RETURN_NOT_OK(FindSessionUnlocked(session_id, &app_error, &session),
                       app_error, "No such session", context);
@@ -337,7 +337,7 @@ void TabletCopyServiceImpl::EndTabletCopySession(
         EndTabletCopySessionResponsePB* /*resp*/,
         rpc::RpcContext* context) {
   {
-    MutexLock l(sessions_lock_);
+    std::lock_guard l(sessions_lock_);
     TabletCopyErrorPB::Code app_error = TabletCopyErrorPB::UNKNOWN_ERROR;
     LOG_WITH_PREFIX(INFO) << "Request end of tablet copy session " << req->session_id()
                           << " received from " << context->requestor_string();
@@ -352,7 +352,7 @@ void TabletCopyServiceImpl::Shutdown() {
   session_expiration_thread_->Join();
 
   // Destroy all tablet copy sessions.
-  MutexLock l(sessions_lock_);
+  std::lock_guard l(sessions_lock_);
   auto iter = sessions_.cbegin();
   while (iter != sessions_.cend()) {
     const string& session_id = iter->first;
@@ -438,7 +438,7 @@ Status TabletCopyServiceImpl::DoEndTabletCopySessionUnlocked(
 
 void TabletCopyServiceImpl::EndExpiredSessions() {
   do {
-    MutexLock l(sessions_lock_);
+    std::lock_guard l(sessions_lock_);
     const MonoTime now = MonoTime::Now();
 
     vector<SessionEntry> expired_session_entries;

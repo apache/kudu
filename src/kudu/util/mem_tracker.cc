@@ -90,7 +90,7 @@ MemTracker::~MemTracker() {
         << " has unreleased consumption " << consumption();
     parent_->Release(consumption());
 
-    MutexLock l(parent_->child_trackers_lock_);
+    std::lock_guard l(parent_->child_trackers_lock_);
     if (child_tracker_it_ != parent_->child_trackers_.end()) {
       parent_->child_trackers_.erase(child_tracker_it_);
       child_tracker_it_ = parent_->child_trackers_.end();
@@ -124,7 +124,7 @@ bool MemTracker::FindTrackerInternal(const string& id,
 
   list<weak_ptr<MemTracker>> children;
   {
-    MutexLock l(parent->child_trackers_lock_);
+    std::lock_guard l(parent->child_trackers_lock_);
     children = parent->child_trackers_;
   }
 
@@ -162,7 +162,7 @@ shared_ptr<MemTracker> MemTracker::FindOrCreateGlobalTracker(
   // globally-visible MemTrackers which are the exception rather than the rule,
   // it's reasonable to synchronize their creation on a singleton lock.
   static Mutex find_or_create_lock;
-  MutexLock l(find_or_create_lock);
+  std::lock_guard l(find_or_create_lock);
 
   shared_ptr<MemTracker> found;
   if (FindTrackerInternal(id, &found, GetRootTracker())) {
@@ -181,7 +181,7 @@ void MemTracker::ListTrackers(vector<shared_ptr<MemTracker>>* trackers) {
 
     trackers->push_back(t);
     {
-      MutexLock l(t->child_trackers_lock_);
+      std::lock_guard l(t->child_trackers_lock_);
       for (const auto& child_weak : t->child_trackers_) {
         shared_ptr<MemTracker> child = child_weak.lock();
         if (child) {
@@ -209,7 +209,7 @@ void MemTracker::TrackersToPb(MemTrackerPB* pb) {
     tracker_pb->set_current_consumption(tracker->consumption());
     tracker_pb->set_peak_consumption(tracker->peak_consumption());
     {
-      MutexLock l(tracker->child_trackers_lock_);
+      std::lock_guard l(tracker->child_trackers_lock_);
       for (const auto& child_weak : tracker->child_trackers_) {
         shared_ptr<MemTracker> child = child_weak.lock();
         if (child) {
@@ -324,7 +324,7 @@ void MemTracker::Init() {
 }
 
 void MemTracker::AddChildTracker(const shared_ptr<MemTracker>& tracker) {
-  MutexLock l(child_trackers_lock_);
+  std::lock_guard l(child_trackers_lock_);
   tracker->child_tracker_it_ = child_trackers_.insert(child_trackers_.end(), tracker);
 }
 

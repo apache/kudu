@@ -420,7 +420,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
 
   // Lock protecting flushing the data to disk.
   // If taken together with 'data_lock_', must be acquired first.
-  mutable Mutex flush_lock_;
+  Mutex flush_lock_;
 
   const std::string tablet_id_;
   std::string table_id_;

@@ -387,7 +387,7 @@ Status AutoLeaderRebalancerTask::RunLeaderRebalanceForTable(
 }
 
 Status AutoLeaderRebalancerTask::RunLeaderRebalancer() {
-  MutexLock auto_lock(running_mutex_);
+  std::lock_guard guard(running_mutex_);
 
   // If catalog manager isn't initialized or isn't the leader, don't do leader
   // rebalancing. Putting the auto-rebalancer to sleep shouldn't affect the

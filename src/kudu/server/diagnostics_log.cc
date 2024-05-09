@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <ostream>
 #include <queue>
@@ -46,7 +47,6 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
-#include "kudu/util/mutex.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
 #include "kudu/util/rolling_log.h"
@@ -126,12 +126,12 @@ DiagnosticsLog::~DiagnosticsLog() {
 }
 
 void DiagnosticsLog::SetMetricsLogInterval(MonoDelta interval) {
-  MutexLock l(lock_);
+  std::lock_guard l(lock_);
   metrics_log_interval_ = interval;
 }
 
 void DiagnosticsLog::DumpStacksNow(std::string reason) {
-  MutexLock l(lock_);
+  std::lock_guard l(lock_);
   dump_stacks_now_reason_ = std::move(reason);
   wake_.Signal();
 }
@@ -154,7 +154,7 @@ void DiagnosticsLog::Stop() {
   if (!thread_) return;
 
   {
-    MutexLock l(lock_);
+    std::lock_guard l(lock_);
     stop_ = true;
     wake_.Signal();
   }
@@ -191,7 +191,7 @@ MonoTime DiagnosticsLog::ComputeNextWakeup(DiagnosticsLog::WakeupType type) cons
 }
 
 void DiagnosticsLog::RunThread() {
-  MutexLock l(lock_);
+  std::unique_lock l(lock_);
 
   // Set up a priority queue which tracks our future scheduled wake-ups.
   typedef pair<MonoTime, WakeupType> QueueElem;
@@ -221,8 +221,8 @@ void DiagnosticsLog::RunThread() {
 
     // Unlock the mutex while actually logging metrics or stacks since it's somewhat
     // slow and we don't want to block threads trying to signal us.
-    l.Unlock();
-    SCOPED_CLEANUP({ l.Lock(); });
+    l.unlock();
+    SCOPED_CLEANUP({ l.lock(); });
     Status s;
     if (what == WakeupType::METRICS) {
       WARN_NOT_OK(LogMetrics(), "Unable to collect metrics to diagnostics log");

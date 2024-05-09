@@ -294,7 +294,7 @@ class MultiThreadTest {
     for (int i = 0; i < blocking_puts_; i++) {
       ASSERT_OK(queue_.BlockingPut(arg));
     }
-    MutexLock guard(lock_);
+    std::lock_guard guard(lock_);
     if (--num_inserters_ == 0) {
       queue_.Shutdown();
     }
@@ -307,7 +307,7 @@ class MultiThreadTest {
       if (!s.ok()) {
         arg = -1;
       }
-      MutexLock guard(lock_);
+      std::lock_guard guard(lock_);
       gotten_[arg] = gotten_[arg] + 1;
     }
   }
@@ -324,7 +324,7 @@ class MultiThreadTest {
       thread.join();
     }
     // Let's check to make sure we got what we should have.
-    MutexLock guard(lock_);
+    std::lock_guard guard(lock_);
     for (int i = 0; i < nthreads_; i++) {
       ASSERT_EQ(puts_ + blocking_puts_, gotten_[i]);
     }

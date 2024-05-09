@@ -148,7 +148,7 @@ void KernelStackWatchdog::RunThread() {
     // NOTE: it's still possible that the thread will have exited in between grabbing its pointer
     // and sending a signal, but DumpThreadStack() already is safe about not sending a signal
     // to some other non-Kudu thread.
-    MutexLock l(unregister_lock_);
+    std::lock_guard l(unregister_lock_);
 
     // Take the snapshot of the thread information under a short lock.
     //

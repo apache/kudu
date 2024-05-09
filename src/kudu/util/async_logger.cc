@@ -17,6 +17,7 @@
 
 #include "kudu/util/async_logger.h"
 
+#include <mutex>
 #include <string>
 #include <thread>
 
@@ -47,7 +48,7 @@ void AsyncLogger::Start() {
 
 void AsyncLogger::Stop() {
   {
-    MutexLock l(lock_);
+    std::lock_guard l(lock_);
     DCHECK_EQ(state_, RUNNING);
     state_ = STOPPED;
     wake_flusher_cond_.Signal();
@@ -62,7 +63,7 @@ void AsyncLogger::Write(bool force_flush,
                         const char* message,
                         size_t message_len) {
   {
-    MutexLock l(lock_);
+    std::lock_guard l(lock_);
     DCHECK_EQ(state_, RUNNING);
     while (BufferFull(*active_buf_)) {
       app_threads_blocked_count_for_tests_++;
@@ -91,7 +92,7 @@ void AsyncLogger::Write(bool force_flush,
 }
 
 void AsyncLogger::Flush() {
-  MutexLock l(lock_);
+  std::lock_guard l(lock_);
   DCHECK_EQ(state_, RUNNING);
 
   // Wake up the writer thread at least twice.
@@ -110,7 +111,7 @@ uint32_t AsyncLogger::LogSize() {
 }
 
 void AsyncLogger::RunThread() {
-  MutexLock l(lock_);
+  std::unique_lock l(lock_);
   while (state_ == RUNNING || active_buf_->needs_flush_or_write()) {
     while (!active_buf_->needs_flush_or_write() && state_ == RUNNING) {
       if (!wake_flusher_cond_.WaitFor(MonoDelta::FromSeconds(FLAGS_logbufsecs))) {
@@ -126,7 +127,7 @@ void AsyncLogger::RunThread() {
     if (BufferFull(*flushing_buf_)) {
       free_buffer_cond_.Broadcast();
     }
-    l.Unlock();
+    l.unlock();
 
     for (const auto& msg : flushing_buf_->messages) {
       wrapped_->Write(false, msg.ts, msg.message.data(), msg.message.size());
@@ -136,7 +137,7 @@ void AsyncLogger::RunThread() {
     }
     flushing_buf_->clear();
 
-    l.Lock();
+    l.lock();
     flush_count_++;
     flush_complete_cond_.Broadcast();
   }
