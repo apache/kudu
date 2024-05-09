@@ -101,7 +101,11 @@ AutoLeaderRebalancerTask::AutoLeaderRebalancerTask(CatalogManager* catalog_manag
       number_of_loop_iterations_for_test_(0),
       moves_scheduled_this_round_for_test_(0) {}
 
-AutoLeaderRebalancerTask::~AutoLeaderRebalancerTask() { Shutdown(); }
+AutoLeaderRebalancerTask::~AutoLeaderRebalancerTask() {
+  if (thread_) {
+    Shutdown();
+  }
+}
 
 Status AutoLeaderRebalancerTask::Init() {
   DCHECK(!thread_) << "AutoleaderRebalancerTask is already initialized";

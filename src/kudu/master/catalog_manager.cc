@@ -1727,6 +1727,10 @@ void CatalogManager::Shutdown() {
     auto_rebalancer_->Shutdown();
   }
 
+  if (auto_leader_rebalancer_) {
+    auto_leader_rebalancer_->Shutdown();
+  }
+
   // Mark all outstanding table tasks as aborted and wait for them to fail.
   //
   // There may be an outstanding table visitor thread modifying the table map,
