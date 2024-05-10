@@ -71,7 +71,14 @@ TEST_F(MinidumpDeathTest, TestRegisterAndDelete) {
     abort();
   },
   // Ensure that a stack trace is produced.
-  "kudu::MinidumpDeathTest_TestRegisterAndDelete_Test::TestBody()");
+  // Currently, cold copies are not demangled correctly in glog 0.6.0, there is
+  // an open issue:
+  // https://github.com/google/glog/issues/869
+  // So currently we have to match for both the demangled and raw symbol.
+  // Current regex does not support the "|" operator.
+  // There is a Jira (KUDU-3572) for updating to 0.7.0 and changing string to:
+  // "kudu::MinidumpDeathTest_TestRegisterAndDelete_Test::TestBody()"
+  "kudu\\S*MinidumpDeathTest_TestRegisterAndDelete_Test\\S*TestBody");
 
   // Ensure that a minidump is produced.
   string minidump_dir = minidump_handler.minidump_dir();
@@ -97,7 +104,7 @@ TEST_F(MinidumpDeathTest, TestCheckStackTraceAndMinidump) {
     CHECK_EQ(1, 0);
   },
   // Ensure that a stack trace is produced.
-  "kudu::MinidumpDeathTest_TestCheckStackTraceAndMinidump_Test::TestBody()");
+  "kudu\\S*MinidumpDeathTest_TestCheckStackTraceAndMinidump_Test\\S*TestBody");
 
   // Ensure that a minidump is produced.
   string minidump_dir = minidump_handler.minidump_dir();
@@ -135,7 +142,7 @@ TEST_P(MinidumpSignalDeathTest, TestHaveMinidumpAndStackTrace) {
     kill(getpid(), signal);
   },
   // Ensure that a stack trace is produced.
-  "kudu::MinidumpSignalDeathTest_TestHaveMinidumpAndStackTrace_Test::TestBody()");
+  "kudu\\S*MinidumpSignalDeathTest_TestHaveMinidumpAndStackTrace_Test\\S*TestBody");
 
   // Ensure that a mindump is produced, unless it's SIGTERM, which does not
   // create a minidump.
