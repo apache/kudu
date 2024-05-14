@@ -315,7 +315,7 @@ class OpState {
 
   // Use to record the op's start time.
   // 'set_start_time()' needs to be called at the beginning of the op to initialize it.
-  MonoTime start_time_;
+  std::atomic<MonoTime> start_time_;
 };
 
 // A parent class for the callback that gets called when ops
