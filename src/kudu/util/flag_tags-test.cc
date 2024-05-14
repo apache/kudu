@@ -82,7 +82,7 @@ TEST_F(FlagTagsTest, TestUnlockFlags) {
   // Setting an unsafe flag without unlocking should crash.
   {
     gflags::FlagSaver s;
-    gflags::SetCommandLineOption("test_unsafe_flag", "true");
+    ASSERT_NE("", gflags::SetCommandLineOption("test_unsafe_flag", "true"));
     ASSERT_DEATH({ ValidateFlags(); },
                  "Flag --test_unsafe_flag is unsafe and unsupported.*"
                  "Use --unlock_unsafe_flags to proceed");
@@ -93,8 +93,8 @@ TEST_F(FlagTagsTest, TestUnlockFlags) {
     StringVectorSink sink;
     ScopedRegisterSink reg(&sink);
     gflags::FlagSaver s;
-    gflags::SetCommandLineOption("test_unsafe_flag", "true");
-    gflags::SetCommandLineOption("unlock_unsafe_flags", "true");
+    ASSERT_NE("", gflags::SetCommandLineOption("test_unsafe_flag", "true"));
+    ASSERT_NE("", gflags::SetCommandLineOption("unlock_unsafe_flags", "true"));
     ValidateFlags();
     ASSERT_EQ(1, sink.logged_msgs().size());
     ASSERT_STR_CONTAINS(sink.logged_msgs()[0], "Enabled unsafe flag: --test_unsafe_flag");
@@ -103,7 +103,7 @@ TEST_F(FlagTagsTest, TestUnlockFlags) {
   // Setting an experimental flag without unlocking should crash.
   {
     gflags::FlagSaver s;
-    gflags::SetCommandLineOption("test_experimental_flag", "true");
+    ASSERT_NE("", gflags::SetCommandLineOption("test_experimental_flag", "true"));
     ASSERT_DEATH({ ValidateFlags(); },
                  "Flag --test_experimental_flag is experimental and unsupported.*"
                  "Use --unlock_experimental_flags to proceed");
@@ -114,8 +114,8 @@ TEST_F(FlagTagsTest, TestUnlockFlags) {
     StringVectorSink sink;
     ScopedRegisterSink reg(&sink);
     gflags::FlagSaver s;
-    gflags::SetCommandLineOption("test_experimental_flag", "true");
-    gflags::SetCommandLineOption("unlock_experimental_flags", "true");
+    ASSERT_NE("", gflags::SetCommandLineOption("test_experimental_flag", "true"));
+    ASSERT_NE("", gflags::SetCommandLineOption("unlock_experimental_flags", "true"));
     ValidateFlags();
     ASSERT_EQ(1, sink.logged_msgs().size());
     ASSERT_STR_CONTAINS(sink.logged_msgs()[0],

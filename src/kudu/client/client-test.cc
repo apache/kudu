@@ -1775,7 +1775,7 @@ TEST_F(ClientTest, TestScanCloseProxy) {
 
 // Check that the client scanner does not redact rows.
 TEST_F(ClientTest, TestRowPtrNoRedaction) {
-  google::SetCommandLineOption("redact", "log");
+  ASSERT_NE("", google::SetCommandLineOption("redact", "log"));
 
   NO_FATALS(InsertTestRows(client_table_.get(), FLAGS_test_scan_num_rows));
   KuduScanner scanner(client_table_.get());
