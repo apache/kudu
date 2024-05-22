@@ -28,6 +28,7 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/concurrent_btree.h"
@@ -474,14 +475,14 @@ void TestCBTree::DoTestConcurrentInsert() {
 
     if (::testing::Test::HasFatalFailure()) {
       tree->DebugPrint();
-      return;
+      break;
     }
   }
 
   tree.reset(nullptr);
   go_barrier.Wait();
 
-  for (thread &thr : threads) {
+  for (thread& thr : threads) {
     thr.join();
   }
 }
@@ -739,7 +740,7 @@ TEST_F(TestCBTree, TestConcurrentIterateAndInsert) {
 
     if (::testing::Test::HasFatalFailure()) {
       tree->DebugPrint();
-      return;
+      break;
     }
   }
 
