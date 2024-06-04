@@ -115,6 +115,14 @@ elif [[ -f "/usr/bin/apt-get" ]]; then
   # Update the repo.
   apt-get update -y
 
+  source /etc/os-release
+
+  if dpkg --compare-versions "$VERSION_ID" ge "22.04"
+  then
+    apt-get install -y --no-install-recommends python3 python-is-python3
+  else
+    apt-get install -y --no-install-recommends python
+  fi
   # Install core build libraries.
   # --no-install-recommends keeps the install smaller
   apt-get install -y --no-install-recommends \
@@ -143,7 +151,6 @@ elif [[ -f "/usr/bin/apt-get" ]]; then
     openssl \
     patch \
     pkg-config \
-    python \
     rsync \
     sudo \
     unzip \
