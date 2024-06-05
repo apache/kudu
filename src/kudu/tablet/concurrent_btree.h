@@ -42,6 +42,7 @@
 #pragma once
 
 #include <algorithm>
+#include <atomic>
 #include <boost/smart_ptr/detail/yield_k.hpp>
 #include <boost/utility/binary.hpp>
 #include <memory>
@@ -120,13 +121,14 @@ template<class Traits> class PreparedMutation;
 template<class Traits> class CBTree;
 template<class Traits> class CBTreeIterator;
 
-typedef base::subtle::Atomic64 AtomicVersion;
+typedef std::atomic<std::uint64_t> AtomicVersion; // Shared between threads
+typedef std::uint64_t AtomicVersionValue; // Local value we loaded/will store
 
 struct VersionField {
  public:
-  static AtomicVersion StableVersion(volatile AtomicVersion *version) {
+  static AtomicVersionValue StableVersion(AtomicVersion* version) {
     for (int loop_count = 0; true; loop_count++) {
-      AtomicVersion v_acq = base::subtle::Acquire_Load(version);
+      AtomicVersionValue v_acq = version->load(std::memory_order_acquire);
       if (PREDICT_TRUE(!IsLocked(v_acq))) {
         return v_acq;
       }
@@ -134,14 +136,16 @@ struct VersionField {
     }
   }
 
-  static void Lock(volatile AtomicVersion *version) {
+  static void Lock(AtomicVersion* version) {
     int loop_count = 0;
 
     while (true) {
-      AtomicVersion v_acq = base::subtle::Acquire_Load(version);
+      AtomicVersionValue v_acq =  version->load(std::memory_order_acquire);
       if (PREDICT_TRUE(!IsLocked(v_acq))) {
-        AtomicVersion v_locked = SetLockBit(v_acq, 1);
-        if (PREDICT_TRUE(base::subtle::Acquire_CompareAndSwap(version, v_acq, v_locked) == v_acq)) {
+
+        AtomicVersionValue v_locked = SetLockBit(v_acq, 1);
+        if (PREDICT_TRUE(
+                version->compare_exchange_strong(v_acq, v_locked, std::memory_order_acq_rel))) {
           return;
         }
       }
@@ -150,10 +154,10 @@ struct VersionField {
     }
   }
 
-  static void Unlock(volatile AtomicVersion *version) {
+  static void Unlock(AtomicVersion* version) {
     // NoBarrier should be OK here, because no one else modifies the
     // version while we have it locked.
-    AtomicVersion v = base::subtle::NoBarrier_Load(version);
+    AtomicVersionValue v = version->load(std::memory_order_relaxed);
 
     DCHECK(v & BTREE_LOCK_MASK);
 
@@ -166,49 +170,61 @@ struct VersionField {
     v = SetLockBit(v, 0);
     v &= ~(BTREE_UNUSED_MASK | BTREE_INSERTING_MASK | BTREE_SPLITTING_MASK);
 
-    base::subtle::Release_Store(version, v);
+    version->store(v, std::memory_order_release);
   }
 
-  static uint64_t GetVSplit(AtomicVersion v) {
+  static uint64_t GetVSplit(AtomicVersionValue v) {
     return v & BTREE_VSPLIT_MASK;
   }
-  static uint64_t GetVInsert(AtomicVersion v) {
+  static uint64_t GetVInsert(AtomicVersionValue v) {
     return (v & BTREE_VINSERT_MASK) >> BTREE_VINSERT_SHIFT;
   }
-  static void SetSplitting(volatile AtomicVersion *v) {
-    base::subtle::Release_Store(v, *v | BTREE_SPLITTING_MASK);
+  static void SetSplitting(AtomicVersion *v) {
+    // The additional barrier is needed because we need to block store
+    // reordering in both directions. Operations on std::atomic<> are just
+    // one-way barriers (no previous store is allowed to be reordered after
+    // the operation). We cannot start storing our changes before the node is
+    // marked 'dirty', so we need to block reordering in the opposite direction
+    // too. Removing the fence would cause issues on platforms which allow
+    // stores to different memory locations to be observed differently from the
+    // program order (e.g ARM).
+    v->fetch_or(BTREE_SPLITTING_MASK, std::memory_order_release);
+    std::atomic_thread_fence(std::memory_order_release);
   }
-  static void SetInserting(volatile AtomicVersion *v) {
-    base::subtle::Release_Store(v, *v | BTREE_INSERTING_MASK);
+  static void SetInserting(AtomicVersion *v) {
+    // Fence needed. See SetSplitting(...) for more information.
+    v->fetch_or(BTREE_INSERTING_MASK, std::memory_order_release);
+    std::atomic_thread_fence(std::memory_order_release);
   }
-  static void SetLockedInsertingNoBarrier(volatile AtomicVersion *v) {
-    *v = VersionField::BTREE_LOCK_MASK | VersionField::BTREE_INSERTING_MASK;
+  static void SetLockedInsertingNoBarrier(AtomicVersion *v) {
+    v->store(VersionField::BTREE_LOCK_MASK | VersionField::BTREE_INSERTING_MASK,
+             std::memory_order_relaxed);
   }
 
   // Return true if the two version fields differ in more
   // than just the lock status.
-  static bool IsDifferent(AtomicVersion v1, AtomicVersion v2) {
+  static bool IsDifferent(AtomicVersionValue v1, AtomicVersionValue v2) {
     return PREDICT_FALSE((v1 & ~BTREE_LOCK_MASK) != (v2 & ~BTREE_LOCK_MASK));
   }
 
   // Return true if a split has occurred between the two versions
   // or is currently in progress
-  static bool HasSplit(AtomicVersion v1, AtomicVersion v2) {
+  static bool HasSplit(AtomicVersionValue v1, AtomicVersionValue v2) {
     return PREDICT_FALSE((v1 & (BTREE_VSPLIT_MASK | BTREE_SPLITTING_MASK)) !=
                          (v2 & (BTREE_VSPLIT_MASK | BTREE_SPLITTING_MASK)));
   }
 
-  static inline bool IsLocked(AtomicVersion v) {
+  static inline bool IsLocked(AtomicVersionValue v) {
     return v & BTREE_LOCK_MASK;
   }
-  static inline bool IsSplitting(AtomicVersion v) {
+  static inline bool IsSplitting(AtomicVersionValue v) {
     return v & BTREE_SPLITTING_MASK;
   }
-  static inline bool IsInserting(AtomicVersion v) {
+  static inline bool IsInserting(AtomicVersionValue v) {
     return v & BTREE_INSERTING_MASK;
   }
 
-  static std::string Stringify(AtomicVersion v) {
+  static std::string Stringify(AtomicVersionValue v) {
     return StringPrintf("[flags=%c%c%c vins=%" PRIu64 " vsplit=%" PRIu64 "]",
                         (v & BTREE_LOCK_MASK) ? 'L':' ',
                         (v & BTREE_SPLITTING_MASK) ? 'S':' ',
@@ -251,7 +267,7 @@ struct VersionField {
   //Undeclared constructor - this is just static utilities.
   VersionField();
 
-  static AtomicVersion SetLockBit(AtomicVersion v, int lock) {
+  static AtomicVersionValue SetLockBit(AtomicVersionValue v, int lock) {
     DCHECK(lock == 0 || lock == 1);
     v = v & ~BTREE_LOCK_MASK;
     COMPILE_ASSERT(sizeof(AtomicVersion) == 8, must_use_64bit_version);
@@ -364,32 +380,38 @@ static void InsertInSliceArray(ISlice *array, size_t num_entries,
 template<class Traits>
 class NodeBase {
  public:
-  AtomicVersion StableVersion() {
-    return VersionField::StableVersion(&version_);
+  AtomicVersionValue StableVersion() {
+    return VersionField::StableVersion(version());
   }
 
-  AtomicVersion AcquireVersion() {
-    return base::subtle::Acquire_Load(&version_);
+  AtomicVersionValue AcquireVersion() {
+    return version()->load(std::memory_order_acquire);
+  }
+
+  AtomicVersionValue AcquireVersion2WayBarrier() {
+    std::atomic_thread_fence(std::memory_order_acquire);
+    return version()->load(std::memory_order_acquire);
   }
 
   void Lock() {
-    VersionField::Lock(&version_);
+    VersionField::Lock(version());
   }
 
-  bool IsLocked() {
-    return VersionField::IsLocked(version_);
+  // For debug DCHECK macros only
+  bool IsLockedUnsafe() {
+    return VersionField::IsLocked(versionPlaceholder_);
   }
 
   void Unlock() {
-    VersionField::Unlock(&version_);
+    VersionField::Unlock(version());
   }
 
   void SetSplitting() {
-    VersionField::SetSplitting(&version_);
+    VersionField::SetSplitting(version());
   }
 
   void SetInserting() {
-    VersionField::SetInserting(&version_);
+    VersionField::SetInserting(version());
   }
 
   // Return the parent node for this node, with the lock acquired.
@@ -415,11 +437,20 @@ class NodeBase {
  protected:
   friend class CBTree<Traits>;
 
-  NodeBase() : version_(0), parent_(NULL)
+  NodeBase() : versionPlaceholder_(0), parent_(NULL)
   {}
 
  public:
-  volatile AtomicVersion version_;
+  // Nodes are guaranteed to be allocated with an alignment suitable for atomic
+  // operations. However, we might store other unaligned structures between
+  // them. So we do not want to pad the structure on the end. std::atomic
+  // conflicts with 1-byte packing.
+  AtomicVersionValue versionPlaceholder_;
+  AtomicVersion* version() {
+    return reinterpret_cast<AtomicVersion*>(
+        // TODO: switch to std::assume_aligned once we reach C++20.
+        __builtin_assume_aligned(&versionPlaceholder_, sizeof(AtomicVersion)));
+  }
 
   // parent_ field is protected not by this node's lock, but by
   // the parent's lock. This allows reassignment of the parent_
@@ -531,7 +562,7 @@ class PACKED InternalNode : public NodeBase<Traits> {
 
     // Just assign the version, instead of using the proper ->Lock()
     // since we don't need a CAS here.
-    VersionField::SetLockedInsertingNoBarrier(&this->version_);
+    VersionField::SetLockedInsertingNoBarrier(this->version());
 
     keys_[0].set(split_key, arena);
     DCHECK_GT(split_key.size(), 0);
@@ -548,7 +579,7 @@ class PACKED InternalNode : public NodeBase<Traits> {
   // This is typically called after one of its child nodes has split.
   InsertStatus Insert(const Slice &key, NodePtr<Traits> right_child,
                       typename Traits::ArenaType* arena) {
-    DCHECK(this->IsLocked());
+    DCHECK(this->IsLockedUnsafe());
     CHECK_GT(key.size(), 0);
 
     bool exact;
@@ -611,8 +642,8 @@ class PACKED InternalNode : public NodeBase<Traits> {
   // to the new size. Also compacts the underlying storage so that all
   // free space is contiguous, allowing for new inserts.
   void Truncate(size_t new_num_keys) {
-    DCHECK(this->IsLocked());
-    DCHECK(VersionField::IsSplitting(this->version_));
+    DCHECK(this->IsLockedUnsafe());
+    DCHECK(VersionField::IsSplitting(this->versionPlaceholder_));
     DCHECK_GT(new_num_keys, 0);
 
     DCHECK_LT(new_num_keys, key_count());
@@ -689,14 +720,14 @@ class LeafNode : public NodeBase<Traits> {
     if (initially_locked) {
       // Just assign the version, instead of using the proper ->Lock()
       // since we don't need a CAS here.
-      VersionField::SetLockedInsertingNoBarrier(&this->version_);
+      VersionField::SetLockedInsertingNoBarrier(this->version());
     }
   }
 
   int num_entries() const { return num_entries_; }
 
   void PrepareMutation(PreparedMutation<Traits> *ret) {
-    DCHECK(this->IsLocked());
+    DCHECK(this->IsLockedUnsafe());
     ret->leaf_ = this;
     ret->idx_ = Find(ret->key(), &ret->exists_);
   }
@@ -704,7 +735,7 @@ class LeafNode : public NodeBase<Traits> {
   // Insert a new entry into this leaf node.
   InsertStatus Insert(PreparedMutation<Traits> *mut, const Slice &val) {
     DCHECK_EQ(this, mut->leaf());
-    DCHECK(this->IsLocked());
+    DCHECK(this->IsLockedUnsafe());
 
     if (PREDICT_FALSE(mut->exists())) {
       return INSERT_DUPLICATE;
@@ -781,8 +812,8 @@ class LeafNode : public NodeBase<Traits> {
   // to the new size.
   // Caller must hold the node's lock with the SPLITTING flag set.
   void Truncate(size_t new_num_entries) {
-    DCHECK(this->IsLocked());
-    DCHECK(VersionField::IsSplitting(this->version_));
+    DCHECK(this->IsLockedUnsafe());
+    DCHECK(VersionField::IsSplitting(this->versionPlaceholder_));
 
     DCHECK_LT(new_num_entries, num_entries_);
     num_entries_ = new_num_entries;
@@ -987,9 +1018,9 @@ class CBTree {
   }
 
   void DebugPrint() const {
-    AtomicVersion v;
+    AtomicVersionValue v;
     DebugPrint(StableRoot(&v), NULL, 0);
-    CHECK_EQ(root_.base_ptr()->AcquireVersion(), v)
+    CHECK_EQ(root_.base_ptr()->AcquireVersion2WayBarrier(), v)
       << "Concurrent modification during DebugPrint not allowed";
   }
 
@@ -1013,7 +1044,7 @@ class CBTree {
 
     retry_from_root:
     {
-      AtomicVersion version;
+      AtomicVersionValue version;
       LeafNode<Traits> *leaf = CHECK_NOTNULL(TraverseToLeaf(key, &version));
 
       DebugRacyPoint();
@@ -1036,7 +1067,8 @@ class CBTree {
 
         // Got some kind of result, but may be based on racy data.
         // Verify it.
-        AtomicVersion new_version = leaf->StableVersion();
+        std::atomic_thread_fence(std::memory_order_acquire);
+        AtomicVersionValue new_version = leaf->StableVersion();
         if (VersionField::HasSplit(version, new_version)) {
           goto retry_from_root;
         } else if (VersionField::IsDifferent(version, new_version)) {
@@ -1069,7 +1101,7 @@ class CBTree {
 
     retry_from_root:
     {
-      AtomicVersion version;
+      AtomicVersionValue version;
       LeafNode<Traits> *leaf = CHECK_NOTNULL(TraverseToLeaf(key, &version));
 
       DebugRacyPoint();
@@ -1081,7 +1113,9 @@ class CBTree {
 
         // Got some kind of result, but may be based on racy data.
         // Verify it.
-        AtomicVersion new_version = leaf->StableVersion();
+        std::atomic_thread_fence(std::memory_order_acquire);
+        AtomicVersionValue new_version = leaf->StableVersion();
+
         if (VersionField::HasSplit(version, new_version)) {
           goto retry_from_root;
         } else if (VersionField::IsDifferent(version, new_version)) {
@@ -1147,7 +1181,7 @@ class CBTree {
 
   DISALLOW_COPY_AND_ASSIGN(CBTree);
 
-  NodePtr<Traits> StableRoot(AtomicVersion *stable_version) const {
+  NodePtr<Traits> StableRoot(AtomicVersionValue *stable_version) const {
     while (true) {
       NodePtr<Traits> node = root_;
       NodeBase<Traits> *node_base = node.base_ptr();
@@ -1164,9 +1198,9 @@ class CBTree {
   }
 
   LeafNode<Traits> *TraverseToLeaf(const Slice &key,
-                                   AtomicVersion *stable_version) const {
+                                   AtomicVersionValue *stable_version) const {
     retry_from_root:
-    AtomicVersion version = 0;
+    AtomicVersionValue version = 0;
     NodePtr<Traits> node = StableRoot(&version);
     NodeBase<Traits> *node_base = node.base_ptr();
 
@@ -1181,13 +1215,13 @@ class CBTree {
       NodePtr<Traits> child = node.internal_node_ptr()->FindChild(key);
       NodeBase<Traits> *child_base = NULL;
 
-      AtomicVersion child_version = -1;
+      AtomicVersionValue child_version = -1;
 
       if (PREDICT_TRUE(!child.is_null())) {
         child_base = child.base_ptr();
         child_version = child_base->StableVersion();
       }
-      AtomicVersion new_node_version = node_base->AcquireVersion();
+      AtomicVersionValue new_node_version = node_base->AcquireVersion2WayBarrier();
 
       if (VersionField::IsDifferent(version, new_node_version)) {
         new_node_version = node_base->StableVersion();
@@ -1287,11 +1321,11 @@ class CBTree {
   void PrepareMutation(PreparedMutation<Traits> *mutation) {
     DCHECK_EQ(mutation->tree(), this);
     while (true) {
-      AtomicVersion stable_version;
+      AtomicVersionValue stable_version;
       LeafNode<Traits> *lnode = TraverseToLeaf(mutation->key(), &stable_version);
 
       lnode->Lock();
-      if (VersionField::HasSplit(lnode->AcquireVersion(), stable_version)) {
+      if (VersionField::HasSplit(lnode->AcquireVersion2WayBarrier(), stable_version)) {
         // Retry traversal due to a split
         lnode->Unlock();
         continue;
@@ -1318,7 +1352,7 @@ class CBTree {
     DCHECK_EQ(mutation->tree(), this);
 
     LeafNode<Traits> *node = mutation->leaf();
-    DCHECK(node->IsLocked());
+    DCHECK(node->IsLockedUnsafe());
 
     // After this function, the prepared mutation cannot be used
     // again.
@@ -1353,7 +1387,7 @@ class CBTree {
   //     new_inode is locked and marked INSERTING
   InternalNode<Traits> *SplitInternalNode(InternalNode<Traits> *node,
                                           faststring *separator_key) {
-    DCHECK(node->IsLocked());
+    DCHECK(node->IsLockedUnsafe());
     //VLOG(2) << "splitting internal node " << node->GetKey(0).ToString();
 
     // TODO: simplified implementation doesn't deal with splitting
@@ -1431,7 +1465,7 @@ class CBTree {
   // modifying it.
   void SplitLeafNode(LeafNode<Traits> *node,
                      LeafNode<Traits> **new_node) {
-    DCHECK(node->IsLocked());
+    DCHECK(node->IsLockedUnsafe());
 
 #ifdef DEBUG_DUMP_SPLIT_STATS
     do {
@@ -1482,7 +1516,7 @@ class CBTree {
     Slice key = mutation->key_;
 
     // Leaf node should already be locked at this point
-    DCHECK(node->IsLocked());
+    DCHECK(node->IsLockedUnsafe());
 
     //DebugPrint();
 
@@ -1490,7 +1524,7 @@ class CBTree {
     SplitLeafNode(node, &new_leaf);
 
     // The new leaf node is returned still locked.
-    DCHECK(new_leaf->IsLocked());
+    DCHECK(new_leaf->IsLockedUnsafe());
 
     // Insert the key that we were originally trying to insert in the
     // correct side post-split.
@@ -1528,8 +1562,8 @@ class CBTree {
     NodeBase<Traits> *left = left_ptr.base_ptr();
     NodeBase<Traits> *right = right_ptr.base_ptr();
 
-    DCHECK(left->IsLocked());
-    DCHECK(right->IsLocked());
+    DCHECK(left->IsLockedUnsafe());
+    DCHECK(right->IsLockedUnsafe());
 
     InternalNode<Traits> *parent = left->GetLockedParent();
     if (parent == NULL) {
@@ -1560,8 +1594,8 @@ class CBTree {
         faststring sep_key(0);
         InternalNode<Traits> *new_inode = SplitInternalNode(parent, &sep_key);
 
-        DCHECK(new_inode->IsLocked());
-        DCHECK(parent->IsLocked()) << "original should still be locked";
+        DCHECK(new_inode->IsLockedUnsafe());
+        DCHECK(parent->IsLockedUnsafe()) << "original should still be locked";
 
         // Insert the new entry into the appropriate half.
         Slice inode_split(sep_key);
@@ -1782,7 +1816,7 @@ class CBTreeIterator {
     debug::ScopedTSANIgnoreReadsAndWrites ignore_tsan;
     retry_from_root:
     {
-      AtomicVersion version;
+      AtomicVersionValue version;
       LeafNode<Traits> *leaf = tree_->TraverseToLeaf(key, &version);
 #ifdef SCAN_PREFETCH
       if (leaf->next_) {
@@ -1801,7 +1835,8 @@ class CBTreeIterator {
       {
         memcpy(static_cast<void*>(&leaf_copy_), leaf, sizeof(leaf_copy_));
 
-        AtomicVersion new_version = leaf->StableVersion();
+        std::atomic_thread_fence(std::memory_order_acquire);
+        AtomicVersionValue new_version = leaf->StableVersion();
         if (VersionField::HasSplit(version, new_version)) {
           goto retry_from_root;
         } else if (VersionField::IsDifferent(version, new_version)) {
@@ -1842,9 +1877,10 @@ class CBTreeIterator {
     }
 
     while (true) {
-      AtomicVersion version = next->StableVersion();
+      AtomicVersionValue version = next->StableVersion();
       memcpy(static_cast<void*>(&leaf_copy_), next, sizeof(leaf_copy_));
-      AtomicVersion new_version = next->StableVersion();
+      std::atomic_thread_fence(std::memory_order_acquire);
+      AtomicVersionValue new_version = next->StableVersion();
       if (VersionField::IsDifferent(new_version, version)) {
         version = new_version;
       } else {
