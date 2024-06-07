@@ -130,6 +130,7 @@
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/tserver_admin.pb.h"
 #include "kudu/tserver/tserver_admin.proxy.h" // IWYU pragma: keep
+#include "kudu/util/bitmap.h"
 #include "kudu/util/cache_metrics.h"
 #include "kudu/util/condition_variable.h"
 #include "kudu/util/debug/trace_event.h"
@@ -2807,7 +2808,8 @@ Status CatalogManager::ApplyAlterSchemaSteps(
     const SysTablesEntryPB& current_pb,
     const vector<AlterTableRequestPB::Step>& steps,
     Schema* new_schema,
-    ColumnId* next_col_id) {
+    ColumnId* next_col_id,
+    bool* needs_range_bounds_refresh) {
   const SchemaPB& current_schema_pb = current_pb.schema();
   Schema cur_schema;
   RETURN_NOT_OK(SchemaFromPB(current_schema_pb, &cur_schema));
@@ -2883,6 +2885,15 @@ Status CatalogManager::ApplyAlterSchemaSteps(
   }
   *new_schema = builder.Build();
   *next_col_id = builder.next_column_id();
+
+  // KUDU-3577: check if the serialized representation of range partition keys
+  // has changed after updating the schema -- the size of the 'column_is_set'
+  // and the 'nullable' bitmaps might change upon adding or dropping columns
+  *needs_range_bounds_refresh =
+      !current_pb.partition_schema().custom_hash_schema_ranges().empty() &&
+      (new_schema->has_nullables() != cur_schema.has_nullables() ||
+       BitmapSize(new_schema->num_columns()) != BitmapSize(cur_schema.num_columns()));
+
   return Status::OK();
 }
 
@@ -3471,8 +3482,17 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
   // is essentialy a no-op. It's still important to execute because
   // ApplyAlterSchemaSteps populates 'new_schema', which is used below.
   TRACE("Apply alter schema");
+
+  // KUDU-3577: 'needs_range_bounds_refresh' reflects whether it's necessary
+  // to re-encode information on partition boundaries for ranges with custom
+  // hash schemas in the system catalog
+  bool needs_range_bounds_refresh = false;
   RETURN_NOT_OK(SetupError(
-        ApplyAlterSchemaSteps(l.data().pb, alter_schema_steps, &new_schema, &next_col_id),
+        ApplyAlterSchemaSteps(l.data().pb,
+                              alter_schema_steps,
+                              &new_schema,
+                              &next_col_id,
+                              &needs_range_bounds_refresh),
         resp, MasterErrorPB::INVALID_SCHEMA));
 
   DCHECK_NE(next_col_id, 0);
@@ -3615,6 +3635,17 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
   }
 
   // 10. Serialize the schema and increment the version number.
+  if (needs_range_bounds_refresh) {
+    // KUDU-3577: if necessary, re-encode the information on partition
+    // boundaries for ranges with custom hash schemas
+    Schema cur_schema;  // the current table schema before being altered
+    RETURN_NOT_OK(SchemaFromPB(l.data().pb.schema(), &cur_schema));
+    PartitionSchema partition_schema;
+    RETURN_NOT_OK(PartitionSchema::FromPB(
+        l.data().pb.partition_schema(), cur_schema, &partition_schema));
+    RETURN_NOT_OK(partition_schema.ToPB(
+        new_schema, l.mutable_data()->pb.mutable_partition_schema()));
+  }
   if (has_metadata_changes_for_existing_tablets && !l.data().pb.has_fully_applied_schema()) {
     l.mutable_data()->pb.mutable_fully_applied_schema()->CopyFrom(l.data().pb.schema());
   }

@@ -100,6 +100,7 @@ using kudu::client::KuduColumnSchema;
 using kudu::client::KuduDelete;
 using kudu::client::KuduError;
 using kudu::client::KuduInsert;
+using kudu::client::KuduRangePartition;
 using kudu::client::KuduRowResult;
 using kudu::client::KuduScanBatch;
 using kudu::client::KuduScanner;
@@ -2172,6 +2173,142 @@ TEST_F(AlterTableTest, TestAddRangePartitionConflictExhaustive) {
   // |
   // |
   expect_range_partitions_conflict(0, 1, 0, 1);
+}
+
+// Test scenario for KUDU-3577.
+TEST_F(AlterTableTest, RangeWithCustomHashSchema) {
+  KuduSchemaBuilder b;
+  b.AddColumn("c0")->Type(KuduColumnSchema::INT32)->NotNull()->
+      Default(KuduValue::FromInt(0));
+  b.AddColumn("c1")->Type(KuduColumnSchema::INT32)->NotNull()->
+      Default(KuduValue::FromInt(0));
+  b.AddColumn("c2")->Type(KuduColumnSchema::INT32)->Nullable();
+  b.SetPrimaryKey({ "c0", "c1" });
+  KuduSchema schema;
+  ASSERT_OK(b.Build(&schema));
+
+  // Create table with table-wide hash schema: 2 hash buckets on "c1" column.
+  const string table_name = "kudu-3577";
+  unique_ptr<KuduTableCreator> creator(client_->NewTableCreator());
+  creator->table_name(table_name)
+      .schema(&schema)
+      .set_range_partition_columns({ "c0" })
+      .add_hash_partitions({ "c1" }, 2)
+      .num_replicas(1);
+
+  // Add a range partition with the table-wide hash schema.
+  {
+    unique_ptr<KuduPartialRow> lower(schema.NewRow());
+    ASSERT_OK(lower->SetInt32("c0", -100));
+    unique_ptr<KuduPartialRow> upper(schema.NewRow());
+    ASSERT_OK(upper->SetInt32("c0", 0));
+    creator->add_range_partition(lower.release(), upper.release());
+  }
+
+  // Add a range partition with custom hash schema.
+  {
+    unique_ptr<KuduPartialRow> lower(schema.NewRow());
+    ASSERT_OK(lower->SetInt32("c0", 0));
+    unique_ptr<KuduPartialRow> upper(schema.NewRow());
+    ASSERT_OK(upper->SetInt32("c0", 100));
+    unique_ptr<KuduRangePartition> p(
+        new KuduRangePartition(lower.release(), upper.release()));
+    ASSERT_OK(p->add_hash_partitions({ "c1" }, 3, 0));
+    creator->add_custom_range_partition(p.release());
+  }
+  ASSERT_OK(creator->Create());
+
+  {
+    // Make sure client successfully opens the newly created table.
+    shared_ptr<KuduTable> table;
+    ASSERT_OK(client_->OpenTable(table_name, &table));
+    // The newly created table is empty, of course.
+    ASSERT_EQ(0, CountTableRows(table.get()));
+    // Insert 100 rows.
+    ASSERT_OK(InsertRowsSequential(table_name, -50, 100));
+    ASSERT_EQ(100, CountTableRows(table.get()));
+  }
+
+  {
+    // Drop "c2", the only nullable column in the table as of now.
+    unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(table_name));
+    alterer->DropColumn("c2");
+    ASSERT_OK(alterer->Alter());
+
+    // Make sure client successfully opens the altered table.
+    shared_ptr<KuduTable> table;
+    ASSERT_OK(client_->OpenTable(table_name, &table));
+    ASSERT_EQ(100, CountTableRows(table.get()));
+  }
+
+  {
+    // Add at least 8 new columns to change the size of the 'column_is_set'
+    // bitset. All the columns are non-nullable.
+    unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(table_name));
+    for (auto i = 2; i < 10; ++i) {
+      alterer->AddColumn(Substitute("c$0", i))->Type(KuduColumnSchema::INT32)->
+          NotNull()->Default(KuduValue::FromInt(0));
+    }
+    ASSERT_OK(alterer->Alter());
+
+    // Make sure client successfully opens the altered table.
+    shared_ptr<KuduTable> table;
+    ASSERT_OK(client_->OpenTable(table_name, &table));
+    ASSERT_EQ(100, CountTableRows(table.get()));
+  }
+
+  {
+    // Drop one non-nullable column.
+    unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(table_name));
+    alterer->DropColumn("c9");
+    ASSERT_OK(alterer->Alter());
+
+    // Make sure client successfully opens the altered table.
+    shared_ptr<KuduTable> table;
+    ASSERT_OK(client_->OpenTable(table_name, &table));
+    ASSERT_EQ(100, CountTableRows(table.get()));
+  }
+
+  {
+    // Add "c9" column back, but make it nullable.
+    unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(table_name));
+    alterer->AddColumn("c9")->Type(KuduColumnSchema::INT32)->Nullable();
+    ASSERT_OK(alterer->Alter());
+
+    // Make sure client successfully opens the altered table.
+    shared_ptr<KuduTable> table;
+    ASSERT_OK(client_->OpenTable(table_name, &table));
+    ASSERT_EQ(100, CountTableRows(table.get()));
+  }
+
+  {
+    // Add 90 more nullable columns.
+    unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(table_name));
+    for (auto i = 10; i < 100; ++i) {
+      alterer->AddColumn(Substitute("c$0", i))->Type(KuduColumnSchema::INT32)->
+          Nullable();
+    }
+    ASSERT_OK(alterer->Alter());
+
+    // Make sure client successfully opens the altered table.
+    shared_ptr<KuduTable> table;
+    ASSERT_OK(client_->OpenTable(table_name, &table));
+    ASSERT_EQ(100, CountTableRows(table.get()));
+  }
+
+  {
+    // Drop all but primary key columns.
+    unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(table_name));
+    for (auto i = 2; i < 100; ++i) {
+      alterer->DropColumn(Substitute("c$0", i));
+    }
+    ASSERT_OK(alterer->Alter());
+
+    // Make sure client successfully opens the altered table.
+    shared_ptr<KuduTable> table;
+    ASSERT_OK(client_->OpenTable(table_name, &table));
+    ASSERT_EQ(100, CountTableRows(table.get()));
+  }
 }
 
 TEST_F(ReplicatedAlterTableTest, TestReplicatedAlter) {

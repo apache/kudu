@@ -978,7 +978,8 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
       const SysTablesEntryPB& current_pb,
       const std::vector<AlterTableRequestPB::Step>& steps,
       Schema* new_schema,
-      ColumnId* next_col_id);
+      ColumnId* next_col_id,
+      bool* needs_range_bounds_refresh);
 
   // Delete the specified table in the catalog. If 'user' is provided,
   // checks that the user is authorized to delete the table. Otherwise,
