@@ -947,6 +947,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   scoped_refptr<Counter> follower_memory_pressure_rejections_;
   scoped_refptr<AtomicGauge<int64_t>> term_metric_;
   scoped_refptr<AtomicGauge<int64_t>> num_failed_elections_metric_;
+  scoped_refptr<Histogram> election_duration_metric_;
 
   // NOTE: it's important that this is the first member to be destructed. This
   // ensures we do not attempt to collect metrics while calling the destructor.

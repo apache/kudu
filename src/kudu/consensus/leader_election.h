@@ -98,7 +98,8 @@ class VoteCounter {
 struct ElectionResult {
  public:
   ElectionResult(VoteRequestPB request, ElectionVote election_decision,
-                 ConsensusTerm highest_term, std::string msg);
+                 ConsensusTerm highest_term, std::string msg,
+                 MonoTime op_start_time);
 
   // The vote request that was sent to the voters for this election.
   const VoteRequestPB vote_request;
@@ -111,6 +112,10 @@ struct ElectionResult {
 
   // Human-readable explanation of the vote result, if any.
   const std::string message;
+
+  // The time at which the election began.
+  // Used to record the election duration.
+  const MonoTime start_time;
 };
 
 // Driver class to run a leader election.
@@ -239,6 +244,9 @@ class LeaderElection : public RefCountedThreadSafe<LeaderElection> {
 
   // The highest term seen from a voter so far (or 0 if no votes).
   int64_t highest_voter_term_;
+
+  // The election's start time
+  MonoTime start_time_;
 };
 
 } // namespace consensus

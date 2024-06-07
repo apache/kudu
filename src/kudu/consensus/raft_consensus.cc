@@ -162,6 +162,13 @@ METRIC_DEFINE_gauge_int64(tablet, time_since_last_leader_heartbeat,
                           "in milliseconds. This metric is identically zero on a leader replica.",
                           kudu::MetricLevel::kDebug);
 
+METRIC_DEFINE_histogram(tablet, election_duration,
+                        "Tablet Election Duration",
+                        kudu::MetricUnit::kMilliseconds,
+                        "Duration of tablet leader election as initiator. From the start of "
+                        "the leader election to its completion, regardless of the outcome.",
+                        kudu::MetricLevel::kDebug,
+                        3600000LU, 1);
 
 using google::protobuf::util::MessageDifferencer;
 using kudu::pb_util::SecureShortDebugString;
@@ -256,6 +263,8 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info,
       metric_entity, [this]() { return this->GetMillisSinceLastLeaderHeartbeat(); },
       MergeType::kMax)
       ->AutoDetach(&metric_detacher_);
+
+  election_duration_metric_ = METRIC_election_duration.Instantiate(metric_entity);
 
   // A single Raft thread pool token is shared between RaftConsensus and
   // PeerManager. Because PeerManager is owned by RaftConsensus, it receives a
@@ -2665,6 +2674,8 @@ void RaftConsensus::ElectionCallback(ElectionReason reason, const ElectionResult
   auto self = shared_from_this();
   Status s = raft_pool_token_->Submit([=]() { self->DoElectionCallback(reason, result); });
   if (!s.ok()) {
+    election_duration_metric_->Increment(
+        (MonoTime::Now() - result.start_time).ToMilliseconds());
     static const char* const msg = "unable to run election callback";
     CHECK(s.IsServiceUnavailable()) << LogPrefixThreadSafe() << msg;
     WARN_NOT_OK(s, LogPrefixThreadSafe() + msg);
@@ -2678,6 +2689,12 @@ void RaftConsensus::DoElectionCallback(ElectionReason reason, const ElectionResu
 
   ThreadRestrictions::AssertWaitAllowed();
   UniqueLock l(lock_);
+
+  // Record the duration of the election regardless of the outcome.
+  auto update_metrics = MakeScopedCleanup([&]() {
+    election_duration_metric_->Increment(
+        (MonoTime::Now() - result.start_time).ToMilliseconds());
+  });
 
   Status s = CheckRunningUnlocked();
   if (PREDICT_FALSE(!s.ok())) {

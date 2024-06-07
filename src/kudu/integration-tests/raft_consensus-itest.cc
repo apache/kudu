@@ -99,6 +99,7 @@ DECLARE_bool(encrypt_data_at_rest);
 METRIC_DECLARE_entity(server);
 METRIC_DECLARE_entity(tablet);
 METRIC_DECLARE_counter(transaction_memory_pressure_rejections);
+METRIC_DECLARE_histogram(election_duration);
 METRIC_DECLARE_gauge_int64(time_since_last_leader_heartbeat);
 METRIC_DECLARE_gauge_int64(failed_elections_since_stable_leader);
 METRIC_DECLARE_gauge_uint64(hybrid_clock_timestamp);
@@ -2781,6 +2782,40 @@ int64_t GetTimeSinceLastLeaderHeartbeat(const ExternalTabletServer* ets,
         "value",
         &ret));
   return ret;
+}
+
+int64_t GetElectionDurationTotalCount(const ExternalTabletServer* ets,
+                                      const std::string& tablet_id) {
+  int64_t ret;
+  CHECK_OK(GetInt64Metric(
+        ets->bound_http_hostport(),
+        &METRIC_ENTITY_tablet,
+        tablet_id.c_str(),
+        &METRIC_election_duration,
+        "total_count",
+        &ret));
+  return ret;
+}
+
+TEST_F(RaftConsensusITest, TestElectionDurationMetrics) {
+  constexpr auto kNumReplicas = 3;
+  constexpr auto kNumTservers = 3;
+  const vector<string> kTsFlags = {
+    // Make leader elections faster so we can test easier.
+    "--raft_heartbeat_interval_ms=100",
+  };
+  const auto kTimeout = MonoDelta::FromSeconds(30);
+
+  FLAGS_num_replicas = kNumReplicas;
+  FLAGS_num_tablet_servers = kNumTservers;
+  NO_FATALS(BuildAndStart(kTsFlags));
+  ASSERT_OK(WaitForServersToAgree(kTimeout, tablet_servers_, tablet_id_, 1));
+  TServerDetails* leader = nullptr;
+  ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &leader));
+  const auto& leader_uuid = leader->uuid();
+
+  auto* leader_srv = cluster_->tablet_server_by_uuid(leader_uuid);
+  ASSERT_LT(0, GetElectionDurationTotalCount(leader_srv, tablet_id_));
 }
 
 // Test for election-related metrics with the leader failure detection disabled.

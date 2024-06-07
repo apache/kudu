@@ -160,11 +160,13 @@ string VoteCounter::GetElectionSummary() const {
 ElectionResult::ElectionResult(VoteRequestPB request,
                                ElectionVote election_decision,
                                ConsensusTerm highest_term,
-                               string msg)
+                               string msg,
+                               MonoTime op_start_time)
     : vote_request(std::move(request)),
       decision(election_decision),
       highest_voter_term(highest_term),
-      message(std::move(msg)) {
+      message(std::move(msg)),
+      start_time(op_start_time) {
   DCHECK(!message.empty());
 }
 
@@ -207,6 +209,7 @@ LeaderElection::~LeaderElection() {
 
 void LeaderElection::Run() {
   VLOG_WITH_PREFIX(1) << "Running leader election.";
+  start_time_ = MonoTime::Now();
 
   // Initialize voter state tracking.
   vector<string> other_voter_uuids;
@@ -306,7 +309,7 @@ void LeaderElection::CheckForDecision() {
       string msg = election_won ?
           "achieved majority votes" : "could not achieve majority";
       result_.reset(new ElectionResult(
-          request_, decision, highest_voter_term_, std::move(msg)));
+          request_, decision, highest_voter_term_, std::move(msg), start_time_));
     }
     // Check whether to respond. This can happen as a result of either getting
     // a majority vote or of something invalidating the election, like
@@ -400,7 +403,7 @@ void LeaderElection::HandleHigherTermUnlocked(const VoterState& state) {
   if (!result_) {
     LOG_WITH_PREFIX(INFO) << "Cancelling election due to peer responding with higher term";
     result_.reset(new ElectionResult(
-        request_, VOTE_DENIED, state.response.responder_term(), std::move(msg)));
+        request_, VOTE_DENIED, state.response.responder_term(), std::move(msg), start_time_));
   }
 }
 
