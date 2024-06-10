@@ -110,6 +110,8 @@ using std::vector;
 using strings::Split;
 using strings::Substitute;
 
+DECLARE_string(columns);
+
 DEFINE_bool(check_row_existence, false,
             "Also check for the existence of the row on the leader replica of "
             "the tablet. If found, the full row will be printed; if not found, "
@@ -297,6 +299,56 @@ class TableLister {
       }
     }
     return output;
+  }
+
+  static Status ListTablesWithColumns(const vector<string>& master_addresses,
+                                      const vector<string>& columns) {
+    client::sp::shared_ptr<KuduClient> client;
+    RETURN_NOT_OK(CreateKuduClient(master_addresses, &client, true /* can_see_all_replicas */));
+    vector<KuduClient::Data::TableInfo> tables_info;
+    RETURN_NOT_OK(client->data_->ListTablesWithInfo(client.get(),
+                                                    &tables_info,
+                                                    "" /* filter */,
+                                                    FLAGS_show_tablet_partition_info,
+                                                    FLAGS_soft_deleted_only));
+
+    DataTable table(columns);
+
+    #define GET_PROPERTY(x) \
+          [](const KuduClient::Data::TableInfo& table_info) ->  \
+          string { return table_info.x;  }
+
+    #define GET_NUM_PROPERTY(x) \
+          [](const KuduClient::Data::TableInfo& table_info) -> \
+          string { return std::to_string(table_info.x); }
+
+    unordered_map<string, std::function<string(const KuduClient::Data::TableInfo& table_info)>>
+        mapping = {
+            {"id", GET_PROPERTY(id)},
+            {"name", GET_PROPERTY(table_name)},
+            {"num_tablets", GET_NUM_PROPERTY(num_tablets)},
+            {"num_replicas", GET_NUM_PROPERTY(num_replicas)},
+            {"live_row_count", GET_NUM_PROPERTY(live_row_count)},
+        };
+
+    #undef GET_PROPERTY()
+    #undef GET_NUM_PROPERTY()
+
+    for (const auto& tinfo : tables_info) {
+      vector<string> values;
+      for (const auto& column : columns) {
+        string lowercase_column;
+        ToLowerCase(column, &lowercase_column);
+        auto getter = mapping.find(lowercase_column);
+        if (getter == mapping.end()) {
+          return Status::InvalidArgument(Substitute("Invalid column name: $0", column));
+        }
+        values.push_back(getter->second(tinfo));
+      }
+      table.AddRow(values);
+    }
+
+    return table.PrintTo(cout);
   }
 
   static Status ListTablets(const vector<string>& master_addresses) {
@@ -865,6 +917,12 @@ Status RenameColumn(const RunnerContext& context) {
 Status ListTables(const RunnerContext& context) {
   vector<string> master_addresses;
   RETURN_NOT_OK(ParseMasterAddresses(context, &master_addresses));
+
+  if (!FLAGS_columns.empty()) {
+    vector<string> columns = Split(FLAGS_columns, ",", strings::SkipEmpty());
+    return TableLister::ListTablesWithColumns(master_addresses, columns);
+  }
+
   return TableLister::ListTablets(master_addresses);
 }
 
@@ -1878,6 +1936,12 @@ unique_ptr<Mode> BuildTableMode() {
       .AddOptionalParameter("show_hash_partition_info")
       .AddOptionalParameter("show_table_info")
       .AddOptionalParameter("list_table_output_format")
+      .AddOptionalParameter(
+          "columns",
+          string(""),
+          string("Comma-separated list of table info fields to "
+                 "include in output. \nPossible values: id, name, live_row_count, "
+                 "num_tablets, num_replicas"))
       .Build();
 
   unique_ptr<Action> list_in_flight =

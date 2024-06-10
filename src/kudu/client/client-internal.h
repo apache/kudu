@@ -154,6 +154,7 @@ class KuduClient::Data {
   };
 
   struct TableInfo {
+    std::string id;
     std::string table_name;
     uint64_t live_row_count;
     int num_tablets;

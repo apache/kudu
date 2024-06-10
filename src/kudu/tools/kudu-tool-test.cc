@@ -5370,6 +5370,75 @@ TEST_F(ToolTest, TestMasterList) {
   ASSERT_STR_CONTAINS(out, "VOTER");
 }
 
+TEST_F(ToolTest, TestTableList) {
+  ExternalMiniClusterOptions opts;
+  NO_FATALS(StartExternalMiniCluster(std::move(opts)));
+  shared_ptr<KuduClient> client;
+  ASSERT_OK(cluster_->CreateClient(nullptr, &client));
+
+  string master_addr = cluster_->master()->bound_rpc_addr().ToString();
+
+  constexpr const char* const kTableName = "kudu.table";
+
+  // Create a table.
+  TestWorkload workload(cluster_.get());
+  workload.set_table_name(kTableName);
+  workload.set_num_replicas(1);
+  workload.Setup();
+
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(client->OpenTable(kTableName, &table));
+
+  // Confirm that the simple table listing works
+  {
+    string out;
+    NO_FATALS(RunActionStdoutString(
+        Substitute("table list $0", master_addr),
+        &out));
+
+    ASSERT_STR_CONTAINS(out, table->name());
+    ASSERT_STR_NOT_CONTAINS(out, table->id());
+    ASSERT_STR_NOT_CONTAINS(out, "num_replicas");
+  }
+
+  // Confirm that the --show_table_info flag works
+  {
+    string out;
+    NO_FATALS(RunActionStdoutString(
+        Substitute("table list $0 --show_table_info", master_addr),
+        &out));
+
+    ASSERT_STR_CONTAINS(out, table->name());
+    ASSERT_STR_NOT_CONTAINS(out, table->id());
+    ASSERT_STR_CONTAINS(out, "num_tablets");
+    ASSERT_STR_CONTAINS(out, "num_replicas");
+    ASSERT_STR_CONTAINS(out, "live_row_count");
+  }
+
+  // Confirm that the --columns flag works
+  {
+    string out;
+    NO_FATALS(RunActionStdoutString(
+        Substitute("table list $0 --columns=id,name,live_row_count,num_tablets,num_replicas",
+                   master_addr),
+        &out));
+
+    ASSERT_STR_CONTAINS(out, table->id());
+    ASSERT_STR_CONTAINS(out, table->name());
+    ASSERT_STR_CONTAINS(out, "num_replicas");
+  }
+
+  // Confirm that wrong column name doesn't crash the tool
+  {
+    string stderr;
+    Status s = RunActionStderrString(
+        Substitute("table list $0 --columns=VeryBadAbsolutelyIncorrectColumName", master_addr),
+        &stderr);
+    ASSERT_FALSE(s.ok());
+    ASSERT_STR_CONTAINS(stderr, "Invalid column name");
+  }
+}
+
 // Operate on Kudu tables:
 // (1)delete a table
 // (2)rename a table

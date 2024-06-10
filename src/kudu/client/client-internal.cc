@@ -512,6 +512,7 @@ Status KuduClient::Data::ListTablesWithInfo(KuduClient* client,
   }
   for (const auto& table : resp.tables()) {
     TableInfo info;
+    if (table.has_id()) info.id = table.id();
     info.table_name = table.name();
     info.live_row_count = table.has_live_row_count() ? table.live_row_count() : 0;
     info.num_tablets = table.has_num_tablets() ? table.num_tablets() : 0;
