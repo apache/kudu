@@ -250,7 +250,6 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/atomic.h"
 #include "kudu/util/hdr_histogram.h"
 #include "kudu/util/jsonwriter.h" // IWYU pragma: keep
 #include "kudu/util/locks.h"
@@ -1141,19 +1140,19 @@ class AtomicGauge : public Gauge {
     return scoped_refptr<Metric>(p);
   }
   T value() const {
-    return static_cast<T>(value_.Load(kMemOrderRelease));
+    return static_cast<T>(value_.load(std::memory_order_acquire));
   }
   void set_value(const T& value) {
     UpdateModificationEpoch();
-    value_.Store(static_cast<int64_t>(value), kMemOrderNoBarrier);
+    value_.store(static_cast<int64_t>(value), std::memory_order_relaxed);
   }
   void Increment() {
     UpdateModificationEpoch();
-    value_.IncrementBy(1, kMemOrderNoBarrier);
+    value_.fetch_add(1, std::memory_order_relaxed);
   }
   void IncrementBy(int64_t amount) {
     UpdateModificationEpoch();
-    value_.IncrementBy(amount, kMemOrderNoBarrier);
+    value_.fetch_add(amount, std::memory_order_relaxed);
   }
   void Decrement() {
     IncrementBy(-1);
@@ -1201,7 +1200,7 @@ class AtomicGauge : public Gauge {
                                 value());
   }
  private:
-  AtomicInt<int64_t> value_;
+  std::atomic<int64_t> value_;
   MergeType type_;
 
   DISALLOW_COPY_AND_ASSIGN(AtomicGauge);
