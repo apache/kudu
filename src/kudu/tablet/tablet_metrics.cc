@@ -252,6 +252,13 @@ METRIC_DEFINE_histogram(tablet, alter_schema_duration,
                         kudu::MetricLevel::kDebug,
                         60000000LU, 2);
 
+METRIC_DEFINE_histogram(tablet, replication_duration,
+                        "Replica Replication Duration",
+                        kudu::MetricUnit::kMicroseconds,
+                        "Duration of replication between replicas on the leader.",
+                        kudu::MetricLevel::kDebug,
+                        60000000LU, 2);
+
 METRIC_DEFINE_histogram(tablet, write_op_duration_client_propagated_consistency,
   "Write Op Duration with Propagated Consistency",
   kudu::MetricUnit::kMicroseconds,
@@ -473,6 +480,7 @@ TabletMetrics::TabletMetrics(const scoped_refptr<MetricEntity>& entity)
     MINIT(write_op_duration_client_propagated_consistency),
     MINIT(write_op_duration_commit_wait_consistency),
     MINIT(alter_schema_duration),
+    MINIT(replication_duration),
     GINIT(flush_dms_running),
     GINIT(flush_mrs_running),
     GINIT(compact_rs_running),

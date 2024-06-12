@@ -771,5 +771,23 @@ TEST_F(TabletReplicaTest, RowLocksLongWaitAndLogging) {
   t1.join();
 }
 
+// Test the replication duration metric works.
+TEST_F(TabletReplicaTest, TestReplicationDurationMetric) {
+  ConsensusBootstrapInfo info;
+  ASSERT_OK(StartReplicaAndWaitUntilLeader(info));
+
+  // The metric should be zero at the beginning.
+  ASSERT_EQ(0, tablet_replica_->tablet()->metrics()->replication_duration->TotalCount());
+
+  auto req = std::make_unique<WriteRequestPB>();
+  ASSERT_OK(GenerateSequentialInsertRequest(GetTestSchema(), req.get()));
+  ASSERT_OK(ExecuteWrite(tablet_replica_.get(), *req));
+
+  // The metric should be non-zero after the write completes.
+  ASSERT_EVENTUALLY([&]{
+    ASSERT_EQ(1, tablet_replica_->tablet()->metrics()->replication_duration->TotalCount());
+  });
+}
+
 } // namespace tablet
 } // namespace kudu

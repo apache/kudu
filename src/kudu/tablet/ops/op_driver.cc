@@ -150,7 +150,7 @@ Status OpDriver::Init(unique_ptr<Op> op,
     // Start the replica op in the thread that is updating consensus, for
     // non-leader ops.
     // Replica ops were already assigned a timestamp so we don't need to
-    // acquire locks before calling Start(). Starting the the op here gives a
+    // acquire locks before calling Start(). Starting the op here gives a
     // strong guarantee to consensus that the op is on mvcc when it moves
     // "safe" time so that we don't risk marking a timestamp "safe" before all
     // ops before it are in-flight are on mvcc.
@@ -440,6 +440,9 @@ void OpDriver::ReplicationFinished(const Status& status) {
     replication_duration = replication_finished_time - replication_start_time_;
   }
 
+  if (auto* metrics = op_->state()->tablet_replica()->tablet()->metrics()) {
+    metrics->replication_duration->Increment(replication_duration.ToMicroseconds());
+  }
   TRACE_COUNTER_INCREMENT("replication_time_us", replication_duration.ToMicroseconds());
   TRACE("REPLICATION: finished");
 
