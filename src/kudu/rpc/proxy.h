@@ -16,12 +16,12 @@
 // under the License.
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <vector>
 
-#include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/rpc/connection_id.h"
 #include "kudu/rpc/outbound_call.h"
@@ -189,7 +189,7 @@ class Proxy {
   mutable simple_spinlock lock_;
   ConnectionId conn_id_;
 
-  mutable Atomic32 is_started_;
+  std::atomic<bool> is_started_;
 
   DISALLOW_COPY_AND_ASSIGN(Proxy);
 };

@@ -31,7 +31,6 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -96,8 +95,8 @@ class RpcBench : public RpcTestBase {
  public:
   RpcBench()
       : should_run_(true),
-        stop_(0)
-  {}
+        stop_(0) {
+  }
 
   void SetUp() override {
     RpcTestBase::SetUp();
@@ -149,7 +148,7 @@ class RpcBench : public RpcTestBase {
   friend class ClientAsyncWorkload;
 
   Sockaddr server_addr_;
-  Atomic32 should_run_;
+  atomic<bool> should_run_;
   CountDownLatch stop_;
 };
 
@@ -176,7 +175,7 @@ class ClientThread {
 
     AddRequestPB req;
     AddResponsePB resp;
-    while (Acquire_Load(&bench_->should_run_)) {
+    while (bench_->should_run_) {
       req.set_x(request_count_);
       req.set_y(request_count_);
       RpcController controller;
@@ -205,7 +204,7 @@ TEST_F(RpcBench, BenchmarkCalls) {
   }
 
   SleepFor(MonoDelta::FromSeconds(FLAGS_run_seconds));
-  Release_Store(&should_run_, false);
+  should_run_ = false;
 
   int total_reqs = 0;
 
@@ -233,7 +232,7 @@ class ClientAsyncWorkload {
       CHECK_OK(controller_.status());
       CHECK_EQ(req_.x() + req_.y(), resp_.result());
     }
-    if (!Acquire_Load(&bench_->should_run_)) {
+    if (!bench_->should_run_) {
       bench_->stop_.CountDown();
       return;
     }
@@ -287,7 +286,7 @@ TEST_F(RpcBench, BenchmarkCallsAsync) {
   }
 
   SleepFor(MonoDelta::FromSeconds(FLAGS_run_seconds));
-  Release_Store(&should_run_, false);
+  should_run_ = false;
 
   sw.stop();
 

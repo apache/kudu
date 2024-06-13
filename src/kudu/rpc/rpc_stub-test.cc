@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <atomic>
 #include <csignal>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -35,7 +36,6 @@
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/proxy.h"
 #include "kudu/rpc/rpc-test-base.h"
@@ -75,7 +75,6 @@ using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
 using std::vector;
-using base::subtle::NoBarrier_Load;
 
 namespace kudu {
 namespace rpc {
@@ -302,12 +301,6 @@ TEST_F(RpcStubTest, TestCallWithInvalidParam) {
                       "missing fields: y");
 }
 
-// Wrapper around AtomicIncrement, since AtomicIncrement returns the 'old'
-// value, and our callback needs to be a void function.
-static void DoIncrement(Atomic32* count) {
-  base::subtle::Barrier_AtomicIncrement(count, 1);
-}
-
 // Test sending a PB parameter with a missing field on the client side.
 // This also ensures that the async callback is only called once
 // (regression test for a previously-encountered bug).
@@ -319,13 +312,13 @@ TEST_F(RpcStubTest, TestCallWithMissingPBFieldClientSide) {
   req.set_x(10);
   // Request is missing the 'y' field.
   AddResponsePB resp;
-  Atomic32 callback_count = 0;
-  p.AddAsync(req, &resp, &controller, [&callback_count]() { DoIncrement(&callback_count); });
-  while (NoBarrier_Load(&callback_count) == 0) {
+  std::atomic<uint32_t> callback_count(0);
+  p.AddAsync(req, &resp, &controller, [&callback_count]() { ++callback_count; });
+  while (callback_count == 0) {
     SleepFor(MonoDelta::FromMicroseconds(10));
   }
   SleepFor(MonoDelta::FromMicroseconds(100));
-  ASSERT_EQ(1, NoBarrier_Load(&callback_count));
+  ASSERT_EQ(1, callback_count);
   ASSERT_STR_CONTAINS(controller.status().ToString(),
                       "Invalid argument: invalid parameter for call "
                       "kudu.rpc_test.CalculatorService.Add: missing fields: y");

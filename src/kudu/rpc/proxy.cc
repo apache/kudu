@@ -203,7 +203,7 @@ void Proxy::AsyncRequest(const string& method,
                          RpcController* controller,
                          const ResponseCallback& callback) {
   DCHECK(!controller->call_) << "Controller should be reset";
-  base::subtle::NoBarrier_Store(&is_started_, true);
+  is_started_.store(true, std::memory_order_relaxed);
   // TODO(awong): it would be great if we didn't have to heap allocate the
   // payload.
   auto req_payload = RequestPayload::CreateRequestPayload(
@@ -269,13 +269,13 @@ Status Proxy::SyncRequest(const string& method,
 }
 
 void Proxy::set_user_credentials(UserCredentials user_credentials) {
-  DCHECK(base::subtle::NoBarrier_Load(&is_started_) == false)
+  DCHECK(is_started_.load(std::memory_order_relaxed) == false)
       << "illegal to call set_user_credentials() after request processing has started";
   conn_id_.set_user_credentials(std::move(user_credentials));
 }
 
 void Proxy::set_network_plane(string network_plane) {
-  DCHECK(base::subtle::NoBarrier_Load(&is_started_) == false)
+  DCHECK(is_started_.load(std::memory_order_relaxed) == false)
       << "illegal to call set_network_plane() after request processing has started";
   conn_id_.set_network_plane(std::move(network_plane));
 }
