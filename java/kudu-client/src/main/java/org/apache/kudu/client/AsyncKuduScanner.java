@@ -292,10 +292,6 @@ public final class AsyncKuduScanner {
 
   private String queryId;
 
-  private final HashedWheelTimer timer = new HashedWheelTimer(
-        new ThreadFactoryBuilder().setDaemon(true).build(), 20,
-        TimeUnit.MILLISECONDS);
-
   private Timeout keepAliveTimeout;
 
   /**
@@ -990,12 +986,12 @@ public final class AsyncKuduScanner {
       @Override
       public void run(final Timeout timeout) {
         keepAlive();
-        keepAliveTimeout = AsyncKuduClient.newTimeout(timer, this, keepAliveIntervalMS);
+        keepAliveTimeout = AsyncKuduClient.newTimeout(client.getTimer(), this, keepAliveIntervalMS);
       }
     }
 
-    keepAliveTimeout = AsyncKuduClient.newTimeout(timer, new KeepAliveTimer(),
-                                                  keepAliveIntervalMS);
+    keepAliveTimeout =
+        AsyncKuduClient.newTimeout(client.getTimer(), new KeepAliveTimer(), keepAliveIntervalMS);
     return true;
   }
 
