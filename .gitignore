@@ -41,12 +41,15 @@ README.html
 *~
 
 # IDE cruft
-.settings/
-.idea/
-nbproject/
-.project
 .cproject
 .csettings/
+.idea/
+.project
+.qt/
+.qtc_clangd/
+.settings/
+.vscode/
+nbproject/
 
 # WWW dependencies which are not checked in directly
 www/tracing.*
