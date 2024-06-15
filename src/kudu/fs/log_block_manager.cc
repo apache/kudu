@@ -65,6 +65,7 @@
 #include "kudu/gutil/strings/util.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/alignment.h"
+#include "kudu/util/atomic-utils.h"
 #include "kudu/util/array_view.h"
 #include "kudu/util/env.h"
 #include "kudu/util/fault_injection.h"
@@ -226,6 +227,7 @@ using kudu::fs::internal::LogWritableBlock;
 using kudu::pb_util::ReadablePBContainerFile;
 using kudu::pb_util::WritablePBContainerFile;
 using std::accumulate;
+using std::atomic;
 using std::map;
 using std::optional;
 using std::set;
@@ -601,23 +603,23 @@ class LogBlockContainer: public RefCountedThreadSafe<LogBlockContainer> {
   // Simple accessors.
   LogBlockManager* block_manager() const { return block_manager_; }
   const string& id() const { return id_; }
-  int64_t next_block_offset() const { return next_block_offset_.Load(); }
-  int64_t total_bytes() const { return total_bytes_.Load(); }
-  int64_t total_blocks() const { return total_blocks_.Load(); }
-  int64_t live_bytes() const { return live_bytes_.Load(); }
-  int64_t live_bytes_aligned() const { return live_bytes_aligned_.Load(); }
-  int64_t live_blocks() const { return live_blocks_.Load(); }
-  int32_t blocks_being_written() const { return blocks_being_written_.Load(); }
+  int64_t next_block_offset() const { return next_block_offset_; }
+  int64_t total_bytes() const { return total_bytes_; }
+  int64_t total_blocks() const { return total_blocks_; }
+  int64_t live_bytes() const { return live_bytes_; }
+  int64_t live_bytes_aligned() const { return live_bytes_aligned_; }
+  int64_t live_blocks() const { return live_blocks_; }
+  int32_t blocks_being_written() const { return blocks_being_written_; }
   virtual bool full() const { return data_full(); }
-  bool dead() const { return dead_.Load(); }
+  bool dead() const { return dead_; }
   const LogBlockManagerMetrics* metrics() const { return metrics_; }
   Dir* data_dir() const { return data_dir_; }
   const DirInstanceMetadataPB* instance() const { return data_dir_->instance()->metadata(); }
 
   // Adjusts the number of blocks being written.
   // Positive means increase, negative means decrease.
-  int32_t blocks_being_written_incr(int32_t value) {
-    return blocks_being_written_.IncrementBy(value);
+  void blocks_being_written_incr(int32_t value) {
+    blocks_being_written_.fetch_add(value);
   }
 
   // Check that the container meets the death condition.
@@ -641,8 +643,11 @@ class LogBlockContainer: public RefCountedThreadSafe<LogBlockContainer> {
   //
   // If successful, returns true; otherwise returns false.
   bool TrySetDead() {
-    if (dead()) return false;
-    return dead_.CompareAndSet(false, true);
+    if (dead()) {
+      return false;
+    }
+    bool is_dead = false;
+    return dead_.compare_exchange_strong(is_dead, true);
   }
 
   // Some work will be triggered after blocks have been removed from this container successfully.
@@ -718,29 +723,29 @@ class LogBlockContainer: public RefCountedThreadSafe<LogBlockContainer> {
   shared_ptr<RWFile> data_file_;
 
   // The offset of the next block to be written to the container.
-  AtomicInt<int64_t> next_block_offset_;
+  atomic<int64_t> next_block_offset_;
 
   // The amount of data (post block alignment) written thus far to the container.
-  AtomicInt<int64_t> total_bytes_;
+  atomic<int64_t> total_bytes_;
 
   // The number of blocks written thus far in the container.
-  AtomicInt<int64_t> total_blocks_;
+  atomic<int64_t> total_blocks_;
 
   // The amount of data present in not-yet-deleted blocks of the container.
-  AtomicInt<int64_t> live_bytes_;
+  atomic<int64_t> live_bytes_;
 
   // The amount of data (post block alignment) present in not-yet-deleted
   // blocks of the container.
-  AtomicInt<int64_t> live_bytes_aligned_;
+  atomic<int64_t> live_bytes_aligned_;
 
   // The number of not-yet-deleted blocks in the container.
-  AtomicInt<int64_t> live_blocks_;
+  atomic<int64_t> live_blocks_;
 
   // The number of LogWritableBlocks currently open for this container.
-  AtomicInt<int32_t> blocks_being_written_;
+  atomic<int32_t> blocks_being_written_;
 
   // Whether or not this container has been marked as dead.
-  AtomicBool dead_;
+  atomic<bool> dead_;
 
   // The metrics. Not owned by the log container; it has the same lifespan
   // as the block manager.
@@ -895,7 +900,7 @@ class LogBlockContainerNativeMeta final : public LogBlockContainer {
   unique_ptr<WritablePBContainerFile> metadata_file_;
 
   // TODO(yingchun): add metadata bytes for metadata.
-  //  AtomicInt<int64_t> metadata_bytes_;
+  //  atomic<int64_t> metadata_bytes_;
 
   DISALLOW_COPY_AND_ASSIGN(LogBlockContainerNativeMeta);
 };
@@ -1021,9 +1026,9 @@ LogBlockContainer::LogBlockContainer(
   if (auto encryption_header_size = data_file_->GetEncryptionHeaderSize();
       encryption_header_size > 0) {
     UpdateNextBlockOffset(0, encryption_header_size);
-    live_bytes_.Store(encryption_header_size);
-    total_bytes_.Store(next_block_offset_.Load());
-    live_bytes_aligned_.Store(next_block_offset_.Load());
+    live_bytes_ = encryption_header_size;
+    total_bytes_ = next_block_offset_.load();
+    live_bytes_aligned_ = next_block_offset_.load();
   }
 }
 
@@ -1132,8 +1137,8 @@ void LogBlockContainerNativeMeta::CompactMetadata() {
   VLOG(1) << "Compacted metadata file " << ToString()
           << " (saved " << file_bytes_delta << " bytes)";
 
-  total_blocks_.Store(live_blocks.size());
-  live_blocks_.Store(live_blocks.size());
+  total_blocks_ = live_blocks.size();
+  live_blocks_ = live_blocks.size();
 }
 
 #define RETURN_NOT_OK_CONTAINER_DISK_FAILURE(status_expr) do { \
@@ -1785,7 +1790,7 @@ void LogBlockContainer::UpdateNextBlockOffset(int64_t block_offset, int64_t bloc
   int64_t new_next_block_offset = KUDU_ALIGN_UP(
       block_offset + block_length,
       instance()->filesystem_block_size_bytes());
-  next_block_offset_.StoreMax(new_next_block_offset);
+  AtomicStoreMax(next_block_offset_, new_next_block_offset);
 
   if (data_full()) {
     VLOG(1) << Substitute(
@@ -1833,19 +1838,19 @@ vector<BlockRecordPB> LogBlockContainer::SortRecords(
 void LogBlockContainer::BlockCreated(const LogBlockRefPtr& block) {
   DCHECK_GE(block->offset(), 0);
 
-  total_bytes_.IncrementBy(block->fs_aligned_length());
-  total_blocks_.Increment();
-  live_bytes_.IncrementBy(block->length());
-  live_bytes_aligned_.IncrementBy(block->fs_aligned_length());
-  live_blocks_.Increment();
+  total_bytes_.fetch_add(block->fs_aligned_length());
+  total_blocks_++;
+  live_bytes_.fetch_add(block->length());
+  live_bytes_aligned_.fetch_add(block->fs_aligned_length());
+  live_blocks_++;
 }
 
 void LogBlockContainer::BlockDeleted(const LogBlockRefPtr& block) {
   DCHECK_GE(block->offset(), 0);
 
-  live_bytes_.IncrementBy(-block->length());
-  live_bytes_aligned_.IncrementBy(-block->fs_aligned_length());
-  live_blocks_.IncrementBy(-1);
+  live_bytes_.fetch_sub(block->length());
+  live_bytes_aligned_.fetch_sub(block->fs_aligned_length());
+  live_blocks_--;
 }
 
 void LogBlockContainer::ExecClosure(const std::function<void()>& task) {
@@ -2639,7 +2644,7 @@ class LogReadableBlock : public ReadableBlock {
 
   // Whether or not this block has been closed. Close() is thread-safe, so
   // this must be an atomic primitive.
-  AtomicBool closed_;
+  atomic<bool> closed_;
 
   DISALLOW_COPY_AND_ASSIGN(LogReadableBlock);
 };
@@ -2659,7 +2664,8 @@ LogReadableBlock::~LogReadableBlock() {
 }
 
 Status LogReadableBlock::Close() {
-  if (closed_.CompareAndSet(false, true)) {
+  bool is_closed = false;
+  if (closed_.compare_exchange_strong(is_closed, true)) {
     if (log_block_->container()->metrics()) {
       log_block_->container()->metrics()->generic_metrics.blocks_open_reading->Decrement();
     }
@@ -2678,7 +2684,7 @@ const BlockId& LogReadableBlock::id() const {
 }
 
 Status LogReadableBlock::Size(uint64_t* sz) const {
-  DCHECK(!closed_.Load());
+  DCHECK(!closed_);
 
   *sz = log_block_->length();
   return Status::OK();
@@ -2689,7 +2695,7 @@ Status LogReadableBlock::Read(uint64_t offset, Slice result) const {
 }
 
 Status LogReadableBlock::ReadV(uint64_t offset, ArrayView<Slice> results) const {
-  DCHECK(!closed_.Load());
+  DCHECK(!closed_);
 
   size_t read_length = accumulate(results.begin(), results.end(), static_cast<size_t>(0),
                                   [&](int sum, const Slice& curr) {
@@ -2780,8 +2786,7 @@ LogBlockManager::LogBlockManager(Env* env,
   // block ID 1, we'll start with a random block ID. A collision is still
   // possible, but exceedingly unlikely.
   if (IsGTest()) {
-    Random r(GetRandomSeed32());
-    next_block_id_.Store(r.Next64());
+    next_block_id_ = Random(GetRandomSeed32()).Next64();
   }
 
   if (opts_.metric_entity) {
@@ -3013,7 +3018,7 @@ Status LogBlockManager::CreateBlock(const CreateBlockOptions& opts,
   // and thus we may have to "skip over" some block IDs that are claimed.
   BlockId new_block_id;
   do {
-    new_block_id.SetId(next_block_id_.Increment());
+    new_block_id.SetId(next_block_id_++);
   } while (!TryUseBlockId(new_block_id));
 
   block->reset(new LogWritableBlock(container,
@@ -3078,7 +3083,7 @@ Status LogBlockManager::GetAllBlockIds(vector<BlockId>* block_ids) {
 }
 
 void LogBlockManager::NotifyBlockId(BlockId block_id) {
-  next_block_id_.StoreMax(block_id.id() + 1);
+  AtomicStoreMax(next_block_id_, block_id.id() + 1);
 }
 
 void LogBlockManager::AddNewContainerUnlocked(const LogBlockContainerRefPtr& container) {
@@ -3583,7 +3588,7 @@ void LogBlockManager::LoadContainer(Dir* dir,
   result->report.stats.live_block_count += container->live_blocks();
   result->report.stats.lbm_container_count++;
 
-  next_block_id_.StoreMax(max_block_id + 1);
+  AtomicStoreMax(next_block_id_, max_block_id + 1);
 
   int64_t mem_usage = 0;
   for (UntrackedBlockMap::value_type& e : live_blocks) {

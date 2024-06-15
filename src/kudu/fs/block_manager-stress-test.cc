@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -47,7 +48,6 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/atomic.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/env.h"
 #include "kudu/util/faststring.h"
@@ -277,13 +277,13 @@ class BlockManagerStressTest : public KuduTest {
 
   // Some performance counters.
 
-  AtomicInt<int64_t> total_blocks_written_;
-  AtomicInt<int64_t> total_bytes_written_;
+  std::atomic<int64_t> total_blocks_written_;
+  std::atomic<int64_t> total_bytes_written_;
 
-  AtomicInt<int64_t> total_blocks_read_;
-  AtomicInt<int64_t> total_bytes_read_;
+  std::atomic<int64_t> total_blocks_read_;
+  std::atomic<int64_t> total_bytes_read_;
 
-  AtomicInt<int64_t> total_blocks_deleted_;
+  std::atomic<int64_t> total_blocks_deleted_;
 };
 
 template <typename T>
@@ -359,8 +359,8 @@ void BlockManagerStressTest<T>::WriterThread() {
     }
   }
 
-  total_blocks_written_.IncrementBy(num_blocks_written);
-  total_bytes_written_.IncrementBy(num_bytes_written);
+  total_blocks_written_.fetch_add(num_blocks_written, std::memory_order_relaxed);
+  total_bytes_written_.fetch_add(num_bytes_written, std::memory_order_relaxed);
 }
 
 template <typename T>
@@ -426,8 +426,8 @@ void BlockManagerStressTest<T>::ReaderThread() {
     num_bytes_read += block_size;
   }
 
-  total_blocks_read_.IncrementBy(num_blocks_read);
-  total_bytes_read_.IncrementBy(num_bytes_read);
+  total_blocks_read_.fetch_add(num_blocks_read, std::memory_order_relaxed);
+  total_bytes_read_.fetch_add(num_bytes_read, std::memory_order_relaxed);
 }
 
 template <typename T>
@@ -470,7 +470,7 @@ void BlockManagerStressTest<T>::DeleterThread() {
     num_blocks_deleted += deleted.size();
   }
 
-  total_blocks_deleted_.IncrementBy(num_blocks_deleted);
+  total_blocks_deleted_.fetch_add(num_blocks_deleted, std::memory_order_relaxed);
 }
 
 template <>
@@ -558,15 +558,15 @@ TYPED_TEST(BlockManagerStressTest, StressTest) {
   LOG(INFO) << "Printing test totals";
   LOG(INFO) << "--------------------";
   LOG(INFO) << Substitute("Wrote $0 blocks ($1 bytes) via $2 threads",
-                          this->total_blocks_written_.Load(),
-                          this->total_bytes_written_.Load(),
+                          this->total_blocks_written_.load(),
+                          this->total_bytes_written_.load(),
                           FLAGS_num_writer_threads);
   LOG(INFO) << Substitute("Read $0 blocks ($1 bytes) via $2 threads",
-                          this->total_blocks_read_.Load(),
-                          this->total_bytes_read_.Load(),
+                          this->total_blocks_read_.load(),
+                          this->total_bytes_read_.load(),
                           FLAGS_num_reader_threads);
   LOG(INFO) << Substitute("Deleted $0 blocks via $1 threads",
-                          this->total_blocks_deleted_.Load(),
+                          this->total_blocks_deleted_.load(),
                           FLAGS_num_deleter_threads);
 }
 

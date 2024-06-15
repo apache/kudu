@@ -40,7 +40,6 @@
 #include "kudu/fs/fs.pb.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/util/atomic.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/oid_generator.h"
@@ -517,7 +516,7 @@ class LogBlockManager : public BlockManager {
   ObjectIdGenerator oid_generator_;
 
   // For generating block IDs.
-  AtomicInt<uint64_t> next_block_id_;
+  std::atomic<uint64_t> next_block_id_;
 
   // Metrics for the block manager.
   //

@@ -15,8 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#ifndef KUDU_FS_FILE_BLOCK_MANAGER_H
-#define KUDU_FS_FILE_BLOCK_MANAGER_H
+#pragma once
 
 #include <atomic>
 #include <cstdint>
@@ -29,7 +28,6 @@
 #include "kudu/fs/error_manager.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/util/atomic.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/random.h"
 #include "kudu/util/status.h"
@@ -145,7 +143,7 @@ class FileBlockManager : public BlockManager {
 
   // For generating block IDs.
   ThreadSafeRandom rand_;
-  AtomicInt<uint64_t> next_block_id_;
+  std::atomic<uint64_t> next_block_id_;
 
   // Protects 'dirty_dirs_'.
   mutable simple_spinlock lock_;
@@ -170,5 +168,3 @@ class FileBlockManager : public BlockManager {
 
 } // namespace fs
 } // namespace kudu
-
-#endif

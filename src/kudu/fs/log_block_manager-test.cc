@@ -18,6 +18,7 @@
 #include "kudu/fs/log_block_manager.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -61,7 +62,6 @@
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
-#include "kudu/util/atomic.h"
 #include "kudu/util/env.h"
 #include "kudu/util/file_cache.h"
 #include "kudu/util/metrics.h"
@@ -628,7 +628,7 @@ TEST_P(LogBlockManagerTest, TestBumpBlockIds) {
 
   // Simulate a complete reset of the block manager's block ID record, e.g.
   // from restarting but with all the blocks gone.
-  bm_->next_block_id_.Store(1);
+  bm_->next_block_id_ = 1;
 
   // Now simulate being notified by some other component (e.g. tablet metadata)
   // of the presence of a block ID.
@@ -651,7 +651,7 @@ TEST_P(LogBlockManagerTest, TestBumpBlockIds) {
 TEST_P(LogBlockManagerTest, TestReuseBlockIds) {
   // Typically, the LBM starts with a random block ID when running as a
   // gtest. In this test, we want to control the block IDs.
-  bm_->next_block_id_.Store(1);
+  bm_->next_block_id_ = 1;
 
   vector<BlockId> block_ids;
 
@@ -689,7 +689,7 @@ TEST_P(LogBlockManagerTest, TestReuseBlockIds) {
   // Reset the block ID sequence and re-create new blocks which should reuse the same
   // block IDs. This isn't allowed in current versions of Kudu, but older versions
   // could produce this situation, and we still need to handle it on startup.
-  bm_->next_block_id_.Store(1);
+  bm_->next_block_id_ = 1;
   for (int i = 0; i < 4; i++) {
     unique_ptr<WritableBlock> writer;
     ASSERT_OK(bm_->CreateBlock(test_block_opts_, &writer));

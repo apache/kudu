@@ -47,7 +47,6 @@
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/array_view.h"
-#include "kudu/util/atomic.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/file_cache.h"
@@ -60,6 +59,7 @@
 #include "kudu/util/status.h"
 
 using std::accumulate;
+using std::atomic;
 using std::set;
 using std::shared_ptr;
 using std::string;
@@ -469,7 +469,7 @@ class FileReadableBlock : public ReadableBlock {
 
   // Whether or not this block has been closed. Close() is thread-safe, so
   // this must be an atomic primitive.
-  AtomicBool closed_;
+  atomic<bool> closed_;
 
   DISALLOW_COPY_AND_ASSIGN(FileReadableBlock);
 };
@@ -500,7 +500,8 @@ FileReadableBlock::~FileReadableBlock() {
 }
 
 Status FileReadableBlock::Close() {
-  if (closed_.CompareAndSet(false, true)) {
+  bool is_closed = false;
+  if (closed_.compare_exchange_strong(is_closed, true)) {
     reader_.reset();
     if (block_manager_->metrics_) {
       block_manager_->metrics_->blocks_open_reading->Decrement();
@@ -519,7 +520,7 @@ const BlockId& FileReadableBlock::id() const {
 }
 
 Status FileReadableBlock::Size(uint64_t* sz) const {
-  DCHECK(!closed_.Load());
+  DCHECK(!closed_);
 
   RETURN_NOT_OK_HANDLE_ERROR(reader_->Size(sz));
   *sz -= reader_->GetEncryptionHeaderSize();
@@ -531,7 +532,7 @@ Status FileReadableBlock::Read(uint64_t offset, Slice result) const {
 }
 
 Status FileReadableBlock::ReadV(uint64_t offset, ArrayView<Slice> results) const {
-  DCHECK(!closed_.Load());
+  DCHECK(!closed_);
 
   RETURN_NOT_OK_HANDLE_ERROR(reader_->ReadV(offset + reader_->GetEncryptionHeaderSize(), results));
 
@@ -730,8 +731,8 @@ FileBlockManager::~FileBlockManager() {
 }
 
 Status FileBlockManager::Open(FsReport* report, MergeReport need_merage,
-                              std::atomic<int>* /* containers_processed */,
-                              std::atomic<int>* /* containers_total */) {
+                              atomic<int>* /* containers_processed */,
+                              atomic<int>* /* containers_total */) {
   // Prepare the filesystem report and either return or log it.
   FsReport local_report;
   set<int> failed_dirs = dd_manager_->GetFailedDirs();
@@ -764,7 +765,7 @@ Status FileBlockManager::Open(FsReport* report, MergeReport need_merage,
 
 Status FileBlockManager::CreateBlock(const CreateBlockOptions& opts,
                                      unique_ptr<WritableBlock>* block) {
-  CHECK(!opts_.read_only);
+  DCHECK(!opts_.read_only);
 
   Dir* dir;
   RETURN_NOT_OK_EVAL(dd_manager_->GetDirAddIfNecessary(opts, &dir),
@@ -788,14 +789,14 @@ Status FileBlockManager::CreateBlock(const CreateBlockOptions& opts,
     // If we failed to generate a unique ID, start trying again from a random
     // part of the key space.
     if (attempt_num++ > 0) {
-      next_block_id_.Store(rand_.Next64());
+      next_block_id_ = rand_.Next64();
     }
 
     // Make sure we don't accidentally create a location using the magic
     // invalid ID value.
     BlockId id;
     do {
-      id.SetId(next_block_id_.Increment());
+      id.SetId(next_block_id_++);
     } while (id.IsNull());
 
     location = internal::FileBlockLocation::FromParts(dir, uuid_idx, id);
@@ -869,7 +870,7 @@ Status FileBlockManager::OpenBlock(const BlockId& block_id,
 }
 
 Status FileBlockManager::DeleteBlock(const BlockId& block_id) {
-  CHECK(!opts_.read_only);
+  DCHECK(!opts_.read_only);
 
   // Return early if deleting a block in a failed directory.
   set<int> failed_dirs = dd_manager_->GetFailedDirs();
@@ -906,13 +907,13 @@ Status FileBlockManager::DeleteBlock(const BlockId& block_id) {
 }
 
 unique_ptr<BlockCreationTransaction> FileBlockManager::NewCreationTransaction() {
-  CHECK(!opts_.read_only);
+  DCHECK(!opts_.read_only);
   return unique_ptr<internal::FileBlockCreationTransaction>(
       new internal::FileBlockCreationTransaction());
 }
 
 shared_ptr<BlockDeletionTransaction> FileBlockManager::NewDeletionTransaction() {
-  CHECK(!opts_.read_only);
+  DCHECK(!opts_.read_only);
   return std::make_shared<internal::FileBlockDeletionTransaction>(this);
 }
 
