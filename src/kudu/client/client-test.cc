@@ -2378,9 +2378,14 @@ TEST_F(ClientTest, TestMetaCacheExpiry) {
 // when alterting a table by adding a new range partition (see
 // KuduTableAlterer::Alter() for details).
 TEST_F(ClientTest, ClearCacheAndConcurrentWorkload) {
+#if defined(THREAD_SANITIZER) || defined(ADDRESS_SANITIZER)
+  constexpr const int64_t kResetIntervalMs = 100;
+#else
+  constexpr const int64_t kResetIntervalMs = 3;
+#endif
   CountDownLatch latch(1);
   thread cache_cleaner([&]() {
-    const auto sleep_interval = MonoDelta::FromMilliseconds(3);
+    const auto sleep_interval = MonoDelta::FromMilliseconds(kResetIntervalMs);
     while (!latch.WaitFor(sleep_interval)) {
       client_->data_->meta_cache_->ClearCache();
     }
