@@ -2029,6 +2029,8 @@ unique_ptr<Mode> BuildTableMode() {
       .AddOptionalParameter("scan_batch_size")
       .AddOptionalParameter("tablets")
       .AddOptionalParameter("write_type")
+      .AddOptionalParameter("table_copy_throttler_bytes_per_sec")
+      .AddOptionalParameter("table_copy_throttler_burst_factor")
       .Build();
 
   unique_ptr<Action> set_extra_config =

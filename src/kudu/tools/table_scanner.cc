@@ -61,6 +61,7 @@
 #include "kudu/util/slice.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/string_case.h"
+#include "kudu/util/throttler.h"
 
 using kudu::client::KuduClient;
 using kudu::client::KuduColumnSchema;
@@ -139,6 +140,15 @@ DEFINE_string(replica_selection, "CLOSEST",
               "Replica selection for scan operations. Acceptable values are: "
               "CLOSEST, LEADER (maps into KuduClient::CLOSEST_REPLICA and "
               "KuduClient::LEADER_ONLY correspondingly).");
+DEFINE_int64(table_copy_throttler_bytes_per_sec, 0,
+             "Limit table copying speed. It limits the copying speed of all the tablets "
+             "in one table for one session. The default value is 0, which means not limiting "
+             "the speed. The unit is bytes/second");
+DEFINE_double(table_copy_throttler_burst_factor, 1.0F,
+             "Burst factor for table copy throttling. The maximum rate the throttler "
+             "allows within a token refill period (100ms) equals burst factor multiplied "
+             "base rate (--table_copy_throttler_bytes_per_sec). The default value is 1.0, "
+             "which means the maximum rate is equal to --table_copy_throttler_bytes_per_sec.");
 
 DECLARE_bool(row_count_only);
 DECLARE_int32(num_threads);
@@ -571,6 +581,11 @@ TableScanner::TableScanner(
       scan_batch_size_(-1),
       out_(nullptr) {
   CHECK_OK(SetReplicaSelection(FLAGS_replica_selection));
+  if (FLAGS_table_copy_throttler_bytes_per_sec > 0) {
+    throttler_ = std::make_shared<Throttler>(MonoTime::Now(), 0,
+                                             FLAGS_table_copy_throttler_bytes_per_sec,
+                                             FLAGS_table_copy_throttler_burst_factor);
+  }
 }
 
 Status TableScanner::ScanData(const vector<KuduScanToken*>& tokens,
@@ -593,6 +608,14 @@ Status TableScanner::ScanData(const vector<KuduScanToken*>& tokens,
       count += batch.NumRows();
       total_count_ += batch.NumRows();
       ++next_batch_calls;
+      // Limit table copy speed.
+      if (throttler_) {
+        SCOPED_LOG_SLOW_EXECUTION(WARNING, 1000, "Table copy throttler");
+        while (!throttler_->Take(MonoTime::Now(), 0,
+                                 batch.direct_data().size() + batch.indirect_data().size())) {
+          SleepFor(MonoDelta::FromMilliseconds(10));
+        }
+      }
       RETURN_NOT_OK(cb(batch));
     }
     sw.stop();

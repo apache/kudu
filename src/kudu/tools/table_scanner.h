@@ -35,6 +35,8 @@
 #include "kudu/util/threadpool.h"
 
 namespace kudu {
+class Throttler;
+
 namespace tools {
 
 // This class is not thread-safe.
@@ -102,6 +104,7 @@ class TableScanner {
   std::optional<std::string> dst_table_name_;
   int32_t scan_batch_size_;
   std::unique_ptr<ThreadPool> thread_pool_;
+  std::shared_ptr<Throttler> throttler_;
 
   // Protects output to 'out_' so that rows don't get interleaved.
   Mutex output_lock_;

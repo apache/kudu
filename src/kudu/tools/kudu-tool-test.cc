@@ -52,6 +52,7 @@
 #include "kudu/cfile/cfile_writer.h"
 #include "kudu/client/client-test-util.h"
 #include "kudu/client/client.h"
+#include "kudu/client/scan_batch.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/client/value.h"
@@ -77,6 +78,7 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/fs/fs_report.h"
 #include "kudu/fs/log_block_manager.h"
+#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
@@ -181,6 +183,8 @@ using kudu::client::KuduScanToken;
 using kudu::client::KuduScanTokenBuilder;
 using kudu::client::KuduSchema;
 using kudu::client::KuduSchemaBuilder;
+using kudu::client::KuduScanBatch;
+using kudu::client::KuduScanner;
 using kudu::client::KuduSession;
 using kudu::client::KuduTable;
 using kudu::client::KuduTableAlterer;
@@ -5984,6 +5988,55 @@ TEST_F(ToolTest, TableScanFaultTolerant) {
     ASSERT_TRUE(s.ok()) << s.ToString() << ": " << err;
     ASSERT_STR_CONTAINS(out, "Total count 888 ");
   }
+}
+
+TEST_F(ToolTest, TableCopyLimitSpeed) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+  NO_FATALS(StartExternalMiniCluster());
+  constexpr const char* const kTableName = "kudu.table.copy.limit_speed.from";
+  constexpr const char* const kNewTableName = "kudu.table.copy.limit_speed.to";
+  TestWorkload workload(cluster_.get());
+  workload.set_table_name(kTableName);
+  workload.set_num_tablets(1);
+  workload.set_num_replicas(1);
+  workload.Setup();
+  workload.Start();
+  ASSERT_EVENTUALLY([&]() {
+    ASSERT_GE(workload.rows_inserted(), 20000);
+  });
+  workload.StopAndJoin();
+
+  const string& master_addr = cluster_->master()->bound_rpc_addr().ToString();
+  int64 table_copy_throttler_bytes_per_sec = 10240;
+  MonoTime start_time = MonoTime::Now();
+  NO_FATALS(RunTool(
+      Substitute("table copy $0 $1 $2 --dst_table=$3 --write_type=upsert "
+                 "-scan_batch_size=1024 "
+                 "--table_copy_throttler_bytes_per_sec=$4 "
+                 "--table_copy_throttler_burst_factor=100",
+                 master_addr, kTableName,
+                 master_addr, kNewTableName,
+                 table_copy_throttler_bytes_per_sec
+                ), nullptr, nullptr));
+  MonoTime end_time = MonoTime::Now();
+
+  shared_ptr<KuduClient> client;
+  ASSERT_OK(KuduClientBuilder()
+                .add_master_server_addr(master_addr)
+                .Build(&client));
+  shared_ptr<KuduTable> table;
+  client->OpenTable(kNewTableName, &table);
+  KuduScanner scanner(table.get());
+  scanner.Open();
+  KuduScanBatch batch;
+  int64_t data_size = 0;
+  while (scanner.HasMoreRows()) {
+    ASSERT_OK(scanner.NextBatch(&batch));
+    data_size = batch.direct_data().size() + batch.indirect_data().size();
+  }
+  // Table copy speed must less than table_copy_throttler_bytes_per_sec.
+  ASSERT_LE(data_size / (end_time - start_time).ToSeconds(), table_copy_throttler_bytes_per_sec);
 }
 
 TEST_F(ToolTest, TableCopyFaultTolerant) {
