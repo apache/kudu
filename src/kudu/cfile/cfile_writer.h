@@ -108,7 +108,7 @@ class CFileWriter {
   // it to 'transaction'.
   Status FinishAndReleaseBlock(fs::BlockCreationTransaction* transaction);
 
-  bool finished() {
+  bool finished() const noexcept {
     return state_ == kWriterFinished;
   }
 
@@ -176,8 +176,6 @@ class CFileWriter {
   }
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(CFileWriter);
-
   friend class IndexTreeBuilder;
 
   // Append the given block into the file.
@@ -195,6 +193,8 @@ class CFileWriter {
   // field, clearing the buffer.
   void FlushMetadataToPB(google::protobuf::RepeatedPtrField<FileMetadataPairPB> *field);
 
+  WriterOptions options_;
+
   // Block being written.
   std::unique_ptr<fs::WritableBlock> block_;
 
@@ -203,8 +203,6 @@ class CFileWriter {
 
   // Current number of values that have been appended.
   rowid_t value_count_;
-
-  WriterOptions options_;
 
   // Type of data being written
   bool is_nullable_;
@@ -234,6 +232,8 @@ class CFileWriter {
     kWriterFinished
   };
   State state_;
+
+  DISALLOW_COPY_AND_ASSIGN(CFileWriter);
 };
 
 

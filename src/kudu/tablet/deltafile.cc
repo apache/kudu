@@ -17,7 +17,7 @@
 
 #include "kudu/tablet/deltafile.h"
 
-#include <functional>
+// IWYU pragma: no_include <functional>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -88,60 +88,61 @@ namespace tablet {
 
 const char* const DeltaFileReader::kDeltaStatsEntryName = "deltafilestats";
 
-DeltaFileWriter::DeltaFileWriter(unique_ptr<WritableBlock> block)
-#ifndef NDEBUG
-   : has_appended_(false)
-#endif
-{ // NOLINT(*)
-  cfile::WriterOptions opts;
-  opts.write_validx = true;
-  opts.storage_attributes.cfile_block_size = FLAGS_deltafile_default_block_size;
-  opts.storage_attributes.encoding = PLAIN_ENCODING;
-  opts.storage_attributes.compression =
-      GetCompressionCodecType(FLAGS_deltafile_default_compression_codec);
+namespace {
 
-  // The CFile value index is 'compressed' by truncating delta values to only
-  // contain the delta key. The entire deltakey is required in order to support
-  // efficient seeks without deserializing the entire block. The generic value
-  // index optimization is disabled, since it could truncate portions of the
-  // deltakey.
-  //
-  // Note: The deltafile usage of the CFile value index is irregular, since it
-  // inserts values in non-sorted order (the timestamp portion of the deltakey
-  // in UNDO files is sorted in descending order). This doesn't appear to cause
-  // problems in practice.
-  opts.optimize_index_keys = false;
-  opts.validx_key_encoder = [] (const void* value, faststring* buffer) {
+constexpr auto kKeyEncoder = [] (const void* value, faststring* buffer) {
     buffer->clear();
     const Slice* s1 = static_cast<const Slice*>(value);
     Slice s2(*s1);
     DeltaKey key;
     CHECK_OK(key.DecodeFrom(&s2));
     key.EncodeTo(buffer);
-  };
+};
 
-  writer_.reset(new cfile::CFileWriter(std::move(opts),
-                                       GetTypeInfo(BINARY),
-                                       false,
-                                       std::move(block)));
+} // anonymous namespace
+
+// The CFile value index is 'compressed' by truncating delta values to only
+// contain the delta key. The entire deltakey is required in order to support
+// efficient seeks without deserializing the entire block. The generic value
+// index optimization is disabled, since it could truncate portions of the
+// deltakey.
+//
+// Note: The deltafile usage of the CFile value index is irregular, since it
+// inserts values in non-sorted order (the timestamp portion of the deltakey
+// in UNDO files is sorted in descending order). This doesn't appear to cause
+// problems in practice.
+DeltaFileWriter::DeltaFileWriter(unique_ptr<WritableBlock> block)
+    : writer_(cfile::WriterOptionsBuilder()
+                  .write_validx(true)
+                  .optimize_index_keys(false)
+                  .storage_attributes({
+                      PLAIN_ENCODING,
+                      GetCompressionCodecType(FLAGS_deltafile_default_compression_codec),
+                      FLAGS_deltafile_default_block_size
+                  })
+                  .validx_key_encoder(kKeyEncoder)
+                  .Build(),
+              GetTypeInfo(BINARY),
+              false,
+              std::move(block)) {
 }
 
 Status DeltaFileWriter::Start() {
-  return writer_->Start();
+  return writer_.Start();
 }
 
 Status DeltaFileWriter::Finish() {
-  BlockManager* bm = writer_->block()->block_manager();
+  BlockManager* bm = writer_.block()->block_manager();
   unique_ptr<BlockCreationTransaction> transaction = bm->NewCreationTransaction();
   RETURN_NOT_OK(FinishAndReleaseBlock(transaction.get()));
   return transaction->CommitCreatedBlocks();
 }
 
 Status DeltaFileWriter::FinishAndReleaseBlock(BlockCreationTransaction* transaction) {
-  if (writer_->written_value_count() == 0) {
+  if (writer_.written_value_count() == 0) {
     return Status::Aborted("no deltas written");
   }
-  return writer_->FinishAndReleaseBlock(transaction);
+  return writer_.FinishAndReleaseBlock(transaction);
 }
 
 Status DeltaFileWriter::DoAppendDelta(const DeltaKey &key,
@@ -155,7 +156,7 @@ Status DeltaFileWriter::DoAppendDelta(const DeltaKey &key,
   tmp_buf_.append(delta_slice.data(), delta_slice.size());
   Slice tmp_buf_slice(tmp_buf_);
 
-  return writer_->AppendEntries(&tmp_buf_slice, 1);
+  return writer_.AppendEntries(&tmp_buf_slice, 1);
 }
 
 template<>
@@ -202,7 +203,7 @@ void DeltaFileWriter::WriteDeltaStats(std::unique_ptr<DeltaStats> stats) {
 
   faststring buf;
   pb_util::SerializeToString(delta_stats_pb, &buf);
-  writer_->AddMetadataPair(DeltaFileReader::kDeltaStatsEntryName, buf.ToString());
+  writer_.AddMetadataPair(DeltaFileReader::kDeltaStatsEntryName, buf.ToString());
   delta_stats_ = std::move(stats);
 }
 

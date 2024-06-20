@@ -33,7 +33,6 @@
 #include "kudu/cfile/cfile_writer.h"
 #include "kudu/cfile/index_btree.h"
 #include "kudu/common/common.pb.h"
-#include "kudu/common/schema.h"
 #include "kudu/common/types.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/gutil/atomicops.h"
@@ -98,28 +97,27 @@ using BloomCacheTLC = ThreadLocalCache<uint64_t, BloomCacheItem>;
 // Writer
 ////////////////////////////////////////////////////////////
 
+// For bloom filters' storage, never use compression regardless of the default
+// settings: bloom filters are high-entropy data structures by their nature.
 BloomFileWriter::BloomFileWriter(unique_ptr<WritableBlock> block,
-                                 const BloomFilterSizing &sizing)
-  : bloom_builder_(sizing) {
-  cfile::WriterOptions opts;
-  opts.write_posidx = false;
-  opts.write_validx = true;
-  // Never use compression, regardless of the default settings, since
-  // bloom filters are high-entropy data structures by their nature.
-  opts.storage_attributes.encoding  = PLAIN_ENCODING;
-  opts.storage_attributes.compression = NO_COMPRESSION;
-  writer_.reset(new cfile::CFileWriter(std::move(opts),
-                                       GetTypeInfo(BINARY),
-                                       false,
-                                       std::move(block)));
+                                 const BloomFilterSizing& sizing)
+    : writer_(WriterOptionsBuilder()
+                  .write_posidx(false)
+                  .write_validx(true)
+                  .storage_attributes({ PLAIN_ENCODING, NO_COMPRESSION })
+                  .Build(),
+              GetTypeInfo(BINARY),
+              false,
+              std::move(block)),
+      bloom_builder_(sizing) {
 }
 
 Status BloomFileWriter::Start() {
-  return writer_->Start();
+  return writer_.Start();
 }
 
 Status BloomFileWriter::Finish() {
-  BlockManager* bm = writer_->block()->block_manager();
+  BlockManager* bm = writer_.block()->block_manager();
   unique_ptr<BlockCreationTransaction> transaction = bm->NewCreationTransaction();
   RETURN_NOT_OK(FinishAndReleaseBlock(transaction.get()));
   return transaction->CommitCreatedBlocks();
@@ -129,11 +127,11 @@ Status BloomFileWriter::FinishAndReleaseBlock(BlockCreationTransaction* transact
   if (bloom_builder_.count() > 0) {
     RETURN_NOT_OK(FinishCurrentBloomBlock());
   }
-  return writer_->FinishAndReleaseBlock(transaction);
+  return writer_.FinishAndReleaseBlock(transaction);
 }
 
 size_t BloomFileWriter::written_size() const {
-  return writer_->written_size();
+  return writer_.written_size();
 }
 
 Status BloomFileWriter::AppendKeys(
@@ -182,7 +180,7 @@ Status BloomFileWriter::FinishCurrentBloomBlock() {
   // Append to the file.
   Slice start_key(first_key_);
   Slice last_key(last_key_);
-  RETURN_NOT_OK(writer_->AppendRawBlock(
+  RETURN_NOT_OK(writer_.AppendRawBlock(
       std::move(slices), 0, &start_key, last_key, "bloom block"));
 
   bloom_builder_.Clear();

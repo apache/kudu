@@ -90,10 +90,10 @@ CFileWriter::CFileWriter(WriterOptions options,
                          const TypeInfo* typeinfo,
                          bool is_nullable,
                          unique_ptr<WritableBlock> block)
-  : block_(std::move(block)),
+  : options_(std::move(options)),
+    block_(std::move(block)),
     off_(0),
     value_count_(0),
-    options_(std::move(options)),
     is_nullable_(is_nullable),
     typeinfo_(typeinfo),
     state_(kWriterInitialized) {

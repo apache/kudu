@@ -68,7 +68,7 @@ class BloomFileWriter {
 
   Status FinishCurrentBloomBlock();
 
-  std::unique_ptr<cfile::CFileWriter> writer_;
+  cfile::CFileWriter writer_;
 
   BloomFilterBuilder bloom_builder_;
 

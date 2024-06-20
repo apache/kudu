@@ -90,6 +90,31 @@ struct WriterOptions {
   WriterOptions();
 };
 
+// Builder API to construct WriterOptions objects with proper settings.
+class WriterOptionsBuilder final {
+ public:
+  WriterOptionsBuilder() noexcept;
+
+  WriterOptionsBuilder& index_block_size(size_t size) noexcept;
+  WriterOptionsBuilder& block_restart_interval(int interval) noexcept;
+  WriterOptionsBuilder& write_posidx(bool is_enabled) noexcept;
+  WriterOptionsBuilder& write_validx(bool is_enabled) noexcept;
+  WriterOptionsBuilder& optimize_index_keys(bool is_enabled) noexcept;
+  WriterOptionsBuilder& storage_attributes(const ColumnStorageAttributes& attrs) noexcept;
+  WriterOptionsBuilder& validx_key_encoder(ValidxKeyEncoder enc) noexcept;
+
+  WriterOptions Build() noexcept;
+
+ private:
+  size_t index_block_size_;
+  int block_restart_interval_;
+  bool write_posidx_;
+  bool write_validx_;
+  bool optimize_index_keys_;
+  ColumnStorageAttributes storage_attributes_;
+  std::optional<ValidxKeyEncoder> validx_key_encoder_;
+};
+
 struct ReaderOptions {
   ReaderOptions();
 

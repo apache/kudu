@@ -41,13 +41,78 @@ using std::string;
 
 static const int kBufSize = 1024*1024;
 
+namespace {
+constexpr const size_t kIndexBlockSize = 32 * 1024;
+constexpr const int kBlockRestartInterval = 16;
+constexpr const bool kWritePosIdxEnabled = false;
+constexpr const bool kWriteValIdxEnabled = false;
+constexpr const bool kOptimizeIndexKeysEnabled = true;
+} // anonymous namespace
+
 WriterOptions::WriterOptions()
-  : index_block_size(32*1024),
-    block_restart_interval(16),
-    write_posidx(false),
-    write_validx(false),
-    optimize_index_keys(true),
-    validx_key_encoder(std::nullopt) {
+    : index_block_size(kIndexBlockSize),
+      block_restart_interval(kBlockRestartInterval),
+      write_posidx(kWritePosIdxEnabled),
+      write_validx(kWriteValIdxEnabled),
+      optimize_index_keys(kOptimizeIndexKeysEnabled),
+      validx_key_encoder(std::nullopt) {
+}
+
+WriterOptionsBuilder::WriterOptionsBuilder() noexcept
+    : index_block_size_(kIndexBlockSize),
+      block_restart_interval_(kBlockRestartInterval),
+      write_posidx_(kWritePosIdxEnabled),
+      write_validx_(kWriteValIdxEnabled),
+      optimize_index_keys_(kOptimizeIndexKeysEnabled),
+      validx_key_encoder_(std::nullopt) {
+}
+
+WriterOptionsBuilder& WriterOptionsBuilder::index_block_size(size_t size) noexcept {
+  index_block_size_ = size;
+  return *this;
+}
+
+WriterOptionsBuilder& WriterOptionsBuilder::block_restart_interval(int interval) noexcept {
+  block_restart_interval_ = interval;
+  return *this;
+}
+
+WriterOptionsBuilder& WriterOptionsBuilder::write_posidx(bool is_enabled) noexcept {
+  write_posidx_ = is_enabled;
+  return *this;
+}
+
+WriterOptionsBuilder& WriterOptionsBuilder::write_validx(bool is_enabled) noexcept {
+  write_validx_ = is_enabled;
+  return *this;
+}
+
+WriterOptionsBuilder& WriterOptionsBuilder::optimize_index_keys(bool is_enabled) noexcept {
+  optimize_index_keys_ = is_enabled;
+  return *this;
+}
+
+WriterOptionsBuilder& WriterOptionsBuilder::storage_attributes(
+    const ColumnStorageAttributes& attrs) noexcept {
+  storage_attributes_ = attrs;
+  return *this;
+}
+
+WriterOptionsBuilder& WriterOptionsBuilder::validx_key_encoder(ValidxKeyEncoder enc) noexcept {
+  validx_key_encoder_.emplace(std::move(enc));
+  return *this;
+}
+
+WriterOptions WriterOptionsBuilder::Build() noexcept {
+  WriterOptions opt;
+  opt.index_block_size = index_block_size_;
+  opt.block_restart_interval = block_restart_interval_;
+  opt.write_posidx = write_posidx_;
+  opt.write_validx = write_validx_;
+  opt.optimize_index_keys = optimize_index_keys_;
+  opt.storage_attributes = storage_attributes_;
+  opt.validx_key_encoder = validx_key_encoder_;
+  return opt;
 }
 
 Status DumpIterator(const CFileReader& reader,

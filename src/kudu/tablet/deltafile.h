@@ -111,14 +111,14 @@ class DeltaFileWriter {
   }
 
   size_t written_size() const {
-    return writer_->written_size();
+    return writer_.written_size();
   }
 
  private:
   Status DoAppendDelta(const DeltaKey &key, const RowChangeList &delta);
 
+  cfile::CFileWriter writer_;
   std::unique_ptr<DeltaStats> delta_stats_;
-  std::unique_ptr<cfile::CFileWriter> writer_;
 
   // Buffer used as a temporary for storing the serialized form
   // of the deltas
@@ -129,7 +129,7 @@ class DeltaFileWriter {
   // This is used in debug mode to make sure that rows are appended
   // in order.
   DeltaKey last_key_;
-  bool has_appended_;
+  bool has_appended_ = false;
   #endif
 
   DISALLOW_COPY_AND_ASSIGN(DeltaFileWriter);

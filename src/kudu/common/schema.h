@@ -145,15 +145,17 @@ struct ColumnTypeAttributes {
 struct ColumnStorageAttributes {
  public:
   ColumnStorageAttributes()
-    : encoding(AUTO_ENCODING),
-      compression(DEFAULT_COMPRESSION),
-      cfile_block_size(0) {
+      : encoding(AUTO_ENCODING),
+        compression(DEFAULT_COMPRESSION),
+        cfile_block_size(0) {
   }
 
-  ColumnStorageAttributes(EncodingType enc, CompressionType cmp)
-    : encoding(enc),
-      compression(cmp),
-      cfile_block_size(0) {
+  ColumnStorageAttributes(EncodingType enc,
+                          CompressionType cmp,
+                          int32_t block_size = 0)
+      : encoding(enc),
+        compression(cmp),
+        cfile_block_size(block_size) {
   }
 
   std::string ToString() const;

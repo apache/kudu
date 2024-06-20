@@ -126,8 +126,8 @@ class BloomFilterSizing {
     expected_count_(expected_count)
   {}
 
-  size_t n_bytes_;
-  size_t expected_count_;
+  const size_t n_bytes_;
+  const size_t expected_count_;
 };
 
 
