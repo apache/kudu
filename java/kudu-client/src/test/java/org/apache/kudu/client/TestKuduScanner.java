@@ -607,6 +607,7 @@ public class TestKuduScanner {
   }
 
   @Test
+  @SuppressWarnings("MissingFail")
   public void testScannerLeaderChanged() throws Exception {
     // Prepare the table for testing.
     Schema schema = createManyStringsSchema();

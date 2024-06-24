@@ -269,7 +269,7 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
    * @param row the row to set
    */
   public void setRow(PartialRow row) {
-    Preconditions.checkArgument(row.getSchema() == table.getSchema(),
+    Preconditions.checkArgument(row.getSchema().equals(table.getSchema()),
         "The row's schema must be equal by reference to the table schema");
     this.row = row;
   }

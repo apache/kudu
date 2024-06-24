@@ -35,7 +35,7 @@ import org.slf4j.LoggerFactory
 
 import scala.collection.JavaConverters._
 import scala.collection.parallel.ForkJoinTaskSupport
-import scala.concurrent.forkjoin.ForkJoinPool
+import java.util.concurrent.ForkJoinPool;
 import scala.util.Failure
 import scala.util.Success
 import scala.util.Try

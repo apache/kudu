@@ -508,6 +508,7 @@ public class PartitionPruner {
     return KeyEncoder.encodeRangePartitionKey(row, rangeSchema);
   }
 
+  @SuppressWarnings("MixedMutabilityReturnType")
   static List<PartitionSchema.EncodedRangeBoundsWithHashSchema> splitIntoHashSpecificRanges(
       byte[] scanLowerBound, byte[] scanUpperBound, PartitionSchema ps) {
     final List<PartitionSchema.EncodedRangeBoundsWithHashSchema> ranges =

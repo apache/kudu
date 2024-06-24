@@ -42,7 +42,6 @@ public class RangePartitionWithCustomHashSchema extends RangePartition {
    * @param upperBound lower bound of the range partition
    * @param lowerBoundType lower bound type: inclusive/exclusive
    * @param upperBoundType upper bound type: inclusive/exclusive
-   * @return new RangePartitionWithCustomHashSchema object
    */
   public RangePartitionWithCustomHashSchema(
       PartialRow lowerBound,

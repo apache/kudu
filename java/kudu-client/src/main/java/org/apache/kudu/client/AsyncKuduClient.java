@@ -1194,7 +1194,7 @@ public class AsyncKuduClient implements AutoCloseable {
   /**
    * Set JWT (JSON Web Token) to authenticate the client to a server.
    * <p>
-   * @note If {@link #importAuthenticationCredentials(byte[] authnData)} and
+   * Note: If {@link #importAuthenticationCredentials(byte[] authnData)} and
    * this method are called on the same object, the JWT provided with this call
    * overrides the corresponding JWT that comes as a part of the imported
    * authentication credentials (if present).
