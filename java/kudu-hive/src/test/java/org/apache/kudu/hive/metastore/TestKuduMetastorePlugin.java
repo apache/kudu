@@ -27,6 +27,7 @@ import java.util.UUID;
 
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.DefaultPartitionExpressionProxy;
 import org.apache.hadoop.hive.metastore.HiveMetaStoreClient;
@@ -39,6 +40,7 @@ import org.apache.hadoop.hive.metastore.api.SerDeInfo;
 import org.apache.hadoop.hive.metastore.api.StorageDescriptor;
 import org.apache.hadoop.hive.metastore.api.Table;
 import org.apache.hadoop.hive.metastore.api.hive_metastoreConstants;
+import org.apache.hadoop.hive.metastore.conf.MetastoreConf;
 import org.apache.hadoop.hive.metastore.utils.MetaStoreUtils;
 import org.apache.thrift.TException;
 import org.junit.After;
@@ -61,21 +63,22 @@ public class TestKuduMetastorePlugin {
   }
 
   public void startCluster(boolean syncEnabled) throws Exception {
-    HiveConf metastoreConf = new HiveConf();
+    Configuration hmsConf = MetastoreConf.newMetastoreConf();
+
     // Avoids a dependency on the default partition expression class, which is
     // contained in the hive-exec jar.
-    metastoreConf.setClass(HiveConf.ConfVars.METASTORE_EXPRESSION_PROXY_CLASS.varname,
-                           DefaultPartitionExpressionProxy.class,
-                           PartitionExpressionProxy.class);
+    hmsConf.setClass(MetastoreConf.ConfVars.EXPRESSION_PROXY_CLASS.getVarname(),
+            DefaultPartitionExpressionProxy.class,
+            PartitionExpressionProxy.class);
 
     // Add the KuduMetastorePlugin.
-    metastoreConf.setClass(HiveConf.ConfVars.METASTORE_TRANSACTIONAL_EVENT_LISTENERS.varname,
-                           KuduMetastorePlugin.class,
-                           MetaStoreEventListener.class);
+    hmsConf.setClass(MetastoreConf.ConfVars.TRANSACTIONAL_EVENT_LISTENERS.getVarname(),
+            KuduMetastorePlugin.class,
+            MetaStoreEventListener.class);
 
     // Auto create necessary schema on a startup if one doesn't exist.
-    metastoreConf.setBoolVar(HiveConf.ConfVars.METASTORE_AUTO_CREATE_ALL, true);
-    metastoreConf.setBoolVar(HiveConf.ConfVars.METASTORE_SCHEMA_VERIFICATION, false);
+    MetastoreConf.setBoolVar(hmsConf, MetastoreConf.ConfVars.AUTO_CREATE_ALL, true);
+    MetastoreConf.setBoolVar(hmsConf, MetastoreConf.ConfVars.SCHEMA_VERIFICATION, false);
 
     // Configure a temporary test state directory.
     Path hiveTestDir = Files.createTempDirectory("hive");
@@ -84,28 +87,28 @@ public class TestKuduMetastorePlugin {
 
     // Set the warehouse directory.
     Path warehouseDir = hiveTestDir.resolve("warehouse");
-    metastoreConf.setVar(HiveConf.ConfVars.METASTOREWAREHOUSE, warehouseDir.toString());
+    MetastoreConf.setVar(hmsConf, MetastoreConf.ConfVars.WAREHOUSE, warehouseDir.toString());
     // For some reason the maven tests fallback to the default warehouse directory
     // and fail without this system property. However, the Gradle tests don't need it.
-    System.setProperty(HiveConf.ConfVars.METASTOREWAREHOUSE.varname, warehouseDir.toString());
+    System.setProperty(MetastoreConf.ConfVars.WAREHOUSE.getVarname(), warehouseDir.toString());
 
     Path warehouseExternalDir = hiveTestDir.resolve("external-warehouse");
     // NOTE: We use the string value for backwards compatibility.
-    // Once upgraded to Hive 3+ we should use
-    // `MetastoreConf.ConfVars.WAREHOUSE_EXTERNAL.getVarname()`.
-    metastoreConf.set("metastore.warehouse.external.dir", warehouseExternalDir.toString());
-    System.setProperty("metastore.warehouse.external.dir", warehouseExternalDir.toString());
+    MetastoreConf.setVar(hmsConf, MetastoreConf.ConfVars.WAREHOUSE_EXTERNAL,
+            warehouseExternalDir.toString());
+    System.setProperty(MetastoreConf.ConfVars.WAREHOUSE_EXTERNAL.getVarname(),
+            warehouseExternalDir.toString());
 
     // Set the metastore connection url.
     Path metadb = hiveTestDir.resolve("metadb");
-    metastoreConf.setVar(HiveConf.ConfVars.METASTORECONNECTURLKEY,
-        "jdbc:derby:memory:" + metadb.toString() + ";create=true");
+    MetastoreConf.setVar(hmsConf, MetastoreConf.ConfVars.CONNECT_URL_KEY,
+            "jdbc:derby:memory:" + metadb.toString() + ";create=true");
     // Set the derby log file.
     Path derbyLogFile = hiveTestDir.resolve("derby.log");
     assertTrue(derbyLogFile.toFile().createNewFile());
     System.setProperty("derby.stream.error.file", derbyLogFile.toString());
 
-    int msPort = MetaStoreUtils.startMetaStore(metastoreConf);
+    int msPort = MetaStoreUtils.startMetaStore(hmsConf);
 
     clientConf = new HiveConf();
     clientConf.setVar(HiveConf.ConfVars.METASTOREURIS, "thrift://localhost:" + msPort);
