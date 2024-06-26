@@ -396,6 +396,9 @@ class Env {
   // Set the raw server encryption key. The key size is in bits.
   virtual void SetEncryptionKey(const uint8_t* key, size_t key_size) = 0;
 
+  // Used for manipulating the proc filesystem
+  virtual Status EchoToFile(const char* file_path, const char* data_ptr, int data_size) = 0;
+
  private:
   DISALLOW_COPY_AND_ASSIGN(Env);
 };

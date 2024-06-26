@@ -42,6 +42,7 @@
 #include "kudu/util/env.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/os-util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
@@ -247,9 +248,7 @@ TEST_P(DenseNodeTest, RunTest) {
       unique_ptr<WritableFile> f;
       WritableFileOptions opts;
       opts.mode = Env::MUST_EXIST;
-      ASSERT_OK(env_->NewWritableFile(opts, "/proc/sys/vm/drop_caches", &f));
-      ASSERT_OK(f->Append("3\n"));
-      ASSERT_OK(f->Close());
+      ASSERT_OK(FreeSlabObjectsAndPagecache());
     }
   }
 

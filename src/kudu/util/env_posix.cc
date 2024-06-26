@@ -2464,6 +2464,27 @@ class PosixEnv : public Env {
     return Status::OK();
   }
 
+  Status EchoToFile(const char* file_path, const char* data_ptr, int data_size) override {
+    int f;
+    RETRY_ON_EINTR(f, open(file_path, O_WRONLY));
+    if (f == -1)
+      return IOError(file_path, errno);
+    ssize_t write_ret;
+    RETRY_ON_EINTR(write_ret, write(f, data_ptr, data_size));
+    if (write_ret == -1) {
+      // Try to close it anyway, but return the error during write().
+      int saved_errno = errno;
+      int dont_care;
+      RETRY_ON_EINTR(dont_care, close(f));
+      return IOError(file_path, saved_errno);
+    }
+    int close_ret;
+    RETRY_ON_EINTR(close_ret, close(f));
+    if (close_ret == -1)
+      return IOError(file_path, errno);
+    return Status::OK();
+  }
+
   std::optional<EncryptionHeader> encryption_key_;
 };
 

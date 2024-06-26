@@ -24,7 +24,6 @@
 
 #include "kudu/util/os-util.h"
 
-#include <fcntl.h>
 #include <sys/resource.h>
 #include <unistd.h>
 
@@ -36,7 +35,6 @@
 
 #include <glog/logging.h>
 
-#include "kudu/gutil/macros.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/stringpiece.h"
@@ -133,14 +131,11 @@ void DisableCoreDumps() {
   // is set to a pipe rather than a file, it's not sufficient. Setting
   // this pattern results in piping a very minimal dump into the core
   // processor (eg abrtd), thus speeding up the crash.
-  int f;
-  RETRY_ON_EINTR(f, open("/proc/self/coredump_filter", O_WRONLY));
-  if (f >= 0) {
-    ssize_t ret;
-    RETRY_ON_EINTR(ret, write(f, "00000000", 8));
-    int close_ret;
-    RETRY_ON_EINTR(close_ret, close(f));
-  }
+  (void)Env::Default()->EchoToFile("/proc/self/coredump_filter", "00000000", 8);
+}
+
+Status FreeSlabObjectsAndPagecache() {
+  return Env::Default()->EchoToFile("/proc/sys/vm/drop_caches", "3", 1);
 }
 
 bool IsBeingDebugged() {

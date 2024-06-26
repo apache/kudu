@@ -62,6 +62,8 @@ Status GetThreadStats(int64_t tid, ThreadStats* stats);
 // want to generate a core dump from an "expected" crash.
 void DisableCoreDumps();
 
+Status FreeSlabObjectsAndPagecache();
+
 // Return true if this process appears to be running under a debugger or strace.
 //
 // This may return false on unsupported (non-Linux) platforms.
