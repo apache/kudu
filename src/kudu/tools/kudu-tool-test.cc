@@ -4620,6 +4620,7 @@ TEST_F(ToolTest, TestLocalReplicaDelete) {
   const string& data_dir = JoinPathSegments(tserver_dir, "data");
   uint64_t size_before_delete;
   ASSERT_OK(env_->GetFileSizeOnDiskRecursively(data_dir, &size_before_delete));
+#if !defined(NO_ROCKSDB)
   const auto ExcludeIgnoredDirIfNeeded = [&] (uint64_t* total_size) {
     if (FLAGS_block_manager == "logr") {
       // Exclude the RocksDB data size.
@@ -4630,6 +4631,7 @@ TEST_F(ToolTest, TestLocalReplicaDelete) {
     }
   };
   ExcludeIgnoredDirIfNeeded(&size_before_delete);
+#endif
   NO_FATALS(RunActionStdoutNone(Substitute("local_replica delete $0 --fs_wal_dir=$1 "
                                            "--fs_data_dirs=$1 --clean_unsafe",
                                            tablet_id, tserver_dir)));
@@ -4665,7 +4667,9 @@ TEST_F(ToolTest, TestLocalReplicaDelete) {
   // indicates that some data has been deleted from disk.
   uint64_t size_after_delete;
   ASSERT_OK(env_->GetFileSizeOnDiskRecursively(data_dir, &size_after_delete));
+#if !defined(NO_ROCKSDB)
   ExcludeIgnoredDirIfNeeded(&size_after_delete);
+#endif
   ASSERT_LT(size_after_delete, size_before_delete);
 
   // Since there was only one tablet on the node which was deleted by tool,

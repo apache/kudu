@@ -22,7 +22,9 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#if !defined(NO_ROCKSDB)
 #include <optional>
+#endif
 #include <set>
 #include <shared_mutex>
 #include <string>
@@ -30,8 +32,10 @@
 #include <unordered_map>
 #include <vector>
 
+#if !defined(NO_ROCKSDB)
 #include <gtest/gtest_prod.h>
 #include <rocksdb/db.h>
+#endif
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
@@ -41,17 +45,14 @@
 #include "kudu/util/random.h"
 #include "kudu/util/status.h"
 
+#if !defined(NO_ROCKSDB)
 namespace rocksdb {
 class Cache;
 class Status;
 } // namespace rocksdb
+#endif
 
 namespace kudu {
-
-// Convert a rocksdb::Status to a kudu::Status.
-// NOTE: Keep it here rather than util/status.h because the latter is
-// an exported header, but FromRdbStatus() is used only internally.
-Status FromRdbStatus(const rocksdb::Status& s);
 
 class Env;
 class ThreadPool;
@@ -197,6 +198,12 @@ class Dir {
   DISALLOW_COPY_AND_ASSIGN(Dir);
 };
 
+#if !defined(NO_ROCKSDB)
+// Convert a rocksdb::Status to a kudu::Status.
+// NOTE: Keep it here rather than util/status.h because the latter is
+// an exported header, but FromRdbStatus() is used only internally.
+Status FromRdbStatus(const rocksdb::Status& s);
+
 // Representation of a directory for LogBlockManagerRdbMeta specially.
 class RdbDir: public Dir {
  public:
@@ -230,6 +237,7 @@ class RdbDir: public Dir {
 
   DISALLOW_COPY_AND_ASSIGN(RdbDir);
 };
+#endif
 
 struct DirManagerOptions {
  public:
@@ -355,7 +363,9 @@ class DirManager {
                                             std::unique_ptr<ThreadPool> pool) = 0;
 
  protected:
+#if !defined(NO_ROCKSDB)
   FRIEND_TEST(LogBlockManagerRdbMetaTest, TestHalfPresentContainer);
+#endif
 
   // The name to be used by this directory manager for each sub-directory of
   // each directory root.

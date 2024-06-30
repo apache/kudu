@@ -21,6 +21,7 @@
 #include <iterator>
 #include <memory>
 #include <ostream>
+#include <set>
 #include <string>
 #include <thread>
 #include <type_traits>
@@ -243,7 +244,7 @@ TEST_P(TsRecoveryITest, TestTabletRecoveryAfterSegmentDelete) {
 // Test for KUDU-2202 that ensures that blocks not found in the FS layer but
 // that are referenced by a tablet will not be reused.
 TEST_P(TsRecoveryITest, TestNoBlockIDReuseIfMissingBlocks) {
-  if (FLAGS_block_manager != "log" && FLAGS_block_manager != "logr") {
+  if (!FsManager::IsLogType(FLAGS_block_manager)) {
     GTEST_SKIP() << "Missing blocks is currently only supported by the log "
                     "block manager. Exiting early!";
   }

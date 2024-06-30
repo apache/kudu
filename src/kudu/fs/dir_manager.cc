@@ -32,12 +32,14 @@
 
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
+#if !defined(NO_ROCKSDB)
 #include <rocksdb/cache.h>
 #include <rocksdb/filter_policy.h>
 #include <rocksdb/options.h>
 #include <rocksdb/slice_transform.h>
 #include <rocksdb/status.h>
 #include <rocksdb/table.h>
+#endif
 
 #include "kudu/fs/dir_util.h"
 #include "kudu/fs/fs.pb.h"
@@ -54,7 +56,9 @@
 #include "kudu/util/random_util.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/stopwatch.h"
+#if !defined(NO_ROCKSDB)
 #include "kudu/util/test_util_prod.h"
+#endif
 #include "kudu/util/threadpool.h"
 
 using std::set;
@@ -72,7 +76,18 @@ DECLARE_int64(fs_data_dirs_reserved_bytes);
 DECLARE_string(block_manager);
 
 namespace kudu {
+namespace {
+// Wrapper for env_util::DeleteTmpFilesRecursively that is suitable for parallel
+// execution on a data directory's thread pool (which requires the return value
+// be void).
+void DeleteTmpFilesRecursively(Env* env, const string& path) {
+  WARN_NOT_OK(env_util::DeleteTmpFilesRecursively(env, path),
+              "Error while deleting temp files");
+}
+} // anonymous namespace
 
+namespace fs {
+#if !defined(NO_ROCKSDB)
 Status FromRdbStatus(const rocksdb::Status& s) {
   switch (s.code()) {
     case rocksdb::Status::kOk:
@@ -95,19 +110,7 @@ Status FromRdbStatus(const rocksdb::Status& s) {
       return Status::RuntimeError(s.ToString());
   }
 }
-
-namespace {
-
-// Wrapper for env_util::DeleteTmpFilesRecursively that is suitable for parallel
-// execution on a data directory's thread pool (which requires the return value
-// be void).
-void DeleteTmpFilesRecursively(Env* env, const string& path) {
-  WARN_NOT_OK(env_util::DeleteTmpFilesRecursively(env, path),
-              "Error while deleting temp files");
-}
-
-} // anonymous namespace
-namespace fs {
+#endif
 
 Dir::Dir(Env* env,
          DirMetrics* metrics,
@@ -205,6 +208,7 @@ int Dir::reserved_bytes() {
   return FLAGS_fs_data_dirs_reserved_bytes;
 }
 
+#if !defined(NO_ROCKSDB)
 shared_ptr<rocksdb::Cache> RdbDir::s_block_cache_;
 RdbDir::RdbDir(Env* env, DirMetrics* metrics,
                FsType fs_type,
@@ -323,6 +327,7 @@ rocksdb::DB* RdbDir::rdb() {
   DCHECK(db_);
   return db_.get();
 }
+#endif
 
 DirManagerOptions::DirManagerOptions(string dir_type,
                                      string tid)

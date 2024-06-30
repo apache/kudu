@@ -41,11 +41,13 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
+#if !defined(NO_ROCKSDB)
 #include <rocksdb/db.h>
 #include <rocksdb/iterator.h>
 #include <rocksdb/options.h>
 #include <rocksdb/slice.h>
 #include <rocksdb/status.h>
+#endif
 
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
@@ -192,10 +194,14 @@ class LogBlockManagerTest : public KuduTest,
           env_, dd_manager_.get(), error_manager_,
           &file_cache_, std::move(opts), fs::kDefaultTenantID));
     }
+#if !defined(NO_ROCKSDB)
     CHECK_EQ(FLAGS_block_manager, "logr");
     return make_scoped_refptr(new LogBlockManagerRdbMeta(
           env_, dd_manager_.get(), error_manager_,
           &file_cache_, std::move(opts), fs::kDefaultTenantID));
+#endif
+    LOG(FATAL) << "unsupported block manager: " << FLAGS_block_manager;
+    return nullptr;
   }
 
   Status ReopenBlockManager(const scoped_refptr<MetricEntity>& metric_entity = nullptr,
@@ -280,7 +286,9 @@ class LogBlockManagerTest : public KuduTest,
     ASSERT_TRUE(report.malformed_record_check->entries.empty());
     ASSERT_TRUE(report.misaligned_block_check->entries.empty());
     ASSERT_TRUE(report.partial_record_check->entries.empty());
+#if !defined(NO_ROCKSDB)
     ASSERT_TRUE(report.corrupted_rdb_record_check->entries.empty());
+#endif
   }
 
   DataDirGroupPB test_group_pb_;
@@ -383,7 +391,12 @@ static void CheckLogMetrics(const scoped_refptr<MetricEntity>& entity,
 INSTANTIATE_TEST_SUITE_P(EncryptionEnabled, LogBlockManagerTest,
                          ::testing::Combine(
                              ::testing::Values(false, true),
-                             ::testing::Values("log", "logr")));
+#if defined(NO_ROCKSDB)
+                             ::testing::Values("log")
+#else
+                             ::testing::Values("log", "logr")
+#endif
+                         ));
 
 // Parameterize test cases:
 // +------------+---------------+
@@ -1623,6 +1636,9 @@ TEST_P(LogBlockManagerTest, TestRepairUnpunchedBlocks) {
   // repair at startup). It's easiest to do this by reopening it; shutdown will
   // wait for outstanding hole punches.
   ASSERT_OK(ReopenBlockManager(nullptr, &report, corruptor.get()));
+#if defined(NO_ROCKSDB)
+  {
+#else
   if (FLAGS_block_manager == "logr" && !FLAGS_encrypt_data_at_rest) {
     // In this case, the data file is too small (zero here), the container will be added to
     // incomplete_container_check, of course, it will be repaired automatically when bootstrap.
@@ -1634,6 +1650,7 @@ TEST_P(LogBlockManagerTest, TestRepairUnpunchedBlocks) {
     report.incomplete_container_check->entries.clear();
     ASSERT_FALSE(env_->FileExists(data_file));
   } else {
+#endif
     // File size should be 0 post-repair.
     ASSERT_OK(env_->GetFileSizeOnDisk(data_file, &file_size_on_disk));
     ASSERT_EQ(initial_file_size_on_disk, file_size_on_disk);
@@ -2499,6 +2516,7 @@ TEST_P(LogBlockManagerNativeMetaTest, TestHalfPresentContainer) {
   }
 }
 
+#if !defined(NO_ROCKSDB)
 // Parameterize test cases:
 // +------------+---------------+
 // | encryption | block_manager |
@@ -2824,6 +2842,7 @@ TEST_P(LogBlockManagerRdbMetaTest, TestHalfPresentContainer) {
     ASSERT_EQ(1, MetadataEntriesCount(container_name));
   }
 }
+#endif
 
 } // namespace fs
 } // namespace kudu

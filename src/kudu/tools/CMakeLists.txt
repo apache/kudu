@@ -142,13 +142,16 @@ set(KUDU_CLI_TOOL_LINK_LIBS
   kudu_util
   log
   master
-  rocksdb
   tablet
   tool_proto
   transactions
   tserver
   ${KUDU_BASE_LIBS}
 )
+if(NOT NO_ROCKSDB)
+  list(APPEND KUDU_CLI_TOOL_LINK_LIBS
+    rocksdb)
+endif()
 
 # The mini_cluster is used only for tests.
 if (KUDU_CLI_TEST_TOOL_ENABLED)

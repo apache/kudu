@@ -204,11 +204,13 @@ std::unique_ptr<Dir> DataDirManager::CreateNewDir(
     Env* env, DirMetrics* metrics, FsType fs_type,
     std::string dir, std::unique_ptr<DirInstanceMetadataFile> metadata_file,
     std::unique_ptr<ThreadPool> pool) {
+#if !defined(NO_ROCKSDB)
   if (FLAGS_block_manager == "logr") {
     bool newly_created = ContainsKey(created_fs_dir_paths_, dir);
     return std::make_unique<RdbDir>(env, metrics, fs_type, newly_created, std::move(dir),
                                     std::move(metadata_file), std::move(pool));
   }
+#endif
   return std::make_unique<Dir>(env, metrics, fs_type, std::move(dir),
                                std::move(metadata_file), std::move(pool));
 }

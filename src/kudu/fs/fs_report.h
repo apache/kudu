@@ -173,6 +173,7 @@ struct LBMPartialRecordCheck {
   std::vector<Entry> entries;
 };
 
+#if !defined(NO_ROCKSDB)
 // Checks for corrupted LBM metadata records in RocksDB.
 //
 // Error type: non-fatal and repairable (by removing the records from RocksDB).
@@ -192,6 +193,7 @@ struct LBMCorruptedRdbRecordCheck {
   };
   std::vector<Entry> entries;
 };
+#endif
 
 // Results of a Kudu filesystem-wide check. The report contains general
 // statistics about the filesystem as well as a series of "checks" that
@@ -288,7 +290,9 @@ struct FsReport {
   std::optional<LBMMalformedRecordCheck> malformed_record_check;
   std::optional<LBMMisalignedBlockCheck> misaligned_block_check;
   std::optional<LBMPartialRecordCheck> partial_record_check;
+#if !defined(NO_ROCKSDB)
   std::optional<LBMCorruptedRdbRecordCheck> corrupted_rdb_record_check;
+#endif
 };
 
 } // namespace fs

@@ -1279,12 +1279,19 @@ ADD_THIRDPARTY_LIB(boost_date_time
     SHARED_LIB "${BOOST_DATE_TIME_SHARED_LIB}")
 
 ## rocksdb
-find_package(Rocksdb REQUIRED)
-include_directories(SYSTEM ${ROCKSDB_INCLUDE_DIR})
-ADD_THIRDPARTY_LIB(rocksdb
-        STATIC_LIB "${ROCKSDB_STATIC_LIB}"
-        SHARED_LIB "${ROCKSDB_SHARED_LIB}"
-        DEPS snappy)
+# The 'logr' block manager will be built if not disabled explicitly.
+if("${NO_ROCKSDB}" STREQUAL "" OR NOT NO_ROCKSDB)
+  set(NO_ROCKSDB 0)
+  find_package(Rocksdb REQUIRED)
+  include_directories(SYSTEM ${ROCKSDB_INCLUDE_DIR})
+  ADD_THIRDPARTY_LIB(rocksdb
+          STATIC_LIB "${ROCKSDB_STATIC_LIB}"
+          SHARED_LIB "${ROCKSDB_SHARED_LIB}"
+          DEPS snappy)
+else()
+  add_definitions(-DNO_ROCKSDB)
+  set(NO_ROCKSDB 1)
+endif()
 
 ############################################################
 # Enable sized deallocation where supported.
@@ -1338,11 +1345,17 @@ if ("${KUDU_USE_ASAN}" OR "${KUDU_USE_TSAN}" OR "${KUDU_USE_UBSAN}")
 endif()
 set(KUDU_TEST_LINK_LIBS ${KUDU_MIN_TEST_LIBS})
 
-# This macro initializes KUDU_MIN_TEST_LIBS to KUDU_MIN_TEST_LIBS and
+# This macro initializes KUDU_TEST_LINK_LIBS to KUDU_MIN_TEST_LIBS and
 # appends the passed list of libraries to the end. This ensures that
 # KUDU_MIN_TEST_LIBS is linked first.
 macro(SET_KUDU_TEST_LINK_LIBS)
   set(KUDU_TEST_LINK_LIBS ${KUDU_MIN_TEST_LIBS})
+  list(APPEND KUDU_TEST_LINK_LIBS ${ARGN})
+endmacro()
+
+# This macro appends the passed list of libraries to the end of
+# KUDU_TEST_LINK_LIBS.
+macro(ADD_KUDU_TEST_LINK_LIBS)
   list(APPEND KUDU_TEST_LINK_LIBS ${ARGN})
 endmacro()
 

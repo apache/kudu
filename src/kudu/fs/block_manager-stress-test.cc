@@ -510,8 +510,12 @@ void BlockManagerStressTest<T>::InjectNonFatalInconsistencies() {
 
 // What kinds of BlockManagers are supported?
 #if defined(__linux__)
+#if defined(NO_ROCKSDB)
+typedef ::testing::Types<FileBlockManager, LogBlockManagerNativeMeta> BlockManagers;
+#else
 typedef ::testing::Types<FileBlockManager, LogBlockManagerNativeMeta, LogBlockManagerRdbMeta>
     BlockManagers;
+#endif
 #else
 typedef ::testing::Types<FileBlockManager> BlockManagers;
 #endif

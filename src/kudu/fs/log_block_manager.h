@@ -58,7 +58,9 @@ namespace internal {
 class LogBlock;
 class LogBlockContainer;
 class LogBlockContainerNativeMeta;
+#if !defined(NO_ROCKSDB)
 class LogBlockContainerRdbMeta;
+#endif
 class LogBlockDeletionTransaction;
 class LogWritableBlock;
 struct LogBlockContainerLoadResult;
@@ -68,7 +70,9 @@ struct LogBlockManagerMetrics;
 typedef scoped_refptr<internal::LogBlock> LogBlockRefPtr;
 typedef scoped_refptr<internal::LogBlockContainer> LogBlockContainerRefPtr;
 typedef scoped_refptr<internal::LogBlockContainerNativeMeta> LogBlockContainerNativeMetaRefPtr;
+#if !defined(NO_ROCKSDB)
 typedef scoped_refptr<internal::LogBlockContainerRdbMeta> LogBlockContainerRdbMetaRefPtr;
+#endif
 typedef std::unordered_map<std::string, std::vector<BlockRecordPB>> ContainerBlocksByName;
 typedef std::unordered_map<std::string, LogBlockContainerRefPtr> ContainersByName;
 
@@ -232,7 +236,9 @@ class LogBlockManager : public BlockManager {
 
   friend class internal::LogBlockContainer;
   friend class internal::LogBlockContainerNativeMeta;
+#if !defined(NO_ROCKSDB)
   friend class internal::LogBlockContainerRdbMeta;
+#endif
   friend class internal::LogBlockDeletionTransaction;
   friend class internal::LogWritableBlock;
 
@@ -588,6 +594,7 @@ class LogBlockManagerNativeMeta : public LogBlockManager {
                   const ContainersByName& containers_by_name) override;
 };
 
+#if !defined(NO_ROCKSDB)
 // All the container's metadata is written into a RocksDB instance which is
 // shared by all containers in the same data directory.
 // The metadata records in RocksDB are all of CREATE type, the records are
@@ -665,6 +672,7 @@ class LogBlockManagerRdbMeta : public LogBlockManager {
   static std::string ConstructRocksDBKey(const std::string& container_id,
                                          const BlockId& block_id);
 };
+#endif
 
 } // namespace fs
 } // namespace kudu

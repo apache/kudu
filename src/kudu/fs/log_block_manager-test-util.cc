@@ -28,16 +28,20 @@
 
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
+#if !defined(NO_ROCKSDB)
 #include <rocksdb/db.h>
 #include <rocksdb/options.h>
 #include <rocksdb/slice.h>
+#endif
 
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/data_dirs.h"
 #include "kudu/fs/dir_manager.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/log_block_manager.h"
+#if !defined(NO_ROCKSDB)
 #include "kudu/gutil/casts.h"
+#endif
 #include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/strip.h"
@@ -100,6 +104,7 @@ class NativeMetadataLBMCorruptor : public LBMCorruptor {
                                BlockRecordPB* record) override;
 };
 
+#if !defined(NO_ROCKSDB)
 // LBMCorruptor to trace the LogBlockManagerRdbMeta data corruption.
 class RdbMetadataLBMCorruptor : public LBMCorruptor {
  public:
@@ -135,15 +140,18 @@ class RdbMetadataLBMCorruptor : public LBMCorruptor {
   // Get the RdbDir for the given container.
   RdbDir* GetRdbDir(const Container* c) const;
 };
+#endif
 
 unique_ptr<LBMCorruptor> LBMCorruptor::Create(
         Env* env, DataDirManager* dd_manager, uint32_t rand_seed) {
     if (FLAGS_block_manager == "log") {
         return std::make_unique<NativeMetadataLBMCorruptor>(env, dd_manager, rand_seed);
     }
+#if !defined(NO_ROCKSDB)
     if (FLAGS_block_manager == "logr") {
         return std::make_unique<RdbMetadataLBMCorruptor>(env, dd_manager, rand_seed);
     }
+#endif
     return nullptr;
 }
 
@@ -642,6 +650,7 @@ Status NativeMetadataLBMCorruptor::AppendDeleteRecordInternal(
   return writer->Append(record);
 }
 
+#if !defined(NO_ROCKSDB)
 Status RdbMetadataLBMCorruptor::AppendPartialRecord(
     const Container* c, const BlockId block_id) {
   auto* rdb_dir = GetRdbDir(c);
@@ -734,6 +743,7 @@ Status RdbMetadataLBMCorruptor::AppendDeleteRecordInternal(
   string key(LogBlockManagerRdbMeta::ConstructRocksDBKey(id, block_id));
   return FromRdbStatus(dir->rdb()->Delete({}, rocksdb::Slice(key)));
 }
+#endif
 
 } // namespace fs
 } // namespace kudu

@@ -126,9 +126,12 @@ SET_KUDU_TEST_LINK_LIBS(
   consensus
   tserver_proto
   cfile
-  rocksdb
   tablet
   kudu_util)
+if(NOT NO_ROCKSDB)
+  ADD_KUDU_TEST_LINK_LIBS(
+    rocksdb)
+endif()
 
 ADD_KUDU_TEST(consensus_meta-test)
 ADD_KUDU_TEST(consensus_meta_manager-stress-test RUN_SERIAL true)

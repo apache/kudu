@@ -252,6 +252,7 @@ LBMPartialRecordCheck::Entry::Entry(string c, int64_t o)
       repaired(false) {
 }
 
+#if !defined(NO_ROCKSDB)
 ///////////////////////////////////////////////////////////////////////////////
 // LBMCorruptedRdbRecordCheck
 ///////////////////////////////////////////////////////////////////////////////
@@ -280,6 +281,7 @@ LBMCorruptedRdbRecordCheck::Entry::Entry(string c, string k)
       rocksdb_key(std::move(k)),
       repaired(false) {
 }
+#endif
 
 ///////////////////////////////////////////////////////////////////////////////
 // FsReport::Stats
@@ -330,7 +332,9 @@ void FsReport::MergeFrom(const FsReport& other) {
   MERGE_ONE_CHECK(malformed_record_check);
   MERGE_ONE_CHECK(misaligned_block_check);
   MERGE_ONE_CHECK(partial_record_check);
+#if !defined(NO_ROCKSDB)
   MERGE_ONE_CHECK(corrupted_rdb_record_check);
+#endif
 
 #undef MERGE_ONE_CHECK
 }
@@ -359,7 +363,9 @@ string FsReport::ToString() const {
   TOSTRING_ONE_CHECK(malformed_record_check, "malformed LBM records");
   TOSTRING_ONE_CHECK(misaligned_block_check, "misaligned LBM blocks");
   TOSTRING_ONE_CHECK(partial_record_check, "partial LBM records");
+#if !defined(NO_ROCKSDB)
   TOSTRING_ONE_CHECK(corrupted_rdb_record_check, "corrupted LBM rdb records");
+#endif
 
 #undef TOSTRING_ONE_CHECK
   return s;

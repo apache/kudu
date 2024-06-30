@@ -39,8 +39,10 @@
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
+#if !defined(NO_ROCKSDB)
 #include <rocksdb/db.h>
 #include <rocksdb/options.h>
+#endif
 
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/data_dirs.h"
@@ -222,21 +224,23 @@ class FsManagerTestBase : public KuduTest,
 INSTANTIATE_TEST_SUITE_P(BlockManagerTypes, FsManagerTestBase,
 // TODO(yingchun): When --enable_multi_tenancy is set, the data directories are still shared by
 //  all tenants, which will cause some errors when --block_manager=logr. This will be fixed in the
-//  future as the TODO mentioned in [1]. We can enable all the following test cases when the TODO
+//  future after the TODO "The new tenant should have its own dd manager instead of sharing" in
+//  src/kudu/fs/fs_manager.cc is done. We can enable all the following test cases when the TODO
 //  is addressed.
-//  1.https://github.com/acelyc111/kudu/blob/master/src/kudu/fs/fs_manager.cc#L1190
 //
 //    ::testing::ValuesIn(BlockManager::block_manager_types()),
 //    ::testing::ValuesIn(kEncryptionType))
     ::testing::Values(
-    make_tuple("file", kEncryptionType[0]),
-    make_tuple("file", kEncryptionType[1]),
-    make_tuple("file", kEncryptionType[2]),
-    make_tuple("log", kEncryptionType[0]),
-    make_tuple("log", kEncryptionType[1]),
-    make_tuple("log", kEncryptionType[2]),
-    make_tuple("logr", kEncryptionType[0]),
-    make_tuple("logr", kEncryptionType[1])));
+      make_tuple("file", kEncryptionType[0]),
+      make_tuple("file", kEncryptionType[1]),
+      make_tuple("file", kEncryptionType[2]),
+#if !defined(NO_ROCKSDB)
+      make_tuple("logr", kEncryptionType[0]),
+      make_tuple("logr", kEncryptionType[1]),
+#endif
+      make_tuple("log", kEncryptionType[0]),
+      make_tuple("log", kEncryptionType[1]),
+      make_tuple("log", kEncryptionType[2])));
 
 TEST_P(FsManagerTestBase, TestBaseOperations) {
   fs_manager()->DumpFileSystemTree(std::cout, tenant_id());
@@ -1406,6 +1410,7 @@ TEST_P(FsManagerTestBase, TestFailToStartWithoutEncryptionKeys) {
   ASSERT_TRUE(fs_manager()->Open().IsIllegalState());
 }
 
+#if !defined(NO_ROCKSDB)
 TEST_P(FsManagerTestBase, TestOpenDirectoryWithRdbMissing) {
   if (FLAGS_block_manager != "logr") {
     GTEST_SKIP() << "Skipping 'logr'-specific test";
@@ -1540,6 +1545,7 @@ TEST_P(FsManagerTestBase, TestInitialOpenDirectoryWithRdbPresent) {
   ASSERT_TRUE(s.IsAlreadyPresent()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "FSManager roots already exist");
 }
+#endif
 
 class OpenFsTypeTest : public KuduTest,
                        public ::testing::WithParamInterface<std::tuple<string, bool, bool>> {

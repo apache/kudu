@@ -20,6 +20,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -198,9 +199,13 @@ struct BlockManagerOptions {
 class BlockManager : public RefCountedThreadSafe<BlockManager> {
  public:
   // Lists the available block manager types.
-  static std::vector<std::string> block_manager_types() {
+  static std::set<std::string> block_manager_types() {
 #if defined(__linux__)
+#if defined(NO_ROCKSDB)
+    return { "file", "log" };
+#else
     return { "file", "log", "logr" };
+#endif
 #else
     return { "file" };
 #endif

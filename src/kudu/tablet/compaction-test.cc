@@ -1388,7 +1388,7 @@ TEST_F(TestCompaction, TestCompactionFreesDiskSpace) {
 // Regression test for KUDU-1237, a bug in which empty flushes or compactions
 // would result in orphaning near-empty cfile blocks on the disk.
 TEST_F(TestCompaction, TestEmptyFlushDoesntLeakBlocks) {
-  if (FLAGS_block_manager != "log" && FLAGS_block_manager != "logr") {
+  if (!FsManager::IsLogType(FLAGS_block_manager)) {
     GTEST_SKIP() << "Test requires the log block manager";
   }
 

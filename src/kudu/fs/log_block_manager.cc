@@ -40,12 +40,14 @@
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
+#if !defined(NO_ROCKSDB)
 #include <rocksdb/db.h>
 #include <rocksdb/iterator.h>
 #include <rocksdb/options.h>
 #include <rocksdb/slice.h>
 #include <rocksdb/status.h>
 #include <rocksdb/write_batch.h>
+#endif
 
 #include "kudu/fs/block_manager_metrics.h"
 #include "kudu/fs/data_dirs.h"
@@ -120,11 +122,13 @@ DEFINE_uint64(log_container_preallocate_bytes, 32LU * 1024 * 1024,
               "creating new blocks. Set to 0 to disable preallocation");
 TAG_FLAG(log_container_preallocate_bytes, advanced);
 
+#if !defined(NO_ROCKSDB)
 DEFINE_uint64(log_container_rdb_delete_batch_count, 256,
               "The batch count for deleting blocks in one operation against RocksDB. It is only "
               "effective when --block_manager='logr'");
 TAG_FLAG(log_container_rdb_delete_batch_count, experimental);
 TAG_FLAG(log_container_rdb_delete_batch_count, advanced);
+#endif
 
 DEFINE_double(log_container_excess_space_before_cleanup_fraction, 0.10,
               "Additional fraction of a log container's calculated size that "
@@ -221,7 +225,9 @@ METRIC_DEFINE_gauge_uint64(server, log_block_manager_processed_containers_startu
 using kudu::fs::internal::LogBlock;
 using kudu::fs::internal::LogBlockContainer;
 using kudu::fs::internal::LogBlockContainerNativeMeta;
+#if !defined(NO_ROCKSDB)
 using kudu::fs::internal::LogBlockContainerRdbMeta;
+#endif
 using kudu::fs::internal::LogBlockDeletionTransaction;
 using kudu::fs::internal::LogWritableBlock;
 using kudu::pb_util::ReadablePBContainerFile;
@@ -905,6 +911,7 @@ class LogBlockContainerNativeMeta final : public LogBlockContainer {
   DISALLOW_COPY_AND_ASSIGN(LogBlockContainerNativeMeta);
 };
 
+#if !defined(NO_ROCKSDB)
 ////////////////////////////////////////////////////////////
 // LogBlockContainerRdbMeta
 ////////////////////////////////////////////////////////////
@@ -991,6 +998,7 @@ class LogBlockContainerRdbMeta final : public LogBlockContainer {
 
   DISALLOW_COPY_AND_ASSIGN(LogBlockContainerRdbMeta);
 };
+#endif
 
 #define CONTAINER_DISK_FAILURE(status_expr, msg) do { \
   Status s_ = (status_expr); \
@@ -1096,7 +1104,9 @@ void LogBlockContainerNativeMeta::CompactMetadata() {
   report.malformed_record_check.emplace();
   report.misaligned_block_check.emplace();
   report.partial_record_check.emplace();
+#if !defined(NO_ROCKSDB)
   report.corrupted_rdb_record_check.emplace();
+#endif
 
   LogBlockManager::UntrackedBlockMap live_blocks;
   LogBlockManager::BlockRecordMap live_block_records;
@@ -1886,6 +1896,7 @@ void LogBlockContainer::ContainerDeletionAsync(int64_t offset, int64_t length) {
                             data_dir()->dir()));
 }
 
+#if !defined(NO_ROCKSDB)
 Status LogBlockContainerRdbMeta::Create(LogBlockManager* block_manager,
                                         Dir* dir,
                                         LogBlockContainerRefPtr* container) {
@@ -2179,6 +2190,7 @@ Status LogBlockContainerRdbMeta::SyncMetadata() {
 //  }
   return Status::OK();
 }
+#endif
 
 ///////////////////////////////////////////////////////////
 // LogBlockCreationTransaction
@@ -2380,7 +2392,9 @@ struct LogBlockContainerLoadResult {
     report.malformed_record_check.emplace();
     report.misaligned_block_check.emplace();
     report.partial_record_check.emplace();
+#if !defined(NO_ROCKSDB)
     report.corrupted_rdb_record_check.emplace();
+#endif
   }
 };
 
@@ -3988,6 +4002,7 @@ int64_t LogBlockManager::LookupBlockLimit(int64_t fs_block_size) {
   return kPerFsBlockSizeBlockLimits.begin()->second;
 }
 
+#if !defined(NO_ROCKSDB)
 Status LogBlockManagerRdbMeta::CreateContainer(Dir* dir, LogBlockContainerRefPtr* container) {
   return LogBlockContainerRdbMeta::Create(this, dir, container);
 }
@@ -4117,6 +4132,7 @@ std::string LogBlockManagerRdbMeta::ConstructRocksDBKey(
     const std::string& container_id, const BlockId& block_id) {
   return Substitute("$0.$1", container_id, block_id.ToString());
 }
+#endif
 
 } // namespace fs
 } // namespace kudu

@@ -83,8 +83,12 @@ SET_KUDU_TEST_LINK_LIBS(
   kudu_curl_util
   mini_kdc
   server_process
-  security_test_util
-  rocksdb
-  snappy)
+  security_test_util)
+if(NOT NO_ROCKSDB)
+  ADD_KUDU_TEST_LINK_LIBS(
+    rocksdb
+    snappy)
+endif()
+
 ADD_KUDU_TEST(rpc_server-test)
 ADD_KUDU_TEST(webserver-test)

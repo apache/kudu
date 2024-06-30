@@ -33,15 +33,21 @@ target_link_libraries(tpch
 add_executable(tpch1 tpch/tpch1.cc)
 target_link_libraries(tpch1
   ${KUDU_MIN_TEST_LIBS}
-  tpch
-  rocksdb)
+  tpch)
+if(NOT NO_ROCKSDB)
+  target_link_libraries(tpch1
+    rocksdb)
+endif()
 
 # tpch_real_world
 add_executable(tpch_real_world tpch/tpch_real_world.cc)
 target_link_libraries(tpch_real_world
   ${KUDU_MIN_TEST_LIBS}
-  tpch
-  rocksdb)
+  tpch)
+if(NOT NO_ROCKSDB)
+  target_link_libraries(tpch_real_world
+    rocksdb)
+endif()
 
 # rle
 add_executable(rle rle.cc)
@@ -61,5 +67,9 @@ endif()
 # Unit tests
 #######################################
 
-SET_KUDU_TEST_LINK_LIBS(tpch rocksdb)
+SET_KUDU_TEST_LINK_LIBS(tpch)
+if(NOT NO_ROCKSDB)
+  ADD_KUDU_TEST_LINK_LIBS(
+    rocksdb)
+endif()
 ADD_KUDU_TEST(tpch/rpc_line_item_dao-test)

@@ -100,7 +100,7 @@ METRIC_DECLARE_gauge_uint64(data_dirs_full);
 // The LogBlockManager is only supported on Linux, since it requires hole punching.
 #define RETURN_NOT_LOG_BLOCK_MANAGER() \
   do { \
-    if (FLAGS_block_manager != "log" && FLAGS_block_manager != "logr") { \
+    if (!FsManager::IsLogType(FLAGS_block_manager)) { \
       GTEST_SKIP() << "This platform does not use the log block manager by default. " \
                       "Skipping test."; \
     } \
@@ -225,11 +225,13 @@ class BlockManagerTest : public KuduTest {
     if (basename == kInstanceMetadataFileName) {
       return Status::OK();
     }
+#if !defined(NO_ROCKSDB)
     // Ignore the 'kRocksDBDirName' directory which contains the RocksDB related files.
     string parent_dir = *SplitPath(dirname).rbegin();
     if (parent_dir == kRocksDBDirName) {
       return Status::OK();
     }
+#endif
     if (type == Env::FILE_TYPE) {
       *num_files += 1;
     }
@@ -419,12 +421,14 @@ void BlockManagerTest<T>::RunMultipathTest(const vector<string>& paths) {
     // '..', and instance files.
     ASSERT_EQ(paths.size() * 4, sum);
   } else {
+#if !defined(NO_ROCKSDB)
     // (numPaths * 2) containers were created, each consisting of 1 file.
     // Thus, there should be a total of (numPaths * 2) files, ignoring '.',
     // '..', 'kRocksDBDirName', and instance files.
     bool is_logr = std::is_same<T, LogBlockManagerRdbMeta>::value;
     ASSERT_TRUE(is_logr);
     ASSERT_EQ(paths.size() * 2, sum);
+#endif
   }
 }
 
@@ -466,8 +470,12 @@ void BlockManagerTest<T>::RunMemTrackerTest() {
 
 // What kinds of BlockManagers are supported?
 #if defined(__linux__)
+#if defined(NO_ROCKSDB)
+typedef ::testing::Types<FileBlockManager, LogBlockManagerNativeMeta> BlockManagers;
+#else
 typedef ::testing::Types<FileBlockManager, LogBlockManagerNativeMeta, LogBlockManagerRdbMeta>
     BlockManagers;
+#endif
 #else
 typedef ::testing::Types<FileBlockManager> BlockManagers;
 #endif
@@ -1325,10 +1333,14 @@ TYPED_TEST(BlockManagerTest, TestBlockTransaction) {
   // into util/env_posix.cc does not affect RocksDB, updating the metadata stored in the
   // logr-based block manager succeeds without any errors.
   if (FLAGS_block_manager == "logr") {
+#if defined(NO_ROCKSDB)
+    ASSERT_TRUE(false);
+#else
     ASSERT_OK(s);
     ASSERT_EQ(created_blocks.size(), deleted_blocks.size());
     ASSERT_EQ(total_blocks_deleted + deleted_blocks.size(), down_cast<Counter*>(
         entity->FindOrNull(METRIC_block_manager_total_blocks_deleted).get())->value());
+#endif
   } else {
     ASSERT_TRUE(s.IsIOError());
     ASSERT_TRUE(deleted_blocks.empty());

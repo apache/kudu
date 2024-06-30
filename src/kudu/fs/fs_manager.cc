@@ -23,6 +23,7 @@
 #include <initializer_list>
 #include <iostream>
 #include <mutex>
+#include <set>
 #include <shared_mutex>
 #include <type_traits>
 #include <unordered_map>
@@ -39,9 +40,9 @@
 #include "kudu/fs/file_block_manager.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/fs_report.h"
+#include "kudu/fs/key_provider.h"
 #include "kudu/fs/log_block_manager.h"
 #include "kudu/fs/ranger_kms_key_provider.h"
-#include "kudu/fs/key_provider.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
@@ -81,19 +82,21 @@ DEFINE_bool(enable_data_block_fsync, true,
 TAG_FLAG(enable_data_block_fsync, unsafe);
 
 #if defined(__linux__)
-DEFINE_string(block_manager, "log", "Which block manager to use for storage. "
-              "Valid options are 'file', 'log' and 'logr'. The file block "
-              "manager is not suitable for production use due to scaling "
-              "limitations.");
+DEFINE_string(block_manager, "log", "Which block manager to use for storage. Valid options are "
+                                    "'file'"
+#if defined(NO_ROCKSDB)
+                                    "and 'log'"
+#else
+                                    ", 'log' and 'logr'"
+#endif
+                                    ". The 'file' block manager is not suitable for production use "
+                                    "due to scaling limitations.");
 #else
 DEFINE_string(block_manager, "file", "Which block manager to use for storage. "
               "Only the file block manager is supported for non-Linux systems.");
 #endif
 static bool ValidateBlockManagerType(const char* /*flagname*/, const std::string& value) {
-  for (const std::string& type : kudu::fs::BlockManager::block_manager_types()) {
-    if (type == value) return true;
-  }
-  return false;
+  return ContainsKey(kudu::fs::BlockManager::block_manager_types(), value);
 }
 DEFINE_validator(block_manager, &ValidateBlockManagerType);
 TAG_FLAG(block_manager, advanced);
@@ -179,7 +182,9 @@ using kudu::fs::FsErrorManager;
 using kudu::fs::FileBlockManager;
 using kudu::fs::FsReport;
 using kudu::fs::LogBlockManagerNativeMeta;
+#if !defined(NO_ROCKSDB)
 using kudu::fs::LogBlockManagerRdbMeta;
+#endif
 using kudu::fs::ReadableBlock;
 using kudu::fs::UpdateInstanceBehavior;
 using kudu::fs::WritableBlock;
@@ -412,10 +417,12 @@ scoped_refptr<BlockManager> FsManager::InitBlockManager(const string& tenant_id)
     block_manager.reset(new LogBlockManagerNativeMeta(
         GetEnv(tenant_id), dd_manager(tenant_id), error_manager_,
         opts_.file_cache, std::move(bm_opts), tenant_id));
+#if !defined(NO_ROCKSDB)
   } else if (opts_.block_manager_type == "logr") {
     block_manager.reset(new LogBlockManagerRdbMeta(
         GetEnv(tenant_id), dd_manager(tenant_id), error_manager_,
         opts_.file_cache, std::move(bm_opts), tenant_id));
+#endif
   } else {
     LOG(FATAL) << "Unknown block_manager_type: " << opts_.block_manager_type;
   }
@@ -799,7 +806,8 @@ void FsManager::UpdateMetadataFormatAndStampUnlock(InstanceMetadataPB* metadata)
 }
 
 bool FsManager::IsLogType(const std::string& block_manager_type) {
-  return (block_manager_type == "log" || block_manager_type == "logr");
+  return block_manager_type != "file"
+      && ContainsKey(BlockManager::block_manager_types(), block_manager_type);
 }
 
 Status FsManager::AddTenantMetadata(const string& tenant_name,
