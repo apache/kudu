@@ -57,6 +57,10 @@ DEFINE_string(block_cache_type, "DRAM",
               "libmemkind 1.8.0 or newer must be available on the system; "
               "otherwise Kudu will crash.");
 
+#if !defined(NO_ROCKSDB)
+DECLARE_uint32(log_container_rdb_block_cache_capacity_mb);
+#endif
+
 using strings::Substitute;
 
 template <class T> class scoped_refptr;
@@ -112,6 +116,18 @@ bool ValidateBlockCacheCapacity() {
                                "--memory_limit_hard_bytes.",
                                capacity, mpt);
   }
+#if !defined(NO_ROCKSDB)
+  if (FLAGS_log_container_rdb_block_cache_capacity_mb >= FLAGS_block_cache_capacity_mb) {
+    LOG(WARNING) << Substitute("Block cache capacity for RocksDB which is used only for metadata "
+                               "is larger than that for data ($0 MB vs. $1 MB). This may cause "
+                               "performance problems. Consider lowering "
+                               "--log_container_rdb_block_cache_capacity_mb or raising "
+                               "--block_cache_capacity_mb.",
+                               FLAGS_log_container_rdb_block_cache_capacity_mb,
+                               FLAGS_block_cache_capacity_mb);
+    return true;
+  }
+#endif
   return true;
 }
 

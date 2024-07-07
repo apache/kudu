@@ -30,7 +30,11 @@
 #include <utility>
 #include <vector>
 
+#if !defined(NO_ROCKSDB)
+#include <gflags/gflags.h>
+#else
 #include <gflags/gflags_declare.h>
+#endif
 #include <glog/logging.h>
 #if !defined(NO_ROCKSDB)
 #include <rocksdb/cache.h>
@@ -50,6 +54,9 @@
 #include "kudu/gutil/strings/util.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
+#if !defined(NO_ROCKSDB)
+#include "kudu/util/flag_tags.h"
+#endif
 #include "kudu/util/oid_generator.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
@@ -74,6 +81,84 @@ using strings::Substitute;
 DECLARE_int32(fs_data_dirs_available_space_cache_seconds);
 DECLARE_int64(fs_data_dirs_reserved_bytes);
 DECLARE_string(block_manager);
+
+#if !defined(NO_ROCKSDB)
+DEFINE_double(log_container_rdb_bits_per_key, 9.9,
+              "Average number of bits allocated per key in RocksDB bloom filter, for details see "
+              "https://github.com/facebook/rocksdb/wiki/RocksDB-Bloom-Filter. It is only effective "
+              "when --block_manager='logr'");
+TAG_FLAG(log_container_rdb_bits_per_key, advanced);
+TAG_FLAG(log_container_rdb_bits_per_key, experimental);
+
+DEFINE_uint32(log_container_rdb_block_cache_capacity_mb, 10,
+              "The block cache capacity of RocksDB in MiB, it is shared by all RocksDB instances "
+              "in the process. It is only effective when --block_manager='logr'");
+TAG_FLAG(log_container_rdb_block_cache_capacity_mb, advanced);
+TAG_FLAG(log_container_rdb_block_cache_capacity_mb, experimental);
+
+DEFINE_uint32(log_container_rdb_max_background_jobs, 8,
+              "The maximum number of concurrent background jobs (compactions and flushes) shared "
+              "between RocksDB instances. It is only effective when --block_manager='logr'");
+TAG_FLAG(log_container_rdb_max_background_jobs, advanced);
+TAG_FLAG(log_container_rdb_max_background_jobs, experimental);
+
+DEFINE_uint32(log_container_rdb_max_write_buffer_number, 2,
+              "The maximum number of write buffers that are built up in memory of each RocksDB "
+              "instance. It is only effective when --block_manager='logr'");
+TAG_FLAG(log_container_rdb_max_write_buffer_number, advanced);
+TAG_FLAG(log_container_rdb_max_write_buffer_number, experimental);
+
+DEFINE_double(log_container_rdb_memtable_prefix_bloom_size_ratio, 0.1,
+              "Enables a dynamic bloom filter of RocksDB memtable to optimize many queries that "
+              "must go beyond the memtable if it is larger than 0. The size in bytes of the filter "
+              "is --log_container_rdb_write_buffer_size * "
+              "--log_container_rdb_memtable_prefix_bloom_size_ratio. It is only effective when "
+              "--block_manager='logr'");
+TAG_FLAG(log_container_rdb_memtable_prefix_bloom_size_ratio, advanced);
+TAG_FLAG(log_container_rdb_memtable_prefix_bloom_size_ratio, experimental);
+
+DEFINE_uint64(log_container_rdb_write_buffer_size, 64 << 20,
+              "The amount of data in RocksDB to build up in memory (backed by an unsorted log on "
+              "disk) before converting to a sorted on-disk file. It is only effective when "
+              "--block_manager='logr'");
+TAG_FLAG(log_container_rdb_write_buffer_size, advanced);
+TAG_FLAG(log_container_rdb_write_buffer_size, experimental);
+
+DEFINE_string(log_container_rdb_db_log_dir, "",
+              "This specifies the info log dir of RocksDB. If it is empty, the log files are in "
+              "the same dir as data (i.e. each dir in --fs_data_dirs). If it is not empty, the log "
+              "files will be in the specified dir, and the --fs_data_dirs absolute path will "
+              "be used as the log file name's prefixes. It is only effective when "
+              "--block_manager='logr'");
+TAG_FLAG(log_container_rdb_db_log_dir, advanced);
+TAG_FLAG(log_container_rdb_db_log_dir, experimental);
+
+DEFINE_uint64(log_container_rdb_max_log_file_size, 8 << 20,
+              "Maximum byte size of the RocksDB info log file. If the log file is larger "
+              "than specified, a new info log file will be created. If it is 0, all logs will be "
+              "written to one log file. It is only effective when --block_manager='logr'");
+TAG_FLAG(log_container_rdb_max_log_file_size, advanced);
+TAG_FLAG(log_container_rdb_max_log_file_size, experimental);
+
+DEFINE_uint64(log_container_rdb_keep_log_file_num, 10,
+              "Maximum number of RocksDB info log files to keep. It is only effective when "
+              "--block_manager='logr'");
+TAG_FLAG(log_container_rdb_keep_log_file_num, advanced);
+TAG_FLAG(log_container_rdb_keep_log_file_num, experimental);
+
+DEFINE_uint64(log_container_rdb_max_manifest_file_size, 64 << 20,
+              "The RocksDB manifest file is rolled over on reaching this byte limit. It is only "
+              "effective when --block_manager='logr'");
+TAG_FLAG(log_container_rdb_max_manifest_file_size, advanced);
+TAG_FLAG(log_container_rdb_max_manifest_file_size, experimental);
+
+DEFINE_int32(log_container_rdb_level0_file_num_compaction_trigger, 4,
+             "Number of files to trigger level-0 compaction in RocksDB. A value <0 means that "
+             "level-0 compaction will not be triggered by the number of files at all. It is only "
+             "effective when --block_manager='logr'");
+TAG_FLAG(log_container_rdb_level0_file_num_compaction_trigger, advanced);
+TAG_FLAG(log_container_rdb_level0_file_num_compaction_trigger, experimental);
+#endif
 
 namespace kudu {
 namespace {
@@ -258,32 +343,28 @@ Status RdbDir::InitRocksDBInstance(bool newly_created) {
       opts.create_if_missing = false;
       opts.error_if_exists = false;
   }
-  // TODO(yingchun): parameterize more rocksDB options, including:
-  //  opts.use_fsync
-  //  opts.db_log_dir
-  //  opts.wal_dir
-  //  opts.max_log_file_size
-  //  opts.keep_log_file_num
-  //  opts.max_manifest_file_size
-  //  opts.max_background_jobs
-  //  opts.write_buffer_size
-  //  opts.level0_file_num_compaction_trigger
-  //  opts.max_write_buffer_number
+  opts.db_log_dir = FLAGS_log_container_rdb_db_log_dir;
+  opts.max_log_file_size = FLAGS_log_container_rdb_max_log_file_size;
+  opts.keep_log_file_num = FLAGS_log_container_rdb_keep_log_file_num;
+  opts.write_buffer_size = FLAGS_log_container_rdb_write_buffer_size;
+  opts.max_write_buffer_number = FLAGS_log_container_rdb_max_write_buffer_number;
+  opts.max_background_jobs = FLAGS_log_container_rdb_max_background_jobs;
+  opts.max_manifest_file_size = FLAGS_log_container_rdb_max_manifest_file_size;
+  opts.level0_file_num_compaction_trigger =
+      FLAGS_log_container_rdb_level0_file_num_compaction_trigger;
 
   static std::once_flag flag;
   std::call_once(flag, [&]() {
-    // TODO(yingchun): parameterize the rocksdb block cache size.
-    s_block_cache_ = rocksdb::NewLRUCache(10 << 20);
+    s_block_cache_ = rocksdb::NewLRUCache(FLAGS_log_container_rdb_block_cache_capacity_mb << 20);
   });
   rocksdb::BlockBasedTableOptions tbl_opts;
   tbl_opts.block_cache = s_block_cache_;
   tbl_opts.whole_key_filtering = false;
-  // TODO(yingchun): parameterize these options.
-  tbl_opts.filter_policy.reset(rocksdb::NewBloomFilterPolicy(9.9));
+  tbl_opts.filter_policy.reset(rocksdb::NewBloomFilterPolicy(FLAGS_log_container_rdb_bits_per_key));
   opts.table_factory.reset(NewBlockBasedTableFactory(tbl_opts));
   // Take advantage of Prefix-Seek, see https://github.com/facebook/rocksdb/wiki/Prefix-Seek.
   opts.prefix_extractor.reset(rocksdb::NewFixedPrefixTransform(ObjectIdGenerator::IdLength()));
-  opts.memtable_prefix_bloom_size_ratio = 0.1;
+  opts.memtable_prefix_bloom_size_ratio = FLAGS_log_container_rdb_memtable_prefix_bloom_size_ratio;
 
   rdb_dir_ = JoinPathSegments(dir_, kRocksDBDirName);
   rocksdb::DB* db_temp = nullptr;
