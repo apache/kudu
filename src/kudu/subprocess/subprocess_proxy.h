@@ -23,7 +23,6 @@
 #include <vector>
 
 #include <glog/logging.h>
-#include <google/protobuf/any.pb.h>
 
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/ref_counted.h"

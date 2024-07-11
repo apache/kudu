@@ -17,15 +17,18 @@
 
 #include "kudu/subprocess/subprocess_proxy.h"
 
+#include <csignal>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <ostream>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include <gflags/gflags_declare.h>
+#include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/casts.h"
@@ -36,8 +39,11 @@
 #include "kudu/subprocess/subprocess.pb.h"
 #include "kudu/util/env.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/path_util.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
+#include "kudu/util/subprocess.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
@@ -63,6 +69,92 @@ using strings::Substitute;
 
 namespace kudu {
 namespace subprocess {
+
+// Helper function to count files in a directory
+int CountLogFiles(const string& log_dir) {
+  vector<string> logfiles;
+  string pattern = Substitute("$0/*.log.gz", log_dir);
+  CHECK_OK(Env::Default()->Glob(pattern, &logfiles));
+  LOG(INFO) << "Found " << logfiles.size() << " log files";
+  return logfiles.size();
+}
+
+class SubprocessProxyTest : public KuduTest {
+ public:
+  SubprocessProxyTest()
+      : test_dir_(GetTestDataDirectory()) {}
+
+  void TearDown() override {
+    if (process_) {
+      process_->KillAndWait(SIGTERM);
+    }
+    KuduTest::TearDown();
+  }
+
+  string GetLogDir() const {
+    return JoinPathSegments(test_dir_, "logs");
+  }
+
+  Status CreateLog4j2PropertiesFile(string* log_properties_path,
+                                    int log_file_limit) {
+    const string log_dir = GetLogDir();
+    const string log_filename = "kudu-subprocess-log-test-log4j2.properties";
+    const string log4j2_properties_path = JoinPathSegments(log_dir, log_filename);
+    unique_ptr<WritableFile> writer;
+    RETURN_NOT_OK(env_->CreateDir(log_dir));
+    RETURN_NOT_OK(env_->NewWritableFile(log4j2_properties_path, &writer));
+    string exe;
+    RETURN_NOT_OK(env_->GetExecutablePath(&exe));
+    const string program_name = BaseName(exe);
+    RETURN_NOT_OK(writer->Append(subprocess::Log4j2Properties(
+                                 program_name, log_dir, log_filename,
+                                 /* rollover_size_mb */ 1,
+                                 /* max_files */ log_file_limit,
+                                 /* log_level */ "debug",
+                                 /* log_to_stdout */ true)));
+    RETURN_NOT_OK(writer->Sync());
+    RETURN_NOT_OK(writer->Close());
+    *log_properties_path = log4j2_properties_path;
+    return Status::OK();
+  }
+
+  Status ResetEchoSubprocess(int log_file_limit) {
+    string log_properties_path;
+    RETURN_NOT_OK(CreateLog4j2PropertiesFile(&log_properties_path, log_file_limit));
+
+    string exe;
+    RETURN_NOT_OK(env_->GetExecutablePath(&exe));
+    const string bin_dir = DirName(exe);
+    string java_home;
+    RETURN_NOT_OK(FindHomeDir("java", bin_dir, &java_home));
+    const string pipe_file = SubprocessServer::FifoPath(JoinPathSegments(test_dir_, "echo_pipe"));
+    vector<string> argv = {
+      Substitute("$0/bin/java", java_home),
+      Substitute("-Dlog4j2.configurationFile=$0", log_properties_path),
+      "-cp", Substitute("$0/kudu-subprocess.jar", bin_dir),
+      "org.apache.kudu.subprocess.log.LoggingTestMain"
+    };
+    process_.reset(new Subprocess(argv));
+    return process_->Start();
+  }
+
+ protected:
+  unique_ptr<Subprocess> process_;
+  const string test_dir_;
+};
+
+TEST_F(SubprocessProxyTest, TestLog4j2LogFileCountLimit) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+  constexpr int log_file_limit = 2;
+  ASSERT_OK(ResetEchoSubprocess(log_file_limit));
+
+  // Wait for the subprocess to generate log files
+  SleepFor(MonoDelta::FromSeconds(10));
+
+  // Verify the number of log files
+  int log_file_count = CountLogFiles(GetLogDir());
+  EXPECT_LE(log_file_count, log_file_limit);
+}
 
 class EchoSubprocessTest : public KuduTest {
  public:

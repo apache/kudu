@@ -47,13 +47,19 @@ appender.$0.type = RollingFile
 appender.$0.name = $1
 appender.$0.layout.type = PatternLayout
 appender.$0.layout.pattern = %d{yyyy-MM-dd HH:mm:ss.SSS} [%p - %t] (%F:%L) %m%n
-appender.$0.filename = $2/$3.log
+appender.$0.fileName = $2/$3.log
 appender.$0.filePattern = $2/$3.%d{yyyyMMdd-HHmmss}.log.gz
 appender.$0.policies.type = Policies
 appender.$0.policies.size.type = SizeBasedTriggeringPolicy
-appender.$0.policies.size.size = $4 MB
+appender.$0.policies.size.size = $4MB
 appender.$0.strategy.type = DefaultRolloverStrategy
 appender.$0.strategy.max = $5
+appender.$0.strategy.action.type = Delete
+appender.$0.strategy.action.basePath = $2
+appender.$0.strategy.action.condition.type = IfFileName
+appender.$0.strategy.action.condition.glob = $3*.log.gz
+appender.$0.strategy.action.condition.nestedCondition.type = IfAccumulatedFileCount
+appender.$0.strategy.action.condition.nestedCondition.exceeds = $5
 )";
 
 // $0: appender instance
