@@ -24,6 +24,7 @@
 #include <string>
 #include <thread>
 #include <type_traits>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -53,6 +54,7 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
@@ -84,6 +86,8 @@ using kudu::client::KuduTableCreator;
 using kudu::client::sp::shared_ptr;
 using kudu::cluster::InternalMiniCluster;
 using kudu::cluster::InternalMiniClusterOptions;
+using kudu::itest::TServerDetails;
+using kudu::itest::TabletServerMap;
 using kudu::master::CatalogManager;
 using kudu::master::TabletInfo;
 using kudu::tablet::TabletReplica;
@@ -1576,6 +1580,168 @@ TEST_F(ScanTokenTest, TestMasterRequestsNoMetadata) {
   KuduScanBatch batch;
   ASSERT_OK(scanner->NextBatch(&batch));
   ASSERT_EQ(init_location_requests + 1, NumGetTableLocationsRequests());
+}
+
+class ScanTokenStaleRaftMembershipTest : public ScanTokenTest {
+ protected:
+  void SetUp() override {
+    NO_FATALS(KuduTest::SetUp());
+
+    InternalMiniClusterOptions opt;
+    opt.num_tablet_servers = 3;
+    // Set up the mini cluster
+    cluster_.reset(new InternalMiniCluster(env_, std::move(opt)));
+    ASSERT_OK(cluster_->Start());
+    ASSERT_OK(cluster_->CreateClient(nullptr, &client_));
+  }
+};
+
+// A test scenario to verify how the client's metacache behaves when a leader
+// replica changes, given that the metacache was originally populated
+// from a scan token. The information on the replicas' Raft configuration
+// becomes outdated by the time a write request is sent out, so the client
+// should find a newly elected leader replica and retry the write request
+// with the new leader replica.
+TEST_F(ScanTokenStaleRaftMembershipTest, TabletLeaderChange) {
+  constexpr const char* const kTableName = "scan-token-stale-tablet-config";
+  constexpr const char* const kKey = "key";
+
+  KuduSchema schema;
+  {
+    KuduSchemaBuilder builder;
+    builder.AddColumn(kKey)->NotNull()->Type(KuduColumnSchema::INT64)->PrimaryKey();
+    builder.AddColumn("col")->Nullable()->Type(KuduColumnSchema::INT64);
+    ASSERT_OK(builder.Build(&schema));
+  }
+
+  shared_ptr<KuduTable> table;
+  {
+    // Create a table of RF=3 and a single range partition [-100, 100).
+    unique_ptr<KuduTableCreator> tc(client_->NewTableCreator());
+    tc->table_name(kTableName);
+    tc->schema(&schema);
+    tc->num_replicas(3);
+    tc->set_range_partition_columns({ kKey });
+
+    {
+      unique_ptr<KuduPartialRow> lb(schema.NewRow());
+      ASSERT_OK(lb->SetInt64(kKey, -100));
+      unique_ptr<KuduPartialRow> ub(schema.NewRow());
+      ASSERT_OK(ub->SetInt64(kKey, 100));
+      tc->add_range_partition(lb.release(), ub.release());
+    }
+    ASSERT_OK(tc->Create());
+    ASSERT_OK(client_->OpenTable(kTableName, &table));
+  }
+
+  unique_ptr<KuduScanToken> token;
+  {
+    // Build scan token(s), embedding information on the tablet locations and
+    // replicas' Raft roles.
+    vector<KuduScanToken*> tokens;
+    KuduScanTokenBuilder builder(table.get());
+    ASSERT_OK(builder.IncludeTableMetadata(true));
+    ASSERT_OK(builder.IncludeTabletMetadata(true));
+    ASSERT_OK(builder.Build(&tokens));
+    ASSERT_EQ(1, tokens.size());
+    token.reset(tokens.front());
+  }
+
+  shared_ptr<KuduClient> new_client;
+  ASSERT_OK(cluster_->CreateClient(nullptr, &new_client));
+
+  {
+    // List the tables to prevent counting initialization RPCs.
+    vector<string> tables;
+    ASSERT_OK(new_client->ListTables(&tables));
+  }
+
+  const auto init_schema_requests = NumGetTableSchemaRequests();
+  const auto init_location_requests = NumGetTableLocationsRequests();
+
+  unique_ptr<KuduScanner> scanner;
+  ASSERT_OK(IntoUniqueScanner(new_client.get(), *token, &scanner));
+  ASSERT_OK(scanner->Open());
+  KuduScanBatch batch;
+  ASSERT_OK(scanner->NextBatch(&batch));
+
+  // Hydrating a scan token, opening the table, and fetching a batch of rows
+  // should result neither in GetTableSchema, nor in GetTableLocations request.
+  ASSERT_EQ(init_schema_requests, NumGetTableSchemaRequests());
+  ASSERT_EQ(init_location_requests, NumGetTableLocationsRequests());
+
+  const auto& tablet = token->tablet();
+  const auto& tablet_id = tablet.id();
+  const auto& replicas = tablet.replicas();
+  const KuduTabletServer* ts = nullptr;
+  string leader_uuid = "";
+  for (const auto& r : replicas) {
+    if (r->is_leader()) {
+      ts = &r->ts();
+      leader_uuid = ts->uuid();
+      break;
+    }
+  }
+  ASSERT_NE(nullptr, ts);
+  ASSERT_FALSE(leader_uuid.empty());
+
+  const auto kRaftTimeout = MonoDelta::FromSeconds(30);
+  TabletServerMap ts_map;
+  ASSERT_OK(CreateTabletServerMap(cluster_->master_proxy(), cluster_->messenger(), &ts_map));
+  const TServerDetails* leader_tsd = FindPtrOrNull(ts_map, leader_uuid);
+  ASSERT_NE(nullptr, leader_tsd);
+
+  // Make the current leader replica identified by 'leader_uuid' to step down
+  // abruptly, inducing Raft election round.
+  ASSERT_OK(LeaderStepDown(leader_tsd, tablet_id, kRaftTimeout));
+
+  // After initiating a change in the tablet's Raft leadership, try to insert
+  // a single row into the table. During the Raft election round, WriteRequestPB
+  // RPCs should be rejected with REPLICA_NOT_LEADER error code by every replica
+  // of the tablet. However, the write request should eventually succeed once
+  // a new leader replica is elected.
+  shared_ptr<KuduSession> session = client_->NewSession();
+  {
+    unique_ptr<KuduInsert> insert(table->NewInsert());
+    ASSERT_OK(insert->mutable_row()->SetInt64(kKey, 0));
+    ASSERT_OK(session->Apply(insert.release()));
+    ASSERT_OK(session->Flush());
+  }
+
+  // At this point the new leader replica for the tablet has already been
+  // established to accommodate the write request above. As an extra sanity
+  // check that's crucial for the essence of this test scenario, make sure
+  // the newly elected leader replica is indeed hosted by other tablet server.
+  //
+  // NOTE: for existing coverage, see RaftConsensusElectionITest.LeaderStepDown
+  //    in raft_consensus_election-itest.cc
+  TServerDetails* new_leader_tsd = nullptr;
+  ASSERT_OK(FindTabletLeader(ts_map, tablet_id, kRaftTimeout, &new_leader_tsd));
+  ASSERT_NE(nullptr, new_leader_tsd);
+  ASSERT_NE(new_leader_tsd->uuid(), leader_tsd->uuid());
+
+  // The version of the table's schema hasn't changed, so no new GetTableSchema
+  // requests should be sent by the client's metacache.
+  ASSERT_EQ(init_schema_requests, NumGetTableSchemaRequests());
+
+  // GetTableLocations requests should be issued by the client's metacache
+  // to find the location of the new leader replica.
+  const auto location_requests_post_election = NumGetTableLocationsRequests();
+  ASSERT_LT(init_location_requests, location_requests_post_election);
+
+  // Write one more row into the tablet to let the metacache do its job again:
+  // that's necessary for the assertion on NumGetTableLocationsRequests() below.
+  {
+    unique_ptr<KuduInsert> insert(table->NewInsert());
+    ASSERT_OK(insert->mutable_row()->SetInt64(kKey, 1));
+    ASSERT_OK(session->Apply(insert.release()));
+    ASSERT_OK(session->Flush());
+  }
+
+  // Make sure no new GetTableLocations requests were sent upon writing into
+  // the tablet once the new leader replica is found and that information
+  // is stored in the metacache.
+  ASSERT_EQ(location_requests_post_election, NumGetTableLocationsRequests());
 }
 
 enum FirstRangeChangeMode {
