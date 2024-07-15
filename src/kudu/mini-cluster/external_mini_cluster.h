@@ -613,6 +613,18 @@ class ExternalMiniCluster : public MiniCluster {
                       size_t idx,
                       scoped_refptr<ExternalMaster>* master);
 
+  // Verify the cluster contains 'num_masters' on all masters, and that they
+  // are all voters. Returns an error if the expected state is not present.
+  //
+  // This should be used if it is required that all masters have accepted the config
+  // change. E.g. tests that restart a cluster after adding a master should verify
+  // that all masters agree before restarting, in case lagging masters start up with
+  // stale configs.
+  //
+  // TODO(awong): we should be more robust to starting up with mismatched on-disk
+  // configs, if we can help it.
+  Status VerifyVotersOnAllMasters(int num_masters);
+
  private:
   Status StartMasters();
 
