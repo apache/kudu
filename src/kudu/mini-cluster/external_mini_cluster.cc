@@ -35,17 +35,20 @@
 
 #include "kudu/client/client.h"
 #include "kudu/client/master_rpc.h"
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/fs/default_key_provider.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/key_provider.h"
 #include "kudu/postgres/mini_postgres.h"
 #include "kudu/ranger-kms/mini_ranger_kms.h"
 #include "kudu/rpc/rpc_header.pb.h"
+#include "kudu/tablet/metadata.pb.h"
 #if !defined(NO_CHRONY)
 #include "kudu/clock/test/mini_chronyd.h"
 #endif
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
+#include "kudu/consensus/consensus.proxy.h"
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/strings/escaping.h"
 #include "kudu/gutil/strings/join.h"
@@ -63,12 +66,10 @@
 #include "kudu/security/test/mini_kdc.h"
 #include "kudu/server/server_base.pb.h"
 #include "kudu/server/server_base.proxy.h"
-#include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/tserver/tserver_service.proxy.h"
-#include "kudu/consensus/consensus.proxy.h"
 #include "kudu/util/async_util.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
@@ -94,8 +95,11 @@ using kudu::client::internal::ConnectToClusterRpc;
 #if !defined(NO_CHRONY)
 using kudu::clock::MiniChronyd;
 #endif
+using kudu::master::ListMastersRequestPB;
+using kudu::master::ListMastersResponsePB;
 using kudu::master::ListTablesRequestPB;
 using kudu::master::ListTablesResponsePB;
+using kudu::consensus::RaftPeerPB;
 using kudu::master::MasterServiceProxy;
 using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
@@ -994,6 +998,27 @@ Status ExternalMiniCluster::WaitForTabletsRunning(
   }
 
   return Status::TimedOut(SecureDebugString(resp));
+}
+
+Status ExternalMiniCluster::VerifyVotersOnAllMasters(int num_masters) {
+  for (int i = 0; i < this->num_masters(); i++) {
+    ListMastersResponsePB resp;
+    ListMastersRequestPB req;
+    RpcController rpc;
+    RETURN_NOT_OK(master_proxy(i)->ListMasters(req, &resp, &rpc));
+    if (num_masters != resp.masters_size()) {
+      return Status::IllegalState(Substitute("expected $0 masters but got $1",
+                                             num_masters, resp.masters_size()));
+    }
+    for (const auto& master : resp.masters()) {
+      if ((master.role() != RaftPeerPB::LEADER && master.role() != RaftPeerPB::FOLLOWER) ||
+          master.member_type() != RaftPeerPB::VOTER ||
+          master.registration().rpc_addresses_size() != 1) {
+        return Status::IllegalState(Substitute("bad master: $0", SecureShortDebugString(master)));
+      }
+    }
+  }
+  return Status::OK();
 }
 
 ExternalMaster* ExternalMiniCluster::leader_master() {

@@ -906,6 +906,10 @@ TEST_F(SecurityITest, TestNonDefaultPrincipalMultipleMaster) {
   ASSERT_OK(cluster_->AddMaster());
   ASSERT_OK(cluster_->master(2)->WaitForCatalogManager());
 
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(cluster_->VerifyVotersOnAllMasters(3));
+  });
+
   // Tablet servers need to be restarted in order to update their master list.
   for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
     cluster_->tablet_server(i)->Shutdown();

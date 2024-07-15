@@ -203,37 +203,6 @@ Status RunListMasters(ListMastersResponsePB* resp, ExternalMiniCluster* cluster)
   return RunLeaderMasterRPC(list_masters, cluster);
 }
 
-// Verify the 'cluster' contains 'num_masters' on all masters, and that they
-// are all voters. Returns an error if the expected state is not present.
-//
-// This should be used instead of VerifyVoterMastersForCluster() if it is
-// required that all masters have accepted the config change. E.g. tests that
-// restart a cluster after adding a master should verify that all masters agree
-// before restarting, in case lagging masters start up with stale configs.
-//
-// TODO(awong): we should be more robust to starting up with mismatched on-disk
-// configs, if we can help it.
-Status VerifyVotersOnAllMasters(int num_masters, ExternalMiniCluster* cluster) {
-  for (int i = 0; i < cluster->num_masters(); i++) {
-    ListMastersResponsePB resp;
-    ListMastersRequestPB req;
-    RpcController rpc;
-    RETURN_NOT_OK(cluster->master_proxy(i)->ListMasters(req, &resp, &rpc));
-    if (num_masters != resp.masters_size()) {
-      return Status::IllegalState(Substitute("expected $0 masters but got $1",
-                                             num_masters, resp.masters_size()));
-    }
-    for (const auto& master : resp.masters()) {
-      if ((master.role() != RaftPeerPB::LEADER && master.role() != RaftPeerPB::FOLLOWER) ||
-          master.member_type() != RaftPeerPB::VOTER ||
-          master.registration().rpc_addresses_size() != 1) {
-        return Status::IllegalState(Substitute("bad master: $0", SecureShortDebugString(master)));
-      }
-    }
-  }
-  return Status::OK();
-}
-
 // Verify the ExternalMiniCluster 'cluster' contains 'num_masters' overall and
 // are all VOTERS. Populates the new master addresses in 'master_hps', if not
 // nullptr. Returns an error if the expected state is not present.
@@ -1699,7 +1668,7 @@ TEST_F(AutoAddMasterTest, TestAddWithOnGoingDdl) {
     ASSERT_OK(new_master->WaitForCatalogManager());
     num_masters++;
     ASSERT_EVENTUALLY([&] {
-      ASSERT_OK(VerifyVotersOnAllMasters(num_masters, cluster_.get()));
+      ASSERT_OK(cluster_->VerifyVotersOnAllMasters(num_masters));
     });
     {
       std::lock_guard l(master_addrs_lock);
@@ -1784,7 +1753,7 @@ TEST_F(AutoAddMasterTest, TestAddNewMaster) {
   ASSERT_OK(peer->WaitForCatalogManager());
   auto expected_num_masters = ++idx;
   ASSERT_EVENTUALLY([&] {
-    ASSERT_OK(VerifyVotersOnAllMasters(expected_num_masters, cluster_.get()));
+    ASSERT_OK(cluster_->VerifyVotersOnAllMasters(expected_num_masters));
   });
   NO_FATALS(cluster_->AssertNoCrashes());
 }
@@ -1811,7 +1780,7 @@ TEST_F(MinidumpTest, TestAddNewMasterMinidumpsEnabled) {
   ASSERT_OK(peer->WaitForCatalogManager());
   auto expected_num_masters = ++idx;
   ASSERT_EVENTUALLY([&] {
-    ASSERT_OK(VerifyVotersOnAllMasters(expected_num_masters, cluster_.get()));
+    ASSERT_OK(cluster_->VerifyVotersOnAllMasters(expected_num_masters));
   });
   NO_FATALS(cluster_->AssertNoCrashes());
 }
