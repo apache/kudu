@@ -18,33 +18,49 @@
 #include "kudu/util/throttler.h"
 
 #include <algorithm>
-#include <mutex>
+
+#include <glog/logging.h>
 
 namespace kudu {
 
-Throttler::Throttler(MonoTime now, uint64_t op_rate, uint64_t byte_rate, double burst_factor) :
-    next_refill_(now) {
-  op_refill_ = op_rate / (MonoTime::kMicrosecondsPerSecond / kRefillPeriodMicros);
-  op_token_ = 0;
-  op_token_max_ = static_cast<uint64_t>(op_refill_ * burst_factor);
-  byte_refill_ = byte_rate / (MonoTime::kMicrosecondsPerSecond / kRefillPeriodMicros);
-  byte_token_ = 0;
-  byte_token_max_ = static_cast<uint64_t>(byte_refill_ * burst_factor);
+Throttler::Throttler(uint64_t op_rate_per_sec,
+                     uint64_t byte_rate_per_sec,
+                     double burst_factor)
+    : Throttler(MonoTime::Now(), op_rate_per_sec, byte_rate_per_sec, burst_factor) {
 }
 
-bool Throttler::Take(MonoTime now, uint64_t op, uint64_t byte) {
-  if (op_refill_ == 0 && byte_refill_ == 0) {
+Throttler::Throttler(MonoTime now,
+                     uint64_t op_rate_per_sec,
+                     uint64_t byte_rate_per_sec,
+                     double burst_factor)
+    : byte_refill_(byte_rate_per_sec / (MonoTime::kMicrosecondsPerSecond / kRefillPeriodMicros)),
+      byte_token_max_(static_cast<uint64_t>(byte_refill_ * burst_factor)),
+      op_refill_(op_rate_per_sec / (MonoTime::kMicrosecondsPerSecond / kRefillPeriodMicros)),
+      op_token_max_(static_cast<uint64_t>(op_refill_ * burst_factor)),
+      byte_token_(0),
+      op_token_(0),
+      next_refill_(now) {
+}
+
+bool Throttler::Take(uint64_t ops, uint64_t bytes) {
+  return Take(MonoTime::Now(), ops, bytes);
+}
+
+bool Throttler::Take(MonoTime now, uint64_t ops, uint64_t bytes) {
+  DCHECK(ops > 0 || bytes > 0);
+  if (op_refill_ == kNoLimit && byte_refill_ == kNoLimit) {
     return true;
   }
-  std::lock_guard<simple_spinlock> lock(lock_);
+
+  std::lock_guard lock(lock_);
   Refill(now);
-  if ((op_refill_ == 0 || op <= op_token_) &&
-      (byte_refill_ == 0 || byte <= byte_token_)) {
+  if ((op_refill_ == 0 || ops <= op_token_) &&
+      (byte_refill_ == 0 || bytes <= byte_token_)) {
     if (op_refill_ > 0) {
-      op_token_ -= op;
+      op_token_ -= ops;
     }
     if (byte_refill_ > 0) {
-      byte_token_ -= byte;
+      byte_token_ -= bytes;
     }
     return true;
   }

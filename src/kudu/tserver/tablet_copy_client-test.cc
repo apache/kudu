@@ -319,7 +319,6 @@ class TabletCopyThrottlerTest : public TabletCopyClientTest {
   TabletCopyThrottlerTest() {
     mode_ = TabletCopyMode::REMOTE;
     throttler_ = std::make_shared<Throttler>(
-        MonoTime::Now(),
         0,
         FLAGS_tablet_copy_transfer_chunk_size_bytes,
         2 * FLAGS_tablet_copy_transfer_chunk_size_bytes);

@@ -17,6 +17,8 @@
 
 #include "kudu/util/throttler.h"
 
+#include <string>
+
 #include <gtest/gtest.h>
 
 #include "kudu/util/monotime.h"
@@ -27,7 +29,13 @@ namespace kudu {
 class ThrottlerTest : public KuduTest {
 };
 
-TEST_F(ThrottlerTest, TestOpThrottle) {
+TEST_F(ThrottlerTest, Basic) {
+  Throttler t(1, 1, 1.0);
+  ASSERT_TRUE(t.Take(0, 1));
+  ASSERT_TRUE(t.Take(1, 0));
+}
+
+TEST_F(ThrottlerTest, OpThrottle) {
   // Check operation rate throttling
   MonoTime now = MonoTime::Now();
   Throttler t0(now, 1000, 1000*1000, 1);
@@ -39,12 +47,12 @@ TEST_F(ThrottlerTest, TestOpThrottle) {
       ASSERT_TRUE(t0.Take(now, 1, 1));
     }
     ASSERT_FALSE(t0.Take(now, 1, 1));
-    now += MonoDelta::FromMilliseconds(100);
+    now += MonoDelta::FromMicroseconds(Throttler::kRefillPeriodMicros);
   }
 }
 
-TEST_F(ThrottlerTest, TestIOThrottle) {
-  // Check operation rate throttling
+TEST_F(ThrottlerTest, IOThrottle) {
+  // Check IO rate throttling
   MonoTime now = MonoTime::Now();
   Throttler t0(now, 50000, 1000*1000, 1);
   // Fill up bucket
@@ -55,12 +63,12 @@ TEST_F(ThrottlerTest, TestIOThrottle) {
       ASSERT_TRUE(t0.Take(now, 1, 1000));
     }
     ASSERT_FALSE(t0.Take(now, 1, 1000));
-    now += MonoDelta::FromMilliseconds(100);
+    now += MonoDelta::FromMilliseconds(Throttler::kRefillPeriodMicros);
   }
 }
 
-TEST_F(ThrottlerTest, TestBurst) {
-  // Check IO rate throttling
+TEST_F(ThrottlerTest, Burst) {
+  // Check throttling for bursty consuming
   MonoTime now = MonoTime::Now();
   Throttler t0(now, 2000, 1000*1000, 5);
   // Fill up bucket

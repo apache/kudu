@@ -582,7 +582,7 @@ TableScanner::TableScanner(
       out_(nullptr) {
   CHECK_OK(SetReplicaSelection(FLAGS_replica_selection));
   if (FLAGS_table_copy_throttler_bytes_per_sec > 0) {
-    throttler_ = std::make_shared<Throttler>(MonoTime::Now(), 0,
+    throttler_ = std::make_shared<Throttler>(Throttler::kNoLimit,
                                              FLAGS_table_copy_throttler_bytes_per_sec,
                                              FLAGS_table_copy_throttler_burst_factor);
   }
@@ -611,9 +611,9 @@ Status TableScanner::ScanData(const vector<KuduScanToken*>& tokens,
       // Limit table copy speed.
       if (throttler_) {
         SCOPED_LOG_SLOW_EXECUTION(WARNING, 1000, "Table copy throttler");
-        while (!throttler_->Take(MonoTime::Now(), 0,
+        while (!throttler_->Take(0,
                                  batch.direct_data().size() + batch.indirect_data().size())) {
-          SleepFor(MonoDelta::FromMilliseconds(10));
+          SleepFor(MonoDelta::FromMicroseconds(Throttler::kRefillPeriodMicros / 2));
         }
       }
       RETURN_NOT_OK(cb(batch));

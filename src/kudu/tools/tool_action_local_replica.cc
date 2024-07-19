@@ -334,8 +334,7 @@ class TabletCopier {
 
     shared_ptr<Throttler> throttler;
     if (FLAGS_tablet_copy_throttler_bytes_per_sec > 0) {
-      throttler = std::make_shared<Throttler>(MonoTime::Now(),
-                                              0,
+      throttler = std::make_shared<Throttler>(0,
                                               FLAGS_tablet_copy_throttler_bytes_per_sec,
                                               FLAGS_tablet_copy_throttler_burst_factor);
     }

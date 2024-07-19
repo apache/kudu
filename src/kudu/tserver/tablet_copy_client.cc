@@ -1036,8 +1036,8 @@ Status RemoteTabletCopyClient::DownloadFile(const DataIdPB& data_id,
     }
     if (throttler_) {
       LOG_TIMING(INFO, "Tablet copy throttler") {
-        while (!throttler_->Take(MonoTime::Now(), 0, chunk_size)) {
-          SleepFor(MonoDelta::FromMilliseconds(10));
+        while (!throttler_->Take(0, chunk_size)) {
+          SleepFor(MonoDelta::FromMicroseconds(Throttler::kRefillPeriodMicros / 2));
         }
       }
     }

@@ -386,8 +386,7 @@ Tablet::Tablet(scoped_refptr<TabletMetadata> metadata,
       FLAGS_tablet_compaction_budget_mb, metrics_.get()));
 
   if (FLAGS_tablet_throttler_rpc_per_sec > 0 || FLAGS_tablet_throttler_bytes_per_sec > 0) {
-    throttler_.reset(new Throttler(MonoTime::Now(),
-                                   FLAGS_tablet_throttler_rpc_per_sec,
+    throttler_.reset(new Throttler(FLAGS_tablet_throttler_rpc_per_sec,
                                    FLAGS_tablet_throttler_bytes_per_sec,
                                    FLAGS_tablet_throttler_burst_factor));
   }
@@ -1795,7 +1794,7 @@ bool Tablet::ShouldThrottleAllow(int64_t bytes) {
   if (!throttler_) {
     return true;
   }
-  return throttler_->Take(MonoTime::Now(), 1, bytes);
+  return throttler_->Take(1, bytes);
 }
 
 Status Tablet::PickRowSetsToCompact(RowSetsInCompactionOrFlush *picked,
