@@ -6026,16 +6026,16 @@ TEST_F(ToolTest, TableCopyLimitSpeed) {
                 .add_master_server_addr(master_addr)
                 .Build(&client));
   shared_ptr<KuduTable> table;
-  client->OpenTable(kNewTableName, &table);
+  ASSERT_OK(client->OpenTable(kNewTableName, &table));
   KuduScanner scanner(table.get());
-  scanner.Open();
+  ASSERT_OK(scanner.Open());
   KuduScanBatch batch;
   int64_t data_size = 0;
   while (scanner.HasMoreRows()) {
     ASSERT_OK(scanner.NextBatch(&batch));
-    data_size = batch.direct_data().size() + batch.indirect_data().size();
+    data_size += batch.direct_data().size() + batch.indirect_data().size();
   }
-  // Table copy speed must less than table_copy_throttler_bytes_per_sec.
+  // Table copy speed must be less than table_copy_throttler_bytes_per_sec.
   ASSERT_LE(data_size / (end_time - start_time).ToSeconds(), table_copy_throttler_bytes_per_sec);
 }
 

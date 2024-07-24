@@ -32,9 +32,9 @@
 #include "kudu/client/write_op.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/status.h"
-#include "kudu/util/threadpool.h"
 
 namespace kudu {
+class ThreadPool;
 class Throttler;
 
 namespace tools {
@@ -47,6 +47,8 @@ class TableScanner {
                std::optional<client::sp::shared_ptr<client::KuduClient>> dst_client =
                    std::nullopt,
                std::optional<std::string> dst_table_name = std::nullopt);
+
+  ~TableScanner();
 
   // Set output stream of this tool, or disable output if not set.
   // 'out' must remain valid for the lifetime of this class.
@@ -104,7 +106,7 @@ class TableScanner {
   std::optional<std::string> dst_table_name_;
   int32_t scan_batch_size_;
   std::unique_ptr<ThreadPool> thread_pool_;
-  std::shared_ptr<Throttler> throttler_;
+  std::unique_ptr<Throttler> throttler_;
 
   // Protects output to 'out_' so that rows don't get interleaved.
   Mutex output_lock_;

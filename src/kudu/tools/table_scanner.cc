@@ -61,6 +61,7 @@
 #include "kudu/util/slice.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/string_case.h"
+#include "kudu/util/threadpool.h"
 #include "kudu/util/throttler.h"
 
 using kudu::client::KuduClient;
@@ -582,11 +583,13 @@ TableScanner::TableScanner(
       out_(nullptr) {
   CHECK_OK(SetReplicaSelection(FLAGS_replica_selection));
   if (FLAGS_table_copy_throttler_bytes_per_sec > 0) {
-    throttler_ = std::make_shared<Throttler>(Throttler::kNoLimit,
+    throttler_ = std::make_unique<Throttler>(Throttler::kNoLimit,
                                              FLAGS_table_copy_throttler_bytes_per_sec,
                                              FLAGS_table_copy_throttler_burst_factor);
   }
 }
+
+TableScanner::~TableScanner() {}
 
 Status TableScanner::ScanData(const vector<KuduScanToken*>& tokens,
                               const function<Status(const KuduScanBatch& batch)>& cb) {
@@ -608,9 +611,9 @@ Status TableScanner::ScanData(const vector<KuduScanToken*>& tokens,
       count += batch.NumRows();
       total_count_ += batch.NumRows();
       ++next_batch_calls;
-      // Limit table copy speed.
+      // Limit table copying speed.
       if (throttler_) {
-        SCOPED_LOG_SLOW_EXECUTION(WARNING, 1000, "Table copy throttler");
+        SCOPED_LOG_SLOW_EXECUTION(INFO, 1000, "Table copy throttler");
         while (!throttler_->Take(0,
                                  batch.direct_data().size() + batch.indirect_data().size())) {
           SleepFor(MonoDelta::FromMicroseconds(Throttler::kRefillPeriodMicros / 2));
