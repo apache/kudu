@@ -70,6 +70,7 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -1687,6 +1688,10 @@ TEST_F(ScanTokenStaleRaftMembershipTest, TabletLeaderChange) {
 
   const auto kRaftTimeout = MonoDelta::FromSeconds(30);
   TabletServerMap ts_map;
+  auto cleanup = MakeScopedCleanup([&] {
+      // We need to make sure this is deallocated.
+      STLDeleteValues(&ts_map);
+  });
   ASSERT_OK(CreateTabletServerMap(cluster_->master_proxy(), cluster_->messenger(), &ts_map));
   const TServerDetails* leader_tsd = FindPtrOrNull(ts_map, leader_uuid);
   ASSERT_NE(nullptr, leader_tsd);
