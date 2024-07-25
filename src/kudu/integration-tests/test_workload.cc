@@ -20,6 +20,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <type_traits>
 
 #include <glog/logging.h>
 
@@ -88,6 +89,7 @@ TestWorkload::TestWorkload(MiniCluster* cluster,
     timeout_allowed_(false),
     not_found_allowed_(false),
     already_present_allowed_(false),
+    invalid_argument_allowed_(false),
     network_error_allowed_(false),
     remote_error_allowed_(false),
     write_pattern_(INSERT_RANDOM_ROWS),
@@ -284,21 +286,23 @@ void TestWorkload::ReadThread() {
 
 #undef CHECK_READ_OK
 
-size_t TestWorkload::GetNumberOfErrors(KuduSession* session) {
+size_t TestWorkload::GetNumberOfErrors(KuduSession* session) const {
   vector<KuduError*> errors;
   ElementDeleter d(&errors);
   bool overflow;
   session->GetPendingErrors(&errors, &overflow);
   CHECK(!overflow);
-  for (const KuduError* e : errors) {
-    if ((timeout_allowed_ && e->status().IsTimedOut()) ||
-        (not_found_allowed_ && e->status().IsNotFound()) ||
-        (already_present_allowed_ && e->status().IsAlreadyPresent()) ||
-        (network_error_allowed_ && e->status().IsNetworkError()) ||
-        (remote_error_allowed_ && e->status().IsRemoteError())) {
+  for (const auto* e : errors) {
+    const auto& s = e->status();
+    if ((timeout_allowed_ && s.IsTimedOut()) ||
+        (not_found_allowed_ && s.IsNotFound()) ||
+        (already_present_allowed_ && s.IsAlreadyPresent()) ||
+        (invalid_argument_allowed_ && s.IsInvalidArgument()) ||
+        (network_error_allowed_ && s.IsNetworkError()) ||
+        (remote_error_allowed_ && s.IsRemoteError())) {
       continue;
     }
-    LOG(FATAL) << e->status().ToString();
+    LOG(FATAL) << s.ToString();
   }
   return errors.size();
 }

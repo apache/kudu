@@ -33,7 +33,6 @@
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
-#include "kudu/rpc/response_callback.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/tserver/tserver.pb.h"
@@ -88,10 +87,7 @@ class ReplaceTabletITest : public ExternalMiniClusterITestBase {
   Random rand_;
 };
 
-// TODO(wdberkeley): Enable this test once KUDU-2376 is fixed.
-// TODO(wdberkeley): Set the PROCESSOR configuration properly for this test once
-//                   it is enabled. See 1c1d3ba.
-TEST_F(ReplaceTabletITest, DISABLED_ReplaceTabletsWhileWriting) {
+TEST_F(ReplaceTabletITest, ReplaceTabletsWhileWriting) {
   constexpr int kNumTabletServers = 3;
   constexpr int kNumTablets = 4;
   constexpr int kNumRows = 10000;
@@ -111,6 +107,7 @@ TEST_F(ReplaceTabletITest, DISABLED_ReplaceTabletsWhileWriting) {
   TestWorkload workload(cluster_.get());
   workload.set_num_replicas(kNumTabletServers);
   workload.set_num_tablets(kNumTablets);
+  workload.set_invalid_argument_allowed(true);
   workload.Setup();
 
   // Insert some rows before replacing tablets so the client's cache is warm.

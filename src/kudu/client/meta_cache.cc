@@ -551,15 +551,15 @@ void MetaCacheServerPicker::PickLeader(const ServerPickedCallback& callback,
           VLOG(2) << Substitute("Explicit fastpath lookup succeeded(maybe), "
                                 "proceed with callback, table: $0",
                                 table_->name());
-          if (remote_tablet &&
-              remote_tablet->tablet_id() != tablet_->tablet_id()) {
+          const auto& known_tablet_id = tablet_->tablet_id();
+          if (remote_tablet && remote_tablet->tablet_id() != known_tablet_id) {
             // Skip further processing if tablet in question has turned invalid
-            LOG(INFO) << Substitute("Tablet under process found to be invalid, "
-                                    "table: $0 - old tabletid: $1, new tabletid: $2",
-                                    table_->name(), tablet_->tablet_id(),
-                                    remote_tablet->tablet_id());
-            callback(Status::InvalidArgument("Tablet id is not valid anymore"),
-                                             nullptr);
+            LOG(INFO) << Substitute(
+                "tablet seems to be replaced: former ID $0, new ID $1 (table $2)",
+                known_tablet_id, remote_tablet->tablet_id(), table_->name());
+            callback(Status::InvalidArgument(
+                         Substitute("tablet ID $0 is not valid", known_tablet_id)),
+                     nullptr);
             return;
           }
         }

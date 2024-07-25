@@ -551,8 +551,10 @@ class ClientTest : public KuduTest {
     ASSERT_EQ(errors.size(), num_rows);
 
     // Check for only the first error.
-    ASSERT_TRUE(errors[0]->status().IsInvalidArgument());
-    ASSERT_STR_CONTAINS(errors[0]->status().ToString(), "Tablet id is not valid anymore");
+    ASSERT_GE(errors.size(), 1);
+    const auto& s = errors[0]->status();
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_MATCHES(s.ToString(), "tablet ID .* is not valid");
   }
 
   // Inserts 'num_rows' using the default client.

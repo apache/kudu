@@ -208,6 +208,14 @@ class TestWorkload {
     already_present_allowed_ = allowed;
   }
 
+  // Whether per-row errors with Status::InvalidArgument() are allowed: these
+  // might be coming out of client's metacache when a particular tablet
+  // is replaced (see KUDU-3461 for details).
+  // By default this triggers a check failure.
+  void set_invalid_argument_allowed(bool allowed) {
+    invalid_argument_allowed_ = allowed;
+  }
+
   // Override the default "simple" schema.
   void set_schema(const client::KuduSchema& schema);
 
@@ -335,7 +343,7 @@ class TestWorkload {
   void OpenTable(client::sp::shared_ptr<client::KuduTable>* table);
   void WriteThread();
   void ReadThread();
-  size_t GetNumberOfErrors(client::KuduSession* session);
+  size_t GetNumberOfErrors(client::KuduSession* session) const;
 
   cluster::MiniCluster* cluster_;
   const PartitioningType partitioning_;
@@ -361,6 +369,7 @@ class TestWorkload {
   bool timeout_allowed_;
   bool not_found_allowed_;
   bool already_present_allowed_;
+  bool invalid_argument_allowed_;
   bool network_error_allowed_;
   bool remote_error_allowed_;
   WritePattern write_pattern_;
