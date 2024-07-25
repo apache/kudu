@@ -19,6 +19,7 @@
 #include <functional>
 #include <memory>
 #include <ostream>
+#include <set>
 #include <string>
 #include <tuple>
 #include <type_traits>
@@ -260,7 +261,7 @@ class TabletServerDiskErrorITest : public DiskErrorITestBase {
     NO_FATALS(writes.StopAndJoin());
 
     // Now add the last server.
-    cluster_->AddTabletServer();
+    ASSERT_OK(cluster_->AddTabletServer());
     for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
       // Prevent attempts to copy over replicas, e.g. ones that don't get to a
       // running state due to an error.
