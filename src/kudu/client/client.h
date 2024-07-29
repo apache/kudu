@@ -306,6 +306,16 @@ class KUDU_EXPORT KuduClientBuilder {
   /// @return Reference to the updated object.
   KuduClientBuilder& connection_negotiation_timeout(const MonoDelta& timeout);
 
+  /// Set the maximum size of RPC message.
+  ///
+  /// If not provided, the underlying messenger is created with reasonable
+  /// default (FLAGS_rpc_max_message_size).
+  ///
+  /// @param [in] size
+  ///   Max size value to set.
+  /// @return Reference to the updated object.
+  KuduClientBuilder& rpc_max_message_size(int64_t size);
+
   /// Set JWT (JSON Web Token) to authenticate the client to a server.
   ///
   /// @note If both @c import_authentication_credentials and

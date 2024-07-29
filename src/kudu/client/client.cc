@@ -322,6 +322,11 @@ KuduClientBuilder& KuduClientBuilder::trusted_certificate(const string& cert_pem
   return *this;
 }
 
+KuduClientBuilder& KuduClientBuilder::rpc_max_message_size(int64_t size) {
+  data_->rpc_max_message_size_ = size;
+  return *this;
+}
+
 KuduClientBuilder& KuduClientBuilder::num_reactors(int num_reactors) {
   data_->num_reactors_ = num_reactors;
   return *this;
@@ -384,6 +389,9 @@ Status KuduClientBuilder::Build(shared_ptr<KuduClient>* client) {
   if (data_->connection_negotiation_timeout_.Initialized()) {
     builder.set_rpc_negotiation_timeout_ms(
         data_->connection_negotiation_timeout_.ToMilliseconds());
+  }
+  if (data_->rpc_max_message_size_) {
+    builder.set_rpc_max_message_size(*data_->rpc_max_message_size_);
   }
   if (data_->num_reactors_) {
     builder.set_num_reactors(*data_->num_reactors_);

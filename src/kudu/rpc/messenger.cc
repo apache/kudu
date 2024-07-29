@@ -43,6 +43,7 @@
 #include "kudu/rpc/sasl_common.h"
 #include "kudu/rpc/server_negotiation.h"
 #include "kudu/rpc/service_if.h"
+#include "kudu/rpc/transfer.h"
 #include "kudu/security/tls_context.h"
 #include "kudu/security/token_verifier.h"
 #include "kudu/util/flags.h"
@@ -81,6 +82,7 @@ MessengerBuilder::MessengerBuilder(string name)
       connection_keepalive_time_(MonoDelta::FromMilliseconds(65000)),
       acceptor_listen_backlog_(AcceptorPool::kDefaultListenBacklog),
       num_reactors_(4),
+      rpc_max_message_size_(FLAGS_rpc_max_message_size),
       min_negotiation_threads_(0),
       max_negotiation_threads_(4),
       coarse_timer_granularity_(MonoDelta::FromMilliseconds(100)),
@@ -379,6 +381,7 @@ Messenger::Messenger(const MessengerBuilder& bld)
       rpcz_store_(new RpczStore),
       metric_entity_(bld.metric_entity_),
       rpc_negotiation_timeout_ms_(bld.rpc_negotiation_timeout_ms_),
+      rpc_max_message_size_(bld.rpc_max_message_size_),
       hostname_(bld.hostname_),
       sasl_proto_name_(bld.sasl_proto_name_),
       keytab_file_(bld.keytab_file_),

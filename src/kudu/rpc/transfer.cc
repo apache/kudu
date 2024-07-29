@@ -99,7 +99,9 @@ InboundTransfer::InboundTransfer(faststring initial_buf)
   buf_.resize(std::max<size_t>(kMsgLengthPrefixLength, buf_.size()));
 }
 
-Status InboundTransfer::ReceiveBuffer(Socket* socket, faststring* extra_4) {
+Status InboundTransfer::ReceiveBuffer(Socket* socket,
+                                      faststring* extra_4,
+                                      const int64_t rpc_max_message_size) {
   static constexpr int kExtraReadLength = kMsgLengthPrefixLength;
   if (total_length_ == 0) {
     // We haven't yet parsed the message length. It's possible that the
@@ -127,10 +129,10 @@ Status InboundTransfer::ReceiveBuffer(Socket* socket, faststring* extra_4) {
     // The length prefix doesn't include its own 4 bytes, so we have to
     // add that back in.
     total_length_ = NetworkByteOrder::Load32(&buf_[0]) + kMsgLengthPrefixLength;
-    if (PREDICT_FALSE(total_length_ > FLAGS_rpc_max_message_size)) {
+    if (PREDICT_FALSE(total_length_ > rpc_max_message_size)) {
       return Status::NetworkError(Substitute(
-          "RPC frame had a length of $0, but we only support messages up to $1 bytes "
-          "long.", total_length_, FLAGS_rpc_max_message_size));
+          "RPC frame had a length of $0, but we only support messages up to $1 bytes long.",
+          total_length_, rpc_max_message_size));
     }
     if (PREDICT_FALSE(total_length_ <= kMsgLengthPrefixLength)) {
       return Status::NetworkError(

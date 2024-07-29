@@ -16,6 +16,7 @@
 // under the License.
 #pragma once
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
@@ -41,6 +42,7 @@ class KuduClientBuilder::Data {
   std::string authn_creds_;
   std::string jwt_;
   internal::ReplicaController::Visibility replica_visibility_;
+  std::optional<int64_t> rpc_max_message_size_;
   std::optional<int> num_reactors_;
   std::string sasl_protocol_name_;
   bool require_authentication_;

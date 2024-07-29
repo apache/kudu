@@ -23,6 +23,7 @@
 #include <cstring>
 #include <functional>
 #include <limits>
+#include <map>
 #include <memory>
 #include <ostream>
 #include <set>
@@ -98,6 +99,7 @@ DECLARE_int32(tcp_keepalive_probe_period_s);
 DECLARE_int32(tcp_keepalive_retry_period_s);
 DECLARE_int32(tcp_keepalive_retry_count);
 
+using std::map;
 using std::tuple;
 using std::shared_ptr;
 using std::string;
@@ -876,6 +878,61 @@ TEST_P(TestRpc, TestTCPKeepalive) {
   SleepResponsePB resp;
   ASSERT_OK(p.SyncRequest(GenericCalculatorService::kSleepMethodName,
       req, &resp, &controller));
+}
+
+// Test that the RpcSidecar transfers the messages within RPC max message
+// size limit and errors out when limit is crossed.
+TEST_P(TestRpc, TestRpcSidecarWithSizeLimits) {
+  int64_t rpc_message_size = 30 * 1024 * 1024; // 30 MB
+  map<std::pair<int64_t, int64_t>, string> rpc_max_message_server_and_client;
+
+  // 1. Set the rpc max size to:
+  // Server: 50 MB,
+  // Client: 70 MB,
+  // so that client is able to accommodate the response size of 60 MB.
+  EmplaceIfNotPresent(&rpc_max_message_server_and_client,
+                      std::make_pair((50 * 1024 * 1024), (70 * 1024 * 1024)),
+                      "OK");
+
+  // 2. Set the rpc max size to:
+  // Server: 50 MB,
+  // Client: 20 MB,
+  // so that client rejects the inbound message of size 60 MB.
+  EmplaceIfNotPresent(&rpc_max_message_server_and_client,
+                      std::make_pair((50 * 1024 * 1024), (20 * 1024 * 1024)),
+                      "Network error: RPC frame had a length of");
+
+  for (auto const& rpc_max_message_size : rpc_max_message_server_and_client) {
+    // Set rpc_max_message_size.
+    int64_t server_rpc_max_size = rpc_max_message_size.first.first;
+    int64_t client_rpc_max_size = rpc_max_message_size.first.second;
+
+    // Set up server.
+    Sockaddr server_addr = bind_addr();
+
+    MessengerBuilder mb("TestRpc.TestRpcSidecarWithSizeLimits");
+    mb.set_rpc_max_message_size(server_rpc_max_size)
+      .set_metric_entity(metric_entity_);
+    if (enable_ssl()) mb.enable_inbound_tls();
+
+    shared_ptr<Messenger> messenger;
+    ASSERT_OK(mb.Build(&messenger));
+
+    ASSERT_OK(StartTestServerWithCustomMessenger(&server_addr, messenger, enable_ssl()));
+
+    // Set up client.
+    shared_ptr<Messenger> client_messenger;
+    ASSERT_OK(CreateMessenger("Client", &client_messenger,
+                              1, enable_ssl(), "", "", "", "", client_rpc_max_size));
+    Proxy p(client_messenger, server_addr, kRemoteHostName,
+            GenericCalculatorService::static_service_name());
+
+    Status status = DoTestSidecarWithSizeLimits(&p, rpc_message_size, rpc_message_size);
+
+    // OK: If size of payload is within max rpc message size limit.
+    // Close connection: If size of payload is beyond max message size limit.
+    ASSERT_STR_CONTAINS(status.ToString(), rpc_max_message_size.second);
+  }
 }
 
 // Test that the RpcSidecar transfers the expected messages.

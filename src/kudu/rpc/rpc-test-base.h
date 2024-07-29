@@ -448,7 +448,8 @@ class RpcTestBase : public KuduTest {
                          const std::string& rpc_certificate_file = "",
                          const std::string& rpc_private_key_file = "",
                          const std::string& rpc_ca_certificate_file = "",
-                         const std::string& rpc_private_key_password_cmd = "") {
+                         const std::string& rpc_private_key_password_cmd = "",
+                         int64_t rpc_max_message_size = FLAGS_rpc_max_message_size) {
     MessengerBuilder bld(name);
 
     if (enable_ssl) {
@@ -461,6 +462,7 @@ class RpcTestBase : public KuduTest {
     }
 
     bld.set_num_reactors(n_reactors);
+    bld.set_rpc_max_message_size(rpc_max_message_size);
     bld.set_connection_keepalive_time(MonoDelta::FromMilliseconds(keepalive_time_ms_));
     if (keepalive_time_ms_ >= 0) {
       // In order for the keepalive timing to be accurate, we need to scan connections
@@ -522,6 +524,37 @@ static void DoTestSidecar(Proxy* p, int size1, int size2) {
     expected.resize(size2);
     RandomString(expected.data(), size2, &rng);
     CHECK_EQ(Slice(expected), second);
+  }
+
+static Status DoTestSidecarWithSizeLimits(Proxy* p, int size1, int size2) {
+    const uint32_t kSeed = 12345;
+
+    SendTwoStringsRequestPB req;
+    req.set_size1(size1);
+    req.set_size2(size2);
+    req.set_random_seed(kSeed);
+
+    SendTwoStringsResponsePB resp;
+    RpcController controller;
+    controller.set_timeout(MonoDelta::FromMilliseconds(10000));
+    Status status = p->SyncRequest(GenericCalculatorService::kSendTwoStringsMethodName,
+                                   req, &resp, &controller);
+    if (status.ok()) {
+      Slice first = GetSidecarPointer(controller, resp.sidecar1(), size1);
+      Slice second = GetSidecarPointer(controller, resp.sidecar2(), size2);
+      Random rng(kSeed);
+      faststring expected;
+
+      expected.resize(size1);
+      RandomString(expected.data(), size1, &rng);
+      CHECK_EQ(Slice(expected), first);
+
+      expected.resize(size2);
+      RandomString(expected.data(), size2, &rng);
+      CHECK_EQ(Slice(expected), second);
+    }
+
+    return status;
   }
 
   static Status DoTestOutgoingSidecar(Proxy* p, int size1, int size2) {

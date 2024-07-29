@@ -10069,7 +10069,7 @@ TEST_P(DownloadSuperblockInBatchTest, TestDownloadSuperblockInBatch) {
                   "--rpc_max_message_size_enable_validation=false "
                   // Set --rpc_max_message_size very small, so it is easy for the size of
                   // superblock over --rpc_max_message_size. It is used to repeat the network
-                  // error, see line 9477.
+                  // error, see 'else' condition below.
                   "--rpc_max_message_size=$5 "
                   // This flag and --rpc_max_message_size are in a group flag validator, so
                   // it is also should be set a small value.
