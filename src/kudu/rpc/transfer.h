@@ -76,7 +76,7 @@ class InboundTransfer {
   // after this call returns OK), up to 4 extra bytes may have been read
   // from the socket and stored in 'extra_4'. In that case, any previous content of
   // 'extra_4' is replaced by this extra bytes.
-  Status ReceiveBuffer(Socket* socket, faststring* extra_4);
+  Status ReceiveBuffer(Socket* socket, faststring* extra_4, int64_t rpc_max_message_size);
 
   // Return true if any bytes have yet been sent.
   bool TransferStarted() const;

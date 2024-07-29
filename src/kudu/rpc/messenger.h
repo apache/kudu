@@ -110,6 +110,12 @@ class MessengerBuilder {
     return *this;
   }
 
+  // Set the maximum size of RPC message for sending and receiving.
+  MessengerBuilder& set_rpc_max_message_size(int64_t rpc_max_message_size) {
+    rpc_max_message_size_ = rpc_max_message_size;
+    return *this;
+  }
+
   // Set the minimum number of connection-negotiation threads that will be used
   // to handle the blocking connection-negotiation step.
   MessengerBuilder& set_min_negotiation_threads(int min_negotiation_threads) {
@@ -278,6 +284,7 @@ class MessengerBuilder {
   MonoDelta connection_keepalive_time_;
   int acceptor_listen_backlog_;
   int num_reactors_;
+  int64_t rpc_max_message_size_;
   int min_negotiation_threads_;
   int max_negotiation_threads_;
   MonoDelta coarse_timer_granularity_;
@@ -448,6 +455,8 @@ class Messenger {
     return rpc_negotiation_timeout_ms_;
   }
 
+  int64_t rpc_max_message_size() const { return rpc_max_message_size_; }
+
   // The name of the node where this Messenger is running. The best case is
   // FQDN retrieved using getaddrinfo(), but it might be just local hostname
   // retrived by gethostname(). It can also be empty if Messenger has been
@@ -562,6 +571,9 @@ class Messenger {
 
   // Timeout in milliseconds after which an incomplete connection negotiation will timeout.
   const int64_t rpc_negotiation_timeout_ms_;
+
+  // Maximum RPC message size (in bytes) set by MessengerBuilder.
+  int64_t rpc_max_message_size_;
 
   // The name of the node where this messenger is running.
   const std::string hostname_;

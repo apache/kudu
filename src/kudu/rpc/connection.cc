@@ -522,12 +522,14 @@ void Connection::ReadHandler(ev::io& /*watcher*/, int revents) {
   }
   last_activity_time_ = reactor_thread_->cur_time();
 
+  const int64_t rpc_max_size = reactor_thread_->reactor()->messenger()->rpc_max_message_size();
   faststring extra_buf;
   while (true) {
     if (!inbound_) {
+      // Initialize the maximum RPC message size set by caller.
       inbound_.reset(new InboundTransfer());
     }
-    Status status = inbound_->ReceiveBuffer(socket_.get(), &extra_buf);
+    Status status = inbound_->ReceiveBuffer(socket_.get(), &extra_buf, rpc_max_size);
     if (PREDICT_FALSE(!status.ok())) {
       if (status.posix_code() == ESHUTDOWN) {
         VLOG(1) << Substitute("$0 shut down by remote end", ToString());

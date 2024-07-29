@@ -16,7 +16,12 @@
 // under the License.
 
 #include "kudu/client/client_builder-internal.h"
+
+#include <gflags/gflags_declare.h>
+
 #include "kudu/client/replica_controller-internal.h"
+
+DECLARE_int64(rpc_max_message_size);
 
 namespace kudu {
 
@@ -26,6 +31,7 @@ KuduClientBuilder::Data::Data()
     : default_admin_operation_timeout_(MonoDelta::FromSeconds(30)),
       default_rpc_timeout_(MonoDelta::FromSeconds(10)),
       replica_visibility_(internal::ReplicaController::Visibility::VOTERS),
+      rpc_max_message_size_(FLAGS_rpc_max_message_size),
       require_authentication_(false),
       encryption_policy_(EncryptionPolicy::OPTIONAL) {
   }
