@@ -22,7 +22,6 @@
 #include <functional>
 #include <map>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <type_traits>
 #include <unordered_map>
@@ -215,17 +214,17 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   void FinishConsensusOnlyRound(consensus::ConsensusRound* round) override;
 
   consensus::RaftConsensus* consensus() {
-    std::lock_guard<simple_spinlock> lock(lock_);
+    std::lock_guard lock(lock_);
     return consensus_.get();
   }
 
   std::shared_ptr<consensus::RaftConsensus> shared_consensus() const {
-    std::lock_guard<simple_spinlock> lock(lock_);
+    std::lock_guard lock(lock_);
     return consensus_;
   }
 
   Tablet* tablet() const {
-    std::lock_guard<simple_spinlock> lock(lock_);
+    std::lock_guard lock(lock_);
     return tablet_.get();
   }
 
@@ -234,19 +233,19 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   }
 
   std::shared_ptr<Tablet> shared_tablet() const {
-    std::lock_guard<simple_spinlock> lock(lock_);
+    std::lock_guard lock(lock_);
     return tablet_;
   }
 
   TabletStatePB state() const {
-    std::lock_guard<simple_spinlock> lock(lock_);
+    std::lock_guard lock(lock_);
     return state_;
   }
 
   const std::string& StateName() const;
 
   TabletDataState data_state() const {
-    std::lock_guard<simple_spinlock> lock(lock_);
+    std::lock_guard lock(lock_);
     return meta_->tablet_data_state();
   }
 
@@ -268,7 +267,7 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
 
   // Returns the error that occurred, when state is FAILED.
   Status error() const {
-    std::lock_guard<simple_spinlock> lock(lock_);
+    std::lock_guard lock(lock_);
     return error_;
   }
 

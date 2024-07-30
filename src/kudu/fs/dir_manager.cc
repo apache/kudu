@@ -22,6 +22,7 @@
 #include <functional>
 #include <iterator>
 #include <memory>
+#include <mutex>
 #include <ostream>
 #include <set>
 #include <shared_mutex>
@@ -244,7 +245,7 @@ void Dir::WaitOnClosures() {
 Status Dir::RefreshAvailableSpace(RefreshMode mode) {
   switch (mode) {
     case RefreshMode::EXPIRED_ONLY: {
-      std::lock_guard<simple_spinlock> l(lock_);
+      std::lock_guard l(lock_);
       DCHECK(last_space_check_.Initialized());
       MonoTime expiry = last_space_check_ + MonoDelta::FromSeconds(
           available_space_cache_secs());
@@ -269,7 +270,7 @@ Status Dir::RefreshAvailableSpace(RefreshMode mode) {
       }
       RETURN_NOT_OK_PREPEND(s, "Could not refresh fullness"); // Catch other types of IOErrors, etc.
       {
-        std::lock_guard<simple_spinlock> l(lock_);
+        std::lock_guard l(lock_);
         if (metrics_ && is_full_ != is_full_new) {
           metrics_->dirs_full->IncrementBy(is_full_new ? 1 : -1);
         }
@@ -919,7 +920,7 @@ void DirManager::MarkDirFailedByUuid(const std::string& uuid) {
 
 Status DirManager::MarkDirFailed(int uuid_idx, const string& error_message) {
   DCHECK_LT(uuid_idx, dirs_.size());
-  std::lock_guard<percpu_rwlock> lock(dir_group_lock_);
+  std::lock_guard lock(dir_group_lock_);
   Dir* dir = FindDirByUuidIndex(uuid_idx);
   DCHECK(dir);
   if (InsertIfNotPresent(&failed_dirs_, uuid_idx)) {

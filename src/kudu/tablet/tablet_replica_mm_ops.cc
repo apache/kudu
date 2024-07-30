@@ -166,7 +166,7 @@ void FlushMRSOp::UpdateStats(MaintenanceOpStats* stats) {
     return;
   }
 
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
 
   map<int64_t, int64_t> replay_size_map;
   if (tablet_replica_->tablet()->MemRowSetEmpty() ||
@@ -218,7 +218,7 @@ void FlushMRSOp::Perform() {
   }
 
   {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     time_since_flush_.start();
   }
 }

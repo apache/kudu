@@ -22,7 +22,6 @@
 #include <algorithm>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <ostream>
 #include <utility>
 
@@ -270,7 +269,7 @@ void ConnectToClusterRpc::SendRpc() {
   const MonoTime rpc_deadline = MonoTime::Now() + rpc_timeout_;
   const MonoTime actual_deadline = std::min(retrier().deadline(), rpc_deadline);
 
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   for (int i = 0; i < addrs_with_names_.size(); i++) {
     scoped_refptr<ConnectToClusterRpc> self(this);
     ConnectToMasterRpc* rpc = new ConnectToMasterRpc(
@@ -295,7 +294,7 @@ void ConnectToClusterRpc::SendRpcCb(const Status& status) {
   // safe to reset completed_ in this case; there's no danger of a late
   // response reading it and entering SendRpcCb inadvertently.
   auto undo_completed = MakeScopedCleanup([&]() {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     completed_ = false;
   });
 
@@ -335,7 +334,7 @@ void ConnectToClusterRpc::SingleNodeCallback(int master_idx,
   // pick the one with the highest term/index as the leader.
   Status new_status = status;
   {
-    std::lock_guard<simple_spinlock> lock(lock_);
+    std::lock_guard lock(lock_);
     if (completed_) {
       // If 'user_cb_' has been invoked (see SendRpcCb above), we can
       // stop.

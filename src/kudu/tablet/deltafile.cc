@@ -290,7 +290,7 @@ Status DeltaFileReader::ReadDeltaStats() {
   }
   unique_ptr<DeltaStats> stats(new DeltaStats());
   RETURN_NOT_OK(stats->InitFromPB(deltastats_pb));
-  std::lock_guard<simple_spinlock> l(stats_lock_);
+  std::lock_guard l(stats_lock_);
   delta_stats_ = std::move(stats);
   return Status::OK();
 }

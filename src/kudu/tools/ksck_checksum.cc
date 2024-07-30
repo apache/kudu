@@ -25,6 +25,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -195,7 +196,7 @@ bool KsckChecksumManager::HasOpenTsSlotsUnlocked() const {
 }
 
 string KsckChecksumManager::OpenTsSlotSummaryString() const {
-  std::lock_guard<simple_spinlock> lock(lock_);
+  std::lock_guard lock(lock_);
   string summary = "Summary of Open TS Slots";
   for (const auto& entry : ts_slots_open_map_) {
     summary.append(Substitute("\n$0 : $1 / $2",
@@ -271,7 +272,7 @@ void KsckChecksumManager::ReportResult(const string& tablet_id,
           << "Checksum finished. Status: " << status.ToString();
 
   {
-    std::lock_guard<simple_spinlock> guard(lock_);
+    std::lock_guard guard(lock_);
     auto& tablet_result = LookupOrEmplace(&checksums_,
                                           tablet_id,
                                           TabletChecksumResult());
@@ -437,7 +438,7 @@ void KsckChecksumManager::StartTabletChecksums() {
     // so it's pretty expensive. But, compared to checksumming multi-gigabyte
     // replicas, and in particular the benefit of greater parallelism in
     // checksumming such replicas, it seems like it's worth it.
-    std::lock_guard<simple_spinlock> guard(lock_);
+    std::lock_guard guard(lock_);
     // Short-circuit if there's no slots available.
     if (!HasOpenTsSlotsUnlocked()) {
       VLOG(1) << "No slots open. Short-circuiting search.";

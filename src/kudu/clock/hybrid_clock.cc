@@ -290,14 +290,14 @@ Status HybridClock::GetGlobalLatest(Timestamp* t) {
 }
 
 Status HybridClock::NowWithError(Timestamp* timestamp, uint64_t* max_error_usec) {
-  std::lock_guard<decltype(lock_)> lock(lock_);
+  std::lock_guard lock(lock_);
   return NowWithErrorUnlocked(timestamp, max_error_usec);
 }
 
 Status HybridClock::Update(const Timestamp& to_update) {
   Timestamp now;
   uint64_t error_ignored;
-  std::lock_guard<decltype(lock_)> lock(lock_);
+  std::lock_guard lock(lock_);
   RETURN_NOT_OK(NowWithErrorUnlocked(&now, &error_ignored));
 
   // If the incoming message is in the past relative to our current
@@ -400,7 +400,7 @@ bool HybridClock::IsAfter(Timestamp t) {
 
   Timestamp now;
   {
-    std::lock_guard<decltype(lock_)> lock(lock_);
+    std::lock_guard lock(lock_);
     now = Timestamp(std::max(next_timestamp_, now_usec << kBitsToShift));
   }
   return t.value() < now.value();
@@ -653,7 +653,7 @@ Status HybridClock::InitWithTimeSource(TimeSource time_source) {
     // its Init() is called, but there is nothing preventing some other thread
     // accessing clock-related metrics via the metrics registry before Init()
     // is called.
-    std::lock_guard<decltype(lock_)> lock(lock_);
+    std::lock_guard lock(lock_);
     state_ = kInitialized;
   }
 
@@ -709,7 +709,7 @@ Status HybridClock::WalltimeWithError(uint64_t* now_usec, uint64_t* error_usec) 
     MonoTime read_time_max_likelihood = read_time_before +
         MonoDelta::FromMicroseconds(read_time_error_us);
 
-    std::lock_guard<decltype(last_clock_read_lock_)> l(last_clock_read_lock_);
+    std::lock_guard l(last_clock_read_lock_);
     if (is_extrapolating_) {
       is_extrapolating_ = false;
       extrapolating_->set_value(is_extrapolating_);

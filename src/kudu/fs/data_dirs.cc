@@ -22,7 +22,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <mutex>
 #include <ostream>
 #include <random>
 #include <set>
@@ -338,7 +337,7 @@ Status DataDirManager::PopulateDirectoryMaps(const vector<unique_ptr<Dir>>& dirs
 
 Status DataDirManager::LoadDataDirGroupFromPB(const std::string& tablet_id,
                                               const DataDirGroupPB& pb) {
-  std::lock_guard<percpu_rwlock> lock(dir_group_lock_);
+  std::lock_guard lock(dir_group_lock_);
   DataDirGroup group_from_pb;
   RETURN_NOT_OK_PREPEND(group_from_pb.LoadFromPB(idx_by_uuid_, pb), Substitute(
       "could not load data dir group for tablet $0", tablet_id));
@@ -358,7 +357,7 @@ Status DataDirManager::LoadDataDirGroupFromPB(const std::string& tablet_id,
 
 Status DataDirManager::CreateDataDirGroup(const string& tablet_id,
                                           DirDistributionMode mode) {
-  std::lock_guard<percpu_rwlock> write_lock(dir_group_lock_);
+  std::lock_guard write_lock(dir_group_lock_);
   if (ContainsKey(group_by_tablet_map_, tablet_id)) {
     return Status::AlreadyPresent("Tried to create directory group for tablet but one is already "
                                   "registered", tablet_id);
@@ -484,7 +483,7 @@ Status DataDirManager::GetDirForBlock(const CreateBlockOptions& opts, Dir** dir,
 }
 
 void DataDirManager::DeleteDataDirGroup(const std::string& tablet_id) {
-  std::lock_guard<percpu_rwlock> lock(dir_group_lock_);
+  std::lock_guard lock(dir_group_lock_);
   DataDirGroup* group = FindOrNull(group_by_tablet_map_, tablet_id);
   if (group == nullptr) {
     return;
@@ -529,7 +528,7 @@ Status DataDirManager::GetDirAddIfNecessary(const CreateBlockOptions& opts, Dir*
   // If we couldn't get a directory because the group is out of space, try
   // adding a new directory to the group.
   DCHECK_GT(new_target_group_size, 0);
-  std::lock_guard<percpu_rwlock> l(dir_group_lock_);
+  std::lock_guard l(dir_group_lock_);
   const DataDirGroup& group = FindOrDie(group_by_tablet_map_, tablet_id);
   // If we're already at the new target group size (e.g. because another
   // thread has added a directory), just return the newly added directory.

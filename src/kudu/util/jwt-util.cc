@@ -34,7 +34,6 @@
 #include <cstring>
 #include <exception>
 #include <functional>
-#include <mutex>
 #include <ostream>
 #include <stdexcept>
 #include <type_traits>
@@ -778,14 +777,14 @@ void JWKSMgr::UpdateJWKSThread() {
 }
 
 JWKSSnapshotPtr JWKSMgr::GetJWKSSnapshot() const {
-  std::lock_guard<std::mutex> l(current_jwks_lock_);
+  std::lock_guard l(current_jwks_lock_);
   DCHECK(current_jwks_.get() != nullptr);
   JWKSSnapshotPtr jwks = current_jwks_;
   return jwks;
 }
 
 void JWKSMgr::SetJWKSSnapshot(const JWKSSnapshotPtr& new_jwks) {
-  std::lock_guard<std::mutex> l(current_jwks_lock_);
+  std::lock_guard l(current_jwks_lock_);
   DCHECK(new_jwks.get() != nullptr);
   current_jwks_ = new_jwks;
   current_jwks_checksum_ = new_jwks->GetChecksum();
@@ -1009,7 +1008,7 @@ Status PerAccountKeyBasedJwtVerifier::JWTHelperForToken(const JWTHelper::JWTDeco
   const auto& account_id = issuer_pieces.back();
 
   {
-    const std::lock_guard<simple_spinlock> l(jwt_by_account_id_map_lock_);
+    const std::lock_guard l(jwt_by_account_id_map_lock_);
     const auto* unique_helper = FindOrNull(jwt_by_account_id_, account_id);
 
     if (unique_helper) {
@@ -1059,7 +1058,7 @@ Status PerAccountKeyBasedJwtVerifier::JWTHelperForToken(const JWTHelper::JWTDeco
                         "Error initializing JWT helper");
 
   {
-    const std::lock_guard<simple_spinlock> l(jwt_by_account_id_map_lock_);
+    const std::lock_guard l(jwt_by_account_id_map_lock_);
     LookupOrEmplace(&jwt_by_account_id_, account_id, std::move(new_helper));
     *helper = FindPointeeOrNull(jwt_by_account_id_, account_id);
   }

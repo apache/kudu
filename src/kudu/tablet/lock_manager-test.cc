@@ -365,7 +365,7 @@ class LmTestResource {
   Slice id() const { return id_; }
 
   void acquire(uint64_t tid) {
-    std::lock_guard<std::mutex> lock(lock_);
+    std::lock_guard lock(lock_);
     CHECK(!is_owned_);
     CHECK_EQ(0, owner_);
     owner_ = tid;
@@ -373,7 +373,7 @@ class LmTestResource {
   }
 
   void release(uint64_t tid) {
-    std::lock_guard<std::mutex> lock(lock_);
+    std::lock_guard lock(lock_);
     CHECK(is_owned_);
     CHECK_EQ(tid, owner_);
     owner_ = 0;

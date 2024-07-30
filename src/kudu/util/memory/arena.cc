@@ -21,7 +21,6 @@
 
 #include <algorithm>
 #include <memory>
-#include <mutex>
 
 using std::min;
 using std::unique_ptr;
@@ -65,7 +64,7 @@ void ArenaBase<THREADSAFE>::SetMaxBufferSize(size_t size) {
 
 template <bool THREADSAFE>
 void *ArenaBase<THREADSAFE>::AllocateBytesFallback(const size_t size, const size_t align) {
-  std::lock_guard<mutex_type> lock(component_lock_);
+  std::lock_guard lock(component_lock_);
 
   // It's possible another thread raced with us and already allocated
   // a new component, in which case we should try the "fast path" again
@@ -145,7 +144,7 @@ void ArenaBase<THREADSAFE>::AddComponent(ArenaBase::Component *component) {
 
 template <bool THREADSAFE>
 void ArenaBase<THREADSAFE>::Reset() {
-  std::lock_guard<mutex_type> lock(component_lock_);
+  std::lock_guard lock(component_lock_);
 
   if (PREDICT_FALSE(arena_.size() > 1)) {
     unique_ptr<Component> last = std::move(arena_.back());
@@ -168,7 +167,7 @@ void ArenaBase<THREADSAFE>::Reset() {
 
 template <bool THREADSAFE>
 size_t ArenaBase<THREADSAFE>::memory_footprint() const {
-  std::lock_guard<mutex_type> lock(component_lock_);
+  std::lock_guard lock(component_lock_);
   return arena_footprint_;
 }
 

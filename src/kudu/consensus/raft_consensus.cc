@@ -760,7 +760,7 @@ Status RaftConsensus::BecomeReplicaUnlocked(optional<MonoDelta> fd_delta) {
 }
 
 Status RaftConsensus::Replicate(const scoped_refptr<ConsensusRound>& round) {
-  std::lock_guard<simple_spinlock> lock(update_lock_);
+  std::lock_guard lock(update_lock_);
   {
     ThreadRestrictions::AssertWaitAllowed();
     LockGuard l(lock_);
@@ -1093,7 +1093,7 @@ Status RaftConsensus::Update(const ConsensusRequestPB* request,
   VLOG_WITH_PREFIX(2) << "Replica received request: " << SecureShortDebugString(*request);
 
   // see var declaration
-  std::lock_guard<simple_spinlock> lock(update_lock_);
+  std::lock_guard lock(update_lock_);
   Status s = UpdateReplica(request, response);
   if (PREDICT_FALSE(VLOG_IS_ON(1))) {
     if (request->ops().empty()) {

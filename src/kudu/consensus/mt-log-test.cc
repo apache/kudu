@@ -21,7 +21,6 @@
 #include <functional>
 #include <map>
 #include <memory>
-#include <mutex>
 #include <ostream>
 #include <string>
 #include <thread>
@@ -155,7 +154,7 @@ class MultiThreadedLogTest : public LogTestBase {
       // Assign indexes and append inside the lock, so that the index order and
       // log order match up.
       {
-        std::lock_guard<simple_spinlock> l(lock_);
+        std::lock_guard l(lock_);
         AssignIndexes(&batch_replicates);
         ASSERT_OK(log_->AsyncAppendReplicates(batch_replicates, cb->AsStatusCallback()));
       }

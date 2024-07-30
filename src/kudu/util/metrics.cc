@@ -231,7 +231,7 @@ void MetricEntity::CheckInstantiation(const MetricPrototype* proto) const {
 }
 
 scoped_refptr<Metric> MetricEntity::FindOrNull(const MetricPrototype& prototype) const {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   return FindPtrOrNull(metric_map_, &prototype);
 }
 
@@ -303,7 +303,7 @@ Status MetricEntity::GetMetricsAndAttrs(const MetricFilters& filters,
 
   {
     // Snapshot the metrics in this registry (not guaranteed to be a consistent snapshot)
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     *attrs = attributes_;
     *metrics = metric_map_;
   }
@@ -498,7 +498,7 @@ Status MetricEntity::CollectTo(MergedEntityMetrics* collections,
 void MetricEntity::RetireOldMetrics() {
   MonoTime now(MonoTime::Now());
 
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   for (auto it = metric_map_.begin(); it != metric_map_.end();) {
     const scoped_refptr<Metric>& metric = it->second;
 
@@ -540,17 +540,17 @@ void MetricEntity::RetireOldMetrics() {
 }
 
 void MetricEntity::NeverRetire(const scoped_refptr<Metric>& metric) {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   never_retire_metrics_.push_back(metric);
 }
 
 void MetricEntity::SetAttributes(const AttributeMap& attrs) {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   attributes_ = attrs;
 }
 
 void MetricEntity::SetAttribute(const string& key, const string& val) {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   attributes_[key] = val;
 }
 
@@ -567,7 +567,7 @@ MetricRegistry::~MetricRegistry() {
 Status MetricRegistry::WriteAsJson(JsonWriter* writer, const MetricJsonOptions& opts) const {
   EntityMap entities;
   {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     entities = entities_;
   }
 
@@ -600,7 +600,7 @@ Status MetricRegistry::WriteAsJson(JsonWriter* writer, const MetricJsonOptions& 
 Status MetricRegistry::WriteAsPrometheus(PrometheusWriter* writer) const {
   EntityMap entities;
   {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     entities = entities_;
   }
   for (const auto& e : entities) {
@@ -614,7 +614,7 @@ Status MetricRegistry::WriteAsPrometheus(PrometheusWriter* writer) const {
 }
 
 void MetricRegistry::RetireOldMetrics() {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   for (auto it = entities_.begin(); it != entities_.end();) {
     it->second->RetireOldMetrics();
 
@@ -640,17 +640,17 @@ MetricPrototypeRegistry* MetricPrototypeRegistry::get() {
 }
 
 void MetricPrototypeRegistry::AddMetric(const MetricPrototype* prototype) {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   metrics_.push_back(prototype);
 }
 
 void MetricPrototypeRegistry::AddEntity(const MetricEntityPrototype* prototype) {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   entities_.push_back(prototype);
 }
 
 void MetricPrototypeRegistry::WriteAsJson(JsonWriter* writer) const {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   MetricJsonOptions opts;
   opts.include_schema_info = true;
   writer->StartObject();
@@ -689,7 +689,7 @@ void MetricPrototypeRegistry::WriteAsJson() const {
 }
 
 void MetricPrototypeRegistry::WriteAsXML() const {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   std::cout << "<?xml version=\"1.0\"?>" << "\n";
   // Add a root node for the document.
   std::cout << "<AllMetrics>" << "\n";
@@ -780,7 +780,7 @@ scoped_refptr<MetricEntity> MetricRegistry::FindOrCreateEntity(
     const MetricEntityPrototype* prototype,
     const string& id,
     const MetricEntity::AttributeMap& initial_attrs) {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   scoped_refptr<MetricEntity> e = FindPtrOrNull(entities_, id);
   if (!e) {
     e = new MetricEntity(prototype, id, initial_attrs);
@@ -859,7 +859,7 @@ StringGauge::StringGauge(const GaugePrototype<string>* proto,
       unique_values_(std::move(initial_unique_values)) {}
 
 scoped_refptr<Metric> StringGauge::snapshot() const {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   auto p = new StringGauge(down_cast<const GaugePrototype<string>*>(prototype_),
                            value_,
                            unique_values_);
@@ -870,7 +870,7 @@ scoped_refptr<Metric> StringGauge::snapshot() const {
 }
 
 string StringGauge::value() const {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   if (PREDICT_TRUE(unique_values_.empty())) {
     return value_;
   }
@@ -884,14 +884,14 @@ void StringGauge::FillUniqueValuesUnlocked() {
 }
 
 unordered_set<string> StringGauge::unique_values() {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   FillUniqueValuesUnlocked();
   return unique_values_;
 }
 
 void StringGauge::set_value(const string& value) {
   UpdateModificationEpoch();
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   value_ = value;
   unique_values_.clear();
 }
@@ -909,7 +909,7 @@ void StringGauge::MergeFrom(const scoped_refptr<Metric>& other) {
   scoped_refptr<StringGauge> other_ptr = down_cast<StringGauge*>(other.get());
   auto other_values = other_ptr->unique_values();
 
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   FillUniqueValuesUnlocked();
   unique_values_.insert(other_values.begin(), other_values.end());
 }
@@ -942,7 +942,7 @@ Status StringGauge::WriteAsPrometheus(PrometheusWriter* /*writer*/,
 //
 
 scoped_refptr<Metric> MeanGauge::snapshot() const {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   auto p = new MeanGauge(down_cast<const GaugePrototype<double>*>(prototype_));
   p->set_value(total_sum_, total_count_);
   p->m_epoch_.store(m_epoch_);
@@ -952,23 +952,23 @@ scoped_refptr<Metric> MeanGauge::snapshot() const {
 }
 
 double MeanGauge::value() const {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   return total_count_ > 0 ? total_sum_ / total_count_
                           : 0.0;
 }
 
 double MeanGauge::total_sum() const {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   return total_sum_;
 }
 
 double MeanGauge::total_count() const {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   return total_count_;
 }
 
 void MeanGauge::set_value(double total_sum, double total_count) {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   total_sum_ = total_sum;
   total_count_ = total_count;
 }
@@ -984,7 +984,7 @@ void MeanGauge::MergeFrom(const scoped_refptr<Metric>& other) {
 
   UpdateModificationEpoch();
   scoped_refptr<MeanGauge> other_ptr = down_cast<MeanGauge*>(other.get());
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   total_sum_ += other_ptr->total_sum();
   total_count_ += other_ptr->total_count();
 }

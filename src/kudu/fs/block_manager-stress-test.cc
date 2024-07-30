@@ -352,7 +352,7 @@ void BlockManagerStressTest<T>::WriterThread() {
     CHECK_OK(creation_transaction->CommitCreatedBlocks());
     // Publish the now sync'ed blocks to readers and deleters.
     {
-      std::lock_guard<simple_spinlock> l(lock_);
+      std::lock_guard l(lock_);
       for (const auto& block : all_dirty_blocks) {
         InsertOrDie(&written_blocks_, block, 0);
       }
@@ -373,7 +373,7 @@ void BlockManagerStressTest<T>::ReaderThread() {
     BlockId block_id;
     {
       // Grab a block at random.
-      std::lock_guard<simple_spinlock> l(lock_);
+      std::lock_guard l(lock_);
       if (written_blocks_.empty()) {
         continue;
       }
@@ -389,7 +389,7 @@ void BlockManagerStressTest<T>::ReaderThread() {
 
     // Done opening the block, make it available for deleting.
     {
-      std::lock_guard<simple_spinlock> l(lock_);
+      std::lock_guard l(lock_);
       int& openers = FindOrDie(written_blocks_, block_id);
       openers--;
     }

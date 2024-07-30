@@ -18,7 +18,6 @@
 #include "kudu/tablet/delta_tracker.h"
 
 #include <algorithm>
-#include <mutex>
 #include <optional>
 #include <ostream>
 #include <set>
@@ -318,7 +317,7 @@ void DeltaTracker::AtomicUpdateStores(const SharedDeltaStoreVector& stores_to_re
                                       const SharedDeltaStoreVector& new_stores,
                                       const IOContext* io_context,
                                       DeltaType type) {
-  std::lock_guard<rw_spinlock> lock(component_lock_);
+  std::lock_guard lock(component_lock_);
   SharedDeltaStoreVector* stores_to_update =
       type == REDO ? &redo_delta_stores_ : &undo_delta_stores_;
   SharedDeltaStoreVector::iterator start_it;
@@ -436,7 +435,7 @@ Status DeltaTracker::CompactStores(const IOContext* io_context, int start_idx, i
   // Prevent concurrent compactions or a compaction concurrent with a flush
   //
   // TODO(perf): this could be more fine grained
-  std::lock_guard<Mutex> l(compact_flush_lock_);
+  std::lock_guard l(compact_flush_lock_);
   RETURN_NOT_OK(CheckWritableUnlocked());
 
   // At the time of writing, minor delta compaction only compacts REDO delta
@@ -490,7 +489,7 @@ Status DeltaTracker::CompactStores(const IOContext* io_context, int start_idx, i
 
 bool DeltaTracker::EstimateAllRedosAreAncient(Timestamp ancient_history_mark) {
   shared_ptr<DeltaStore> newest_redo;
-  std::lock_guard<rw_spinlock> lock(component_lock_);
+  std::lock_guard lock(component_lock_);
   const std::optional<Timestamp> dms_highest_timestamp =
       dms_ ? dms_->highest_timestamp() : std::nullopt;
   if (dms_highest_timestamp) {
@@ -579,7 +578,7 @@ Status DeltaTracker::DeleteAncientUndoDeltas(Timestamp ancient_history_mark,
   // updating both the rowset metadata and the delta stores in this method, so
   // we need to be the only thread doing a flush or a compaction on this RowSet
   // while we do our work.
-  std::lock_guard<Mutex> l(compact_flush_lock_);
+  std::lock_guard l(compact_flush_lock_);
   RETURN_NOT_OK(CheckWritableUnlocked());
 
   // Get the list of undo deltas.
@@ -657,7 +656,7 @@ Status DeltaTracker::DoCompactStores(const IOContext* io_context,
 
 void DeltaTracker::CollectStores(vector<shared_ptr<DeltaStore>>* deltas,
                                  WhichStores which) const {
-  std::lock_guard<rw_spinlock> lock(component_lock_);
+  std::lock_guard lock(component_lock_);
   if (which != REDOS_ONLY) {
     deltas->assign(undo_delta_stores_.begin(), undo_delta_stores_.end());
   }
@@ -683,7 +682,7 @@ Status DeltaTracker::NewDeltaFileIterator(
     vector<shared_ptr<DeltaStore>>* included_stores,
     unique_ptr<DeltaIterator>* out) const {
   {
-    std::lock_guard<rw_spinlock> lock(component_lock_);
+    std::lock_guard lock(component_lock_);
     // TODO perf: is this really needed? Will check
     // DeltaIteratorMerger::Create()
     if (type == UNDO) {
@@ -723,7 +722,7 @@ Status DeltaTracker::Update(Timestamp timestamp,
                             OperationResultPB* result) {
   while (true) {
     if (!dms_exists_) {
-      std::lock_guard<rw_spinlock> lock(component_lock_);
+      std::lock_guard lock(component_lock_);
       // Should check dms_exists_ here in case multiple threads are blocked.
       if (!dms_exists_) {
         RETURN_NOT_OK(CreateAndInitDMSUnlocked(nullptr));
@@ -823,7 +822,7 @@ Status DeltaTracker::FlushDMS(DeltaMemStore* dms,
     // Merge the deleted row count of the old DMS to the RowSetMetadata
     // and reset deleted_row_count_ should be atomic, so we lock the
     // component_lock_ in exclusive mode.
-    std::lock_guard<rw_spinlock> lock(component_lock_);
+    std::lock_guard lock(component_lock_);
     rowset_metadata_->CommitRedoDeltaDataBlock(
         dms->id(), deleted_row_count_, block_id);
     deleted_row_count_ = 0;
@@ -837,7 +836,7 @@ Status DeltaTracker::FlushDMS(DeltaMemStore* dms,
 }
 
 Status DeltaTracker::Flush(const IOContext* io_context, MetadataFlushType flush_type) {
-  std::lock_guard<Mutex> l(compact_flush_lock_);
+  std::lock_guard l(compact_flush_lock_);
   RETURN_NOT_OK(CheckWritableUnlocked());
 
   // First, swap out the old DeltaMemStore a new one,
@@ -848,7 +847,7 @@ Status DeltaTracker::Flush(const IOContext* io_context, MetadataFlushType flush_
   {
     // Lock the component_lock_ in exclusive mode.
     // This shuts out any concurrent readers or writers.
-    std::lock_guard<rw_spinlock> lock(component_lock_);
+    std::lock_guard lock(component_lock_);
 
     count = dms_exists_ ? dms_->Count() : 0;
 
@@ -888,7 +887,7 @@ Status DeltaTracker::Flush(const IOContext* io_context, MetadataFlushType flush_
   // Now, re-take the lock and swap in the DeltaFileReader in place of
   // of the DeltaMemStore
   {
-    std::lock_guard<rw_spinlock> lock(component_lock_);
+    std::lock_guard lock(component_lock_);
     size_t idx = redo_delta_stores_.size() - 1;
 
     CHECK_EQ(redo_delta_stores_[idx], old_dms)

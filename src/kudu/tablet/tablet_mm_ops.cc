@@ -17,7 +17,6 @@
 
 #include "kudu/tablet/tablet_mm_ops.h"
 
-#include <mutex>
 #include <optional>
 #include <ostream>
 #include <type_traits>
@@ -144,7 +143,7 @@ void CompactRowSetsOp::UpdateStats(MaintenanceOpStats* stats) {
     return;
   }
 
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
 
   double workload_score = FLAGS_enable_workload_score_for_perf_improvement_ops ?
                           tablet_->CollectAndUpdateWorkloadStats(MaintenanceOp::COMPACT_OP) : 0;
@@ -177,7 +176,7 @@ void CompactRowSetsOp::UpdateStats(MaintenanceOpStats* stats) {
 }
 
 bool CompactRowSetsOp::Prepare() {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   // Invalidate the cached stats so that another section of the tablet can
   // be compacted concurrently.
   //
@@ -225,7 +224,7 @@ void MinorDeltaCompactionOp::UpdateStats(MaintenanceOpStats* stats) {
     return;
   }
 
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
 
   double workload_score = FLAGS_enable_workload_score_for_perf_improvement_ops ?
                           tablet_->CollectAndUpdateWorkloadStats(MaintenanceOp::COMPACT_OP) : 0;
@@ -263,7 +262,7 @@ void MinorDeltaCompactionOp::UpdateStats(MaintenanceOpStats* stats) {
 }
 
 bool MinorDeltaCompactionOp::Prepare() {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   // Invalidate the cached stats so that another rowset in the tablet can
   // be delta compacted concurrently.
   //
@@ -309,7 +308,7 @@ void MajorDeltaCompactionOp::UpdateStats(MaintenanceOpStats* stats) {
     return;
   }
 
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
 
   double workload_score = FLAGS_enable_workload_score_for_perf_improvement_ops ?
                           tablet_->CollectAndUpdateWorkloadStats(MaintenanceOp::COMPACT_OP) : 0;
@@ -351,7 +350,7 @@ void MajorDeltaCompactionOp::UpdateStats(MaintenanceOpStats* stats) {
 }
 
 bool MajorDeltaCompactionOp::Prepare() {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   // Invalidate the cached stats so that another rowset in the tablet can
   // be delta compacted concurrently.
   //

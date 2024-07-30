@@ -27,7 +27,6 @@
 #include <iterator>
 #include <map>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <ostream>
 #include <random>
@@ -240,8 +239,6 @@ using std::vector;
 using strings::Substitute;
 
 namespace kudu {
-
-class RWMutex;
 
 namespace client {
 
@@ -7536,7 +7533,7 @@ TEST_P(ServiceUnavailableRetryClientTest, CreateTable) {
   // Keeping the catalog manager off its duties results in ServiceUnavailable
   // error response for 'CreateTable' RPC.
   thread usurper([&]() {
-      std::lock_guard<RWMutex> leader_lock_guard(
+      std::lock_guard leader_lock_guard(
             cluster_->mini_master()->master()->catalog_manager()->leader_lock_);
       start_synchronizer.CountDown();
       SleepFor(param.usurper_sleep);

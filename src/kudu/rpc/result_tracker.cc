@@ -115,7 +115,7 @@ ResultTracker::~ResultTracker() {
     gc_thread_->Join();
   }
 
-  lock_guard<simple_spinlock> l(lock_);
+  lock_guard l(lock_);
   // Release all the memory for the stuff we'll delete on destruction.
   for (auto& client_state : clients_) {
     client_state.second->GCCompletionRecords(
@@ -127,7 +127,7 @@ ResultTracker::~ResultTracker() {
 ResultTracker::RpcState ResultTracker::TrackRpc(const RequestIdPB& request_id,
                                                 Message* response,
                                                 RpcContext* context) {
-  lock_guard<simple_spinlock> l(lock_);
+  lock_guard l(lock_);
   return TrackRpcUnlocked(request_id, response, context);
 }
 
@@ -222,7 +222,7 @@ ResultTracker::RpcState ResultTracker::TrackRpcUnlocked(const RequestIdPB& reque
 }
 
 ResultTracker::RpcState ResultTracker::TrackRpcOrChangeDriver(const RequestIdPB& request_id) {
-  lock_guard<simple_spinlock> l(lock_);
+  lock_guard l(lock_);
   RpcState state = TrackRpcUnlocked(request_id, nullptr, nullptr);
 
   if (state != RpcState::IN_PROGRESS) return state;
@@ -242,7 +242,7 @@ ResultTracker::RpcState ResultTracker::TrackRpcOrChangeDriver(const RequestIdPB&
 }
 
 bool ResultTracker::IsCurrentDriver(const RequestIdPB& request_id) {
-  lock_guard<simple_spinlock> l(lock_);
+  lock_guard l(lock_);
   CompletionRecord* completion_record = FindCompletionRecordOrNullUnlocked(request_id);
 
   // If we couldn't find the CompletionRecord, someone might have called FailAndRespond() so
@@ -312,7 +312,7 @@ void ResultTracker::RecordCompletionAndRespond(const RequestIdPB& request_id,
                                                const Message* response) {
   vector<OnGoingRpcInfo> to_respond;
   {
-    lock_guard<simple_spinlock> l(lock_);
+    lock_guard l(lock_);
 
     CompletionRecord* completion_record = FindCompletionRecordOrDieUnlocked(request_id);
     ScopedMemTrackerUpdater<CompletionRecord> updater(mem_tracker_.get(), completion_record);
@@ -364,7 +364,7 @@ void ResultTracker::FailAndRespondInternal(const RequestIdPB& request_id,
                                            const HandleOngoingRpcFunc& func) {
   vector<OnGoingRpcInfo> to_handle;
   {
-    lock_guard<simple_spinlock> l(lock_);
+    lock_guard l(lock_);
     auto state_and_record = FindClientStateAndCompletionRecordOrNullUnlocked(request_id);
     if (PREDICT_FALSE(state_and_record.first == nullptr)) {
       LOG(FATAL) << "Couldn't find ClientState for request: " << SecureShortDebugString(request_id)
@@ -471,7 +471,7 @@ void ResultTracker::RunGCThread() {
 }
 
 void ResultTracker::GCResults() {
-  lock_guard<simple_spinlock> l(lock_);
+  lock_guard l(lock_);
   MonoTime now = MonoTime::Now();
   // Calculate the instants before which we'll start GCing ClientStates and CompletionRecords.
   const auto time_to_gc_clients_from = now -
@@ -517,7 +517,7 @@ void ResultTracker::GCResults() {
 }
 
 string ResultTracker::ToString() {
-  lock_guard<simple_spinlock> l(lock_);
+  lock_guard l(lock_);
   return ToStringUnlocked();
 }
 

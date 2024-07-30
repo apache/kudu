@@ -187,7 +187,7 @@ void Proxy::RefreshDnsAndEnqueueRequest(const string& method,
     DCHECK(addr->is_initialized());
     addr->set_port(hp_.port());
     {
-      std::lock_guard<simple_spinlock> l(lock_);
+      std::lock_guard l(lock_);
       conn_id_.set_remote(*addr);
     }
     // NOTE: we don't expect the user-provided callback to free sidecars, so
@@ -221,7 +221,7 @@ void Proxy::AsyncRequest(const string& method,
   // lookup failed, refresh the DNS entry and enqueue the request.
   bool remote_initialized;
   {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     remote_initialized = conn_id_.remote().is_initialized();
   }
   if (!remote_initialized) {

@@ -25,14 +25,12 @@
 #include <iostream>
 #include <iterator>
 #include <map>
-#include <mutex>
 #include <set>
 #include <type_traits>
 #include <vector>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
-#include <google/protobuf/stubs/port.h>
 
 #include "kudu/common/partition.h"
 #include "kudu/consensus/quorum_util.h"
@@ -302,7 +300,7 @@ Status Ksck::CheckMasterHealth() {
       }
 
       {
-        std::lock_guard<simple_spinlock> lock(master_summaries_lock);
+        std::lock_guard lock(master_summaries_lock);
         master_summaries.emplace_back(std::move(sh));
       }
 
@@ -510,7 +508,7 @@ Status Ksck::FetchInfoFromTabletServers() {
       summary.health = health;
 
       {
-        std::lock_guard<simple_spinlock> lock(tablet_server_summaries_lock);
+        std::lock_guard lock(tablet_server_summaries_lock);
         tablet_server_summaries.push_back(std::move(summary));
       }
 

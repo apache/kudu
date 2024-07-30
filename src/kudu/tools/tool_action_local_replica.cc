@@ -24,7 +24,6 @@
 #include <limits>
 #include <map>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <set>
 #include <string>
@@ -307,7 +306,7 @@ class TabletCopier {
     RETURN_NOT_OK(Thread::Create("tool-tablet-copy", "check-progress",
         [&] () {
           while (!latch.WaitFor(MonoDelta::FromSeconds(10))) {
-            std::lock_guard<simple_spinlock> l(lock);
+            std::lock_guard l(lock);
             for (const auto& entry : copying_replicas_by_tablet_id) {
               LOG(INFO) << Substitute("Tablet $0 copy status: $1",
                                       entry.first,
@@ -345,7 +344,7 @@ class TabletCopier {
         // 'fake_replica' is used for checking copy progress only.
         scoped_refptr<TabletReplica> fake_replica(new TabletReplica());
         {
-          std::lock_guard<simple_spinlock> l(lock);
+          std::lock_guard l(lock);
           LOG(WARNING) << "Start to copy tablet " << tablet_id;
           copying_replicas_by_tablet_id[tablet_id] = fake_replica.get();
         }
@@ -370,7 +369,7 @@ class TabletCopier {
           return client->Finish();
         });
         {
-          std::lock_guard<simple_spinlock> l(lock);
+          std::lock_guard l(lock);
           if (!s.ok()) {
             InsertOrDie(&failed_tablet_ids, tablet_id);
             LOG(ERROR) << Substitute("Tablet $0 copy failed: $1.", tablet_id, s.ToString());

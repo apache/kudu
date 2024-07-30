@@ -600,7 +600,7 @@ class LogBlockContainer: public RefCountedThreadSafe<LogBlockContainer> {
   // Returns the error that caused the container to become read-only, or OK if
   // the container has not been marked read-only.
   Status read_only_status() const {
-    std::lock_guard<simple_spinlock> l(read_only_lock_);
+    std::lock_guard l(read_only_lock_);
     return read_only_status_;
   }
 
@@ -1878,7 +1878,7 @@ void LogBlockContainer::SetReadOnly(const Status& error) {
   DCHECK(!error.ok());
   LOG(WARNING) << Substitute("Container $0 being marked read-only: $1",
                              ToString(), error.ToString());
-  std::lock_guard<simple_spinlock> l(read_only_lock_);
+  std::lock_guard l(read_only_lock_);
   read_only_status_ = error;
 }
 
@@ -3048,7 +3048,7 @@ Status LogBlockManager::OpenBlock(const BlockId& block_id,
   LogBlockRefPtr lb;
   {
     auto index = block_id.id() & kBlockMapMask;
-    std::lock_guard<simple_spinlock> l(*managed_block_shards_[index].lock);
+    std::lock_guard l(*managed_block_shards_[index].lock);
     lb = FindPtrOrNull(*managed_block_shards_[index].blocks_by_block_id, block_id);
   }
   if (!lb) {
@@ -3065,7 +3065,7 @@ bool LogBlockManager::FindBlockPath(const BlockId& block_id, string* path) const
   LogBlockRefPtr lb;
   {
     auto index = block_id.id() & kBlockMapMask;
-    std::lock_guard<simple_spinlock> l(*managed_block_shards_[index].lock);
+    std::lock_guard l(*managed_block_shards_[index].lock);
     lb = FindPtrOrNull(*managed_block_shards_[index].blocks_by_block_id, block_id);
   }
   if (!lb) {
@@ -3089,7 +3089,7 @@ shared_ptr<BlockDeletionTransaction> LogBlockManager::NewDeletionTransaction() {
 Status LogBlockManager::GetAllBlockIds(vector<BlockId>* block_ids) {
   block_ids->clear();
   for (const auto& mb : managed_block_shards_) {
-    std::lock_guard<simple_spinlock> l(*mb.lock);
+    std::lock_guard l(*mb.lock);
     AppendKeysFromMap(*mb.blocks_by_block_id, block_ids);
     block_ids->insert(block_ids->end(), mb.open_block_ids.begin(), mb.open_block_ids.end());
   }
@@ -3129,7 +3129,7 @@ void LogBlockManager::RemoveDeadContainerUnlocked(const string& container_name) 
 void LogBlockManager::RemoveDeadContainer(const string& container_name) {
   // Remove the container from memory.
   {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     RemoveDeadContainerUnlocked(container_name);
   }
 
@@ -3148,7 +3148,7 @@ Status LogBlockManager::GetOrCreateContainer(const CreateBlockOptions& opts,
                                              tenant_id()));
 
   {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     auto& d = available_containers_by_data_dir_[DCHECK_NOTNULL(dir)];
     if (!d.empty()) {
       *container = d.front();
@@ -3168,7 +3168,7 @@ Status LogBlockManager::GetOrCreateContainer(const CreateBlockOptions& opts,
       ErrorHandlerType::DISK_ERROR, dir, tenant_id()));
   RETURN_NOT_OK_PREPEND(s, "Could not create new log block container at " + dir->dir());
   {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     dirty_dirs_.insert(dir->dir());
     AddNewContainerUnlocked(new_container);
   }
@@ -3177,7 +3177,7 @@ Status LogBlockManager::GetOrCreateContainer(const CreateBlockOptions& opts,
 }
 
 void LogBlockManager::MakeContainerAvailable(LogBlockContainerRefPtr container) {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   MakeContainerAvailableUnlocked(std::move(container));
 }
 
@@ -3194,7 +3194,7 @@ Status LogBlockManager::SyncContainer(const LogBlockContainer& container) {
   Status s;
   bool to_sync = false;
   {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     to_sync = dirty_dirs_.erase(container.data_dir()->dir());
   }
 
@@ -3211,7 +3211,7 @@ Status LogBlockManager::SyncContainer(const LogBlockContainer& container) {
     // we'll sync it again needlessly.
     if (!s.ok()) {
       container.HandleError(s);
-      std::lock_guard<simple_spinlock> l(lock_);
+      std::lock_guard l(lock_);
       dirty_dirs_.insert(container.data_dir()->dir());
     }
   }
@@ -3224,7 +3224,7 @@ bool LogBlockManager::TryUseBlockId(const BlockId& block_id) {
   }
 
   auto index = block_id.id() & kBlockMapMask;
-  std::lock_guard<simple_spinlock> l(*managed_block_shards_[index].lock);
+  std::lock_guard l(*managed_block_shards_[index].lock);
   if (ContainsKey(*managed_block_shards_[index].blocks_by_block_id, block_id)) {
     return false;
   }
@@ -3251,7 +3251,7 @@ bool LogBlockManager::AddLogBlock(LogBlockRefPtr lb) {
   // insert an empty scoped_refptr and assign into it down below rather
   // than using the utility function.
   int index = lb->block_id().id() & kBlockMapMask;
-  std::lock_guard<simple_spinlock> l(*managed_block_shards_[index].lock);
+  std::lock_guard l(*managed_block_shards_[index].lock);
   auto& blocks_by_block_id = *managed_block_shards_[index].blocks_by_block_id;
   LogBlockRefPtr* entry_ptr = &blocks_by_block_id[lb->block_id()];
   if (*entry_ptr) {
@@ -3367,7 +3367,7 @@ void LogBlockContainerNativeMeta::PostWorkOfBlocksDeleted() {
 Status LogBlockManager::RemoveLogBlock(const BlockId& block_id,
                                        LogBlockRefPtr* lb) {
   auto index = block_id.id() & kBlockMapMask;
-  std::lock_guard<simple_spinlock> l(*managed_block_shards_[index].lock);
+  std::lock_guard l(*managed_block_shards_[index].lock);
   auto& blocks_by_block_id = managed_block_shards_[index].blocks_by_block_id;
 
   auto it = blocks_by_block_id->find(block_id);
@@ -3611,7 +3611,7 @@ void LogBlockManager::LoadContainer(Dir* dir,
 
   int64_t container_count = 0;
   {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     AddNewContainerUnlocked(container);
     MakeContainerAvailableUnlocked(std::move(container));
     container_count = all_containers_by_name_.size();
@@ -3866,7 +3866,7 @@ Status LogBlockManager::Repair(
   // From here on out we're committed to repairing.
   ContainersByName containers_by_name;
   {
-    std::lock_guard <simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
 
     // 1. Remove all of the dead containers from the block manager. They will be
     // deleted from disk shortly thereafter, outside of the lock.

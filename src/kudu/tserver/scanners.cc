@@ -20,7 +20,6 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <numeric>
 #include <ostream>
 #include <shared_mutex>
@@ -217,7 +216,7 @@ void ScannerManager::NewScanner(const scoped_refptr<TabletReplica>& tablet_repli
                                row_format_flags));
 
     ScannerMapStripe& stripe = GetStripeByScannerId(id);
-    std::lock_guard<RWMutex> l(stripe.lock_);
+    std::lock_guard l(stripe.lock_);
     success = InsertIfNotPresent(&stripe.scanners_by_id_, id, *scanner);
   }
 }
@@ -248,7 +247,7 @@ bool ScannerManager::UnregisterScanner(const string& scanner_id) {
   SharedScanDescriptor descriptor;
   ScannerMapStripe& stripe = GetStripeByScannerId(scanner_id);
   {
-    std::lock_guard<RWMutex> l(stripe.lock_);
+    std::lock_guard l(stripe.lock_);
     auto it = stripe.scanners_by_id_.find(scanner_id);
     if (it == stripe.scanners_by_id_.end()) {
       return false;
@@ -266,7 +265,7 @@ bool ScannerManager::UnregisterScanner(const string& scanner_id) {
   }
 
   {
-    std::lock_guard<percpu_rwlock> l(completed_scans_lock_);
+    std::lock_guard l(completed_scans_lock_);
     RecordCompletedScanUnlocked(descriptor);
   }
 
@@ -274,7 +273,7 @@ bool ScannerManager::UnregisterScanner(const string& scanner_id) {
     const MonoTime start_time = descriptor->start_time;
     if (start_time + MonoDelta::FromMilliseconds(FLAGS_slow_scanner_threshold_ms)
         < MonoTime::Now()) {
-      std::lock_guard<percpu_rwlock> l(slow_scans_lock_);
+      std::lock_guard l(slow_scans_lock_);
       RecordSlowScanUnlocked(descriptor);
     }
   }
@@ -388,7 +387,7 @@ void ScannerManager::CollectSlowScanners() {
   vector<SharedScanDescriptor> descriptors;
   int32_t slow_scanner_threshold = FLAGS_slow_scanner_threshold_ms;
   for (ScannerMapStripe* stripe : scanner_maps_) {
-    std::lock_guard<RWMutex> l(stripe->lock_);
+    std::lock_guard l(stripe->lock_);
     for (auto it = stripe->scanners_by_id_.begin(); it != stripe->scanners_by_id_.end(); ++it) {
       const SharedScanner& scanner = it->second;
       if (!scanner->is_initted()) {
@@ -413,7 +412,7 @@ void ScannerManager::CollectSlowScanners() {
     }
   }
 
-  std::lock_guard<percpu_rwlock> l(slow_scans_lock_);
+  std::lock_guard l(slow_scans_lock_);
   for (auto& descriptor : descriptors) {
     if (std::find(slow_scans_.begin(), slow_scans_.end(), descriptor) == slow_scans_.end()) {
       RecordSlowScanUnlocked(descriptor);
@@ -427,7 +426,7 @@ void ScannerManager::RemoveExpiredScanners() {
 
   vector<SharedScanDescriptor> descriptors;
   for (ScannerMapStripe* stripe : scanner_maps_) {
-    std::lock_guard<RWMutex> l(stripe->lock_);
+    std::lock_guard l(stripe->lock_);
     for (auto it = stripe->scanners_by_id_.begin(); it != stripe->scanners_by_id_.end();) {
       const SharedScanner& scanner = it->second;
       MonoDelta idle_time = scanner->TimeSinceLastAccess(now);
@@ -454,7 +453,7 @@ void ScannerManager::RemoveExpiredScanners() {
     }
   }
 
-  std::lock_guard<percpu_rwlock> l(completed_scans_lock_);
+  std::lock_guard l(completed_scans_lock_);
   for (auto& descriptor : descriptors) {
     descriptor->last_access_time = now;
     descriptor->state = ScanState::kExpired;
@@ -535,7 +534,7 @@ void Scanner::UpdateTabletMetrics(const CpuTimes& elapsed) {
 }
 
 void Scanner::AddTimings(const CpuTimes& elapsed) {
-  std::lock_guard<RWMutex> l(cpu_times_lock_);
+  std::lock_guard l(cpu_times_lock_);
   cpu_times_.Add(elapsed);
   UpdateTabletMetrics(elapsed);
 }

@@ -266,7 +266,7 @@ class Txn : public RefCountedThreadSafe<Txn> {
   }
 
   void ReleasePartitionLock() {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     partition_lock_.Release();
   }
 

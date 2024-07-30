@@ -21,10 +21,11 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <type_traits>
 
 #include <glog/logging.h>
 
-#include "kudu/rpc/messenger.h"
+#include "kudu/rpc/messenger.h" // IWYU pragma: keep
 #include "kudu/util/monotime.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
@@ -86,7 +87,7 @@ void PeriodicTimer::Start(optional<MonoDelta> next_task_delta) {
 }
 
 void PeriodicTimer::Stop() {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   StopUnlocked();
 }
 
@@ -96,7 +97,7 @@ void PeriodicTimer::StopUnlocked() {
 }
 
 void PeriodicTimer::Snooze(optional<MonoDelta> next_task_delta) {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   SnoozeUnlocked(std::move(next_task_delta));
 }
 
@@ -119,7 +120,7 @@ void PeriodicTimer::SnoozeUnlocked(optional<MonoDelta> next_task_delta) {
 }
 
 bool PeriodicTimer::started() const {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   return started_;
 }
 
@@ -131,7 +132,7 @@ MonoDelta PeriodicTimer::GetMinimumPeriod() {
 }
 
 int64_t PeriodicTimer::NumCallbacksForTests() const {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   return num_callbacks_for_tests_;
 }
 
@@ -154,7 +155,7 @@ void PeriodicTimer::Callback(int64_t my_callback_generation) {
   MonoDelta delay = GetMinimumPeriod();
   bool run_task = false;
   {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     num_callbacks_for_tests_++;
 
     // If the timer was stopped, exit.

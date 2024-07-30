@@ -22,7 +22,6 @@
 #include <initializer_list>
 #include <map>
 #include <memory>
-#include <mutex>
 #include <numeric>
 #include <random>
 #include <set>
@@ -276,7 +275,7 @@ TEST_F(TxnStatusManagerTest, TestStartTransactionsConcurrently) {
         auto s = txn_manager_->BeginTransaction(
             txn_id, kOwner, &highest_seen_txn_id, &ts_error);
         if (s.ok()) {
-          std::lock_guard<simple_spinlock> l(lock);
+          std::lock_guard l(lock);
           successful_txn_ids.emplace_back(txn_id);
           CHECK_GE(highest_seen_txn_id, txn_id);
         } else {
@@ -337,7 +336,7 @@ TEST_F(TxnStatusManagerTest, TestRegisterParticipantsConcurrently) {
       TabletServerErrorPB ts_error;
       Status s = txn_manager_->RegisterParticipant(kTxnId, prt, kOwner, &ts_error);
       if (s.ok()) {
-        std::lock_guard<simple_spinlock> l(lock);
+        std::lock_guard l(lock);
         successful_participants.emplace_back(std::move(prt));
       }
     });

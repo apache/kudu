@@ -18,7 +18,6 @@
 
 #include <cstdint>
 #include <map>
-#include <mutex>
 #include <string>
 
 #include "kudu/gutil/macros.h"
@@ -72,17 +71,17 @@ class TraceMetrics {
 };
 
 inline void TraceMetrics::Increment(const char* name, int64_t amount) {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   counters_[name] += amount;
 }
 
 inline std::map<const char*, int64_t> TraceMetrics::Get() const {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   return counters_;
 }
 
 inline int64_t TraceMetrics::GetMetric(const char* name) const {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   return FindWithDefault(counters_, name, 0);
 }
 

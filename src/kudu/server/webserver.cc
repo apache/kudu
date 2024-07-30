@@ -22,6 +22,7 @@
 #if OPENSSL_VERSION_NUMBER >= 0x30000000L
 #include <openssl/ssl.h>
 #endif
+#include <gssapi/gssapi_krb5.h>
 #include <sys/socket.h>
 
 #include <algorithm>
@@ -31,7 +32,6 @@
 #include <cstring>
 #include <functional>
 #include <map>
-#include <mutex>
 #include <shared_mutex>
 #include <sstream>
 #include <string>
@@ -46,7 +46,6 @@
 #include <glog/logging.h>
 #include <mustache.h>
 #include <squeasel.h>
-#include <gssapi/gssapi_krb5.h>
 
 #include "kudu/gutil/endian.h"
 #include "kudu/gutil/macros.h"
@@ -527,7 +526,7 @@ int Webserver::LogMessageCallbackStatic(const struct sq_connection* /*connection
     // the squeasel server uses the log callback to report on errors.
     {
       static simple_spinlock kErrMsgLock_;
-      std::lock_guard<simple_spinlock> l(kErrMsgLock_);
+      std::lock_guard l(kErrMsgLock_);
       kWebserverLastErrMsg = message;
     }
     LOG(ERROR) << "Webserver: " << message;
@@ -856,7 +855,7 @@ void Webserver::RegisterPathHandler(const string& path, const string& alias,
 
 void Webserver::RegisterPrerenderedPathHandler(const string& path, const string& alias,
     const PrerenderedPathHandlerCallback& callback, bool is_styled, bool is_on_nav_bar) {
-  std::lock_guard<RWMutex> l(lock_);
+  std::lock_guard l(lock_);
   InsertOrDie(&path_handlers_, path, new PathHandler(is_styled, is_on_nav_bar, alias, callback));
 }
 
@@ -864,7 +863,7 @@ void Webserver::RegisterBinaryDataPathHandler(
     const string& path,
     const string& alias,
     const PrerenderedPathHandlerCallback& callback) {
-  std::lock_guard<RWMutex> l(lock_);
+  std::lock_guard l(lock_);
   InsertOrDie(&path_handlers_, path, new PathHandler(false /*is_styled*/,
                                                      false /*is_on_nav_bar*/,
                                                      alias,
@@ -971,7 +970,7 @@ bool Webserver::static_pages_available() const {
 }
 
 void Webserver::set_footer_html(const std::string& html) {
-  std::lock_guard<RWMutex> l(lock_);
+  std::lock_guard l(lock_);
   footer_html_ = html;
 }
 

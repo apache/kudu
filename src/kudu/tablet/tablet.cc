@@ -477,7 +477,7 @@ Status Tablet::Open(const unordered_set<int64_t>& in_flight_txn_ids,
                                       &txn_mrs));
       EmplaceOrDie(&uncommitted_rs_by_txn_id, txn_id, new TxnRowSets(std::move(txn_mrs)));
     }
-    std::lock_guard<rw_spinlock> lock(component_lock_);
+    std::lock_guard lock(component_lock_);
     components_.reset(new TabletComponents(
         std::move(new_mrs), {}, std::move(new_rowset_tree)));
     uncommitted_rowsets_by_txn_id_ = std::move(uncommitted_rs_by_txn_id);
@@ -487,7 +487,7 @@ Status Tablet::Open(const unordered_set<int64_t>& in_flight_txn_ids,
   UpdateAverageRowsetHeight();
 
   {
-    std::lock_guard<simple_spinlock> l(state_lock_);
+    std::lock_guard l(state_lock_);
     if (state_ != kInitialized) {
       DCHECK(state_ == kStopped || state_ == kShutdown);
       return Status::IllegalState("Expected the Tablet to be initialized");
@@ -532,7 +532,7 @@ Status Tablet::UpdateAutoIncrementingCounter(const RowSetVector& rowsets_opened)
 
 void Tablet::Stop() {
   {
-    std::lock_guard<simple_spinlock> l(state_lock_);
+    std::lock_guard l(state_lock_);
     if (state_ == kStopped || state_ == kShutdown) {
       return;
     }
@@ -548,7 +548,7 @@ void Tablet::Stop() {
 }
 
 Status Tablet::MarkFinishedBootstrapping() {
-  std::lock_guard<simple_spinlock> l(state_lock_);
+  std::lock_guard l(state_lock_);
   if (state_ != kBootstrapping) {
     DCHECK(state_ == kStopped || state_ == kShutdown);
     return Status::IllegalState("The tablet has been stopped");
@@ -561,10 +561,10 @@ void Tablet::Shutdown() {
   Stop();
   UnregisterMaintenanceOps();
 
-  std::lock_guard<rw_spinlock> lock(component_lock_);
+  std::lock_guard lock(component_lock_);
   components_ = nullptr;
   {
-    std::lock_guard<simple_spinlock> l(state_lock_);
+    std::lock_guard l(state_lock_);
     set_state_unlocked(kShutdown);
   }
   if (metric_entity_) {
@@ -744,7 +744,7 @@ void Tablet::AssignTimestampAndStartOpForTests(WriteOpState* op_state) {
   // get a timestamp/start/advance safe time before op1 starts making op1's timestamp
   // invalid on start.
   {
-    std::lock_guard<simple_spinlock> l(test_start_op_lock_);
+    std::lock_guard l(test_start_op_lock_);
     op_state->set_timestamp(clock_->Now());
     StartOp(op_state);
   }
@@ -1132,7 +1132,7 @@ void Tablet::CreateTxnRowSets(int64_t txn_id, scoped_refptr<TxnMetadata> txn_met
                              &new_mrs));
   scoped_refptr<TxnRowSets> rowsets(new TxnRowSets(std::move(new_mrs)));
   {
-    std::lock_guard<rw_spinlock> l(component_lock_);
+    std::lock_guard l(component_lock_);
     // TODO(awong): can we ever get here?
     if (ContainsKey(uncommitted_rowsets_by_txn_id_, txn_id)) {
       return;
@@ -1334,7 +1334,7 @@ void Tablet::CommitTransaction(Txn* txn, Timestamp commit_ts, const OpId& op_id)
 }
 
 void Tablet::CommitTxnRowSets(int64_t txn_id) {
-  std::lock_guard<rw_spinlock> lock(component_lock_);
+  std::lock_guard lock(component_lock_);
   auto txn_rowsets = EraseKeyReturnValuePtr(&uncommitted_rowsets_by_txn_id_, txn_id);
   CHECK(txn_rowsets);
   auto committed_mrss = components_->txn_memrowsets;
@@ -1351,7 +1351,7 @@ void Tablet::AbortTransaction(Txn* txn,  const OpId& op_id) {
   const auto& txn_id = txn->txn_id();
   metadata_->AbortTransaction(txn_id, std::move(anchor));
   {
-    std::lock_guard<rw_spinlock> lock(component_lock_);
+    std::lock_guard lock(component_lock_);
     uncommitted_rowsets_by_txn_id_.erase(txn_id);
   }
   txn->AbortTransaction();
@@ -1380,7 +1380,7 @@ Status Tablet::ApplyRowOperations(WriteOpState* op_state) {
   TRACE("finished ApplyRowOperation cycle");
 
   {
-    std::lock_guard<rw_spinlock> l(last_rw_time_lock_);
+    std::lock_guard l(last_rw_time_lock_);
     last_write_time_ = MonoTime::Now();
   }
 
@@ -1492,7 +1492,7 @@ void Tablet::ModifyRowSetTree(const RowSetTree& old_tree,
 
 void Tablet::AtomicSwapRowSets(const RowSetVector &to_remove,
                                const RowSetVector &to_add) {
-  std::lock_guard<rw_spinlock> lock(component_lock_);
+  std::lock_guard lock(component_lock_);
   AtomicSwapRowSetsUnlocked(to_remove, to_add);
 }
 
@@ -1555,7 +1555,7 @@ HistoryGcOpts Tablet::GetHistoryGcOpts() const {
 
 Status Tablet::Flush() {
   TRACE_EVENT1("tablet", "Tablet::Flush", "id", tablet_id());
-  std::lock_guard<Semaphore> lock(rowsets_flush_sem_);
+  std::lock_guard lock(rowsets_flush_sem_);
   return FlushUnlocked();
 }
 
@@ -1566,7 +1566,7 @@ Status Tablet::FlushUnlocked() {
   vector<shared_ptr<MemRowSet>> old_mrss;
   {
     // Create a new MRS with the latest schema.
-    std::lock_guard<rw_spinlock> lock(component_lock_);
+    std::lock_guard lock(component_lock_);
     RETURN_NOT_OK(ReplaceMemRowSetsUnlocked(&input, &old_mrss));
     DCHECK_GE(old_mrss.size(), 1);
   }
@@ -1705,7 +1705,7 @@ Status Tablet::AlterSchema(AlterSchemaOpState* op_state) {
   // Prevent any concurrent flushes. Otherwise, we run into issues where
   // we have an MRS in the rowset tree, and we can't alter its schema
   // in-place.
-  std::lock_guard<Semaphore> lock(rowsets_flush_sem_);
+  std::lock_guard lock(rowsets_flush_sem_);
 
   // If the current version >= new version, there is nothing to do.
   const bool same_schema = (*schema() == *op_state->schema());
@@ -1755,7 +1755,7 @@ Status Tablet::RewindSchemaForBootstrap(const Schema& new_schema,
   SchemaPtr schema = std::make_shared<Schema>(new_schema);
   metadata_->SetSchema(schema, schema_version);
   {
-    std::lock_guard<rw_spinlock> lock(component_lock_);
+    std::lock_guard lock(component_lock_);
 
     shared_ptr<MemRowSet> old_mrs = components_->memrowset;
     shared_ptr<RowSetTree> old_rowsets = components_->rowsets;
@@ -1809,7 +1809,7 @@ Status Tablet::PickRowSetsToCompact(RowSetsInCompactionOrFlush *picked,
     rowsets_copy = components_->rowsets;
   }
 
-  std::lock_guard<std::mutex> compact_lock(compact_select_lock_);
+  std::lock_guard compact_lock(compact_select_lock_);
   CHECK_EQ(picked->num_rowsets(), 0);
 
   unordered_set<const RowSet*> picked_set;
@@ -1911,7 +1911,7 @@ void Tablet::RegisterMaintenanceOps(MaintenanceManager* maint_mgr) {
   // calls to it or to UnregisterMaintenanceOps.
   DFAKE_SCOPED_LOCK(maintenance_registration_fake_lock_);
   {
-    std::lock_guard<simple_spinlock> l(state_lock_);
+    std::lock_guard l(state_lock_);
     if (state_ == kStopped || state_ == kShutdown) {
       LOG(WARNING) << "Could not register maintenance ops";
       return;
@@ -1941,7 +1941,7 @@ void Tablet::RegisterMaintenanceOps(MaintenanceManager* maint_mgr) {
     maint_mgr->RegisterOp(maintenance_ops.back().get());
   }
 
-  std::lock_guard<simple_spinlock> l(state_lock_);
+  std::lock_guard l(state_lock_);
   maintenance_ops_ = std::move(maintenance_ops);
 }
 
@@ -1956,7 +1956,7 @@ void Tablet::UnregisterMaintenanceOps() {
 
   decltype(maintenance_ops_) ops;
   {
-    std::lock_guard<simple_spinlock> l(state_lock_);
+    std::lock_guard l(state_lock_);
     ops = std::move(maintenance_ops_);
     maintenance_ops_.clear();
   }
@@ -1970,7 +1970,7 @@ void Tablet::UnregisterMaintenanceOps() {
 }
 
 void Tablet::CancelMaintenanceOps() {
-  std::lock_guard<simple_spinlock> l(state_lock_);
+  std::lock_guard l(state_lock_);
   for (auto& op : maintenance_ops_) {
     op->CancelAndDisable();
   }
@@ -2153,7 +2153,7 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompactionOrFlush &input,
     TRACE_EVENT0("tablet", "Swapping DuplicatingRowSet");
     // Taking component_lock_ in write mode ensures that no new ops can
     // StartApplying() (or snapshot components_) during this block.
-    std::lock_guard<rw_spinlock> lock(component_lock_);
+    std::lock_guard lock(component_lock_);
     AtomicSwapRowSetsUnlocked(input.rowsets(), { inprogress_rowset });
 
     // NOTE: ops may *commit* in between these two lines.
@@ -2325,7 +2325,7 @@ void Tablet::UpdateAverageRowsetHeight() {
   // scratch.
   scoped_refptr<TabletComponents> comps;
   GetComponents(&comps);
-  std::lock_guard<std::mutex> l(compact_select_lock_);
+  std::lock_guard l(compact_select_lock_);
   double rowset_total_height;
   double rowset_total_width;
   RowSetInfo::ComputeCdfAndCollectOrdered(*comps->rowsets,
@@ -2381,7 +2381,7 @@ void Tablet::UpdateCompactionStats(MaintenanceOpStats* stats) {
   }
 
   {
-    std::lock_guard<std::mutex> compact_lock(compact_select_lock_);
+    std::lock_guard compact_lock(compact_select_lock_);
     WARN_NOT_OK(compaction_policy_->PickRowSets(*rowsets_copy, &picked, &quality, nullptr),
                 Substitute("Couldn't determine compaction quality for $0", tablet_id()));
   }
@@ -2653,7 +2653,7 @@ uint64_t Tablet::LastReadElapsedSeconds() const {
 }
 
 void Tablet::UpdateLastReadTime() {
-  std::lock_guard<rw_spinlock> l(last_rw_time_lock_);
+  std::lock_guard l(last_rw_time_lock_);
   last_read_time_ = MonoTime::Now();
 }
 
@@ -2860,7 +2860,7 @@ Status Tablet::CompactWorstDeltas(RowSet::DeltaCompactionType type) {
     // We only want to keep the selection lock during the time we look at rowsets to compact.
     // The returned rowset is guaranteed to be available to lock since locking must be done
     // under this lock.
-    std::lock_guard<std::mutex> compact_lock(compact_select_lock_);
+    std::lock_guard compact_lock(compact_select_lock_);
     perf_improv = GetPerfImprovementForBestDeltaCompactUnlocked(type, &rs);
     if (!rs) {
       return Status::OK();
@@ -2886,7 +2886,7 @@ Status Tablet::CompactWorstDeltas(RowSet::DeltaCompactionType type) {
 
 double Tablet::GetPerfImprovementForBestDeltaCompact(RowSet::DeltaCompactionType type,
                                                      shared_ptr<RowSet>* rs) const {
-  std::lock_guard<std::mutex> compact_lock(compact_select_lock_);
+  std::lock_guard compact_lock(compact_select_lock_);
   return GetPerfImprovementForBestDeltaCompactUnlocked(type, rs);
 }
 
@@ -3022,7 +3022,7 @@ Status Tablet::GetBytesInAncientDeletedRowsets(int64_t* bytes_in_ancient_deleted
   GetComponents(&comps);
   int64_t bytes = 0;
   {
-    std::lock_guard<std::mutex> csl(compact_select_lock_);
+    std::lock_guard csl(compact_select_lock_);
     for (const auto& rowset : comps->rowsets->all_rowsets()) {
       if (!rowset->IsAvailableForCompaction()) {
         continue;
@@ -3058,7 +3058,7 @@ Status Tablet::DeleteAncientDeletedRowsets() {
   vector<std::unique_lock<std::mutex>> rowset_locks;
   int64_t bytes_deleted = 0;
   {
-    std::lock_guard<std::mutex> csl(compact_select_lock_);
+    std::lock_guard csl(compact_select_lock_);
     for (const auto& rowset : comps->rowsets->all_rowsets()) {
       // Check if this rowset has been locked by a compaction. If so, we
       // shouldn't attempt to delete it.
@@ -3104,7 +3104,7 @@ Status Tablet::DeleteAncientUndoDeltas(int64_t* blocks_deleted, int64_t* bytes_d
   {
     // We hold the selection lock so other threads will not attempt to select the
     // same rowsets for compaction while we delete old undos.
-    std::lock_guard<std::mutex> compact_lock(compact_select_lock_);
+    std::lock_guard compact_lock(compact_select_lock_);
     for (const auto& rowset : comps->rowsets->all_rowsets()) {
       if (!rowset->IsAvailableForCompaction()) {
         continue;
@@ -3183,7 +3183,7 @@ void Tablet::PrintRSLayout(ostream* o) {
     shared_lock<rw_spinlock> l(component_lock_);
     rowsets_copy = components_->rowsets;
   }
-  std::lock_guard<std::mutex> compact_lock(compact_select_lock_);
+  std::lock_guard compact_lock(compact_select_lock_);
   // Run the compaction policy in order to get its log and highlight those
   // rowsets which would be compacted next.
   vector<string> log;

@@ -15,7 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <mutex>
+#include "kudu/util/rwc_lock.h"
+
 #include <string>
 #include <thread>
 #include <vector>
@@ -26,7 +27,6 @@
 #include "kudu/gutil/atomicops.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
-#include "kudu/util/rwc_lock.h"
 #include "kudu/util/test_util.h"
 
 namespace kudu {
@@ -61,19 +61,19 @@ struct LockHoldersCount {
   }
 
   void AdjustReaders(int delta) {
-    std::lock_guard<simple_spinlock> l(lock);
+    std::lock_guard l(lock);
     num_readers += delta;
     CheckInvariants();
   }
 
   void AdjustWriters(int delta) {
-    std::lock_guard<simple_spinlock> l(lock);
+    std::lock_guard l(lock);
     num_writers += delta;
     CheckInvariants();
   }
 
   void AdjustCommitters(int delta) {
-    std::lock_guard<simple_spinlock> l(lock);
+    std::lock_guard l(lock);
     num_committers += delta;
     CheckInvariants();
   }

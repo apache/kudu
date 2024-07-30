@@ -25,7 +25,6 @@
 #include <functional>
 #include <list>
 #include <memory>
-#include <mutex>
 #include <ostream>
 #include <string>
 #include <thread>
@@ -121,7 +120,7 @@ class TestMaintenanceOp : public MaintenanceOp {
 
   bool Prepare() override {
     queue_time_ += (MonoTime::Now() - update_time_);
-    std::lock_guard<simple_spinlock> guard(lock_);
+    std::lock_guard guard(lock_);
     if (remaining_runs_ == 0) {
       return false;
     }
@@ -133,7 +132,7 @@ class TestMaintenanceOp : public MaintenanceOp {
 
   void Perform() override {
     {
-      std::lock_guard<simple_spinlock> guard(lock_);
+      std::lock_guard guard(lock_);
       DLOG(INFO) << "Performing op " << name();
 
       // Ensure that we don't call Perform() more times than we returned
@@ -143,7 +142,7 @@ class TestMaintenanceOp : public MaintenanceOp {
     }
     SleepFor(sleep_time_);
     {
-      std::lock_guard<simple_spinlock> guard(lock_);
+      std::lock_guard guard(lock_);
       run_count_++;
       updated_ = false;
       completed_at_ = MonoTime::Now();
@@ -171,7 +170,7 @@ class TestMaintenanceOp : public MaintenanceOp {
       }
     }
 
-    std::lock_guard<simple_spinlock> guard(lock_);
+    std::lock_guard guard(lock_);
     stats->set_runnable(remaining_runs_ > 0);
     stats->set_ram_anchored(ram_anchored_);
     stats->set_logs_retained_bytes(logs_retained_bytes_);
@@ -186,47 +185,47 @@ class TestMaintenanceOp : public MaintenanceOp {
   }
 
   void set_remaining_runs(int runs) {
-    std::lock_guard<simple_spinlock> guard(lock_);
+    std::lock_guard guard(lock_);
     remaining_runs_ = runs;
   }
 
   void set_sleep_time(MonoDelta time) {
-    std::lock_guard<simple_spinlock> guard(lock_);
+    std::lock_guard guard(lock_);
     sleep_time_ = time;
   }
 
   void set_update_stats_time(MonoDelta time) {
-    std::lock_guard<simple_spinlock> guard(lock_);
+    std::lock_guard guard(lock_);
     update_stats_time_ = time;
   }
 
   void set_ram_anchored(uint64_t ram_anchored) {
-    std::lock_guard<simple_spinlock> guard(lock_);
+    std::lock_guard guard(lock_);
     ram_anchored_ = ram_anchored;
   }
 
   void set_logs_retained_bytes(uint64_t logs_retained_bytes) {
-    std::lock_guard<simple_spinlock> guard(lock_);
+    std::lock_guard guard(lock_);
     logs_retained_bytes_ = logs_retained_bytes;
   }
 
   void set_data_retained_bytes(uint64_t data_retained_bytes) {
-    std::lock_guard<simple_spinlock> guard(lock_);
+    std::lock_guard guard(lock_);
     data_retained_bytes_ = data_retained_bytes;
   }
 
   void set_perf_improvement(uint64_t perf_improvement) {
-    std::lock_guard<simple_spinlock> guard(lock_);
+    std::lock_guard guard(lock_);
     perf_improvement_ = perf_improvement;
   }
 
   void set_workload_score(uint64_t workload_score) {
-    std::lock_guard<simple_spinlock> guard(lock_);
+    std::lock_guard guard(lock_);
     workload_score_ = workload_score;
   }
 
   void set_register_self(bool register_self) {
-    std::lock_guard<simple_spinlock> guard(lock_);
+    std::lock_guard guard(lock_);
     register_self_ = register_self;
   }
 
@@ -243,17 +242,17 @@ class TestMaintenanceOp : public MaintenanceOp {
   }
 
   int remaining_runs() const {
-    std::lock_guard<simple_spinlock> guard(lock_);
+    std::lock_guard guard(lock_);
     return remaining_runs_;
   }
 
   uint64_t update_stats_count() const {
-    std::lock_guard<simple_spinlock> guard(lock_);
+    std::lock_guard guard(lock_);
     return update_stats_count_;
   }
 
   MonoTime completed_at() const {
-    std::lock_guard<simple_spinlock> guard(lock_);
+    std::lock_guard guard(lock_);
     return completed_at_;
   }
 

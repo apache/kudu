@@ -21,7 +21,6 @@
 #include <cctype>
 #include <cstring>
 #include <map>
-#include <mutex>
 #include <ostream>
 #include <string>
 #include <utility>
@@ -51,7 +50,7 @@ const char* TraceMetrics::InternName(const string& name) {
       << "not printable: " << name;
 
   debug::ScopedLeakCheckDisabler no_leakcheck;
-  std::lock_guard<simple_spinlock> l(g_intern_map_lock);
+  std::lock_guard l(g_intern_map_lock);
   if (g_intern_map == nullptr) {
     g_intern_map = new InternMap();
   }

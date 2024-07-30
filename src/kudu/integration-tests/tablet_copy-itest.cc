@@ -1983,7 +1983,7 @@ TEST_F(TabletCopyITest, TestBeginTabletCopySessionConcurrency) {
         MonoTime start = MonoTime::Now();
         Status s = itest::BeginTabletCopySession(ts, tablet_id, "dummy-uuid", kTimeout);
         MonoDelta duration = MonoTime::Now() - start;
-        lock_guard<mutex> l(m);
+        lock_guard l(m);
         if (s.ok()) {
           success_latencies.push_back(duration);
           return;

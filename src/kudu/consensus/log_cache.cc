@@ -118,14 +118,14 @@ LogCache::~LogCache() {
 }
 
 void LogCache::Init(const OpId& preceding_op) {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   CHECK_EQ(1, cache_.size()) << "cache should have only special '0' op";
   next_sequential_op_index_ = preceding_op.index() + 1;
   min_pinned_op_index_ = next_sequential_op_index_;
 }
 
 void LogCache::TruncateOpsAfter(int64_t index) {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   TruncateOpsAfterUnlocked(index);
 }
 
@@ -228,7 +228,7 @@ void LogCache::LogCallback(int64_t last_idx_in_batch,
                            const StatusCallback& user_callback,
                            const Status& log_status) {
   if (log_status.ok()) {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     if (min_pinned_op_index_ <= last_idx_in_batch) {
       VLOG_WITH_PREFIX_UNLOCKED(1) << "Updating pinned index to " << (last_idx_in_batch + 1);
       min_pinned_op_index_ = last_idx_in_batch + 1;
@@ -247,14 +247,14 @@ void LogCache::LogCallback(int64_t last_idx_in_batch,
 }
 
 bool LogCache::HasOpBeenWritten(int64_t index) const {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   return index < next_sequential_op_index_;
 }
 
 Status LogCache::LookupOpId(int64_t op_index, OpId* op_id) const {
   // First check the log cache itself.
   {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
 
     // We sometimes try to look up OpIds that have never been written
     // on the local node. In that case, don't try to read the op from
@@ -359,7 +359,7 @@ Status LogCache::ReadOps(int64_t after_op_index,
 
 
 void LogCache::EvictThroughOp(int64_t index) {
-  std::lock_guard<simple_spinlock> lock(lock_);
+  std::lock_guard lock(lock_);
 
   EvictSomeUnlocked(index, MathLimits<int64_t>::kMax);
 }
@@ -417,7 +417,7 @@ int64_t LogCache::BytesUsed() const {
 }
 
 string LogCache::StatsString() const {
-  std::lock_guard<simple_spinlock> lock(lock_);
+  std::lock_guard lock(lock_);
   return StatsStringUnlocked();
 }
 
@@ -428,7 +428,7 @@ string LogCache::StatsStringUnlocked() const {
 }
 
 std::string LogCache::ToString() const {
-  std::lock_guard<simple_spinlock> lock(lock_);
+  std::lock_guard lock(lock_);
   return ToStringUnlocked();
 }
 
@@ -443,7 +443,7 @@ std::string LogCache::LogPrefixUnlocked() const {
 }
 
 void LogCache::DumpToStrings(vector<string>* lines) const {
-  std::lock_guard<simple_spinlock> lock(lock_);
+  std::lock_guard lock(lock_);
   lines->reserve(cache_.size() + 2);
   lines->push_back(ToStringUnlocked());
   lines->push_back("Messages:");
@@ -460,7 +460,7 @@ void LogCache::DumpToStrings(vector<string>* lines) const {
 void LogCache::DumpToHtml(std::ostream& out) const {
   using std::endl;
 
-  std::lock_guard<simple_spinlock> lock(lock_);
+  std::lock_guard lock(lock_);
   out << "<h3>Messages:</h3>" << endl;
   out << "<table>" << endl;
   out << "<tr><th>Entry</th><th>OpId</th><th>Type</th><th>Size</th><th>Status</th></tr>" << endl;

@@ -142,7 +142,7 @@ Status OpDriver::Init(unique_ptr<Op> op,
   op_ = std::move(op);
 
   if (type == consensus::FOLLOWER) {
-    std::lock_guard<simple_spinlock> lock(opid_lock_);
+    std::lock_guard lock(opid_lock_);
     op_id_copy_ = op_->state()->op_id();
     DCHECK(op_id_copy_.IsInitialized());
     replication_state_ = REPLICATING;
@@ -182,7 +182,7 @@ Status OpDriver::Init(unique_ptr<Op> op,
 }
 
 consensus::OpId OpDriver::GetOpId() {
-  std::lock_guard<simple_spinlock> lock(opid_lock_);
+  std::lock_guard lock(opid_lock_);
   return op_id_copy_;
 }
 
@@ -199,7 +199,7 @@ Op::OpType OpDriver::op_type() const {
 }
 
 string OpDriver::ToString() const {
-  std::lock_guard<simple_spinlock> lock(lock_);
+  std::lock_guard lock(lock_);
   return ToStringUnlocked();
 }
 
@@ -295,7 +295,7 @@ Status OpDriver::Prepare() {
   // phase.
   ReplicationState repl_state_copy;
   {
-    std::lock_guard<simple_spinlock> lock(lock_);
+    std::lock_guard lock(lock_);
     CHECK_EQ(prepare_state_, NOT_PREPARED);
     prepare_state_ = PREPARED;
     repl_state_copy = replication_state_;
@@ -331,14 +331,14 @@ Status OpDriver::Prepare() {
       TRACE("REPLICATION: starting");
       // Trigger consensus replication.
       {
-        std::lock_guard<simple_spinlock> lock(lock_);
+        std::lock_guard lock(lock_);
         replication_state_ = REPLICATING;
         replication_start_time_ = MonoTime::Now();
       }
 
       Status s = consensus_->Replicate(mutable_state()->consensus_round());
       if (PREDICT_FALSE(!s.ok())) {
-        std::lock_guard<simple_spinlock> lock(lock_);
+        std::lock_guard lock(lock_);
         CHECK_EQ(replication_state_, REPLICATING);
         op_status_ = s;
         replication_state_ = REPLICATION_FAILED;
@@ -374,7 +374,7 @@ void OpDriver::HandleFailure(const Status& s) {
   ReplicationState repl_state_copy;
 
   {
-    std::lock_guard<simple_spinlock> lock(lock_);
+    std::lock_guard lock(lock_);
     op_status_ = s;
     repl_state_copy = replication_state_;
   }
@@ -409,7 +409,7 @@ void OpDriver::ReplicationFinished(const Status& status) {
 
   ADOPT_TRACE(trace());
   {
-    std::lock_guard<simple_spinlock> op_id_lock(opid_lock_);
+    std::lock_guard op_id_lock(opid_lock_);
     // TODO: it's a bit silly that we have three copies of the opid:
     // one here, one in ConsensusRound, and one in OpState.
 
@@ -428,7 +428,7 @@ void OpDriver::ReplicationFinished(const Status& status) {
   MonoDelta replication_duration;
   PrepareState prepare_state_copy;
   {
-    std::lock_guard<simple_spinlock> lock(lock_);
+    std::lock_guard lock(lock_);
     CHECK_EQ(replication_state_, REPLICATING);
     if (status.ok()) {
       replication_state_ = REPLICATED;
@@ -463,7 +463,7 @@ void OpDriver::Abort(const Status& status) {
 
   ReplicationState repl_state_copy;
   {
-    std::lock_guard<simple_spinlock> lock(lock_);
+    std::lock_guard lock(lock_);
     repl_state_copy = replication_state_;
     op_status_ = status;
   }
@@ -515,7 +515,7 @@ void OpDriver::ApplyTask() {
 
 #if DCHECK_IS_ON()
   {
-    std::lock_guard<simple_spinlock> lock(lock_);
+    std::lock_guard lock(lock_);
     DCHECK_EQ(replication_state_, REPLICATED);
     DCHECK_EQ(prepare_state_, PREPARED);
   }
@@ -587,7 +587,7 @@ void OpDriver::Finalize() {
   // TODO: this is an ugly hack so that the Release() call doesn't delete the
   // object while we still hold the lock.
   scoped_refptr<OpDriver> ref(this);
-  std::lock_guard<simple_spinlock> lock(lock_);
+  std::lock_guard lock(lock_);
   op_->Finish(Op::APPLIED);
   mutable_state()->completion_callback()->OpCompleted();
   op_tracker_->Release(this);
@@ -633,7 +633,7 @@ std::string OpDriver::LogPrefix() const {
   string ts_string;
 
   {
-    std::lock_guard<simple_spinlock> lock(lock_);
+    std::lock_guard lock(lock_);
     repl_state_copy = replication_state_;
     prep_state_copy = prepare_state_;
     ts_string = state()->has_timestamp() ? state()->timestamp().ToString() : "No timestamp";

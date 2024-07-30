@@ -310,7 +310,7 @@ void NvmLRUCache::NvmLRU_Append(LRUHandle* e) {
 Cache::Handle* NvmLRUCache::Lookup(const Slice& key, uint32_t hash, bool caching) {
   LRUHandle* e;
   {
-    std::lock_guard<MutexType> l(mutex_);
+    std::lock_guard l(mutex_);
     e = table_.Lookup(key, hash);
     if (e != nullptr) {
       // If an entry exists, remove the old entry from the cache
@@ -383,7 +383,7 @@ Cache::Handle* NvmLRUCache::Insert(LRUHandle* e,
   }
 
   {
-    std::lock_guard<MutexType> l(mutex_);
+    std::lock_guard l(mutex_);
 
     NvmLRU_Append(e);
 
@@ -411,7 +411,7 @@ void NvmLRUCache::Erase(const Slice& key, uint32_t hash) {
   LRUHandle* e;
   bool last_reference = false;
   {
-    std::lock_guard<MutexType> l(mutex_);
+    std::lock_guard l(mutex_);
     e = table_.Remove(key, hash);
     if (e != nullptr) {
       NvmLRU_Remove(e);
@@ -431,7 +431,7 @@ size_t NvmLRUCache::Invalidate(const Cache::InvalidationControl& ctl) {
   LRUHandle* to_remove_head = nullptr;
 
   {
-    std::lock_guard<MutexType> l(mutex_);
+    std::lock_guard l(mutex_);
 
     // rl_.next is the oldest entry in the recency list.
     LRUHandle* h = lru_.next;

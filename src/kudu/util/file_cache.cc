@@ -22,7 +22,6 @@
 #include <cstring>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <ostream>
 #include <string>
 #include <type_traits>
@@ -514,7 +513,7 @@ Status FileCache::DoOpenFile(const string& file_name,
   shared_ptr<internal::Descriptor<RWFile>> d;
   bool cd;
   {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     d = FindDescriptorUnlocked(file_name, FindMode::CREATE_IF_NOT_EXIST,
                                &rwf_descs_, &cd);
     DCHECK(d);
@@ -542,7 +541,7 @@ Status FileCache::DoOpenFile(const string& file_name,
   shared_ptr<internal::Descriptor<RandomAccessFile>> d;
   bool cd;
   {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     d = FindDescriptorUnlocked(file_name, FindMode::CREATE_IF_NOT_EXIST,
                                &raf_descs_, &cd);
     DCHECK(d);
@@ -624,7 +623,7 @@ Status FileCache::DeleteFile(const string& file_name) {
   // descriptor per file name, we can short circuit the search if we find a
   // descriptor in the first map.
   {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     bool ignored;
     {
       auto d = FindDescriptorUnlocked(file_name, FindMode::DONT_CREATE,
@@ -669,7 +668,7 @@ void FileCache::Invalidate(const string& file_name) {
   shared_ptr<internal::Descriptor<RWFile>> rwf_desc;
   shared_ptr<internal::Descriptor<RandomAccessFile>> raf_desc;
   {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     bool ignored;
     rwf_desc = FindDescriptorUnlocked(file_name, FindMode::CREATE_IF_NOT_EXIST,
                                       &rwf_descs_, &ignored);
@@ -692,14 +691,14 @@ void FileCache::Invalidate(const string& file_name) {
   // duration of this method, and no other methods erase strong references from
   // the maps.
   {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     CHECK_EQ(1, rwf_descs_.erase(file_name));
     CHECK_EQ(1, raf_descs_.erase(file_name));
   }
 }
 
 size_t FileCache::NumDescriptorsForTests() const {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   return rwf_descs_.size() + raf_descs_.size();
 }
 
@@ -711,7 +710,7 @@ string FileCache::ToDebugString() const {
   DescriptorMap<RWFile> rwfs_copy;
   DescriptorMap<RandomAccessFile> rafs_copy;
   {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     rwfs_copy = rwf_descs_;
     rafs_copy = raf_descs_;
   }
@@ -801,7 +800,7 @@ void FileCache::ExpireDescriptorsFromMap(DescriptorMap<FileType>* descs) {
 void FileCache::RunDescriptorExpiry() {
   while (!running_.WaitFor(MonoDelta::FromMilliseconds(
       FLAGS_file_cache_expiry_period_ms))) {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     ExpireDescriptorsFromMap(&rwf_descs_);
     ExpireDescriptorsFromMap(&raf_descs_);
   }

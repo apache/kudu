@@ -18,7 +18,6 @@
 #include "kudu/master/location_cache.h"
 
 #include <cstdio>
-#include <mutex>
 #include <shared_mutex>
 #include <string>
 #include <type_traits>
@@ -114,7 +113,7 @@ Status LocationCache::GetLocation(const string& key, string* location) {
   TRACE(Substitute("key $0: assigned location '$1'", key, value));
   if (s.ok()) {
     CHECK(!value.empty());
-    std::lock_guard<rw_spinlock> l(location_map_lock_);
+    std::lock_guard l(location_map_lock_);
     // This simple implementation doesn't protect against multiple runs of the
     // location-mapping command for the same key.
     // TODO(KUDU-2771): queue concurrent requests for the same key

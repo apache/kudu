@@ -18,7 +18,6 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <ostream>
 #include <string>
 #include <thread>
@@ -495,7 +494,7 @@ class MasterStressTest : public ExternalMiniClusterITestBase,
   }
 
   bool BlockingGetTableName(string* chosen_table) {
-    std::lock_guard<Mutex> l(table_names_lock_);
+    std::lock_guard l(table_names_lock_);
     while (table_names_.empty() && done_.count()) {
       table_names_condvar_.Wait();
     }
@@ -516,7 +515,7 @@ class MasterStressTest : public ExternalMiniClusterITestBase,
   }
 
   void PutTableName(const string& table_name) {
-    std::lock_guard<Mutex> l(table_names_lock_);
+    std::lock_guard l(table_names_lock_);
     table_names_.push_back(table_name);
     table_names_condvar_.Signal();
   }

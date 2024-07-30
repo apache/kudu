@@ -19,7 +19,6 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <shared_mutex>
 #include <string>
@@ -402,20 +401,20 @@ class Messenger {
   JwtVerifier* mutable_jwt_verifier() { return jwt_verifier_.get(); }
 
   std::optional<security::SignedTokenPB> authn_token() const {
-    std::lock_guard<simple_spinlock> l(authn_token_lock_);
+    std::lock_guard l(authn_token_lock_);
     return authn_token_;
   }
   void set_authn_token(const security::SignedTokenPB& token) {
-    std::lock_guard<simple_spinlock> l(authn_token_lock_);
+    std::lock_guard l(authn_token_lock_);
     authn_token_ = token;
   }
 
   std::optional<security::JwtRawPB> jwt() const {
-    std::lock_guard<simple_spinlock> l(authn_token_lock_);
+    std::lock_guard l(authn_token_lock_);
     return jwt_;
   }
   void set_jwt(const security::JwtRawPB& token) {
-    std::lock_guard<simple_spinlock> l(authn_token_lock_);
+    std::lock_guard l(authn_token_lock_);
     jwt_ = token;
   }
 
@@ -434,7 +433,7 @@ class Messenger {
   }
 
   void SetServicesRegistered() {
-    std::lock_guard<percpu_rwlock> guard(lock_);
+    std::lock_guard guard(lock_);
     state_ = kServicesRegistered;
   }
 

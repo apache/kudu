@@ -999,7 +999,7 @@ CatalogManager::~CatalogManager() {
 
 Status CatalogManager::Init(bool is_first_run) {
   {
-    std::lock_guard<simple_spinlock> l(state_lock_);
+    std::lock_guard l(state_lock_);
     CHECK_EQ(kConstructed, state_);
     state_ = kStarting;
   }
@@ -1049,7 +1049,7 @@ Status CatalogManager::Init(bool is_first_run) {
     // but we need to use something to protect this hms_catalog_ write vis a vis
     // the read in PrepareForLeadershipTask(), and that read is performed while
     // holding leader_lock_, so this is the path of least resistance.
-    std::lock_guard<RWMutex> leader_lock_guard(leader_lock_);
+    std::lock_guard leader_lock_guard(leader_lock_);
 
     hms_catalog_.reset(new hms::HmsCatalog(std::move(master_addresses_str)));
     RETURN_NOT_OK_PREPEND(hms_catalog_->Start(HmsClientVerifyKuduSyncConfig::VERIFY),
@@ -1067,7 +1067,7 @@ Status CatalogManager::Init(bool is_first_run) {
                         "Failed to initialize catalog manager background tasks");
 
   {
-    std::lock_guard<simple_spinlock> l(state_lock_);
+    std::lock_guard l(state_lock_);
     CHECK_EQ(kStarting, state_);
     state_ = kRunning;
   }
@@ -1116,7 +1116,7 @@ Status CatalogManager::InitClusterId() {
   // Once the cluster ID is loaded or stored, store it in a variable for
   // fast lookup.
   if (s.ok()) {
-    std::lock_guard<simple_spinlock> l(cluster_id_lock_);
+    std::lock_guard l(cluster_id_lock_);
     cluster_id_ = cluster_id;
   }
 
@@ -1393,7 +1393,7 @@ void CatalogManager::PrepareForLeadershipTask() {
   const RaftConsensus* consensus = sys_catalog_->tablet_replica()->consensus();
   const int64_t term_before_wait = consensus->CurrentTerm();
   {
-    std::lock_guard<simple_spinlock> l(state_lock_);
+    std::lock_guard l(state_lock_);
     if (leader_ready_term_ == term_before_wait) {
       // The term hasn't changed since the last time this master was the
       // leader. It's not possible for another master to be leader for the same
@@ -1445,7 +1445,7 @@ void CatalogManager::PrepareForLeadershipTask() {
       }
 
       {
-        std::lock_guard<simple_spinlock> l(state_lock_);
+        std::lock_guard l(state_lock_);
         if (state_ == kClosing) {
           // Errors on shutdown are not considered fatal.
           LOG(INFO) << Substitute("$0 failed due to the shutdown of the catalog: $1",
@@ -1469,7 +1469,7 @@ void CatalogManager::PrepareForLeadershipTask() {
     };
 
     // Block new catalog operations, and wait for existing operations to finish.
-    std::lock_guard<RWMutex> leader_lock_guard(leader_lock_);
+    std::lock_guard leader_lock_guard(leader_lock_);
 
     static const char* const kLoadMetaOpDescription =
         "Loading table and tablet metadata into memory";
@@ -1538,7 +1538,7 @@ void CatalogManager::PrepareForLeadershipTask() {
     ResetTableLocationsCache();
   }
 
-  std::lock_guard<simple_spinlock> l(state_lock_);
+  std::lock_guard l(state_lock_);
   leader_ready_term_ = term;
 }
 
@@ -1553,7 +1553,7 @@ Status CatalogManager::PrepareFollowerClusterId() {
     LOG_WITH_PREFIX(INFO) << kDescription << ": success";
     // Once the cluster ID is loaded or stored, store it in a variable for
     // fast lookup.
-    std::lock_guard<simple_spinlock> l(cluster_id_lock_);
+    std::lock_guard l(cluster_id_lock_);
     cluster_id_ = cluster_id;
   } else {
     LOG_WITH_PREFIX(WARNING) << kDescription << ": " << s.ToString();
@@ -1633,7 +1633,7 @@ Status CatalogManager::VisitTablesAndTabletsUnlocked() {
 
   // This lock is held for the entirety of the function because the calls to
   // VisitTables and VisitTablets mutate global maps.
-  std::lock_guard<LockType> lock(lock_);
+  std::lock_guard lock(lock_);
 
   // Abort any outstanding tasks. All TableInfos are orphaned below, so
   // it's important to end their tasks now; otherwise Shutdown() will
@@ -1661,12 +1661,12 @@ Status CatalogManager::VisitTablesAndTabletsUnlocked() {
 // This method is called by tests only.
 Status CatalogManager::VisitTablesAndTablets() {
   // Block new catalog operations, and wait for existing operations to finish.
-  std::lock_guard<RWMutex> leader_lock_guard(leader_lock_);
+  std::lock_guard leader_lock_guard(leader_lock_);
   return VisitTablesAndTabletsUnlocked();
 }
 
 Status CatalogManager::InitSysCatalogAsync(bool is_first_run) {
-  std::lock_guard<LockType> l(lock_);
+  std::lock_guard l(lock_);
   unique_ptr<SysCatalogTable> new_catalog(new SysCatalogTable(
       master_, [this]() { return this->ElectedAsLeaderCb(); }));
   if (is_first_run) {
@@ -1679,14 +1679,14 @@ Status CatalogManager::InitSysCatalogAsync(bool is_first_run) {
 }
 
 bool CatalogManager::IsInitialized() const {
-  std::lock_guard<simple_spinlock> l(state_lock_);
+  std::lock_guard l(state_lock_);
   return state_ == kRunning;
 }
 
 RaftPeerPB::Role CatalogManager::Role() const {
   shared_ptr<consensus::RaftConsensus> consensus;
   {
-    std::lock_guard<simple_spinlock> l(state_lock_);
+    std::lock_guard l(state_lock_);
     if (state_ == kRunning) {
       consensus = sys_catalog_->tablet_replica()->shared_consensus();
     }
@@ -1702,7 +1702,7 @@ RaftConsensus::RoleAndMemberType CatalogManager::GetRoleAndMemberType() const {
 
 void CatalogManager::Shutdown() {
   {
-    std::lock_guard<simple_spinlock> l(state_lock_);
+    std::lock_guard l(state_lock_);
     if (state_ == kClosing) {
       VLOG(2) << "CatalogManager already shut down";
       return;
@@ -2072,7 +2072,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
 
   scoped_refptr<TableInfo> table;
   {
-    std::lock_guard<LockType> l(lock_);
+    std::lock_guard l(lock_);
     TRACE("Acquired catalog manager lock");
 
     // b. Verify that the table does not exist.
@@ -2098,7 +2098,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
 
   // Ensure that we drop the name reservation upon return.
   SCOPED_CLEANUP({
-    std::lock_guard<LockType> l(lock_);
+    std::lock_guard l(lock_);
     CHECK_EQ(1, reserved_normalized_table_names_.erase(normalized_table_name));
   });
 
@@ -2205,7 +2205,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
 
   // i. Make the new table and tablets visible in the catalog.
   {
-    std::lock_guard<LockType> l(lock_);
+    std::lock_guard l(lock_);
 
     table_ids_map_[table->id()] = table;
     normalized_table_names_map_[normalized_table_name] = table;
@@ -2792,7 +2792,7 @@ Status CatalogManager::DeleteTable(const DeleteTableRequestPB& req,
     // 4. Remove the table from the by-name map.
     {
       TRACE("Removing table from by-name map");
-      std::lock_guard<LockType> l_map(lock_);
+      std::lock_guard l_map(lock_);
       if ((normalized_table_names_map_.erase(NormalizeTableName(l.data().name())) != 1) &&
           (soft_deleted_table_names_map_.erase(NormalizeTableName(l.data().name())) != 1)) {
         LOG(FATAL) << "Could not remove table " << table->ToString()
@@ -3655,7 +3655,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
           ValidateIdentifier(req.new_table_name()).CloneAndPrepend("invalid table name"),
           resp, MasterErrorPB::INVALID_SCHEMA));
 
-    std::lock_guard<LockType> catalog_lock(lock_);
+    std::lock_guard catalog_lock(lock_);
     TRACE("Acquired catalog manager lock");
 
     // Verify that a table does not already exist with the new name. This
@@ -3691,7 +3691,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
   // Ensure that we drop our reservation upon return.
   SCOPED_CLEANUP({
     if (req.has_new_table_name()) {
-      std::lock_guard<LockType> l(lock_);
+      std::lock_guard l(lock_);
       CHECK_EQ(1, reserved_normalized_table_names_.erase(normalized_new_table_name));
     }
   });
@@ -3854,7 +3854,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
 
     // Take the global catalog manager lock in order to modify the global table
     // and tablets indices.
-    std::lock_guard<LockType> lock(lock_);
+    std::lock_guard lock(lock_);
     if (req.has_new_table_name()) {
       if (normalized_table_names_map_.erase(normalized_table_name) != 1) {
         LOG(FATAL) << "Could not remove table " << table->ToString()
@@ -5729,7 +5729,7 @@ Status CatalogManager::ProcessTabletReport(
 }
 
 string CatalogManager::GetClusterId() const {
-  std::lock_guard<simple_spinlock> l(cluster_id_lock_);
+  std::lock_guard l(cluster_id_lock_);
   return cluster_id_;
 }
 
@@ -6176,7 +6176,7 @@ Status CatalogManager::ProcessPendingAssignments(
 
   // Acquire the global lock to publish the new tablets.
   {
-    std::lock_guard<LockType> l(lock_);
+    std::lock_guard l(lock_);
     for (const auto& t : deferred.tablets_to_add) {
       tablet_map_[t->id()] = t;
     }
@@ -6326,7 +6326,7 @@ Status CatalogManager::ProcessDeletedTablets(const vector<scoped_refptr<TabletIn
   }
   // Remove expired tablets from the global map.
   {
-    std::lock_guard<LockType> l(lock_);
+    std::lock_guard l(lock_);
     for (const auto& t : tablets_to_clean_up) {
       DCHECK(ContainsKey(tablet_map_, t->id()));
       tablet_map_.erase(t->id());
@@ -6355,7 +6355,7 @@ Status CatalogManager::ProcessDeletedTables(const vector<scoped_refptr<TableInfo
         return s;
       }
 
-      std::lock_guard<LockType> l(lock_);
+      std::lock_guard l(lock_);
       DCHECK(ContainsKey(table_ids_map_, table->id()));
       table_ids_map_.erase(table->id());
       VLOG(1) << "Cleaned up deleted table: " << table->ToString();
@@ -6573,7 +6573,7 @@ Status CatalogManager::ReplaceTablet(const string& tablet_id, ReplaceTabletRespo
 
   // Add the new tablet to the global tablet map.
   {
-    std::lock_guard<LockType> l(lock_);
+    std::lock_guard l(lock_);
     InsertOrDie(&tablet_map_, new_tablet->id(), new_tablet);
   }
 
@@ -7058,7 +7058,7 @@ Status CatalogManager::MoveToSoftDeletedContainer(const DeleteTableRequestPB& re
   TRACE("Moving table from normalized table map to soft_deleted table map.");
 
   const string table_name = req.table().table_name();;
-  std::lock_guard<LockType> l_map(lock_);
+  std::lock_guard l_map(lock_);
   auto table = FindPtrOrNull(normalized_table_names_map_,
                              NormalizeTableName(table_name));
   if (!table) {
@@ -7079,7 +7079,7 @@ Status CatalogManager::MoveToSoftDeletedContainer(const DeleteTableRequestPB& re
 Status CatalogManager::MoveToNormalContainer(const RecallDeletedTableRequestPB& req) {
   TRACE("Moving table from soft_deleted table map to normalized table map.");
 
-  std::lock_guard<LockType> l_map(lock_);
+  std::lock_guard l_map(lock_);
   auto table = FindPtrOrNull(table_ids_map_, req.table().table_id());
   if (!table) {
       return Status::Corruption(Substitute("Table id $0 is not exist in soft_deleted table map.",
@@ -7148,7 +7148,7 @@ CatalogManager::ScopedLeaderSharedLock::ScopedLeaderSharedLock(
   // Check if the catalog manager is running.
   int64_t leader_ready_term;
   {
-    std::lock_guard<simple_spinlock> l(catalog_->state_lock_);
+    std::lock_guard l(catalog_->state_lock_);
     if (PREDICT_FALSE(catalog_->state_ != kRunning)) {
       catalog_status_ = Status::ServiceUnavailable(
           Substitute("Catalog manager is not initialized. State: $0",
@@ -7267,18 +7267,18 @@ TabletInfo::~TabletInfo() {
 }
 
 void TabletInfo::set_last_create_tablet_time(const MonoTime& ts) {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   last_create_tablet_time_ = ts;
 }
 
 MonoTime TabletInfo::last_create_tablet_time() const {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   return last_create_tablet_time_;
 }
 
 void TabletInfo::set_reported_schema_version(int64_t version) {
   {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
 
     // Fast path: there's no schema version change.
     if (version <= reported_schema_version_) {
@@ -7301,8 +7301,8 @@ void TabletInfo::set_reported_schema_version(int64_t version) {
     key_start = Partition::StringToPartitionKey(
         p.partition_key_start(), p.hash_buckets_size());
   }
-  std::lock_guard<rw_spinlock> table_l(table_->lock_);
-  std::lock_guard<simple_spinlock> tablet_l(lock_);
+  std::lock_guard table_l(table_->lock_);
+  std::lock_guard tablet_l(lock_);
 
   // Check again in case the schema version changed underneath us.
   int64_t old_version = reported_schema_version_;
@@ -7329,7 +7329,7 @@ void TabletInfo::set_reported_schema_version(int64_t version) {
 }
 
 int64_t TabletInfo::reported_schema_version() const {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   return reported_schema_version_;
 }
 
@@ -7339,12 +7339,12 @@ string TabletInfo::ToString() const {
 }
 
 void TabletInfo::UpdateStats(ReportedTabletStatsPB stats) {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   stats_ = std::move(stats);
 }
 
 ReportedTabletStatsPB TabletInfo::GetStats() const {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   return stats_;
 }
 
@@ -7382,7 +7382,7 @@ uint32_t TableInfo::schema_version() const {
 
 void TableInfo::AddRemoveTablets(const vector<scoped_refptr<TabletInfo>>& tablets_to_add,
                                  const vector<scoped_refptr<TabletInfo>>& tablets_to_drop) {
-  std::lock_guard<rw_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   for (const auto& tablet : tablets_to_drop) {
     const auto& p = tablet->metadata().state().pb.partition();
     const auto& lower_bound = Partition::StringToPartitionKey(
@@ -7529,12 +7529,12 @@ bool TableInfo::IsCreateInProgress() const {
 }
 
 void TableInfo::AddTask(const string& tablet_id, const scoped_refptr<MonitoredTask>& task) {
-  std::lock_guard<rw_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   pending_tasks_.emplace(tablet_id, task);
 }
 
 void TableInfo::RemoveTask(const string& tablet_id, MonitoredTask* task) {
-  std::lock_guard<rw_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   auto range = pending_tasks_.equal_range(tablet_id);
   for (auto it = range.first; it != range.second; ++it) {
     if (it->second.get() == task) {
@@ -7631,7 +7631,7 @@ void TableInfo::UpdateStatsMetrics(const string& tablet_id,
         DCHECK(new_stats.has_on_disk_size());
         uint64_t on_disk_size = new_stats.on_disk_size();
         {
-          std::lock_guard<rw_spinlock> l(lock_);
+          std::lock_guard l(lock_);
           for (const auto& e : tablet_map_) {
             if (e.second->id() != tablet_id) {
               on_disk_size += e.second->GetStats().on_disk_size();
@@ -7665,7 +7665,7 @@ void TableInfo::UpdateStatsMetrics(const string& tablet_id,
       if (metrics_->TableSupportsLiveRowCount()) {
         uint64_t live_row_count = new_stats.live_row_count();
         {
-          std::lock_guard<rw_spinlock> l(lock_);
+          std::lock_guard l(lock_);
           for (const auto& e : tablet_map_) {
             if (e.second->id() != tablet_id) {
               live_row_count += e.second->GetStats().live_row_count();

@@ -19,9 +19,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include "kudu/common/rowid.h"
@@ -29,7 +29,6 @@
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/port.h"
 #include "kudu/tablet/concurrent_btree.h"
 #include "kudu/tablet/delta_stats.h"
 #include "kudu/tablet/delta_store.h"
@@ -157,7 +156,7 @@ class DeltaMemStore : public DeltaStore,
   // Returns the highest timestamp of any updates applied to this DMS. Returns
   // 'nullopt' if no updates have been applied.
   std::optional<Timestamp> highest_timestamp() const {
-    std::lock_guard<simple_spinlock> l(ts_lock_);
+    std::lock_guard l(ts_lock_);
     return highest_timestamp_ == Timestamp::kMin
         ? std::nullopt : std::make_optional(highest_timestamp_);
   }

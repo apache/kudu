@@ -20,9 +20,9 @@
 #include <algorithm>
 #include <cstddef>
 #include <limits>
-#include <mutex>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include <gflags/gflags.h>
@@ -139,7 +139,7 @@ OpTracker::OpTracker() {
 
 OpTracker::~OpTracker() {
 #ifndef NDEBUG
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   DCHECK(pending_ops_.empty());
 #endif
 }
@@ -176,7 +176,7 @@ Status OpTracker::Add(OpDriver* driver) {
   // again, as it may disappear between now and then.
   State st;
   st.memory_footprint = driver_mem_footprint;
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   InsertOrDie(&pending_ops_, driver, st);
   return Status::OK();
 }
@@ -226,7 +226,7 @@ void OpTracker::Release(OpDriver* driver) {
   DecrementCounters(*driver);
 
   // Remove the op from the map updating memory consumption if needed.
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   if (mem_tracker_) {
     const State& st = FindOrDie(pending_ops_, driver);
     mem_tracker_->Release(st.memory_footprint);
@@ -240,7 +240,7 @@ void OpTracker::Release(OpDriver* driver) {
 void OpTracker::GetPendingOps(
     vector<scoped_refptr<OpDriver> >* pending_out) const {
   DCHECK(pending_out->empty());
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   for (const TxnMap::value_type& e : pending_ops_) {
     // Increments refcount of each op.
     pending_out->push_back(e.first);
@@ -248,7 +248,7 @@ void OpTracker::GetPendingOps(
 }
 
 int OpTracker::GetNumPendingForTests() const {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   return pending_ops_.size();
 }
 

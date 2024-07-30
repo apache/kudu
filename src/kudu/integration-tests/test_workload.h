@@ -19,7 +19,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <ostream>
 #include <string>
@@ -333,7 +332,7 @@ class TestWorkload {
 
   // Returns a copy of the errors seen by the read threads so far.
   std::vector<Status> read_errors() const {
-    std::lock_guard<simple_spinlock> l(read_error_lock_);
+    std::lock_guard l(read_error_lock_);
     return read_errors_;
   }
 

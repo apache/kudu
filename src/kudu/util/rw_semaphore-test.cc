@@ -15,8 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/util/rw_semaphore.h"
+
 #include <cstdint>
-#include <mutex>
 #include <shared_mutex>
 #include <thread>
 #include <type_traits>
@@ -26,7 +27,6 @@
 #include <gtest/gtest.h>
 
 #include "kudu/util/monotime.h"
-#include "kudu/util/rw_semaphore.h"
 
 using std::shared_lock;
 using std::thread;
@@ -45,7 +45,7 @@ struct SharedState {
 void Writer(SharedState* state) {
   int i = 0;
   while (true) {
-    std::lock_guard<rw_semaphore> l(state->sem);
+    std::lock_guard l(state->sem);
     state->int_var += (i++);
     if (state->done) {
       break;
@@ -83,7 +83,7 @@ TEST(RWSemaphoreTest, TestBasicOperation) {
 
   // Signal them to stop.
   {
-    std::lock_guard<rw_semaphore> l(s.sem);
+    std::lock_guard l(s.sem);
     s.done = true;
   }
 

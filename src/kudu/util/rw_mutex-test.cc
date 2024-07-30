@@ -67,7 +67,7 @@ TEST_P(RWMutexTest, TestDeadlocks) {
   for (int i = 0; i < 2; i++) {
     threads.emplace_back([&](){
       while (!done.Load()) {
-        lock_guard<RWMutex> l(lock_);
+        lock_guard l(lock_);
         number_of_writes++;
       }
     });

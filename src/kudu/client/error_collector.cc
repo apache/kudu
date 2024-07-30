@@ -18,7 +18,6 @@
 #include "kudu/client/error_collector.h"
 
 #include <memory>
-#include <mutex>
 #include <vector>
 
 #include "kudu/client/client.h"
@@ -45,7 +44,7 @@ ErrorCollector::~ErrorCollector() {
 }
 
 Status ErrorCollector::SetMaxMemSize(size_t size_bytes) {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   if (dropped_errors_cnt_ > 0) {
     // The error collector has dropped some errors already: do not allow
     // to change the limit on memory size in this case at all. We want
@@ -66,7 +65,7 @@ Status ErrorCollector::SetMaxMemSize(size_t size_bytes) {
 }
 
 void ErrorCollector::AddError(std::unique_ptr<KuduError> error) {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   const size_t error_size_bytes = error->data_->failed_op_->SizeInBuffer();
 
   // If the maximum limit on the memory size is set, check whether the
@@ -88,13 +87,13 @@ void ErrorCollector::AddError(std::unique_ptr<KuduError> error) {
 }
 
 size_t ErrorCollector::CountErrors() const {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   return errors_.size() + dropped_errors_cnt_;
 }
 
 void ErrorCollector::GetErrors(std::vector<KuduError*>* errors,
                                bool* overflowed) {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   if (overflowed != nullptr) {
     *overflowed = (dropped_errors_cnt_ != 0);
   }

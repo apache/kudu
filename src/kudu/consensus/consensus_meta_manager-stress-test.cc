@@ -136,13 +136,13 @@ TEST_F(ConsensusMetadataManagerStressTest, CreateLoadDeleteTSANTest) {
       for (int op_num = 0; op_num < kNumOpsPerThread; op_num++) {
         const string& tablet_id = tablet_ids[rng_.Uniform(kNumTablets)];
         auto unlocker = MakeScopedCleanup([&] {
-          lock_guard<simple_spinlock> l(lock_);
+          lock_guard l(lock_);
           CHECK(lock_table.erase(tablet_id));
         });
         // Acquire lock in lock table or bail.
         {
           // 'lock_' protects 'lock_table'.
-          lock_guard<simple_spinlock> l(lock_);
+          lock_guard l(lock_);
           if (ContainsKey(lock_table, tablet_id)) {
             // Another thread has access to this tablet id. Bail.
             unlocker.cancel(); // Don't unlock what we didn't lock.

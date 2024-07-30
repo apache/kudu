@@ -20,7 +20,6 @@
 #include <cstdint>
 #include <functional>
 #include <map>
-#include <mutex>
 #include <optional>
 #include <ostream>
 #include <string>
@@ -102,7 +101,7 @@ Status HmsNotificationLogListenerTask::Init() {
 void HmsNotificationLogListenerTask::Shutdown() {
   CHECK(thread_) << "HmsNotificationLogListenerTask is not initialized";
   {
-    std::lock_guard<Mutex> l(lock_);
+    std::lock_guard l(lock_);
     DCHECK(!closing_);
     closing_ = true;
     wake_up_cv_.Signal();
@@ -114,7 +113,7 @@ void HmsNotificationLogListenerTask::Shutdown() {
 Status HmsNotificationLogListenerTask::WaitForCatchUp(const MonoTime& deadline) {
   Synchronizer synchronizer;
   {
-    std::lock_guard<Mutex> l(lock_);
+    std::lock_guard l(lock_);
     if (closing_) {
       return Status::ServiceUnavailable(kShutdownMessage);
     }
@@ -140,7 +139,7 @@ void HmsNotificationLogListenerTask::RunLoop() {
     callback_batch.clear();
 
     {
-      std::lock_guard<Mutex> l(lock_);
+      std::lock_guard l(lock_);
 
       // Check if shutdown was signaled while polling.
       if (closing_) {
@@ -227,7 +226,7 @@ Status HmsNotificationLogListenerTask::Poll() {
     events.clear();
 
     {
-      std::lock_guard<Mutex> l(lock_);
+      std::lock_guard l(lock_);
       if (closing_) {
         return Status::ServiceUnavailable(kShutdownMessage);
       }

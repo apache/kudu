@@ -42,55 +42,55 @@ class TxnMetadata : public RefCountedThreadSafe<TxnMetadata> {
         flushed_committed_mrs_(flushed_committed_mrs) {}
 
   void set_flushed_committed_mrs() {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     flushed_committed_mrs_ = true;
   }
   bool flushed_committed_mrs() const {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     return flushed_committed_mrs_;
   }
 
   void set_aborted() {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     CHECK(std::nullopt == commit_timestamp_);
     aborted_ = true;
   }
   void set_commit_timestamp(Timestamp commit_ts) {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     CHECK(std::nullopt == commit_timestamp_);
     CHECK(!aborted_);
     CHECK(std::nullopt != commit_mvcc_op_timestamp_);
     commit_timestamp_ = commit_ts;
   }
   void set_commit_mvcc_op_timestamp(Timestamp op_ts) {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     CHECK(std::nullopt == commit_timestamp_);
     commit_mvcc_op_timestamp_ = op_ts;
   }
 
   bool aborted() const {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     return aborted_;
   }
   std::optional<Timestamp> commit_timestamp() const {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     return commit_timestamp_;
   }
   std::optional<Timestamp> commit_mvcc_op_timestamp() const {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     return commit_mvcc_op_timestamp_;
   }
 
   void GetTimestamps(std::optional<Timestamp>* op_ts,
                      std::optional<Timestamp>* commit_ts) const {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     *op_ts = commit_mvcc_op_timestamp_;
     *commit_ts = commit_timestamp_;
   }
 
   TxnMetadataPB ToPB() {
     TxnMetadataPB pb;
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     if (commit_timestamp_) {
       pb.set_commit_timestamp(commit_timestamp_->value());
     }

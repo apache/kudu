@@ -19,7 +19,6 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
-#include <mutex>
 #include <unordered_map>
 #include <vector>
 
@@ -116,7 +115,7 @@ class Batcher : public RefCountedThreadSafe<Batcher> {
   // there yet, the returned MonoTime object is not initialized
   // (i.e. MonoTime::Initialized() returns false).
   const MonoTime& first_op_time() const {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     return first_op_time_;
   }
 

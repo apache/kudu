@@ -18,7 +18,6 @@
 
 #include <atomic>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <vector>
 
@@ -168,7 +167,7 @@ class Proxy {
   Sockaddr* GetSingleSockaddr(std::vector<Sockaddr>* addrs) const;
 
   ConnectionId conn_id() const {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     return conn_id_;
   }
 

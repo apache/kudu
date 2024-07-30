@@ -22,7 +22,6 @@
 #include <cmath>
 #include <cstdint>
 #include <memory>
-#include <mutex>
 #include <sstream>
 #include <string>
 #include <type_traits>
@@ -242,7 +241,7 @@ Status MaintenanceManager::Start() {
 
 void MaintenanceManager::Shutdown() {
   {
-    std::lock_guard<Mutex> guard(lock_);
+    std::lock_guard guard(lock_);
     if (shutdown_) {
       return;
     }
@@ -265,7 +264,7 @@ void MaintenanceManager::MergePendingOpRegistrationsUnlocked() {
   lock_.AssertAcquired();
   OpMapType ops_to_register;
   {
-    std::lock_guard<simple_spinlock> l(registration_lock_);
+    std::lock_guard l(registration_lock_);
     ops_to_register = std::move(ops_pending_registration_);
     ops_pending_registration_.clear();
   }
@@ -280,7 +279,7 @@ void MaintenanceManager::MergePendingOpRegistrationsUnlocked() {
 void MaintenanceManager::RegisterOp(MaintenanceOp* op) {
   CHECK(op);
   {
-    std::lock_guard<simple_spinlock> l(registration_lock_);
+    std::lock_guard l(registration_lock_);
     CHECK(!op->manager_) << "Tried to register " << op->name()
                         << ", but it is already registered.";
     EmplaceOrDie(&ops_pending_registration_, op, MaintenanceOpStats());
@@ -300,7 +299,7 @@ void MaintenanceManager::UnregisterOp(MaintenanceOp* op) {
 
   // While the op is running, wait for it to be finished.
   {
-    std::lock_guard<Mutex> guard(running_instances_lock_);
+    std::lock_guard guard(running_instances_lock_);
     if (op->running_ > 0) {
       VLOG_AND_TRACE_WITH_PREFIX("maintenance", 1)
           << Substitute("Waiting for op $0 to finish so we can unregister it", op->name());
@@ -313,9 +312,9 @@ void MaintenanceManager::UnregisterOp(MaintenanceOp* op) {
   // Remove the op from 'ops_', and if it wasn't there, erase it from
   // 'ops_pending_registration_'.
   {
-    std::lock_guard<Mutex> guard(lock_);
+    std::lock_guard guard(lock_);
     if (ops_.erase(op) == 0) {
-      std::lock_guard<simple_spinlock> l(registration_lock_);
+      std::lock_guard l(registration_lock_);
       const auto num_erased_ops = ops_pending_registration_.erase(op);
       CHECK_GT(num_erased_ops, 0);
     }
@@ -337,7 +336,7 @@ void MaintenanceManager::RunSchedulerThread() {
   while (true) {
     if (PREDICT_FALSE(!FLAGS_enable_maintenance_manager)) {
       {
-        std::lock_guard<Mutex> guard(lock_);
+        std::lock_guard guard(lock_);
         if (shutdown_) {
           VLOG_AND_TRACE_WITH_PREFIX("maintenance", 1) << "Shutting down maintenance manager.";
           return;
@@ -351,7 +350,7 @@ void MaintenanceManager::RunSchedulerThread() {
     MaintenanceOp* op = nullptr;
     string op_note;
     {
-      std::lock_guard<Mutex> guard(lock_);
+      std::lock_guard guard(lock_);
       // Upon each iteration, we should have dropped and reacquired 'lock_'.
       // Register any ops that may have been buffered for registration while the
       // lock was last held.
@@ -389,7 +388,7 @@ void MaintenanceManager::RunSchedulerThread() {
         // whether the op is cancelled. This ensures that we don't attempt to
         // launch an op that has been destructed in UnregisterOp(). See
         // KUDU-3268 for more details.
-        std::lock_guard<Mutex> guard(running_instances_lock_);
+        std::lock_guard guard(running_instances_lock_);
         if (op->cancelled()) {
           VLOG_AND_TRACE_WITH_PREFIX("maintenance", 2)
               << "picked maintenance operation that has been cancelled";
@@ -411,7 +410,7 @@ void MaintenanceManager::RunSchedulerThread() {
       LOG_WITH_PREFIX(INFO) << "Prepare failed for " << op->name()
                             << ". Re-running scheduler.";
       metrics_.SubmitOpPrepareFailed();
-      std::lock_guard<Mutex> guard(running_instances_lock_);
+      std::lock_guard guard(running_instances_lock_);
       DecreaseOpCountAndNotifyWaiters(op);
       continue;
     }
@@ -599,7 +598,7 @@ void MaintenanceManager::LaunchOp(MaintenanceOp* op) {
   op_instance.start_mono_time = MonoTime::Now();
   op->RunningGauge()->Increment();
   {
-    std::lock_guard<Mutex> lock(running_instances_lock_);
+    std::lock_guard lock(running_instances_lock_);
     InsertOrDie(&running_instances_, thread_id, &op_instance);
   }
 
@@ -611,7 +610,7 @@ void MaintenanceManager::LaunchOp(MaintenanceOp* op) {
 
     op->RunningGauge()->Decrement();
     {
-      std::lock_guard<Mutex> lock(running_instances_lock_);
+      std::lock_guard lock(running_instances_lock_);
       running_instances_.erase(thread_id);
 
       op_instance.duration = now - op_instance.start_mono_time;
@@ -623,7 +622,7 @@ void MaintenanceManager::LaunchOp(MaintenanceOp* op) {
 
     // Add corresponding entry into the completed_ops_ container.
     {
-      std::lock_guard<simple_spinlock> lock(completed_ops_lock_);
+      std::lock_guard lock(completed_ops_lock_);
       completed_ops_[completed_ops_count_ % completed_ops_.size()] =
           std::move(op_instance);
       ++completed_ops_count_;
@@ -649,7 +648,7 @@ void MaintenanceManager::LaunchOp(MaintenanceOp* op) {
 void MaintenanceManager::GetMaintenanceManagerStatusDump(
     MaintenanceManagerStatusPB* out_pb) {
   DCHECK(out_pb != nullptr);
-  std::lock_guard<Mutex> guard(lock_);
+  std::lock_guard guard(lock_);
   MergePendingOpRegistrationsUnlocked();
   for (const auto& val : ops_) {
     auto* op_pb = out_pb->add_registered_operations();
@@ -675,7 +674,7 @@ void MaintenanceManager::GetMaintenanceManagerStatusDump(
   }
 
   {
-    std::lock_guard<Mutex> lock(running_instances_lock_);
+    std::lock_guard lock(running_instances_lock_);
     for (const auto& running_instance : running_instances_) {
       *out_pb->add_running_operations() = running_instance.second->DumpToPB();
     }
@@ -683,7 +682,7 @@ void MaintenanceManager::GetMaintenanceManagerStatusDump(
 
   // The latest completed op will be dumped at first.
   {
-    std::lock_guard<simple_spinlock> lock(completed_ops_lock_);
+    std::lock_guard lock(completed_ops_lock_);
     for (int n = 1; n <= completed_ops_.size(); ++n) {
       if (completed_ops_count_ < n) {
         break;

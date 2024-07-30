@@ -276,7 +276,7 @@ Status KinitContext::DoRenewalInternal(bool* found_in_cache) {
     // Acquire a new ticket using the keytab. This ticket will automatically be put into the
     // credential cache.
     {
-      std::lock_guard<RWMutex> l(*g_kerberos_reinit_lock);
+      std::lock_guard l(*g_kerberos_reinit_lock);
       KRB5_RETURN_NOT_OK_PREPEND(krb5_get_init_creds_keytab(g_krb5_ctx, &new_creds, principal_,
                                                             keytab_, 0 /* valid from now */,
                                                             nullptr /* TKT service name */,

@@ -22,7 +22,6 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <ostream>
 #include <string>
@@ -695,7 +694,7 @@ bool Heartbeater::Thread::IsCurrentThread() const {
 }
 
 void Heartbeater::Thread::MarkTabletReportAcknowledged(const TabletReportPB& report) {
-  std::lock_guard<simple_spinlock> l(dirty_tablets_lock_);
+  std::lock_guard l(dirty_tablets_lock_);
 
   int32_t acked_seq = report.sequence_number();
   CHECK_LT(acked_seq, next_report_seq_.load());
@@ -747,7 +746,7 @@ void Heartbeater::Thread::TriggerASAP() {
 
 void Heartbeater::Thread::MarkTabletsDirty(const vector<string>& tablet_ids,
                                            const string& /*reason*/) {
-  std::lock_guard<simple_spinlock> l(dirty_tablets_lock_);
+  std::lock_guard l(dirty_tablets_lock_);
 
   // Even though this is an atomic load, it needs to hold the lock. To see why,
   // consider this sequence:
@@ -780,7 +779,7 @@ void Heartbeater::Thread::GenerateIncrementalTabletReport(TabletReportPB* report
   report->set_is_incremental(true);
   vector<string> dirty_tablet_ids;
   {
-    std::lock_guard<simple_spinlock> l(dirty_tablets_lock_);
+    std::lock_guard l(dirty_tablets_lock_);
     AppendKeysFromMap(dirty_tablets_, &dirty_tablet_ids);
   }
   server_->tablet_manager()->PopulateIncrementalTabletReport(

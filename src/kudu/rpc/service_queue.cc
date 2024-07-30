@@ -43,13 +43,13 @@ bool LifoServiceQueue::BlockingGet(std::unique_ptr<InboundCall>* out) {
   auto* consumer = tl_consumer_;
   if (PREDICT_FALSE(!consumer)) {
     consumer = tl_consumer_ = new ConsumerState(this);
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     consumers_.emplace_back(consumer);
   }
 
   while (true) {
     {
-      std::lock_guard<simple_spinlock> l(lock_);
+      std::lock_guard l(lock_);
       if (!queue_.empty()) {
         auto it = queue_.begin();
         out->reset(*it);
@@ -112,7 +112,7 @@ QueueStatus LifoServiceQueue::Put(InboundCall* call,
 }
 
 void LifoServiceQueue::Shutdown() {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   shutdown_ = true;
 
   // Post a nullptr to wake up any consumers which are waiting.
@@ -125,7 +125,7 @@ void LifoServiceQueue::Shutdown() {
 std::string LifoServiceQueue::ToString() const {
   std::string ret;
 
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   for (const auto* t : queue_) {
     ret.append(t->ToString());
     ret.append("\n");

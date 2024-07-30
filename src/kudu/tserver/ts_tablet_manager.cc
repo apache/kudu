@@ -595,7 +595,7 @@ Status TSTabletManager::Init(Timer* start_tablets,
                                                registered_count, metas.size());
       scoped_refptr<TransitionInProgressDeleter> deleter;
       {
-        std::lock_guard<RWMutex> lock(lock_);
+        std::lock_guard lock(lock_);
         CHECK_OK(StartTabletStateTransitionUnlocked(meta->tablet_id(), "opening tablet", &deleter));
       }
 
@@ -615,7 +615,7 @@ Status TSTabletManager::Init(Timer* start_tablets,
   }
 
   {
-    std::lock_guard<RWMutex> lock(lock_);
+    std::lock_guard lock(lock_);
     state_ = MANAGER_RUNNING;
   }
 
@@ -659,7 +659,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
   {
     // acquire the lock in exclusive mode as we'll add a entry to the
     // transition_in_progress_ set if the lookup fails.
-    std::lock_guard<RWMutex> lock(lock_);
+    std::lock_guard lock(lock_);
     TRACE("Acquired tablet manager lock");
 
     // Sanity check that the tablet isn't already registered.
@@ -836,7 +836,7 @@ void TSTabletManager::RunTabletCopy(
   bool replacing_tablet = false;
   scoped_refptr<TransitionInProgressDeleter> deleter;
   {
-    std::lock_guard<RWMutex> lock(lock_);
+    std::lock_guard lock(lock_);
     if (LookupTabletUnlocked(tablet_id, &old_replica)) {
       meta = old_replica->tablet_metadata();
       replacing_tablet = true;
@@ -1061,7 +1061,7 @@ Status TSTabletManager::BeginReplicaStateTransition(
     TabletServerErrorPB::Code* error_code) {
   // Acquire the lock in exclusive mode as we'll add a entry to the
   // transition_in_progress_ map.
-  std::lock_guard<RWMutex> lock(lock_);
+  std::lock_guard lock(lock_);
   TRACE("Acquired tablet manager lock");
   RETURN_NOT_OK(CheckRunningUnlocked(error_code));
 
@@ -1220,7 +1220,7 @@ Status TSTabletManager::DeleteTablet(
   // Only DELETED tablets are fully shut down and removed from the tablet map.
   if (delete_type == TABLET_DATA_DELETED) {
     replica->Shutdown();
-    std::lock_guard<RWMutex> lock(lock_);
+    std::lock_guard lock(lock_);
     RETURN_NOT_OK(CheckRunningUnlocked(error_code));
     CHECK_EQ(1, tablet_map_.erase(tablet_id)) << tablet_id;
     InsertOrDie(&perm_deleted_tablet_ids_, tablet_id);
@@ -1485,7 +1485,7 @@ void TSTabletManager::IncrementTabletsProcessed(int tablets_total,
 
 void TSTabletManager::Shutdown() {
   {
-    std::lock_guard<RWMutex> lock(lock_);
+    std::lock_guard lock(lock_);
     switch (state_) {
       case MANAGER_QUIESCING: {
         VLOG(1) << "Tablet manager shut down already in progress..";
@@ -1560,7 +1560,7 @@ void TSTabletManager::Shutdown() {
   }
 
   {
-    std::lock_guard<RWMutex> l(lock_);
+    std::lock_guard l(lock_);
     // We don't expect anyone else to be modifying the map after we start the
     // shut down process.
     CHECK_EQ(tablet_map_.size(), replicas_to_shutdown.size())
@@ -1574,7 +1574,7 @@ void TSTabletManager::Shutdown() {
 void TSTabletManager::RegisterTablet(const string& tablet_id,
                                      const scoped_refptr<TabletReplica>& replica,
                                      RegisterTabletReplicaMode mode) {
-  std::lock_guard<RWMutex> lock(lock_);
+  std::lock_guard lock(lock_);
   // If we are replacing a tablet replica, we delete the existing one first.
   if (mode == REPLACEMENT_REPLICA && tablet_map_.erase(tablet_id) != 1) {
     LOG(FATAL) << "Unable to remove previous tablet replica " << tablet_id << ": not registered!";
@@ -2019,7 +2019,7 @@ void TSTabletManager::FailTabletAndScheduleShutdown(const string& tablet_id) {
 
 int TSTabletManager::RefreshTabletStateCacheAndReturnCount(tablet::TabletStatePB st) {
   MonoDelta period = MonoDelta::FromMilliseconds(FLAGS_tablet_state_walk_min_period_ms);
-  std::lock_guard<RWMutex> lock(lock_);
+  std::lock_guard lock(lock_);
   if (last_walked_ + period < MonoTime::Now()) {
     // Old cache: regenerate counts.
     tablet_state_counts_.clear();
@@ -2095,7 +2095,7 @@ Status TSTabletManager::SchedulePreliminaryTasksForTxnWrite(
 
 Status TSTabletManager::ScheduleAbortTxn(int64_t txn_id, const string& user) {
   {
-    std::lock_guard<simple_spinlock> l(txn_aborts_lock_);
+    std::lock_guard l(txn_aborts_lock_);
     if (!InsertIfNotPresent(&txn_aborts_in_progress_, txn_id)) {
       return Status::OK();
     }
@@ -2111,7 +2111,7 @@ Status TSTabletManager::ScheduleAbortTxn(int64_t txn_id, const string& user) {
         if (s.IsTimedOut()) {
           // Presumably this was a transient error. Try again.
           {
-            std::lock_guard<simple_spinlock> l(txn_aborts_lock_);
+            std::lock_guard l(txn_aborts_lock_);
             txn_aborts_in_progress_.erase(txn_id);
           }
           WARN_NOT_OK(ScheduleAbortTxn(txn_id, user),
@@ -2119,13 +2119,13 @@ Status TSTabletManager::ScheduleAbortTxn(int64_t txn_id, const string& user) {
           return;
         }
         WARN_NOT_OK(s, Substitute("Error aborting transaction $0 as user $1", txn_id, user));
-        std::lock_guard<simple_spinlock> l(txn_aborts_lock_);
+        std::lock_guard l(txn_aborts_lock_);
         txn_aborts_in_progress_.erase(txn_id);
       });
 }
 
 void TSTabletManager::SetNextUpdateTimeForTests() {
-  std::lock_guard<rw_spinlock> l(lock_update_);
+  std::lock_guard l(lock_update_);
   next_update_time_ = MonoTime::Now();
 }
 
@@ -2135,7 +2135,7 @@ TransitionInProgressDeleter::TransitionInProgressDeleter(
 
 void TransitionInProgressDeleter::Destroy() {
   CHECK(!is_destroyed_);
-  std::lock_guard<RWMutex> lock(*lock_);
+  std::lock_guard lock(*lock_);
   CHECK(in_progress_->erase(entry_));
   is_destroyed_ = true;
 }

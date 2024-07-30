@@ -23,7 +23,6 @@
 #include <functional>
 #include <map>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <ostream>
 #include <set>
@@ -162,7 +161,6 @@ struct tm;
 namespace kudu {
 
 class BlockBloomFilter;
-class simple_spinlock;
 
 namespace client {
 
@@ -848,17 +846,17 @@ Status KuduClient::ExportAuthenticationCredentials(string* authn_creds) const {
 }
 
 string KuduClient::GetHiveMetastoreUris() const {
-  std::lock_guard<simple_spinlock> l(data_->leader_master_lock_);
+  std::lock_guard l(data_->leader_master_lock_);
   return data_->hive_metastore_uris_;
 }
 
 bool KuduClient::GetHiveMetastoreSaslEnabled() const {
-  std::lock_guard<simple_spinlock> l(data_->leader_master_lock_);
+  std::lock_guard l(data_->leader_master_lock_);
   return data_->hive_metastore_sasl_enabled_;
 }
 
 string KuduClient::GetHiveMetastoreUuid() const {
-  std::lock_guard<simple_spinlock> l(data_->leader_master_lock_);
+  std::lock_guard l(data_->leader_master_lock_);
   return data_->hive_metastore_uuid_;
 }
 

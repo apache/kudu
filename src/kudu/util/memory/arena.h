@@ -44,6 +44,9 @@
 #include "kudu/util/mutex.h"
 #include "kudu/util/slice.h"
 
+// IWYU pragma: no_forward_declare kudu::ArenaBase<true>::Component
+// IWYU pragma: no_forward_declare kudu::ArenaBase<false>::Component
+
 namespace kudu {
 
 template<bool THREADSAFE> struct ArenaTraits;
@@ -459,7 +462,7 @@ inline uint8_t *ArenaBase<false>::Component::AllocateBytesAligned(
 template <bool THREADSAFE>
 inline void ArenaBase<THREADSAFE>::Component::AsanUnpoison(const void* addr, size_t size) {
 #ifdef ADDRESS_SANITIZER
-  std::lock_guard<spinlock_type> l(asan_lock_);
+  std::lock_guard l(asan_lock_);
   ASAN_UNPOISON_MEMORY_REGION(addr, size);
 #endif
 }

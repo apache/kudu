@@ -16,8 +16,6 @@
 // under the License.
 #include "kudu/master/table_metrics.h"
 
-#include <mutex>
-
 #include "kudu/gutil/map-util.h"
 
 METRIC_DECLARE_gauge_size(merged_entities_count_of_table);
@@ -58,42 +56,42 @@ TableMetrics::TableMetrics(const scoped_refptr<MetricEntity>& entity)
 #undef HIDEINIT
 
 void TableMetrics::AddTabletNoOnDiskSize(const std::string& tablet_id) {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   InsertIfNotPresent(&tablet_ids_no_on_disk_size_, tablet_id);
 }
 
 void TableMetrics::DeleteTabletNoOnDiskSize(const std::string& tablet_id) {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   tablet_ids_no_on_disk_size_.erase(tablet_id);
 }
 
 bool TableMetrics::ContainsTabletNoOnDiskSize(const std::string& tablet_id) const {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   return ContainsKey(tablet_ids_no_on_disk_size_, tablet_id);
 }
 
 bool TableMetrics::TableSupportsOnDiskSize() const {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   return tablet_ids_no_on_disk_size_.empty();
 }
 
 void TableMetrics::AddTabletNoLiveRowCount(const std::string& tablet_id) {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   InsertIfNotPresent(&tablet_ids_no_live_row_count_, tablet_id);
 }
 
 void TableMetrics::DeleteTabletNoLiveRowCount(const std::string& tablet_id) {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   tablet_ids_no_live_row_count_.erase(tablet_id);
 }
 
 bool TableMetrics::ContainsTabletNoLiveRowCount(const std::string& tablet_id) const {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   return ContainsKey(tablet_ids_no_live_row_count_, tablet_id);
 }
 
 bool TableMetrics::TableSupportsLiveRowCount() const {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   return tablet_ids_no_live_row_count_.empty();
 }
 

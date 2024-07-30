@@ -852,7 +852,7 @@ Status RebalancerTool::RefreshKsckResults() {
   {
     unique_ptr<Ksck> new_ksck(new Ksck(cluster));
     ignore_result(new_ksck->Run());
-    std::lock_guard<decltype(ksck_lock_)> guard(ksck_lock_);
+    std::lock_guard guard(ksck_lock_);
     ksck_ = std::move(new_ksck);
   }
   return refresh_status;

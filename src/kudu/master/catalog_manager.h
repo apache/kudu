@@ -25,7 +25,6 @@
 #include <iosfwd>
 #include <map>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <set>
 #include <shared_mutex>
@@ -631,12 +630,12 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
     explicit ScopedLeaderDisablerForTests(CatalogManager* catalog)
         : catalog_(catalog),
         old_leader_ready_term_(catalog->leader_ready_term_) {
-      std::lock_guard<simple_spinlock> l(catalog_->state_lock_);
+      std::lock_guard l(catalog_->state_lock_);
       catalog_->leader_ready_term_ = -1;
     }
 
     virtual ~ScopedLeaderDisablerForTests() {
-      std::lock_guard<simple_spinlock> l(catalog_->state_lock_);
+      std::lock_guard l(catalog_->state_lock_);
       catalog_->leader_ready_term_ = old_leader_ready_term_;
     }
 

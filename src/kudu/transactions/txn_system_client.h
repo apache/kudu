@@ -19,7 +19,6 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <utility>
 #include <vector>
@@ -34,8 +33,8 @@
 
 namespace kudu {
 class HostPort;
-class Timestamp;
 class ThreadPool;
+class Timestamp;
 
 namespace client {
 class KuduClient;
@@ -44,8 +43,8 @@ class KuduTable;
 
 namespace itest {
 class TxnStatusTableITest;
-class TxnStatusTableITest_TestProtectCreateAndAlter_Test;
 class TxnStatusTableITest_CheckOpenTxnStatusTable_Test;
+class TxnStatusTableITest_TestProtectCreateAndAlter_Test;
 } // namespace itest
 
 namespace rpc {
@@ -180,7 +179,7 @@ class TxnSystemClient {
                                     tserver::CoordinatorOpResultPB* result = nullptr);
 
   client::sp::shared_ptr<client::KuduTable> txn_status_table() {
-    std::lock_guard<simple_spinlock> l(table_lock_);
+    std::lock_guard l(table_lock_);
     return txn_status_table_;
   }
 

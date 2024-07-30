@@ -22,7 +22,6 @@
 #include <functional>
 #include <initializer_list>
 #include <iostream>
-#include <mutex>
 #include <set>
 #include <shared_mutex>
 #include <type_traits>
@@ -256,15 +255,15 @@ FsManager::FsManager(Env* env, FsManagerOpts opts)
 
 FsManager::~FsManager() {
   {
-    std::lock_guard<LockType> lock(ddm_lock_);
+    std::lock_guard lock(ddm_lock_);
     dd_manager_map_.clear();
   }
   {
-    std::lock_guard<LockType> lock(bm_lock_);
+    std::lock_guard lock(bm_lock_);
     block_manager_map_.clear();
   }
   {
-    std::lock_guard<LockType> lock(env_lock_);
+    std::lock_guard lock(env_lock_);
     env_map_.clear();
   }
 }
@@ -428,7 +427,7 @@ scoped_refptr<BlockManager> FsManager::InitBlockManager(const string& tenant_id)
   }
 
   {
-    std::lock_guard<LockType> lock(bm_lock_);
+    std::lock_guard lock(bm_lock_);
     block_manager_map_[tenant_id] = block_manager;
   }
 
@@ -666,7 +665,7 @@ Status FsManager::Open(FsReport* report, Timer* read_instance_metadata_files,
 
 Status FsManager::AddDataDirManager(scoped_refptr<DataDirManager> dd_manager,
                                     const string& tenant_id) {
-  std::lock_guard<LockType> lock(ddm_lock_);
+  std::lock_guard lock(ddm_lock_);
   scoped_refptr<DataDirManager> ddm(FindPtrOrNull(dd_manager_map_, tenant_id));
   if (ddm) {
     return Status::AlreadyPresent(Substitute("Tenant $0 already exists.", tenant_id));
@@ -780,7 +779,7 @@ Status FsManager::UpdateMetadata(unique_ptr<InstanceMetadataPB>& metadata) {
 
   {
     // Update the records in memory.
-    std::lock_guard<percpu_rwlock> lock(metadata_rwlock_);
+    std::lock_guard lock(metadata_rwlock_);
     metadata_ = std::move(metadata);
   }
 
@@ -1253,7 +1252,7 @@ Env* FsManager::AddEnv(const std::string& tenant_id) {
     return env_;
   }
 
-  std::lock_guard<LockType> lock(env_lock_);
+  std::lock_guard lock(env_lock_);
   auto env = FindPtrOrNull(env_map_, tenant_id);
   if (env) {
     return env.get();
@@ -1271,7 +1270,7 @@ Env* FsManager::GetEnv(const std::string& tenant_id) const {
     return env_;
   }
 
-  std::lock_guard<LockType> lock(env_lock_);
+  std::lock_guard lock(env_lock_);
   auto env = FindPtrOrNull(env_map_, tenant_id);
   if (env) {
     return env.get();
@@ -1283,7 +1282,7 @@ Env* FsManager::GetEnv(const std::string& tenant_id) const {
 }
 
 scoped_refptr<DataDirManager> FsManager::dd_manager(const string& tenant_id) const {
-  std::lock_guard<LockType> lock(ddm_lock_);
+  std::lock_guard lock(ddm_lock_);
   scoped_refptr<DataDirManager> dd_manager(FindPtrOrNull(dd_manager_map_, tenant_id));
   return dd_manager;
 }

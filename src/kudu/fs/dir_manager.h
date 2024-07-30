@@ -21,7 +21,6 @@
 
 #include <functional>
 #include <memory>
-#include <mutex>
 #if !defined(NO_ROCKSDB)
 #include <optional>
 #endif
@@ -160,12 +159,12 @@ class Dir {
   }
 
   bool is_full() const {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     return is_full_;
   }
 
   int64_t available_bytes() {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     return available_bytes_;
   }
 

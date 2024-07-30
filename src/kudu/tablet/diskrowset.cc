@@ -98,8 +98,6 @@ using std::vector;
 
 namespace kudu {
 
-class Mutex;
-
 namespace consensus {
 class OpId;
 }
@@ -577,7 +575,7 @@ Status DiskRowSet::MajorCompactDeltaStoresWithColumnIds(const vector<ColumnId>& 
                                                         HistoryGcOpts history_gc_opts) {
   VLOG_WITH_PREFIX(1) << "Major compacting REDO delta stores (cols: " << col_ids << ")";
   TRACE_EVENT0("tablet", "DiskRowSet::MajorCompactDeltaStoresWithColumnIds");
-  std::lock_guard<Mutex> l(*mutable_delta_tracker()->compact_flush_lock());
+  std::lock_guard l(*mutable_delta_tracker()->compact_flush_lock());
   RETURN_NOT_OK(mutable_delta_tracker()->CheckWritableUnlocked());
 
   // Keep a reference to the tablet's schema. This is to prevent race condition
@@ -621,7 +619,7 @@ Status DiskRowSet::MajorCompactDeltaStoresWithColumnIds(const vector<ColumnId>& 
                                &new_base));
   {
     // Update the delta tracker and the base data with the changes.
-    std::lock_guard<rw_spinlock> lock(component_lock_);
+    std::lock_guard lock(component_lock_);
     RETURN_NOT_OK(compaction->UpdateDeltaTracker(delta_tracker_.get(), io_context));
     base_data_.swap(new_base);
   }

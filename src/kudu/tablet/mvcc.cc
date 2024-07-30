@@ -18,7 +18,6 @@
 #include "kudu/tablet/mvcc.h"
 
 #include <algorithm>
-#include <mutex>
 #include <ostream>
 #include <utility>
 
@@ -65,7 +64,7 @@ Status MvccManager::CheckIsCleanTimeInitialized() const {
 
 void MvccManager::StartOp(Timestamp timestamp) {
   MAYBE_INJECT_RANDOM_LATENCY(FLAGS_inject_latency_ms_before_starting_op);
-  std::lock_guard<LockType> l(lock_);
+  std::lock_guard l(lock_);
   CHECK(!cur_snap_.IsApplied(timestamp)) <<
       Substitute("Trying to start a new op at an already applied "
                  "timestamp: $0, current MVCC snapshot: $1",
@@ -80,7 +79,7 @@ void MvccManager::StartOp(Timestamp timestamp) {
 }
 
 void MvccManager::StartApplyingOp(Timestamp timestamp) {
-  std::lock_guard<LockType> l(lock_);
+  std::lock_guard l(lock_);
   auto it = ops_in_flight_.find(timestamp.value());
   if (PREDICT_FALSE(it == ops_in_flight_.end())) {
     LOG(FATAL) << "Cannot mark timestamp " << timestamp.ToString() << " as APPLYING: "
@@ -108,7 +107,7 @@ bool MvccManager::InitOpUnlocked(const Timestamp& timestamp) {
 }
 
 void MvccManager::AbortOp(Timestamp timestamp) {
-  std::lock_guard<LockType> l(lock_);
+  std::lock_guard l(lock_);
 
   // Remove from our in-flight list.
   OpState old_state = RemoveInFlightAndGetStateUnlocked(timestamp);
@@ -132,7 +131,7 @@ void MvccManager::AbortOp(Timestamp timestamp) {
 }
 
 void MvccManager::FinishApplyingOp(Timestamp timestamp) {
-  std::lock_guard<LockType> l(lock_);
+  std::lock_guard l(lock_);
 
   // Apply the op, but do not adjust 'all_applied_before_', that will
   // be done with a separate OfflineAdjustCurSnap() call.
@@ -191,7 +190,7 @@ void MvccManager::AdvanceEarliestInFlightTimestamp() {
 }
 
 void MvccManager::AdjustNewOpLowerBound(Timestamp timestamp) {
-  std::lock_guard<LockType> l(lock_);
+  std::lock_guard l(lock_);
   // No more ops will start with a timestamp that is lower than or
   // equal to 'timestamp', so we adjust the snapshot accordingly.
   if (PREDICT_TRUE(new_op_timestamp_exc_lower_bound_ <= timestamp)) {
@@ -226,7 +225,7 @@ static void FilterTimestamps(std::vector<Timestamp::val_type>* v,
 
 void MvccManager::Close() {
   open_.store(false);
-  std::lock_guard<LockType> l(lock_);
+  std::lock_guard l(lock_);
   auto iter = waiters_.begin();
   while (iter != waiters_.end()) {
     auto* waiter = *iter;
@@ -302,7 +301,7 @@ Status MvccManager::WaitUntil(WaitFor wait_for, Timestamp ts, const MonoTime& de
     waiting_state.latch = &latch;
     waiting_state.wait_for = wait_for;
 
-    std::lock_guard<LockType> l(lock_);
+    std::lock_guard l(lock_);
     if (IsDoneWaitingUnlocked(waiting_state)) return Status::OK();
     waiters_.push_back(&waiting_state);
   }
@@ -312,7 +311,7 @@ Status MvccManager::WaitUntil(WaitFor wait_for, Timestamp ts, const MonoTime& de
   }
   // We timed out. We need to clean up our entry in the waiters_ array.
 
-  std::lock_guard<LockType> l(lock_);
+  std::lock_guard l(lock_);
   // It's possible that we got notified while we were re-acquiring the lock. In
   // that case, we have no cleanup to do.
   if (waiting_state.latch->count() == 0) {
@@ -368,7 +367,7 @@ bool MvccManager::AnyApplyingAtOrBeforeUnlocked(Timestamp ts) const {
 }
 
 void MvccManager::TakeSnapshot(MvccSnapshot *snap) const {
-  std::lock_guard<LockType> l(lock_);
+  std::lock_guard l(lock_);
   *snap = cur_snap_;
 }
 
@@ -389,7 +388,7 @@ Status MvccManager::WaitForApplyingOpsToApply() const {
   // Find the highest timestamp of an APPLYING op.
   Timestamp wait_for = Timestamp::kMin;
   {
-    std::lock_guard<LockType> l(lock_);
+    std::lock_guard l(lock_);
     for (const auto& entry : ops_in_flight_) {
       if (entry.second == APPLYING) {
         wait_for = Timestamp(std::max(entry.first, wait_for.value()));
@@ -408,12 +407,12 @@ Status MvccManager::WaitForApplyingOpsToApply() const {
 }
 
 Timestamp MvccManager::GetCleanTimestamp() const {
-  std::lock_guard<LockType> l(lock_);
+  std::lock_guard l(lock_);
   return cur_snap_.all_applied_before_;
 }
 
 void MvccManager::GetApplyingOpsTimestamps(std::vector<Timestamp>* timestamps) const {
-  std::lock_guard<LockType> l(lock_);
+  std::lock_guard l(lock_);
   timestamps->reserve(ops_in_flight_.size());
   for (const auto& entry : ops_in_flight_) {
     if (entry.second == APPLYING) {

@@ -100,13 +100,13 @@ void RetrieveAuthzTokenRpc::SendRpcCb(const Status& status) {
 
 void AuthzTokenCache::Put(const string& table_id, SignedTokenPB authz_token) {
   VLOG(1) << Substitute("Putting new token for table $0 into the token cache", table_id);
-  std::lock_guard<simple_spinlock> l(token_lock_);
+  std::lock_guard l(token_lock_);
   EmplaceOrUpdate(&authz_tokens_, table_id, std::move(authz_token));
 }
 
 bool AuthzTokenCache::Fetch(const string& table_id, SignedTokenPB* authz_token) {
   DCHECK(authz_token);
-  std::lock_guard<simple_spinlock> l(token_lock_);
+  std::lock_guard l(token_lock_);
   const auto* token = FindOrNull(authz_tokens_, table_id);
   if (token) {
     *authz_token = *token;
@@ -145,7 +145,7 @@ void AuthzTokenCache::RetrievedNewAuthzTokenCb(const string& table_id,
   vector<StatusCallback> cbs;
   {
     // Erase the RPC from our in-flight map.
-    std::lock_guard<simple_spinlock> l(rpc_lock_);
+    std::lock_guard l(rpc_lock_);
     auto rpc_and_cbs = EraseKeyReturnValuePtr(&authz_rpcs_, table_id);
     cbs = std::move(rpc_and_cbs.second);
   }

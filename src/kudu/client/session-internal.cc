@@ -18,7 +18,6 @@
 #include "kudu/client/session-internal.h"
 
 #include <functional>
-#include <mutex>
 #include <type_traits>
 #include <utility>
 
@@ -84,7 +83,7 @@ void KuduSession::Data::Init(weak_ptr<KuduSession> session) {
 void KuduSession::Data::FlushFinished(Batcher* batcher) {
   const int64_t bytes_flushed = batcher->buffer_bytes_used();
   {
-    std::lock_guard<Mutex> l(mutex_);
+    std::lock_guard l(mutex_);
     buffer_bytes_used_ -= bytes_flushed;
     --batchers_num_;
     // The logic of KuduSession::ApplyWriteOp() needs to know
@@ -98,7 +97,7 @@ void KuduSession::Data::FlushFinished(Batcher* batcher) {
 }
 
 Status KuduSession::Data::Close(bool force) {
-  std::lock_guard<Mutex> l(mutex_);
+  std::lock_guard l(mutex_);
   if (!batcher_) {
       return Status::OK();
   }
@@ -112,7 +111,7 @@ Status KuduSession::Data::Close(bool force) {
 
 Status KuduSession::Data::SetExternalConsistencyMode(
     KuduSession::ExternalConsistencyMode m) {
-  std::lock_guard<Mutex> l(mutex_);
+  std::lock_guard l(mutex_);
   if (HasPendingOperationsUnlocked()) {
     // NOTE: this is an artificial restriction.
     return Status::IllegalState(
@@ -129,7 +128,7 @@ Status KuduSession::Data::SetExternalConsistencyMode(
 
 Status KuduSession::Data::SetFlushMode(FlushMode mode) {
   {
-    std::lock_guard<Mutex> l(mutex_);
+    std::lock_guard l(mutex_);
     if (HasPendingOperationsUnlocked()) {
       // Don't allow to change flush mode otherwise it might lead to
       // unexpected behavior while working with the KuduSession interface.
@@ -153,7 +152,7 @@ Status KuduSession::Data::SetFlushMode(FlushMode mode) {
 }
 
 Status KuduSession::Data::SetBufferBytesLimit(size_t size) {
-  std::lock_guard<Mutex> l(mutex_);
+  std::lock_guard l(mutex_);
   if (HasPendingOperationsUnlocked()) {
     // NOTE: this is an artificial restriction.
     return Status::IllegalState(
@@ -176,7 +175,7 @@ Status KuduSession::Data::SetBufferFlushWatermark(int watermark_pct) {
         Substitute("$0: watermark must be between 0 and 100 inclusive",
                    watermark_pct));
   }
-  std::lock_guard<Mutex> l(mutex_);
+  std::lock_guard l(mutex_);
   if (HasPendingOperationsUnlocked()) {
     // NOTE: this is an artificial restriction.
     return Status::IllegalState(
@@ -195,7 +194,7 @@ Status KuduSession::Data::SetBufferFlushWatermark(int watermark_pct) {
 }
 
 Status KuduSession::Data::SetBufferFlushInterval(unsigned int millis) {
-  std::lock_guard<Mutex> l(mutex_);
+  std::lock_guard l(mutex_);
   if (HasPendingOperationsUnlocked()) {
     // NOTE: this is an artificial restriction.
     return Status::IllegalState(
@@ -210,7 +209,7 @@ Status KuduSession::Data::SetBufferFlushInterval(unsigned int millis) {
 Status KuduSession::Data::SetMaxBatchersNum(unsigned int max_num) {
   // 1 is the minimum possible number of batchers per session.
   // 0 means there isn't any limit on the maximum number of batchers.
-  std::lock_guard<Mutex> l(mutex_);
+  std::lock_guard l(mutex_);
   if (HasPendingOperationsUnlocked()) {
     // NOTE: this is an artificial restriction.
     return Status::IllegalState(
@@ -233,7 +232,7 @@ void KuduSession::Data::SetTimeoutMillis(int timeout_ms) {
     timeout_ms = 0;
   }
   {
-    std::lock_guard<Mutex> l(mutex_);
+    std::lock_guard l(mutex_);
     timeout_ = MonoDelta::FromMilliseconds(timeout_ms);
     if (batcher_) {
       batcher_->SetTimeout(timeout_);
@@ -252,7 +251,7 @@ Status KuduSession::Data::Flush() {
   // all session's batchers.
   FlushCurrentBatcher(kWatermarkNonEmptyBatcher, nullptr);
   {
-    std::lock_guard<Mutex> l(mutex_);
+    std::lock_guard l(mutex_);
     while (buffer_bytes_used_ > 0) {
       condition_.Wait();
     }
@@ -266,7 +265,7 @@ Status KuduSession::Data::Flush() {
 bool KuduSession::Data::HasPendingOperations() const {
   // Thread-safety note: the buffer_bytes_used_ can be accessed or modified
   // from the threads busy with pending RPCs or from the background flush task.
-  std::lock_guard<Mutex> l(mutex_);
+  std::lock_guard l(mutex_);
   return HasPendingOperationsUnlocked();
 }
 
@@ -276,7 +275,7 @@ bool KuduSession::Data::HasPendingOperationsUnlocked() const {
 }
 
 int KuduSession::Data::CountBufferedOperations() const {
-  std::lock_guard<Mutex> l(mutex_);
+  std::lock_guard l(mutex_);
   if (batcher_) {
     // Prior batchers (if any) with pending operations are not relevant here:
     // the flushed operations, even if they have not reached the tablet server,
@@ -291,7 +290,7 @@ void KuduSession::Data::FlushCurrentBatcher(int64_t watermark,
                                             KuduStatusCallback* cb) {
   scoped_refptr<Batcher> batcher_to_flush;
   {
-    std::lock_guard<Mutex> l(mutex_);
+    std::lock_guard l(mutex_);
     if (PREDICT_TRUE(batcher_) && batcher_->buffer_bytes_used() >= watermark) {
       batcher_to_flush.swap(batcher_);
     }
@@ -313,7 +312,7 @@ MonoDelta KuduSession::Data::FlushCurrentBatcher(const MonoDelta& max_age) {
   MonoDelta time_left;
   scoped_refptr<Batcher> batcher_to_flush;
   {
-    std::lock_guard<Mutex> l(mutex_);
+    std::lock_guard l(mutex_);
     if (batcher_) {
       const MonoTime first_op_time = batcher_->first_op_time();
       if (PREDICT_TRUE(first_op_time.Initialized())) {
@@ -445,7 +444,7 @@ Status KuduSession::Data::ApplyWriteOp(KuduWriteOperation* write_op) {
   // access here as well, but TSAN does not like that.
   FlushMode flush_mode;
   {
-    std::lock_guard<Mutex> l(mutex_);
+    std::lock_guard l(mutex_);
     flush_mode = flush_mode_;
   }
 
@@ -489,7 +488,7 @@ Status KuduSession::Data::ApplyWriteOp(KuduWriteOperation* write_op) {
     }
   }
   {
-    std::lock_guard<Mutex> l(mutex_);
+    std::lock_guard l(mutex_);
     if (flush_mode == AUTO_FLUSH_BACKGROUND) {
       // In AUTO_FLUSH_BACKGROUND mode Apply() blocks if total would-be-used
       // buffer space is over the limit. Once amount of buffered data drops
@@ -575,7 +574,7 @@ void KuduSession::Data::TimeBasedFlushTask(
   KuduSession::Data* data = session->data_;
   MonoDelta max_batcher_age;
   {
-    std::lock_guard<Mutex> l(data->mutex_);
+    std::lock_guard l(data->mutex_);
     if (do_startup_check && data->flush_task_active_) {
       // The task is already active.
       return;
@@ -615,12 +614,12 @@ void KuduSession::Data::TimeBasedFlushTask(
 }
 
 int64_t KuduSession::Data::GetPendingOperationsSizeForTests() const {
-  std::lock_guard<Mutex> l(mutex_);
+  std::lock_guard l(mutex_);
   return buffer_bytes_used_;
 }
 
 size_t KuduSession::Data::GetBatchersCountForTests() const {
-  std::lock_guard<Mutex> l(mutex_);
+  std::lock_guard l(mutex_);
   return batchers_num_;
 }
 

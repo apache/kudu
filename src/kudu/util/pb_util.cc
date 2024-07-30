@@ -29,10 +29,10 @@
 #include <initializer_list>
 #include <limits>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <unordered_set>
 #include <vector>
 
@@ -741,7 +741,7 @@ Status WritablePBContainerFile::OpenExisting() {
 }
 
 Status WritablePBContainerFile::AppendBytes(const Slice& data) {
-  std::lock_guard<Mutex> l(offset_lock_);
+  std::lock_guard l(offset_lock_);
   RETURN_NOT_OK(writer_->Write(offset_, data));
   offset_ += data.size();
   return Status::OK();
@@ -776,7 +776,7 @@ Status WritablePBContainerFile::Sync() {
 }
 
 uint64_t WritablePBContainerFile::Offset() const {
-  std::lock_guard<Mutex> l(offset_lock_);
+  std::lock_guard l(offset_lock_);
   return offset_;
 }
 

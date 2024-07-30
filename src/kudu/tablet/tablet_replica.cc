@@ -231,13 +231,13 @@ Status TabletReplica::Start(
   DCHECK(log) << "A TabletReplica must be provided with a Log";
 
   {
-    std::lock_guard<simple_spinlock> state_change_guard(state_change_lock_);
+    std::lock_guard state_change_guard(state_change_lock_);
 
     scoped_refptr<MetricEntity> metric_entity;
     unique_ptr<PeerProxyFactory> peer_proxy_factory;
     unique_ptr<TimeManager> time_manager;
     {
-      std::lock_guard<simple_spinlock> l(lock_);
+      std::lock_guard l(lock_);
       CHECK_EQ(BOOTSTRAPPING, state_);
 
       tablet_ = DCHECK_NOTNULL(std::move(tablet));
@@ -296,7 +296,7 @@ Status TabletReplica::Start(
         metric_entity,
         mark_dirty_clbk_));
 
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
 
     // If an error has been set (e.g. due to a disk failure from a separate
     // thread), error out.
@@ -332,7 +332,7 @@ void TabletReplica::Stop() {
   }
 
   WaitUntilTxnCoordinatorTasksFinished();
-  std::lock_guard<simple_spinlock> l(state_change_lock_);
+  std::lock_guard l(state_change_lock_);
 
   // Even though Tablet::Shutdown() also unregisters its ops, we have to do it here
   // to ensure that any currently running operation finishes before we proceed with
@@ -367,7 +367,7 @@ void TabletReplica::Stop() {
 
   // Only mark the peer as STOPPED when all other components have shut down.
   {
-    std::lock_guard<simple_spinlock> lock(lock_);
+    std::lock_guard lock(lock_);
     tablet_.reset();
     set_state(STOPPED);
   }
@@ -378,7 +378,7 @@ void TabletReplica::Stop() {
 void TabletReplica::Shutdown() {
   Stop();
   if (consensus_) consensus_->Shutdown();
-  std::lock_guard<simple_spinlock> lock(lock_);
+  std::lock_guard lock(lock_);
   if (state_ == SHUTDOWN || state_ == FAILED) return;
   if (!error_.ok()) {
     set_state(FAILED);
@@ -390,7 +390,7 @@ void TabletReplica::Shutdown() {
 void TabletReplica::WaitUntilStopped() {
   while (true) {
     {
-      std::lock_guard<simple_spinlock> lock(lock_);
+      std::lock_guard lock(lock_);
       if (state_ == STOPPED || state_ == SHUTDOWN || state_ == FAILED) {
         return;
       }
@@ -406,7 +406,7 @@ void TabletReplica::WaitUntilTxnCoordinatorTasksFinished() {
 
   while (true) {
     {
-      std::lock_guard<simple_spinlock> lock(lock_);
+      std::lock_guard lock(lock_);
       if (txn_coordinator_task_counter_ == 0) {
         return;
       }
@@ -486,7 +486,7 @@ void TabletReplica::set_state(TabletStatePB new_state) {
 
 Status TabletReplica::CheckRunning() const {
   {
-    std::lock_guard<simple_spinlock> lock(lock_);
+    std::lock_guard lock(lock_);
     if (state_ != RUNNING) {
       return Status::IllegalState(Substitute("The tablet is not in a running state: $0",
                                              TabletStatePB_Name(state_)));
@@ -496,7 +496,7 @@ Status TabletReplica::CheckRunning() const {
 }
 
 bool TabletReplica::IsShuttingDown() const {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   if (state_ == STOPPING || state_ == STOPPED) {
     return true;
   }
@@ -512,7 +512,7 @@ Status TabletReplica::WaitUntilConsensusRunning(const MonoDelta& timeout) {
     bool has_consensus = false;
     TabletStatePB cached_state;
     {
-      std::lock_guard<simple_spinlock> lock(lock_);
+      std::lock_guard lock(lock_);
       cached_state = state_;
       if (consensus_) {
         has_consensus = true; // consensus_ is a set-once object.
@@ -550,7 +550,7 @@ Status TabletReplica::SubmitTxnWrite(
   const int64_t txn_id = op_state->request()->txn_id();
   shared_ptr<TxnOpDispatcher> dispatcher;
   {
-    std::lock_guard<simple_spinlock> guard(txn_op_dispatchers_lock_);
+    std::lock_guard guard(txn_op_dispatchers_lock_);
     dispatcher = LookupOrEmplace(
         &txn_op_dispatchers_,
         txn_id,
@@ -565,7 +565,7 @@ Status TabletReplica::UnregisterTxnOpDispatcher(int64_t txn_id,
   Status unregister_status;
   VLOG(3) << Substitute(
       "received request to unregister TxnOpDispatcher (txn ID $0)", txn_id);
-  std::lock_guard<simple_spinlock> guard(txn_op_dispatchers_lock_);
+  std::lock_guard guard(txn_op_dispatchers_lock_);
   auto it = txn_op_dispatchers_.find(txn_id);
   // It might happen that TxnOpDispatcher isn't there, and that's completely
   // fine. One possible scenario that might lead to such condition is:
@@ -629,7 +629,7 @@ Status TabletReplica::SubmitAlterSchema(unique_ptr<AlterSchemaOpState> state,
 void TabletReplica::GetTabletStatusPB(TabletStatusPB* status_pb_out) const {
   DCHECK(status_pb_out != nullptr);
   {
-    std::lock_guard<simple_spinlock> lock(lock_);
+    std::lock_guard lock(lock_);
     status_pb_out->set_state(state_);
     status_pb_out->set_last_status(last_status_);
   }
@@ -667,29 +667,29 @@ Status TabletReplica::RunLogGC() {
 }
 
 void TabletReplica::SetBootstrapping() {
-  std::lock_guard<simple_spinlock> lock(lock_);
+  std::lock_guard lock(lock_);
   set_state(BOOTSTRAPPING);
 }
 
 void TabletReplica::SetStatusMessage(string status) {
-  std::lock_guard<simple_spinlock> lock(lock_);
+  std::lock_guard lock(lock_);
   last_status_ = std::move(status);
 }
 
 string TabletReplica::last_status() const {
-  std::lock_guard<simple_spinlock> lock(lock_);
+  std::lock_guard lock(lock_);
   return last_status_;
 }
 
 void TabletReplica::SetError(const Status& error) {
-  std::lock_guard<simple_spinlock> lock(lock_);
+  std::lock_guard lock(lock_);
   CHECK(!error.ok());
   error_ = error;
   last_status_ = error.ToString();
 }
 
 string TabletReplica::HumanReadableState() const {
-  std::lock_guard<simple_spinlock> lock(lock_);
+  std::lock_guard lock(lock_);
   TabletDataState data_state = meta_->tablet_data_state();
   // If failed, any number of things could have gone wrong.
   if (state_ == FAILED) {
@@ -793,7 +793,7 @@ Status TabletReplica::GetGCableDataSize(int64_t* retention_size) const {
 
 Status TabletReplica::StartFollowerOp(const scoped_refptr<ConsensusRound>& round) {
   {
-    std::lock_guard<simple_spinlock> lock(lock_);
+    std::lock_guard lock(lock_);
     if (state_ != RUNNING && state_ != BOOTSTRAPPING) {
       return Status::IllegalState(TabletStatePB_Name(state_));
     }
@@ -890,7 +890,7 @@ void TabletReplica::FinishConsensusOnlyRound(ConsensusRound* round) {
     // pool token and this callback is invoked while the RaftConsensus lock is
     // held.
     CHECK_OK(prepare_pool_token_->Submit([this, ts] {
-      std::lock_guard<simple_spinlock> l(lock_);
+      std::lock_guard l(lock_);
       if (state_ == RUNNING || state_ == BOOTSTRAPPING) {
         tablet_->mvcc_manager()->AdjustNewOpLowerBound(Timestamp(ts));
       }
@@ -933,7 +933,7 @@ Status TabletReplica::NewFollowerOpDriver(unique_ptr<Op> op,
 void TabletReplica::RegisterMaintenanceOps(MaintenanceManager* maint_mgr) {
   // Taking state_change_lock_ ensures that we don't shut down concurrently with
   // this last start-up task.
-  std::lock_guard<simple_spinlock> state_change_lock(state_change_lock_);
+  std::lock_guard state_change_lock(state_change_lock_);
 
   if (state() != RUNNING) {
     LOG(WARNING) << "Not registering maintenance operations for " << tablet_
@@ -954,7 +954,7 @@ void TabletReplica::RegisterMaintenanceOps(MaintenanceManager* maint_mgr) {
 
   std::shared_ptr<Tablet> tablet;
   {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     DCHECK(maintenance_ops_.empty());
     maintenance_ops_ = std::move(maintenance_ops);
     tablet = tablet_;
@@ -963,7 +963,7 @@ void TabletReplica::RegisterMaintenanceOps(MaintenanceManager* maint_mgr) {
 }
 
 void TabletReplica::CancelMaintenanceOpsForTests() {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   for (auto& op : maintenance_ops_) {
     op->CancelAndDisable();
   }
@@ -973,7 +973,7 @@ void TabletReplica::UnregisterMaintenanceOps() {
   DCHECK(state_change_lock_.is_locked());
   decltype(maintenance_ops_) ops;
   {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     ops = std::move(maintenance_ops_);
     maintenance_ops_.clear();
   }
@@ -993,7 +993,7 @@ size_t TabletReplica::OnDiskSize() const {
   shared_ptr<Tablet> tablet;
   scoped_refptr<Log> log;
   {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     tablet = tablet_;
     log = log_;
   }
@@ -1009,7 +1009,7 @@ size_t TabletReplica::OnDiskSize() const {
 Status TabletReplica::CountLiveRows(uint64_t* live_row_count) const {
   shared_ptr<Tablet> tablet;
   {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     tablet = tablet_;
   }
 
@@ -1045,7 +1045,7 @@ void TabletReplica::UpdateTabletStats(vector<string>* dirty_tablets) {
   // a deadlock.
   RaftPeerPB::Role role = consensus_->role();
 
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   if (stats_pb_.on_disk_size() != pb.on_disk_size() ||
       stats_pb_.live_row_count() != pb.live_row_count()) {
     if (consensus::RaftPeerPB_Role_LEADER == role) {
@@ -1056,7 +1056,7 @@ void TabletReplica::UpdateTabletStats(vector<string>* dirty_tablets) {
 }
 
 ReportedTabletStatsPB TabletReplica::GetTabletStats() const {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   return stats_pb_;
 }
 
@@ -1064,7 +1064,7 @@ bool TabletReplica::ShouldRunTxnCoordinatorStalenessTask() {
   if (!txn_coordinator_) {
     return false;
   }
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   if (state_ != RUNNING) {
     LOG(WARNING) << Substitute("The tablet is not running. State: $0",
                                TabletStatePB_Name(state_));
@@ -1078,7 +1078,7 @@ bool TabletReplica::ShouldRunTxnCoordinatorStateChangedTask() {
   if (!txn_coordinator_) {
     return false;
   }
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   // We only check if the tablet is shutting down here, since replica
   // state change can happen even when the tablet is not running yet.
   if (state_ == STOPPING || state_ == STOPPED) {
@@ -1092,7 +1092,7 @@ bool TabletReplica::ShouldRunTxnCoordinatorStateChangedTask() {
 
 void TabletReplica::DecreaseTxnCoordinatorTaskCounter() {
   DCHECK(txn_coordinator_);
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   txn_coordinator_task_counter_--;
   DCHECK_GE(txn_coordinator_task_counter_, 0);
 }
@@ -1163,7 +1163,7 @@ void TabletReplica::BeginTxnParticipantOp(int64_t txn_id, RegisteredTxnCallback 
 void TabletReplica::MakeUnavailable(const Status& error) {
   std::shared_ptr<Tablet> tablet;
   {
-    std::lock_guard<simple_spinlock> lock(lock_);
+    std::lock_guard lock(lock_);
     tablet = tablet_;
     for (auto& op : maintenance_ops_) {
       op->CancelAndDisable();
@@ -1182,7 +1182,7 @@ Status TabletReplica::TxnOpDispatcher::Dispatch(
     std::unique_ptr<WriteOpState> op,
     const std::function<Status(int64_t txn_id, RegisteredTxnCallback cb)>& scheduler) {
   const auto txn_id = op->request()->txn_id();
-  std::lock_guard<simple_spinlock> guard(lock_);
+  std::lock_guard guard(lock_);
   if (PREDICT_FALSE(unregistered_)) {
     KLOG_EVERY_N_SECS(WARNING, 10)
         << Substitute("received request for unregistered TxnOpDispatcher (txn ID $0)",
@@ -1245,7 +1245,7 @@ Status TabletReplica::TxnOpDispatcher::Submit() {
   decltype(ops_queue_) failed_ops;
   Status failed_status;
   {
-    std::lock_guard<simple_spinlock> guard(lock_);
+    std::lock_guard guard(lock_);
     DCHECK(!preliminary_tasks_completed_);
     while (!ops_queue_.empty()) {
       auto op = std::move(ops_queue_.front());
@@ -1300,7 +1300,7 @@ void TabletReplica::TxnOpDispatcher::Cancel(const Status& status,
                     status.ToString()) << THROTTLE_MSG;
   decltype(ops_queue_) ops;
   {
-    std::lock_guard<simple_spinlock> guard(lock_);
+    std::lock_guard guard(lock_);
     inflight_status_ = status;
     std::swap(ops, ops_queue_);
   }
@@ -1309,7 +1309,7 @@ void TabletReplica::TxnOpDispatcher::Cancel(const Status& status,
 }
 
 Status TabletReplica::TxnOpDispatcher::MarkUnregistered() {
-  std::lock_guard<simple_spinlock> guard(lock_);
+  std::lock_guard guard(lock_);
   unregistered_ = true;
 
   // If there are still pending write operations, return ServiceUnavailable()

@@ -26,7 +26,6 @@
 #include <iterator>
 #include <map>
 #include <memory>
-#include <mutex>
 #include <numeric>
 #include <optional>
 #include <ostream>
@@ -35,6 +34,7 @@
 #include <string>
 #include <thread>
 #include <tuple>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -74,7 +74,7 @@
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/tserver/tserver.pb.h"
-#include "kudu/tserver/tserver_service.proxy.h"
+#include "kudu/tserver/tserver_service.proxy.h" // IWYU pragma: keep
 #include "kudu/util/barrier.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
@@ -618,7 +618,7 @@ TEST_F(TxnWriteOpsITest, FrequentElections) {
           CHECK_OK(txn->Rollback());
         }
         {
-          std::lock_guard<simple_spinlock> guard(transactions_lock);
+          std::lock_guard guard(transactions_lock);
           transactions.emplace_back(std::move(txn));
         }
       }
@@ -1067,7 +1067,7 @@ class TxnOpDispatcherITest : public KuduTest {
     }
     size_t elem_count = 0;
     for (auto& r : replicas) {
-      std::lock_guard<simple_spinlock> guard(r->txn_op_dispatchers_lock_);
+      std::lock_guard guard(r->txn_op_dispatchers_lock_);
       elem_count += r->txn_op_dispatchers_.size();
     }
     return elem_count;
@@ -1079,7 +1079,7 @@ class TxnOpDispatcherITest : public KuduTest {
     std::shared_ptr<typename TabletReplica::TxnOpDispatcher> d;
     size_t count = 0;
     for (auto& r : replicas) {
-      std::lock_guard<simple_spinlock> guard(r->txn_op_dispatchers_lock_);
+      std::lock_guard guard(r->txn_op_dispatchers_lock_);
       auto& dispatchers = r->txn_op_dispatchers_;
       if (!dispatchers.empty()) {
         d = dispatchers.begin()->second;
@@ -1097,7 +1097,7 @@ class TxnOpDispatcherITest : public KuduTest {
     auto replicas = GetAllReplicas(table_name);
     OpDispatchersPerTxnId result;
     for (auto& r : replicas) {
-      std::lock_guard<simple_spinlock> guard(r->txn_op_dispatchers_lock_);
+      std::lock_guard guard(r->txn_op_dispatchers_lock_);
       auto& dispatchers = r->txn_op_dispatchers_;
       for (auto& [txn_id, d] : dispatchers) {
         auto& dispatchers = LookupOrEmplace(&result, txn_id, OpDispatchers());
@@ -1184,7 +1184,7 @@ TEST_F(TxnOpDispatcherITest, LifecycleBasic) {
       for (const auto& [txn_id, dispatcher] : r->txn_op_dispatchers_) {
         ASSERT_EQ(ref_txn_id, txn_id);
         {
-          std::lock_guard<simple_spinlock> guard(dispatcher->lock_);
+          std::lock_guard guard(dispatcher->lock_);
           ASSERT_TRUE(dispatcher->preliminary_tasks_completed_);
           ASSERT_TRUE(dispatcher->ops_queue_.empty());
           ASSERT_FALSE(dispatcher->unregistered_);
@@ -1551,7 +1551,7 @@ TEST_F(TxnOpDispatcherITest, ErrorInProcessingWriteOp) {
   // Find and examine the TxnOpDispatcher instance.
   auto dispatcher = GetSingleTxnOpDispatcher();
   ASSERT_EVENTUALLY([&] {
-    std::lock_guard<simple_spinlock> guard(dispatcher->lock_);
+    std::lock_guard guard(dispatcher->lock_);
     // Due to scheduling anomalies, the operation above might be responded,
     // but TxnOpDispatcher::preliminary_tasks_completed_ field is not updated
     // yet. So, using ASSERT_EVENTUALLY here.
@@ -1594,7 +1594,7 @@ TEST_F(TxnOpDispatcherITest, ErrorInProcessingWriteOp) {
   ASSERT_EQ(2, dispatchers.size());
 
   for (auto& d : dispatchers) {
-    std::lock_guard<simple_spinlock> guard(d->lock_);
+    std::lock_guard guard(d->lock_);
     ASSERT_TRUE(d->preliminary_tasks_completed_);
     ASSERT_FALSE(d->unregistered_);
     ASSERT_OK(d->inflight_status_);
@@ -1684,7 +1684,7 @@ TEST_F(TxnOpDispatcherITest, NoPendingWriteOps) {
     ASSERT_EVENTUALLY([d] {
       // Eventually, every involved tablet should be registered as a transaction
       // participant and BEGIN_TXN should be issued.
-      std::lock_guard<simple_spinlock> guard(d->lock_);
+      std::lock_guard guard(d->lock_);
       ASSERT_TRUE(d->ops_queue_.empty());
       ASSERT_FALSE(d->unregistered_);
       ASSERT_OK(d->inflight_status_);
@@ -1891,7 +1891,7 @@ TEST_F(TxnOpDispatcherITest, DuplicateTxnParticipantRegistration) {
     auto& [dmap_txn_id, dispatchers] = *(dmap.begin());
     ASSERT_EQ(GetTxnId(txn), dmap_txn_id);
     for (auto& d : dispatchers) {
-      std::lock_guard<simple_spinlock> guard(d->lock_);
+      std::lock_guard guard(d->lock_);
       ASSERT_TRUE(d->ops_queue_.empty());
       ASSERT_FALSE(d->unregistered_);
       ASSERT_OK(d->inflight_status_);

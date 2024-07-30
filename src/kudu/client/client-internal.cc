@@ -769,7 +769,7 @@ void KuduClient::Data::ConnectedToClusterCb(
 
   vector<StatusCallback> cbs;
   {
-    std::lock_guard<simple_spinlock> l(leader_master_lock_);
+    std::lock_guard l(leader_master_lock_);
     if (cred_policy == CredentialsPolicy::PRIMARY_CREDENTIALS) {
       leader_master_rpc_primary_creds_.reset();
       cbs.swap(leader_master_callbacks_primary_creds_);
@@ -937,33 +937,33 @@ void KuduClient::Data::RetrieveAuthzTokenAsync(const KuduTable* table,
 }
 
 HostPort KuduClient::Data::leader_master_hostport() const {
-  std::lock_guard<simple_spinlock> l(leader_master_lock_);
+  std::lock_guard l(leader_master_lock_);
   return leader_master_hostport_;
 }
 
 vector<HostPort> KuduClient::Data::master_hostports() const {
-  std::lock_guard<simple_spinlock> l(leader_master_lock_);
+  std::lock_guard l(leader_master_lock_);
   return master_hostports_;
 }
 
 string KuduClient::Data::location() const {
-  std::lock_guard<simple_spinlock> l(leader_master_lock_);
+  std::lock_guard l(leader_master_lock_);
   return location_;
 }
 
 string KuduClient::Data::cluster_id() const {
-  std::lock_guard<simple_spinlock> l(leader_master_lock_);
+  std::lock_guard l(leader_master_lock_);
   return cluster_id_;
 }
 
 shared_ptr<master::MasterServiceProxy> KuduClient::Data::master_proxy() const {
-  std::lock_guard<simple_spinlock> l(leader_master_lock_);
+  std::lock_guard l(leader_master_lock_);
   return master_proxy_;
 }
 
 std::shared_ptr<transactions::TxnManagerServiceProxy>
 KuduClient::Data::txn_manager_proxy() const {
-  std::lock_guard<simple_spinlock> l(leader_master_lock_);
+  std::lock_guard l(leader_master_lock_);
   return txn_manager_proxy_;
 }
 

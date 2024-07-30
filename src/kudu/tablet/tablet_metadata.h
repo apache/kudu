@@ -19,7 +19,6 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -161,7 +160,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   // This pointer will be valid until the TabletMetadata is destructed,
   // even if the schema is changed.
   const SchemaPtr schema() const {
-    std::lock_guard<LockType> l(data_lock_);
+    std::lock_guard l(data_lock_);
     return schema_;
   }
 

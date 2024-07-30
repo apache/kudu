@@ -233,7 +233,6 @@
 #include <functional>
 #include <limits>
 #include <memory>
-#include <mutex>
 #include <ostream>
 #include <string>
 #include <unordered_map>
@@ -698,19 +697,19 @@ class MetricEntity : public RefCountedThreadSafe<MetricEntity> {
   void SetAttribute(const std::string& key, const std::string& val);
 
   int num_metrics() const {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     return metric_map_.size();
   }
 
   // Mark this entity as unpublished. This will cause the registry to retire its metrics
   // and unregister it.
   void Unpublish() {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     published_ = false;
   }
 
   bool published() {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     return published_;
   }
 
@@ -894,7 +893,7 @@ class MetricRegistry {
 
   // Return the number of entities in this registry.
   int num_entities() const {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     return entities_.size();
   }
 
@@ -1283,7 +1282,7 @@ class FunctionGauge : public Gauge {
   }
 
   T value() const {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     return function_();
   }
 
@@ -1303,7 +1302,7 @@ class FunctionGauge : public Gauge {
   // This should be used during destruction. If you want a settable
   // Gauge, use a normal Gauge instead of a FunctionGauge.
   void DetachToConstant(T v) {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     function_ = [v]() { return v; };
   }
 
@@ -1560,7 +1559,7 @@ class ScopedLatencyMetric {
 inline scoped_refptr<Counter> MetricEntity::FindOrCreateCounter(
     const CounterPrototype* proto) {
   CheckInstantiation(proto);
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   scoped_refptr<Counter> m = down_cast<Counter*>(FindPtrOrNull(metric_map_, proto).get());
   if (!m) {
     m = new Counter(proto);
@@ -1572,7 +1571,7 @@ inline scoped_refptr<Counter> MetricEntity::FindOrCreateCounter(
 inline scoped_refptr<Histogram> MetricEntity::FindOrCreateHistogram(
     const HistogramPrototype* proto) {
   CheckInstantiation(proto);
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   scoped_refptr<Histogram> m = down_cast<Histogram*>(FindPtrOrNull(metric_map_, proto).get());
   if (!m) {
     m = new Histogram(proto);
@@ -1587,7 +1586,7 @@ inline scoped_refptr<AtomicGauge<T> > MetricEntity::FindOrCreateGauge(
     const T& initial_value,
     MergeType type) {
   CheckInstantiation(proto);
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   scoped_refptr<AtomicGauge<T> > m = down_cast<AtomicGauge<T>*>(
       FindPtrOrNull(metric_map_, proto).get());
   if (!m) {
@@ -1600,7 +1599,7 @@ inline scoped_refptr<AtomicGauge<T> > MetricEntity::FindOrCreateGauge(
 inline scoped_refptr<MeanGauge> MetricEntity::FindOrCreateMeanGauge(
     const GaugePrototype<double>* proto) {
   CheckInstantiation(proto);
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   scoped_refptr<MeanGauge> m = down_cast<MeanGauge*>(
       FindPtrOrNull(metric_map_, proto).get());
   if (!m) {
@@ -1616,7 +1615,7 @@ inline scoped_refptr<FunctionGauge<T> > MetricEntity::FindOrCreateFunctionGauge(
     std::function<T()> function,
     MergeType type) {
   CheckInstantiation(proto);
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   scoped_refptr<FunctionGauge<T> > m = down_cast<FunctionGauge<T>*>(
       FindPtrOrNull(metric_map_, proto).get());
   if (!m) {

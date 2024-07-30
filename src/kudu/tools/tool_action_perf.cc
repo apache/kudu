@@ -716,7 +716,7 @@ WriteResults GeneratorThread(const shared_ptr<KuduSession>& session,
       str << "  " << errors[i]->status().ToString() << endl;
     }
     // Serialize access to the stderr to prevent garbled output.
-    lock_guard<mutex> lock(cerr_lock);
+    lock_guard lock(cerr_lock);
     cerr << str.str() << endl;
   }
 

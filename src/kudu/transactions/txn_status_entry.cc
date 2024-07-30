@@ -17,7 +17,6 @@
 
 #include "kudu/transactions/txn_status_entry.h"
 
-#include <mutex>
 #include <string>
 
 #include <glog/logging.h>
@@ -44,7 +43,7 @@ scoped_refptr<ParticipantEntry> TransactionEntry::GetOrCreateParticipant(
   DCHECK(metadata_.IsReadLocked());
 
   // In the expected case, this participant hasn't been added; add it.
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   scoped_refptr<ParticipantEntry> participant = FindPtrOrNull(participants_, tablet_id);
   if (PREDICT_TRUE(!participant)) {
     participant = new ParticipantEntry();
@@ -54,7 +53,7 @@ scoped_refptr<ParticipantEntry> TransactionEntry::GetOrCreateParticipant(
 }
 
 vector<string> TransactionEntry::GetParticipantIds() const {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   vector<string> ret;
   AppendKeysFromMap(participants_, &ret);
   return ret;

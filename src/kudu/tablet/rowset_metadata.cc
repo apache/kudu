@@ -18,7 +18,6 @@
 #include "kudu/tablet/rowset_metadata.h"
 
 #include <algorithm>
-#include <mutex>
 #include <ostream>
 #include <string>
 #include <unordered_set>
@@ -26,8 +25,8 @@
 
 #include <glog/stl_logging.h>
 
-#include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/metadata.pb.h"
 
 using std::unique_ptr;
@@ -74,7 +73,7 @@ Status RowSetMetadata::InitFromPB(const RowSetDataPB& pb) {
 }
 
 void RowSetMetadata::LoadFromPB(const RowSetDataPB& pb) {
-  std::lock_guard<LockType> l(lock_);
+  std::lock_guard l(lock_);
   id_ = pb.id();
 
   // Load the min/max keys.
@@ -128,7 +127,7 @@ void RowSetMetadata::LoadFromPB(const RowSetDataPB& pb) {
 void RowSetMetadata::ToProtobuf(RowSetDataPB *pb) {
   pb->set_id(id_);
 
-  std::lock_guard<LockType> l(lock_);
+  std::lock_guard l(lock_);
 
   // Write Column Files
   for (const ColumnIdToBlockIdMap::value_type& e : blocks_by_col_id_) {
@@ -182,21 +181,21 @@ const std::string RowSetMetadata::ToString() const {
 void RowSetMetadata::SetColumnDataBlocks(const std::map<ColumnId, BlockId>& blocks_by_col_id) {
   ColumnIdToBlockIdMap new_map(blocks_by_col_id.begin(), blocks_by_col_id.end());
   new_map.shrink_to_fit();
-  std::lock_guard<LockType> l(lock_);
+  std::lock_guard l(lock_);
   blocks_by_col_id_ = std::move(new_map);
 }
 
 void RowSetMetadata::CommitRedoDeltaDataBlock(int64_t dms_id,
                                               int64_t num_deleted_rows,
                                               const BlockId& block_id) {
-  std::lock_guard<LockType> l(lock_);
+  std::lock_guard l(lock_);
   last_durable_redo_dms_id_ = dms_id;
   redo_delta_blocks_.push_back(block_id);
   IncrementLiveRowsUnlocked(-num_deleted_rows);
 }
 
 void RowSetMetadata::CommitUndoDeltaDataBlock(const BlockId& block_id) {
-  std::lock_guard<LockType> l(lock_);
+  std::lock_guard l(lock_);
   undo_delta_blocks_.push_back(block_id);
 }
 
@@ -204,7 +203,7 @@ void RowSetMetadata::CommitUpdate(const RowSetMetadataUpdate& update,
                                   BlockIdContainer* removed) {
   removed->clear();
   {
-    std::lock_guard<LockType> l(lock_);
+    std::lock_guard l(lock_);
 
     // Find the exact sequence of blocks to remove.
     for (const auto& rep : update.replace_redo_blocks_) {
@@ -286,12 +285,12 @@ void RowSetMetadata::IncrementLiveRowsUnlocked(int64_t row_count) {
 }
 
 void RowSetMetadata::IncrementLiveRows(int64_t row_count) {
-  std::lock_guard<LockType> l(lock_);
+  std::lock_guard l(lock_);
   IncrementLiveRowsUnlocked(row_count);
 }
 
 int64_t RowSetMetadata::live_row_count() const {
-  std::lock_guard<LockType> l(lock_);
+  std::lock_guard l(lock_);
   DCHECK_GE(live_row_count_, 0);
   return live_row_count_;
 }
@@ -302,7 +301,7 @@ BlockIdContainer RowSetMetadata::GetAllBlocks() const {
                  undo_delta_blocks_.size() +
                  redo_delta_blocks_.size() +
                  2);  // '2' is reserved for 'adhoc_index_block_' and 'bloom_block_'
-  std::lock_guard<LockType> l(lock_);
+  std::lock_guard l(lock_);
   if (!adhoc_index_block_.IsNull()) {
     blocks.push_back(adhoc_index_block_);
   }
@@ -320,7 +319,7 @@ BlockIdContainer RowSetMetadata::GetAllBlocks() const {
 
 BlockId RowSetMetadata::GetMaxLiveBlockId() const {
   BlockId max_block_id;
-  std::lock_guard<LockType> l(lock_);
+  std::lock_guard l(lock_);
   if (!adhoc_index_block_.IsNull()) {
     max_block_id = std::max(max_block_id, adhoc_index_block_);
   }

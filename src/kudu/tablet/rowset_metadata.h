@@ -20,7 +20,6 @@
 #include <cstdint>
 #include <map>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <string>
 #include <type_traits>
@@ -105,13 +104,13 @@ class RowSetMetadata {
   }
 
   void set_bloom_block(const BlockId& block_id) {
-    std::lock_guard<LockType> l(lock_);
+    std::lock_guard l(lock_);
     DCHECK(bloom_block_.IsNull());
     bloom_block_ = block_id;
   }
 
   void set_adhoc_index_block(const BlockId& block_id) {
-    std::lock_guard<LockType> l(lock_);
+    std::lock_guard l(lock_);
     DCHECK(adhoc_index_block_.IsNull());
     adhoc_index_block_ = block_id;
   }
@@ -131,88 +130,88 @@ class RowSetMetadata {
   }
 
   bool has_encoded_keys() const {
-    std::lock_guard<LockType> l(lock_);
+    std::lock_guard l(lock_);
     return has_encoded_keys_unlocked();
   }
 
   void set_min_encoded_key(std::string min_encoded_key) {
-    std::lock_guard<LockType> l(lock_);
+    std::lock_guard l(lock_);
     min_encoded_key_ = std::move(min_encoded_key);
   }
 
   void set_max_encoded_key(std::string max_encoded_key) {
-    std::lock_guard<LockType> l(lock_);
+    std::lock_guard l(lock_);
     max_encoded_key_ = std::move(max_encoded_key);
   }
 
   std::string min_encoded_key() const {
-    std::lock_guard<LockType> l(lock_);
+    std::lock_guard l(lock_);
     DCHECK(min_encoded_key_);
     return *min_encoded_key_;
   }
 
   std::string max_encoded_key() const {
-    std::lock_guard<LockType> l(lock_);
+    std::lock_guard l(lock_);
     DCHECK(max_encoded_key_);
     return *max_encoded_key_;
   }
 
   BlockId bloom_block() const {
-    std::lock_guard<LockType> l(lock_);
+    std::lock_guard l(lock_);
     return bloom_block_;
   }
 
   BlockId adhoc_index_block() const {
-    std::lock_guard<LockType> l(lock_);
+    std::lock_guard l(lock_);
     return adhoc_index_block_;
   }
 
   bool has_adhoc_index_block() const {
-    std::lock_guard<LockType> l(lock_);
+    std::lock_guard l(lock_);
     return !adhoc_index_block_.IsNull();
   }
 
   BlockId column_data_block_for_col_id(const ColumnId& col_id) const {
-    std::lock_guard<LockType> l(lock_);
+    std::lock_guard l(lock_);
     return FindOrDie(blocks_by_col_id_, col_id);
   }
 
   ColumnIdToBlockIdMap GetColumnBlocksById() const {
-    std::lock_guard<LockType> l(lock_);
+    std::lock_guard l(lock_);
     return blocks_by_col_id_;
   }
 
   std::vector<BlockId> redo_delta_blocks() const {
-    std::lock_guard<LockType> l(lock_);
+    std::lock_guard l(lock_);
     return redo_delta_blocks_;
   }
 
   std::vector<BlockId> undo_delta_blocks() const {
-    std::lock_guard<LockType> l(lock_);
+    std::lock_guard l(lock_);
     return undo_delta_blocks_;
   }
 
   TabletMetadata *tablet_metadata() const { return tablet_metadata_; }
 
   int64_t last_durable_redo_dms_id() const {
-    std::lock_guard<LockType> l(lock_);
+    std::lock_guard l(lock_);
     return last_durable_redo_dms_id_;
   }
 
   void SetLastDurableRedoDmsIdForTests(int64_t redo_dms_id) {
-    std::lock_guard<LockType> l(lock_);
+    std::lock_guard l(lock_);
     last_durable_redo_dms_id_ = redo_dms_id;
   }
 
   bool HasDataForColumnIdForTests(ColumnId col_id) const {
     BlockId b;
-    std::lock_guard<LockType> l(lock_);
+    std::lock_guard l(lock_);
     if (!FindCopy(blocks_by_col_id_, col_id, &b)) return false;
     return fs_manager()->BlockExists(b);
   }
 
   bool HasBloomDataBlockForTests() const {
-    std::lock_guard<LockType> l(lock_);
+    std::lock_guard l(lock_);
     return !bloom_block_.IsNull() && fs_manager()->BlockExists(bloom_block_);
   }
 

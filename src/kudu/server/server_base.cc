@@ -1353,7 +1353,7 @@ Status ServerBase::Start() {
 int64_t ServerBase::RefreshWalDirAvailableSpaceIfExpired(const ServerBaseOptions& options,
                                                          const FsManager& fs_manager) {
   {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     if (MonoTime::Now() < wal_dir_space_last_check_ + MonoDelta::FromSeconds(
             FLAGS_fs_wal_dir_available_space_cache_seconds))
       return wal_dir_available_space_;
@@ -1362,7 +1362,7 @@ int64_t ServerBase::RefreshWalDirAvailableSpaceIfExpired(const ServerBaseOptions
   int64_t wal_dir_space = CalculateAvailableSpace(options, fs_manager.GetWalsRootDir(),
                                                   FLAGS_fs_wal_dir_reserved_bytes,
                                                   &space_info_waldir);
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   wal_dir_space_last_check_ = MonoTime::Now();
   wal_dir_available_space_ = wal_dir_space;
   return wal_dir_available_space_;
@@ -1371,7 +1371,7 @@ int64_t ServerBase::RefreshWalDirAvailableSpaceIfExpired(const ServerBaseOptions
 int64_t ServerBase::RefreshDataDirAvailableSpaceIfExpired(const ServerBaseOptions& options,
                                                           const FsManager& fs_manager) {
   {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     if (MonoTime::Now() < data_dirs_space_last_check_ + MonoDelta::FromSeconds(
             FLAGS_fs_data_dirs_available_space_cache_seconds))
       return data_dirs_available_space_;
@@ -1391,7 +1391,7 @@ int64_t ServerBase::RefreshDataDirAvailableSpaceIfExpired(const ServerBaseOption
       data_dirs_available_space += available_space;
     }
   }
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   data_dirs_space_last_check_ = MonoTime::Now();
   data_dirs_available_space_ = data_dirs_available_space;
   return data_dirs_available_space_;

@@ -19,7 +19,6 @@
 
 #include <cstdint>
 #include <exception>
-#include <mutex>
 #include <string>
 
 #include <boost/uuid/uuid.hpp>
@@ -46,7 +45,7 @@ string ConvertUuidToString(const boost::uuids::uuid& to_convert) {
 } // anonymous namespace
 
 string ObjectIdGenerator::Next() {
-  std::lock_guard<LockType> l(oid_lock_);
+  std::lock_guard l(oid_lock_);
   boost::uuids::uuid uuid = oid_generator_();
   return ConvertUuidToString(uuid);
 }

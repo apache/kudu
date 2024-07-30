@@ -30,7 +30,6 @@
 #include <algorithm>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <ostream>
 #include <shared_mutex>
@@ -368,7 +367,7 @@ Status TlsContext::UseCertificateAndKey(const Cert& cert, const PrivateKey& key)
   // Verify that the cert and key match.
   RETURN_NOT_OK(cert.CheckKeyMatch(key));
 
-  std::lock_guard<RWMutex> lock(lock_);
+  std::lock_guard lock(lock_);
 
   // Verify that the appropriate CA certs have been loaded into the context
   // before we adopt a cert. Otherwise, client connections without the CA cert
@@ -405,7 +404,7 @@ Status TlsContext::AddTrustedCertificate(const Cert& cert) {
     CHECK_OK(cert.GetPublicKey(&k));
   }
 
-  std::lock_guard<RWMutex> lock(lock_);
+  std::lock_guard lock(lock_);
   auto* cert_store = SSL_CTX_get_cert_store(ctx_.get());
 
   // Iterate through the certificate chain and add each individual certificate to the store.
@@ -529,7 +528,7 @@ Status TlsContext::GenerateSelfSignedCertAndKey() {
   ERR_clear_error(); // in case it left anything on the queue.
 
   // Step 4: Adopt the new key and cert.
-  std::lock_guard<RWMutex> lock(lock_);
+  std::lock_guard lock(lock_);
   CHECK(!has_cert_);
   OPENSSL_RET_NOT_OK(SSL_CTX_use_PrivateKey(ctx_.get(), key.GetRawData()),
                      "failed to use private key");
@@ -551,7 +550,7 @@ optional<CertSignRequest> TlsContext::GetCsrIfNecessary() const {
 
 Status TlsContext::AdoptSignedCert(const Cert& cert) {
   SCOPED_OPENSSL_NO_PENDING_ERRORS;
-  std::lock_guard<RWMutex> lock(lock_);
+  std::lock_guard lock(lock_);
 
   if (!csr_) {
     // A signed cert has already been adopted.

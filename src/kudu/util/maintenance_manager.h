@@ -23,7 +23,6 @@
 #include <functional>
 #include <map>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -330,7 +329,7 @@ class MaintenanceManager : public std::enable_shared_from_this<MaintenanceManage
   void GetMaintenanceManagerStatusDump(MaintenanceManagerStatusPB* out_pb);
 
   void set_memory_pressure_func_for_tests(std::function<bool(double*)> f) {
-    std::lock_guard<Mutex> guard(lock_);
+    std::lock_guard guard(lock_);
     memory_pressure_func_ = std::move(f);
   }
 

@@ -254,7 +254,7 @@ void SubprocessServer::Shutdown() {
   // Call any of the remaining callbacks.
   std::map<CallId, shared_ptr<SubprocessCall>> calls;
   {
-    std::lock_guard<simple_spinlock> l(in_flight_lock_);
+    std::lock_guard l(in_flight_lock_);
     calls = std::move(call_by_id_);
   }
   for (const auto& [_, call] : calls) {
@@ -346,7 +346,7 @@ void SubprocessServer::ResponderThread() {
     vector<pair<shared_ptr<SubprocessCall>, SubprocessResponsePB>> calls_and_resps;
     calls_and_resps.reserve(resps.size());
     {
-      std::lock_guard<simple_spinlock> l(in_flight_lock_);
+      std::lock_guard l(in_flight_lock_);
       for (auto& [resp, _] : resps) {
         auto id = resp.id();
         auto call = EraseKeyReturnValuePtr(&call_by_id_, id);
@@ -372,7 +372,7 @@ void SubprocessServer::CheckDeadlinesThread() {
     MonoTime now = MonoTime::Now();
     vector<shared_ptr<SubprocessCall>> timed_out_calls;
     {
-      std::lock_guard<simple_spinlock> l(in_flight_lock_);
+      std::lock_guard l(in_flight_lock_);
       // NOTE: this is an approximation for age based on ID. That's OK because
       // deadline-checking is best-effort.
       auto earliest_call_within_deadline = call_by_id_.begin();
@@ -420,7 +420,7 @@ void SubprocessServer::SendMessagesThread() {
     // in-flight map. We'll run their callbacks as a part of shutdown.
     s = outbound_call_queue_.BlockingDrainTo(&calls);
     {
-      std::lock_guard<simple_spinlock> l(in_flight_lock_);
+      std::lock_guard l(in_flight_lock_);
       for (const auto& [call, _] : calls) {
         EmplaceOrDie(&call_by_id_, call->id(), call);
       }

@@ -18,7 +18,6 @@
 
 #include <cstdint>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <shared_mutex>
 #include <string>
@@ -185,13 +184,13 @@ class TSDescriptor : public enable_make_shared<TSDescriptor> {
   // Set the number of live replicas (i.e. running or bootstrapping).
   void set_num_live_replicas(int n) {
     DCHECK_GE(n, 0);
-    std::lock_guard<rw_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     num_live_replicas_ = n;
   }
 
   // Set the number of live replicas in each dimension.
   void set_num_live_replicas_by_dimension(TabletNumByDimensionMap num_live_tablets_by_dimension) {
-    std::lock_guard<rw_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     num_live_tablets_by_dimension_ = std::move(num_live_tablets_by_dimension);
   }
 
@@ -199,7 +198,7 @@ class TSDescriptor : public enable_make_shared<TSDescriptor> {
   void set_num_live_replicas_by_range_per_table(
       std::string table_id,
       TabletNumByRangeMap num_live_tablets_by_table) {
-    std::lock_guard<rw_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     num_live_tablets_by_range_per_table_.emplace(table_id, num_live_tablets_by_table);
   }
 

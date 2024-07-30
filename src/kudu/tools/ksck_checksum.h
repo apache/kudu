@@ -21,7 +21,6 @@
 #include <cstdint>
 #include <iosfwd>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -40,8 +39,8 @@
 namespace kudu {
 
 namespace rpc {
-class PeriodicTimer;
 class Messenger;
+class PeriodicTimer;
 } // namespace rpc
 
 namespace tools {
@@ -176,7 +175,7 @@ class KsckChecksumManager : public std::enable_shared_from_this<KsckChecksumMana
 
   // Get a snapshot of results reported so far.
   TabletChecksumResultsMap checksums() const {
-    std::lock_guard<simple_spinlock> guard(lock_);
+    std::lock_guard guard(lock_);
     return checksums_;
   }
 

@@ -18,8 +18,8 @@
 #include "kudu/consensus/peer_manager.h"
 
 #include <memory>
-#include <mutex>
 #include <ostream>
+#include <type_traits>
 #include <utility>
 
 #include <glog/logging.h>
@@ -63,7 +63,7 @@ PeerManager::~PeerManager() {
 void PeerManager::UpdateRaftConfig(const RaftConfigPB& config) {
   VLOG(1) << "Updating peers from new config: " << SecureShortDebugString(config);
 
-  std::lock_guard<simple_spinlock> lock(lock_);
+  std::lock_guard lock(lock_);
   // Create new peers
   for (const RaftPeerPB& peer_pb : config.peers()) {
     if (ContainsKey(peers_, peer_pb.permanent_uuid())) {
@@ -87,7 +87,7 @@ void PeerManager::UpdateRaftConfig(const RaftConfigPB& config) {
 }
 
 void PeerManager::SignalRequest(bool force_if_queue_empty) {
-  std::lock_guard<simple_spinlock> lock(lock_);
+  std::lock_guard lock(lock_);
   for (auto iter = peers_.begin(); iter != peers_.end();) {
     Status s = (*iter).second->SignalRequest(force_if_queue_empty);
     if (PREDICT_FALSE(!s.ok())) {
@@ -104,7 +104,7 @@ void PeerManager::SignalRequest(bool force_if_queue_empty) {
 Status PeerManager::StartElection(const string& uuid) {
   shared_ptr<Peer> peer;
   {
-    std::lock_guard<simple_spinlock> lock(lock_);
+    std::lock_guard lock(lock_);
     peer = FindPtrOrNull(peers_, uuid);
   }
   if (!peer) {
@@ -115,7 +115,7 @@ Status PeerManager::StartElection(const string& uuid) {
 }
 
 void PeerManager::Close() {
-  std::lock_guard<simple_spinlock> lock(lock_);
+  std::lock_guard lock(lock_);
   for (const auto& entry : peers_) {
     entry.second->Close();
   }

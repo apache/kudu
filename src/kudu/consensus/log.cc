@@ -21,7 +21,6 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <ostream>
 #include <shared_mutex>
 #include <type_traits>
@@ -302,7 +301,7 @@ void Log::AppendThread::Wake() {
 }
 
 void Log::SetActiveSegmentIdle() {
-  std::lock_guard<rw_spinlock> l(segment_idle_lock_);
+  std::lock_guard l(segment_idle_lock_);
   segment_allocator_.active_segment_->GoIdle();
 }
 
@@ -471,7 +470,7 @@ Status SegmentAllocator::AllocateOrRollOverIfNecessary(
   bool should_rollover = false;
   // if the size of this entry overflows the current segment, get a new one
   {
-    std::lock_guard<RWMutex> l(allocation_lock_);
+    std::lock_guard l(allocation_lock_);
     if (allocation_state_ == kAllocationNotStarted) {
       if ((active_segment_->written_offset() + write_size_bytes + 4) > max_segment_size_) {
         VLOG_WITH_PREFIX(1) << "Max segment size reached. Starting new segment allocation";
@@ -598,7 +597,7 @@ Status SegmentAllocator::AllocateSegmentAndRollOver(
     scoped_refptr<ReadableLogSegment>* finished_segment,
     scoped_refptr<ReadableLogSegment>* new_readable_segment) {
   {
-    std::lock_guard<RWMutex> l(allocation_lock_);
+    std::lock_guard l(allocation_lock_);
     RETURN_NOT_OK(AsyncAllocateSegmentUnlocked());
   }
   return RollOver(finished_segment, new_readable_segment);
@@ -608,7 +607,7 @@ void SegmentAllocator::SetSchemaForNextSegment(Schema schema,
                                                uint32_t version) {
   VLOG_WITH_PREFIX(2) << Substitute("Setting schema version $0 for next log segment $1",
                                     version, schema.ToString());
-  std::lock_guard<rw_spinlock> l(schema_lock_);
+  std::lock_guard l(schema_lock_);
   schema_ = std::move(schema);
   schema_version_ = version;
 }
@@ -631,7 +630,7 @@ Status SegmentAllocator::AllocateNewSegment() {
 
   // We must mark allocation as finished when returning from this method.
   auto alloc_finished = MakeScopedCleanup([&] () {
-    std::lock_guard<RWMutex> l(allocation_lock_);
+    std::lock_guard l(allocation_lock_);
     allocation_state_ = kAllocationFinished;
   });
 
@@ -724,7 +723,7 @@ Status SegmentAllocator::SwitchToAllocatedSegment(
   // Now set 'active_segment_' to the new segment.
   active_segment_ = std::move(new_segment);
 
-  std::lock_guard<RWMutex> l(allocation_lock_);
+  std::lock_guard l(allocation_lock_);
   allocation_state_ = kAllocationNotStarted;
   return Status::OK();
 }
@@ -962,7 +961,7 @@ Status Log::UpdateIndexForBatch(const LogEntryBatch& batch,
 }
 
 Status Log::AllocateSegmentAndRollOverForTests() {
-  std::lock_guard<rw_spinlock> l(segment_idle_lock_);
+  std::lock_guard l(segment_idle_lock_);
   scoped_refptr<ReadableLogSegment> finished_segment;
   scoped_refptr<ReadableLogSegment> new_readable_segment;
   RETURN_NOT_OK(segment_allocator_.AllocateSegmentAndRollOver(
@@ -1047,7 +1046,7 @@ Status Log::GC(RetentionIndexes retention_indexes, int32_t* num_gced) {
     SegmentSequence segments_to_delete;
 
     {
-      std::lock_guard<percpu_rwlock> l(state_lock_);
+      std::lock_guard l(state_lock_);
       CHECK_EQ(kLogWriting, log_state_);
 
       GetSegmentsToGCUnlocked(retention_indexes, &segments_to_delete);
@@ -1157,7 +1156,7 @@ Status Log::Close() {
   append_thread_->Shutdown();
 
   {
-    std::lock_guard<percpu_rwlock> l(state_lock_);
+    std::lock_guard l(state_lock_);
     switch (log_state_) {
       case kLogWriting:
         log_state_ = kLogClosed;

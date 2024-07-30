@@ -20,7 +20,6 @@
 #include <algorithm>
 #include <cstddef>
 #include <memory>
-#include <mutex>
 #include <ostream>
 #include <type_traits>
 
@@ -129,7 +128,7 @@ LogReader::~LogReader() {
 
 Status LogReader::Init(const string& tablet_wal_path) {
   {
-    std::lock_guard<simple_spinlock> lock(lock_);
+    std::lock_guard lock(lock_);
     CHECK_EQ(state_, kLogReaderInitialized) << "bad state for Init(): " << state_;
   }
   VLOG(1) << "Reading wal from path:" << tablet_wal_path;
@@ -182,7 +181,7 @@ Status LogReader::Init(const string& tablet_wal_path) {
   std::sort(read_segments.begin(), read_segments.end(), LogSegmentSeqnoComparator());
 
   {
-    std::lock_guard<simple_spinlock> lock(lock_);
+    std::lock_guard lock(lock_);
 
     string previous_seg_path;
     int64_t previous_seg_seqno = -1;
@@ -207,12 +206,12 @@ Status LogReader::Init(const string& tablet_wal_path) {
 }
 
 void LogReader::InitEmptyReaderForTests() {
-  std::lock_guard<simple_spinlock> lock(lock_);
+  std::lock_guard lock(lock_);
   state_ = kLogReaderReading;
 }
 
 int64_t LogReader::GetMinReplicateIndex() const {
-  std::lock_guard<simple_spinlock> lock(lock_);
+  std::lock_guard lock(lock_);
   int64_t min_remaining_op_idx = -1;
 
   for (const scoped_refptr<ReadableLogSegment>& segment : segments_) {
@@ -228,7 +227,7 @@ int64_t LogReader::GetMinReplicateIndex() const {
 
 
 scoped_refptr<ReadableLogSegment> LogReader::GetSegmentBySequenceNumber(int64_t seq) const {
-  std::lock_guard<simple_spinlock> lock(lock_);
+  std::lock_guard lock(lock_);
   if (segments_.empty()) {
     return nullptr;
   }
@@ -364,13 +363,13 @@ Status LogReader::LookupOpId(int64_t op_index, OpId* op_id) const {
 }
 
 void LogReader::GetSegmentsSnapshot(SegmentSequence* segments) const {
-  std::lock_guard<simple_spinlock> lock(lock_);
+  std::lock_guard lock(lock_);
   CHECK_EQ(state_, kLogReaderReading);
   segments->assign(segments_.begin(), segments_.end());
 }
 
 void LogReader::TrimSegmentsUpToAndIncluding(int64_t segment_sequence_number) {
-  std::lock_guard<simple_spinlock> lock(lock_);
+  std::lock_guard lock(lock_);
   CHECK_EQ(state_, kLogReaderReading);
   auto iter = segments_.begin();
   int num_deleted_segments = 0;
@@ -388,7 +387,7 @@ void LogReader::TrimSegmentsUpToAndIncluding(int64_t segment_sequence_number) {
 }
 
 void LogReader::UpdateLastSegmentOffset(int64_t readable_to_offset) {
-  std::lock_guard<simple_spinlock> lock(lock_);
+  std::lock_guard lock(lock_);
   CHECK_EQ(state_, kLogReaderReading);
   DCHECK(!segments_.empty());
   // Get the last segment
@@ -402,7 +401,7 @@ void LogReader::ReplaceLastSegment(scoped_refptr<ReadableLogSegment> segment) {
   // have a footer.
   DCHECK(segment->HasFooter());
 
-  std::lock_guard<simple_spinlock> lock(lock_);
+  std::lock_guard lock(lock_);
   CHECK_EQ(state_, kLogReaderReading);
   // Make sure the segment we're replacing has the same sequence number
   DCHECK(!segments_.empty());
@@ -415,7 +414,7 @@ Status LogReader::AppendSegment(scoped_refptr<ReadableLogSegment> segment) {
   if (PREDICT_FALSE(!segment->HasFooter())) {
     RETURN_NOT_OK(segment->RebuildFooterByScanning());
   }
-  std::lock_guard<simple_spinlock> lock(lock_);
+  std::lock_guard lock(lock_);
   AppendSegmentUnlocked(std::move(segment));
   return Status::OK();
 }
@@ -435,18 +434,18 @@ void LogReader::AppendSegmentUnlocked(scoped_refptr<ReadableLogSegment> segment)
 
 void LogReader::AppendEmptySegment(scoped_refptr<ReadableLogSegment> segment) {
   DCHECK(segment->IsInitialized());
-  std::lock_guard<simple_spinlock> lock(lock_);
+  std::lock_guard lock(lock_);
   CHECK_EQ(state_, kLogReaderReading);
   AppendSegmentUnlocked(std::move(segment));
 }
 
 int LogReader::num_segments() const {
-  std::lock_guard<simple_spinlock> lock(lock_);
+  std::lock_guard lock(lock_);
   return segments_.size();
 }
 
 string LogReader::ToString() const {
-  std::lock_guard<simple_spinlock> lock(lock_);
+  std::lock_guard lock(lock_);
   string ret = "Reader's SegmentSequence: \n";
   for (const SegmentSequence::value_type& entry : segments_) {
     ret.append(Substitute("Segment: $0 Footer: $1\n",

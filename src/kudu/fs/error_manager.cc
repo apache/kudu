@@ -17,7 +17,6 @@
 
 #include "kudu/fs/error_manager.h"
 
-#include <mutex>
 #include <string>
 #include <utility>
 
@@ -39,19 +38,19 @@ FsErrorManager::FsErrorManager() {
 }
 
 void FsErrorManager::SetErrorNotificationCb(ErrorHandlerType e, ErrorNotificationCb cb) {
-  std::lock_guard<Mutex> l(lock_);
+  std::lock_guard l(lock_);
   EmplaceOrUpdate(&callbacks_, e, std::move(cb));
 }
 
 void FsErrorManager::UnsetErrorNotificationCb(ErrorHandlerType e) {
-  std::lock_guard<Mutex> l(lock_);
+  std::lock_guard l(lock_);
   EmplaceOrUpdate(&callbacks_, e, &DoNothingErrorNotification);
 }
 
 void FsErrorManager::RunErrorNotificationCb(ErrorHandlerType e,
                                             const string& uuid,
                                             const string& tenant_id) const {
-  std::lock_guard<Mutex> l(lock_);
+  std::lock_guard l(lock_);
   FindOrDie(callbacks_, e)(uuid, tenant_id);
 }
 

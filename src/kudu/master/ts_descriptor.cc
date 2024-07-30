@@ -18,7 +18,6 @@
 #include "kudu/master/ts_descriptor.h"
 
 #include <cmath>
-#include <mutex>
 #include <optional>
 #include <ostream>
 #include <shared_mutex>
@@ -109,7 +108,7 @@ Status TSDescriptor::Register(const NodeInstancePB& instance,
                               const ServerRegistrationPB& registration,
                               const optional<std::string>& location,
                               DnsResolver* dns_resolver) {
-  std::lock_guard<rw_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   CHECK_EQ(instance.permanent_uuid(), permanent_uuid_);
 
   // TODO(KUDU-418): we don't currently support changing RPC addresses since the
@@ -155,7 +154,7 @@ Status TSDescriptor::Register(const NodeInstancePB& instance,
 }
 
 void TSDescriptor::UpdateHeartbeatTime() {
-  std::lock_guard<rw_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   last_heartbeat_ = MonoTime::Now();
 }
 
@@ -166,7 +165,7 @@ MonoDelta TSDescriptor::TimeSinceHeartbeat() const {
 }
 
 void TSDescriptor::UpdateNeedsFullTabletReport(bool needs_report) {
-  std::lock_guard<rw_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   needs_full_report_ = needs_report;
 }
 
@@ -265,14 +264,14 @@ void TSDescriptor::DecayRecentReplicaCreationsByTableUnlocked(const string& tabl
 }
 
 void TSDescriptor::IncrementRecentReplicaCreations() {
-  std::lock_guard<rw_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   DecayRecentReplicaCreationsUnlocked();
   recent_replica_creations_ += 1;
 }
 
 void TSDescriptor::IncrementRecentReplicaCreationsByRangeAndTable(const string& range_key_start,
                                                                   const string& table_id) {
-  std::lock_guard<rw_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   DecayRecentReplicaCreationsByRangeUnlocked(range_key_start, table_id);
   DecayRecentReplicaCreationsByTableUnlocked(table_id);
   recent_replicas_by_range_[table_id].first[range_key_start]++;
@@ -281,7 +280,7 @@ void TSDescriptor::IncrementRecentReplicaCreationsByRangeAndTable(const string& 
 
 double TSDescriptor::RecentReplicaCreations() {
   // NOTE: not a shared lock because of the "Decay" side effect.
-  std::lock_guard<rw_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   DecayRecentReplicaCreationsUnlocked();
   return recent_replica_creations_;
 }
@@ -289,7 +288,7 @@ double TSDescriptor::RecentReplicaCreations() {
 double TSDescriptor::RecentReplicaCreationsByRange(const string& range_key_start,
                                                    const string& table_id) {
   // NOTE: not a shared lock because of the "Decay" side effect.
-  std::lock_guard<rw_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   DecayRecentReplicaCreationsByRangeUnlocked(range_key_start, table_id);
   DecayRecentReplicaCreationsByTableUnlocked(table_id);
   return recent_replicas_by_range_[table_id].first[range_key_start];
@@ -297,7 +296,7 @@ double TSDescriptor::RecentReplicaCreationsByRange(const string& range_key_start
 
 double TSDescriptor::RecentReplicaCreationsByTable(const string& table_id) {
   // NOTE: not a shared lock because of the "Decay" side effect.
-  std::lock_guard<rw_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   DecayRecentReplicaCreationsByTableUnlocked(table_id);
   return recent_replicas_by_range_[table_id].second;
 }
@@ -402,7 +401,7 @@ Status TSDescriptor::GetTSAdminProxy(const shared_ptr<rpc::Messenger>& messenger
   string host;
   RETURN_NOT_OK(ResolveSockaddr(&addr, &host));
 
-  std::lock_guard<rw_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   if (!ts_admin_proxy_) {
     HostPort hp;
     RETURN_NOT_OK(hp.ParseString(host, addr.port()));
@@ -427,7 +426,7 @@ Status TSDescriptor::GetConsensusProxy(const shared_ptr<rpc::Messenger>& messeng
   string host;
   RETURN_NOT_OK(ResolveSockaddr(&addr, &host));
 
-  std::lock_guard<rw_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   if (!consensus_proxy_) {
     HostPort hp;
     RETURN_NOT_OK(hp.ParseString(host, addr.port()));

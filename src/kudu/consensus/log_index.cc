@@ -31,9 +31,9 @@
 #include <cinttypes>
 #include <cstdint>
 #include <memory>
-#include <mutex>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -164,7 +164,7 @@ Status LogIndex::GetChunkForIndex(int64_t log_index, bool create,
   int64_t chunk_idx = log_index / kEntriesPerIndexChunk;
 
   {
-    std::lock_guard<simple_spinlock> l(open_chunks_lock_);
+    std::lock_guard l(open_chunks_lock_);
     if (FindCopy(open_chunks_, chunk_idx, chunk)) {
       return Status::OK();
     }
@@ -177,7 +177,7 @@ Status LogIndex::GetChunkForIndex(int64_t log_index, bool create,
   RETURN_NOT_OK_PREPEND(OpenChunk(chunk_idx, chunk),
                         "Couldn't open index chunk");
   {
-    std::lock_guard<simple_spinlock> l(open_chunks_lock_);
+    std::lock_guard l(open_chunks_lock_);
     if (PREDICT_FALSE(ContainsKey(open_chunks_, chunk_idx))) {
       // Someone else opened the chunk in the meantime.
       // We'll just return that one.
@@ -235,7 +235,7 @@ void LogIndex::GC(int64_t min_index_to_retain) {
   // Enumerate which chunks to delete.
   vector<int64_t> chunks_to_delete;
   {
-    std::lock_guard<simple_spinlock> l(open_chunks_lock_);
+    std::lock_guard l(open_chunks_lock_);
     for (auto it = open_chunks_.begin();
          it != open_chunks_.lower_bound(min_chunk_to_retain); ++it) {
       chunks_to_delete.push_back(it->first);
@@ -252,7 +252,7 @@ void LogIndex::GC(int64_t min_index_to_retain) {
     }
     LOG(INFO) << "Deleted log index chunk " << path;
     {
-      std::lock_guard<simple_spinlock> l(open_chunks_lock_);
+      std::lock_guard l(open_chunks_lock_);
       open_chunks_.erase(chunk_idx);
     }
   }

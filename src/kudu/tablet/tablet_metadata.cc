@@ -249,7 +249,7 @@ Status TabletMetadata::DeleteTabletData(TabletDataState delete_type,
   // We also set the state in our persisted metadata to indicate that
   // we have been deleted.
   {
-    std::lock_guard<LockType> l(data_lock_);
+    std::lock_guard l(data_lock_);
     for (const shared_ptr<RowSetMetadata>& rsmd : rowsets_) {
       AddOrphanedBlocksUnlocked(rsmd->GetAllBlocks());
     }
@@ -278,14 +278,14 @@ Status TabletMetadata::DeleteTabletData(TabletDataState delete_type,
 }
 
 bool TabletMetadata::IsTombstonedWithNoBlocks() const {
-  std::lock_guard<LockType> l(data_lock_);
+  std::lock_guard l(data_lock_);
   return tablet_data_state_ == TABLET_DATA_TOMBSTONED &&
       rowsets_.empty() &&
       orphaned_blocks_.empty();
 }
 
 Status TabletMetadata::DeleteSuperBlock() {
-  std::lock_guard<LockType> l(data_lock_);
+  std::lock_guard l(data_lock_);
   if (!orphaned_blocks_.empty()) {
     return Status::InvalidArgument("The metadata for tablet " + tablet_id_ +
                                    " still references orphaned blocks. "
@@ -387,7 +387,7 @@ Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) 
           << SecureDebugString(superblock);
 
   {
-    std::lock_guard<LockType> l(data_lock_);
+    std::lock_guard l(data_lock_);
 
     // Verify that the tablet id matches with the one in the protobuf
     if (superblock.tablet_id() != tablet_id_) {
@@ -545,14 +545,14 @@ Status TabletMetadata::UpdateAndFlush(const RowSetMetadataIds& to_remove,
                                       int64_t last_durable_mrs_id,
                                       const vector<TxnInfoBeingFlushed>& txns_being_flushed) {
   {
-    std::lock_guard<LockType> l(data_lock_);
+    std::lock_guard l(data_lock_);
     RETURN_NOT_OK(UpdateUnlocked(to_remove, to_add, last_durable_mrs_id, txns_being_flushed));
   }
   return Flush();
 }
 
 void TabletMetadata::AddOrphanedBlocks(const BlockIdContainer& block_ids) {
-  std::lock_guard<LockType> l(data_lock_);
+  std::lock_guard l(data_lock_);
   AddOrphanedBlocksUnlocked(block_ids);
 }
 
@@ -582,7 +582,7 @@ void TabletMetadata::DeleteOrphanedBlocks(const BlockIdContainer& blocks) {
   // hardware issues, there's not much we can do and we assume the disk isn't
   // coming back. At worst, this leaves some untracked orphaned blocks.
   {
-    std::lock_guard<LockType> l(data_lock_);
+    std::lock_guard l(data_lock_);
     for (const BlockId& b : blocks) {
       orphaned_blocks_.erase(b);
     }
@@ -590,7 +590,7 @@ void TabletMetadata::DeleteOrphanedBlocks(const BlockIdContainer& blocks) {
 }
 
 void TabletMetadata::PinFlush() {
-  std::lock_guard<LockType> l(data_lock_);
+  std::lock_guard l(data_lock_);
   CHECK_GE(num_flush_pins_, 0);
   num_flush_pins_++;
   VLOG(1) << "Number of flush pins: " << num_flush_pins_;
@@ -616,7 +616,7 @@ Status TabletMetadata::Flush() {
   TabletSuperBlockPB pb;
   vector<unique_ptr<MinLogIndexAnchorer>> anchors_needing_flush;
   {
-    std::lock_guard<LockType> l(data_lock_);
+    std::lock_guard l(data_lock_);
     CHECK_GE(num_flush_pins_, 0);
     if (num_flush_pins_ > 0) {
       needs_flush_ = true;
@@ -724,7 +724,7 @@ void TabletMetadata::SetPreFlushCallback(StatusClosure callback) {
 }
 
 std::optional<consensus::OpId> TabletMetadata::tombstone_last_logged_opid() const {
-  std::lock_guard<LockType> l(data_lock_);
+  std::lock_guard l(data_lock_);
   return tombstone_last_logged_opid_;
 }
 
@@ -738,7 +738,7 @@ Status TabletMetadata::ReadSuperBlockFromDisk(TabletSuperBlockPB* superblock) co
 
 Status TabletMetadata::ToSuperBlock(TabletSuperBlockPB* super_block) const {
   // acquire the lock so that rowsets_ doesn't get changed until we're finished.
-  std::lock_guard<LockType> l(data_lock_);
+  std::lock_guard l(data_lock_);
   return ToSuperBlockUnlocked(super_block, rowsets_);
 }
 
@@ -814,14 +814,14 @@ Status TabletMetadata::CreateRowSet(shared_ptr<RowSetMetadata>* rowset) {
 }
 
 void TabletMetadata::AddTxnMetadata(int64_t txn_id, unique_ptr<MinLogIndexAnchorer> log_anchor) {
-  std::lock_guard<LockType> l(data_lock_);
+  std::lock_guard l(data_lock_);
   EmplaceOrDie(&txn_metadata_by_txn_id_, txn_id, new TxnMetadata());
   anchors_needing_flush_.emplace_back(std::move(log_anchor));
 }
 
 void TabletMetadata::BeginCommitTransaction(int64_t txn_id, Timestamp mvcc_op_timestamp,
                                             unique_ptr<MinLogIndexAnchorer> log_anchor) {
-  std::lock_guard<LockType> l(data_lock_);
+  std::lock_guard l(data_lock_);
   auto txn_metadata = FindOrDie(txn_metadata_by_txn_id_, txn_id);
   // NOTE: we may already have an MVCC op timestamp if we are bootstrapping and
   // the timestamp was persisted already, in which case, we don't need to
@@ -834,14 +834,14 @@ void TabletMetadata::BeginCommitTransaction(int64_t txn_id, Timestamp mvcc_op_ti
 
 void TabletMetadata::AddCommitTimestamp(int64_t txn_id, Timestamp commit_timestamp,
                                         unique_ptr<MinLogIndexAnchorer> log_anchor) {
-  std::lock_guard<LockType> l(data_lock_);
+  std::lock_guard l(data_lock_);
   auto txn_metadata = FindOrDie(txn_metadata_by_txn_id_, txn_id);
   txn_metadata->set_commit_timestamp(commit_timestamp);
   anchors_needing_flush_.emplace_back(std::move(log_anchor));
 }
 
 void TabletMetadata::AbortTransaction(int64_t txn_id, unique_ptr<MinLogIndexAnchorer> log_anchor) {
-  std::lock_guard<LockType> l(data_lock_);
+  std::lock_guard l(data_lock_);
   // NOTE: we can't emplace with a raw pointer here; if the lookup succeeds, we
   // wouldn't use it and we'd have a memory leak, so use scoped_refptr.
   auto txn_metadata = LookupOrEmplace(&txn_metadata_by_txn_id_, txn_id,
@@ -852,7 +852,7 @@ void TabletMetadata::AbortTransaction(int64_t txn_id, unique_ptr<MinLogIndexAnch
 }
 
 bool TabletMetadata::HasTxnMetadata(int64_t txn_id, TxnState* state, Timestamp* timestamp) {
-  std::lock_guard<LockType> l(data_lock_);
+  std::lock_guard l(data_lock_);
   auto txn_meta = FindPtrOrNull(txn_metadata_by_txn_id_, txn_id);
   if (txn_meta) {
     if (!state) return true;
@@ -884,7 +884,7 @@ void TabletMetadata::GetTxnIds(unordered_set<int64_t>* in_flight_txn_ids,
   std::unordered_set<int64_t> in_flights;
   std::unordered_set<int64_t> terminals;
   std::unordered_set<int64_t> needs_mrs;
-  std::lock_guard<LockType> l(data_lock_);
+  std::lock_guard l(data_lock_);
   for (const auto& txn_id_and_metadata : txn_metadata_by_txn_id_) {
     const auto& txn_id = txn_id_and_metadata.first;
     const auto& txn_meta = txn_id_and_metadata.second;
@@ -913,12 +913,12 @@ void TabletMetadata::GetTxnIds(unordered_set<int64_t>* in_flight_txn_ids,
 }
 
 unordered_map<int64_t, scoped_refptr<TxnMetadata>> TabletMetadata::GetTxnMetadata() const {
-  std::lock_guard<LockType> l(data_lock_);
+  std::lock_guard l(data_lock_);
   return txn_metadata_by_txn_id_;
 }
 
 bool TabletMetadata::GetTxnMetadataPB(int64_t txn_id, TxnMetadataPB* pb) const {
-  std::lock_guard<LockType> l(data_lock_);
+  std::lock_guard l(data_lock_);
   auto txn_meta = FindPtrOrNull(txn_metadata_by_txn_id_, txn_id);
   if (!txn_meta) {
     return false;
@@ -937,7 +937,7 @@ const RowSetMetadata *TabletMetadata::GetRowSetForTests(int64_t id) const {
 }
 
 RowSetMetadata *TabletMetadata::GetRowSetForTests(int64_t id) {
-  std::lock_guard<LockType> l(data_lock_);
+  std::lock_guard l(data_lock_);
   for (const shared_ptr<RowSetMetadata>& rowset_meta : rowsets_) {
     if (rowset_meta->id() == id) {
       return rowset_meta.get();
@@ -951,7 +951,7 @@ void TabletMetadata::SetSchema(const SchemaPtr& schema, uint32_t version) {
   // outside the lock.
   SchemaPtr old_schema;
   {
-    std::lock_guard<LockType> l(data_lock_);
+    std::lock_guard l(data_lock_);
     SwapSchemaUnlocked(schema, version, &old_schema);
   }
 }
@@ -965,24 +965,24 @@ void TabletMetadata::SwapSchemaUnlocked(SchemaPtr schema, uint32_t version,
 }
 
 void TabletMetadata::SetTableName(const string& table_name) {
-  std::lock_guard<LockType> l(data_lock_);
+  std::lock_guard l(data_lock_);
   table_name_ = table_name;
 }
 
 string TabletMetadata::table_name() const {
-  std::lock_guard<LockType> l(data_lock_);
+  std::lock_guard l(data_lock_);
   DCHECK_NE(state_, kNotLoadedYet);
   return table_name_;
 }
 
 uint32_t TabletMetadata::schema_version() const {
-  std::lock_guard<LockType> l(data_lock_);
+  std::lock_guard l(data_lock_);
   DCHECK_NE(state_, kNotLoadedYet);
   return schema_version_;
 }
 
 void TabletMetadata::set_tablet_data_state(TabletDataState state) {
-  std::lock_guard<LockType> l(data_lock_);
+  std::lock_guard l(data_lock_);
   if (state == TABLET_DATA_READY) {
     tombstone_last_logged_opid_.reset();
   }
@@ -990,27 +990,27 @@ void TabletMetadata::set_tablet_data_state(TabletDataState state) {
 }
 
 TabletDataState TabletMetadata::tablet_data_state() const {
-  std::lock_guard<LockType> l(data_lock_);
+  std::lock_guard l(data_lock_);
   return tablet_data_state_;
 }
 
 void TabletMetadata::SetExtraConfig(TableExtraConfigPB extra_config) {
-  std::lock_guard<LockType> l(data_lock_);
+  std::lock_guard l(data_lock_);
   extra_config_ = std::move(extra_config);
 }
 
 optional<TableExtraConfigPB> TabletMetadata::extra_config() const {
-  std::lock_guard<LockType> l(data_lock_);
+  std::lock_guard l(data_lock_);
   return extra_config_;
 }
 
 optional<string> TabletMetadata::dimension_label() const {
-  std::lock_guard<LockType> l(data_lock_);
+  std::lock_guard l(data_lock_);
   return dimension_label_;
 }
 
 const optional<TableTypePB>& TabletMetadata::table_type() const {
-  std::lock_guard<LockType> l(data_lock_);
+  std::lock_guard l(data_lock_);
   return table_type_;
 }
 

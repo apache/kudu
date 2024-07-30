@@ -19,7 +19,6 @@
 
 #include <algorithm>
 #include <memory>
-#include <mutex>
 #include <ostream>
 #include <utility>
 #include <vector>
@@ -203,7 +202,7 @@ LeaderElection::LeaderElection(RaftConfigPB config,
 }
 
 LeaderElection::~LeaderElection() {
-  std::lock_guard<Lock> guard(lock_);
+  std::lock_guard guard(lock_);
   DCHECK(has_responded_); // We must always call the callback exactly once.
 }
 
@@ -255,7 +254,7 @@ void LeaderElection::Run() {
   for (const auto& voter_uuid : other_voter_uuids) {
     VoterState* state = nullptr;
     {
-      std::lock_guard<Lock> guard(lock_);
+      std::lock_guard guard(lock_);
       state = FindOrDie(voter_state_, voter_uuid).get();
       // Safe to drop the lock because voter_state_ is not mutated outside of
       // the constructor / destructor. We do this to avoid deadlocks below.
@@ -269,7 +268,7 @@ void LeaderElection::Run() {
                                << state->PeerInfo() << ": " << state->proxy_status.ToString()
                                << ". Counting it as a 'NO' vote.";
       {
-        std::lock_guard<Lock> guard(lock_);
+        std::lock_guard guard(lock_);
         RecordVoteUnlocked(*state, VOTE_DENIED);
       }
       CheckForDecision();
@@ -296,7 +295,7 @@ void LeaderElection::Run() {
 void LeaderElection::CheckForDecision() {
   bool to_respond = false;
   {
-    std::lock_guard<Lock> guard(lock_);
+    std::lock_guard guard(lock_);
     // Check if the vote has been newly decided.
     if (!result_ && vote_counter_.IsDecided()) {
       ElectionVote decision;
@@ -329,7 +328,7 @@ void LeaderElection::CheckForDecision() {
 
 void LeaderElection::VoteResponseRpcCallback(const string& voter_uuid) {
   {
-    std::lock_guard<Lock> guard(lock_);
+    std::lock_guard guard(lock_);
     VoterState* state = FindOrDie(voter_state_, voter_uuid).get();
 
     // Check for RPC errors.

@@ -141,18 +141,18 @@ bool RWMutex::TryWriteLock() {
 #ifndef NDEBUG
 
 void RWMutex::AssertAcquired() const {
-  lock_guard<simple_spinlock> l(tid_lock_);
+  lock_guard l(tid_lock_);
   CHECK(ContainsKey(reader_tids_, Env::Default()->gettid()) ||
         Env::Default()->gettid() == writer_tid_);
 }
 
 void RWMutex::AssertAcquiredForReading() const {
-  lock_guard<simple_spinlock> l(tid_lock_);
+  lock_guard l(tid_lock_);
   CHECK(ContainsKey(reader_tids_, Env::Default()->gettid()));
 }
 
 void RWMutex::AssertAcquiredForWriting() const {
-  lock_guard<simple_spinlock> l(tid_lock_);
+  lock_guard l(tid_lock_);
   CHECK_EQ(Env::Default()->gettid(), writer_tid_);
 }
 
@@ -161,7 +161,7 @@ void RWMutex::CheckLockState(LockState state) const {
   bool is_reader;
   bool is_writer;
   {
-    lock_guard<simple_spinlock> l(tid_lock_);
+    lock_guard l(tid_lock_);
     is_reader = ContainsKey(reader_tids_, my_tid);
     is_writer = writer_tid_ == my_tid;
   }
@@ -183,22 +183,22 @@ void RWMutex::CheckLockState(LockState state) const {
 }
 
 void RWMutex::MarkForReading() {
-  lock_guard<simple_spinlock> l(tid_lock_);
+  lock_guard l(tid_lock_);
   reader_tids_.insert(Env::Default()->gettid());
 }
 
 void RWMutex::MarkForWriting() {
-  lock_guard<simple_spinlock> l(tid_lock_);
+  lock_guard l(tid_lock_);
   writer_tid_ = Env::Default()->gettid();
 }
 
 void RWMutex::UnmarkForReading() {
-  lock_guard<simple_spinlock> l(tid_lock_);
+  lock_guard l(tid_lock_);
   reader_tids_.erase(Env::Default()->gettid());
 }
 
 void RWMutex::UnmarkForWriting() {
-  lock_guard<simple_spinlock> l(tid_lock_);
+  lock_guard l(tid_lock_);
   writer_tid_ = 0;
 }
 

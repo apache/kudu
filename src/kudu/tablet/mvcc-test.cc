@@ -18,7 +18,6 @@
 #include "kudu/tablet/mvcc.h"
 
 #include <memory>
-#include <mutex>
 #include <ostream>
 #include <string>
 #include <thread>
@@ -59,12 +58,12 @@ class MvccTest : public KuduTest {
     MvccSnapshot s;
     CHECK_OK(mgr->WaitForSnapshotWithAllApplied(ts, &s, MonoTime::Max()));
     CHECK(s.is_clean()) << "verifying postcondition";
-    std::lock_guard<simple_spinlock> lock(lock_);
+    std::lock_guard lock(lock_);
     result_snapshot_.reset(new MvccSnapshot(s));
   }
 
   bool HasResultSnapshot() {
-    std::lock_guard<simple_spinlock> lock(lock_);
+    std::lock_guard lock(lock_);
     return result_snapshot_ != nullptr;
   }
 
@@ -587,7 +586,7 @@ TEST_F(MvccTest, TestDontWaitAfterClose) {
   Status s;
   simple_spinlock status_lock;
   thread waiting_thread = thread([&] {
-    std::lock_guard<simple_spinlock> l(status_lock);
+    std::lock_guard l(status_lock);
     s = mgr.WaitForApplyingOpsToApply();
   });
 

@@ -22,7 +22,6 @@
 #include <iosfwd>
 #include <map>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -476,7 +475,7 @@ class FsManager {
 
   // Search the tenant's block manager.
   scoped_refptr<fs::BlockManager> SearchBlockManager(const std::string& tenant_id) const {
-    std::lock_guard<LockType> lock(bm_lock_);
+    std::lock_guard lock(bm_lock_);
     scoped_refptr<fs::BlockManager> block_manager(FindPtrOrNull(block_manager_map_, tenant_id));
     return block_manager;
   }

@@ -20,9 +20,9 @@
 #include <algorithm>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <ostream>
 #include <string>
+#include <type_traits>
 
 #include <glog/logging.h>
 
@@ -37,8 +37,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/txn_manager.pb.h"
 #include "kudu/master/txn_manager.proxy.h"
-#include "kudu/rpc/messenger.h"
-#include "kudu/rpc/response_callback.h"
+#include "kudu/rpc/messenger.h" // IWYU pragma: keep
 #include "kudu/rpc/rpc.h"
 #include "kudu/transactions/transactions.pb.h"
 #include "kudu/util/async_util.h"
@@ -116,7 +115,7 @@ Status KuduTransaction::Data::CreateSession(sp::shared_ptr<KuduSession>* session
   ret->data_->Init(ret);
 
   {
-    std::lock_guard<simple_spinlock> l(commit_started_lock_);
+    std::lock_guard l(commit_started_lock_);
     if (PREDICT_FALSE(commit_started_)) {
       return Status::IllegalState("transaction commit has already started");
     }
@@ -183,7 +182,7 @@ Status KuduTransaction::Data::Commit(CommitMode mode) {
   }
 
   {
-    std::lock_guard<simple_spinlock> l(commit_started_lock_);
+    std::lock_guard l(commit_started_lock_);
     commit_started_ = true;
   }
   // In case of 'synchronous' commit mode (i.e. if waiting for the transaction

@@ -637,7 +637,7 @@ void Batcher::Abort() {
 
   vector<InFlightOp*> to_abort;
   for (InFlightOp* op : ops_) {
-    std::lock_guard<simple_spinlock> l(op->lock_);
+    std::lock_guard l(op->lock_);
     if (op->state == InFlightOp::kBufferedToTabletServer) {
       to_abort.push_back(op);
     }
@@ -666,18 +666,18 @@ Batcher::~Batcher() {
 }
 
 void Batcher::SetTimeout(const MonoDelta& timeout) {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   timeout_ = timeout;
 }
 
 
 bool Batcher::HasPendingOperations() const {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   return !ops_.empty();
 }
 
 int Batcher::CountBufferedOperations() const {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   if (state_ == kGatheringOps) {
     return ops_.size();
   } else {
@@ -690,7 +690,7 @@ int Batcher::CountBufferedOperations() const {
 void Batcher::CheckForFinishedFlush() {
   sp::shared_ptr<KuduSession> session;
   {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     if (state_ != kFlushing || !ops_.empty()) {
       return;
     }
@@ -722,7 +722,7 @@ MonoTime Batcher::ComputeDeadlineUnlocked() const {
 
 void Batcher::FlushAsync(KuduStatusCallback* cb) {
   {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     CHECK_EQ(state_, kGatheringOps);
     state_ = kFlushing;
     flush_callback_ = cb;
@@ -776,7 +776,7 @@ Status Batcher::Add(KuduWriteOperation* write_op) {
 void Batcher::AddInFlightOp(InFlightOp* op) {
   DCHECK_EQ(op->state, InFlightOp::kLookingUpTablet);
 
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   CHECK_EQ(state_, kGatheringOps);
   InsertOrDie(&ops_, op);
   op->sequence_number_ = next_op_sequence_number_++;
@@ -792,7 +792,7 @@ bool Batcher::IsAbortedUnlocked() const {
 }
 
 void Batcher::MarkInFlightOpFailed(InFlightOp* op, const Status& s) {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   MarkInFlightOpFailedUnlocked(op, s);
 }
 
@@ -841,7 +841,7 @@ void Batcher::TabletLookupFinished(InFlightOp* op, const Status& s) {
   }
 
   {
-    std::lock_guard<simple_spinlock> l2(op->lock_);
+    std::lock_guard l2(op->lock_);
     CHECK_EQ(op->state, InFlightOp::kLookingUpTablet);
     CHECK(op->tablet != NULL);
 
@@ -882,7 +882,7 @@ void Batcher::FlushBuffersIfReady() {
   // 2. All outstanding ops have finished lookup. Why? To avoid a situation
   //    where ops are flushed one by one as they finish lookup.
   {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     if (state_ != kFlushing) {
       VLOG(3) << "FlushBuffersIfReady: batcher not yet in flushing state";
       return;
@@ -1002,7 +1002,7 @@ void Batcher::ProcessWriteResponse(const WriteRpc& rpc,
   //     calls CheckForFinishedFlush(), and wakes up the client thread
   //     from which the Flush() is being called.
   {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     for (InFlightOp* op : rpc.ops()) {
       CHECK_EQ(1, ops_.erase(op))
             << "Could not remove op " << op->ToString()

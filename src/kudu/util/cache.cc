@@ -8,7 +8,6 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
-#include <mutex>
 #include <ostream>
 #include <string>
 #include <utility>
@@ -274,7 +273,7 @@ Cache::Handle* CacheShard<policy>::Lookup(const Slice& key,
                                           bool caching) {
   RLHandle* e;
   {
-    std::lock_guard<decltype(mutex_)> l(mutex_);
+    std::lock_guard l(mutex_);
     e = table_.Lookup(key, hash);
     if (e != nullptr) {
       e->refs.fetch_add(1, std::memory_order_relaxed);
@@ -313,7 +312,7 @@ Cache::Handle* CacheShard<policy>::Insert(
 
   RLHandle* to_remove_head = nullptr;
   {
-    std::lock_guard<decltype(mutex_)> l(mutex_);
+    std::lock_guard l(mutex_);
 
     RL_Append(handle);
 
@@ -352,7 +351,7 @@ void CacheShard<policy>::Erase(const Slice& key, uint32_t hash) {
   RLHandle* e;
   bool last_reference = false;
   {
-    std::lock_guard<decltype(mutex_)> l(mutex_);
+    std::lock_guard l(mutex_);
     e = table_.Remove(key, hash);
     if (e != nullptr) {
       RL_Remove(e);
@@ -373,7 +372,7 @@ size_t CacheShard<policy>::Invalidate(const Cache::InvalidationControl& ctl) {
   RLHandle* to_remove_head = nullptr;
 
   {
-    std::lock_guard<decltype(mutex_)> l(mutex_);
+    std::lock_guard l(mutex_);
 
     // rl_.next is the oldest (a.k.a. least relevant) entry in the recency list.
     RLHandle* h = rl_.next;
@@ -446,7 +445,7 @@ class ShardedCache : public Cache {
 
   void SetMetrics(std::unique_ptr<CacheMetrics> metrics,
                   ExistingMetricsPolicy metrics_policy) override {
-    std::lock_guard<decltype(metrics_lock_)> l(metrics_lock_);
+    std::lock_guard l(metrics_lock_);
     if (metrics_ && metrics_policy == ExistingMetricsPolicy::kKeep) {
       // KUDU-2165: reuse of the Cache singleton across multiple InternalMiniCluster
       // servers causes TSAN errors. So, we'll ensure that metrics only get

@@ -25,7 +25,6 @@
 #include <deque>
 #include <iterator>
 #include <memory>
-#include <mutex>
 #include <numeric>
 #include <optional>
 #include <ostream>
@@ -754,7 +753,7 @@ Status MergeIterator::RefillHotHeap() {
 void MergeIterator::DestroySubIterator(MergeIterState* state) {
   DCHECK(state->IsFullyExhausted());
 
-  std::lock_guard<rw_spinlock> l(states_lock_);
+  std::lock_guard l(states_lock_);
   state->AddStats(&finished_iter_stats_by_col_);
   states_.erase_and_dispose(states_.iterator_to(*state),
                             [](MergeIterState* s) { delete s; });
@@ -1081,7 +1080,7 @@ void UnionIterator::FinishBatch() {
 }
 
 void UnionIterator::PopFront() {
-  std::lock_guard<rw_spinlock> l(iters_lock_);
+  std::lock_guard l(iters_lock_);
   AddIterStats(*iters_.front().iter, &finished_iter_stats_by_col_);
   iters_.pop_front();
 }

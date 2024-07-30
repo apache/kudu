@@ -19,7 +19,6 @@
 
 #include <cstddef>
 #include <memory>
-#include <mutex>
 #include <ostream>
 #include <string>
 #include <utility>
@@ -90,7 +89,7 @@ TableLocationsCache::EntryHandle TableLocationsCache::Put(
   // Insert() evicts already existing entry with the same key, if any.
   auto h(cache_->Insert(std::move(pending), &eviction_cb_));
   {
-    std::lock_guard<simple_spinlock> l(keys_by_table_id_lock_);
+    std::lock_guard l(keys_by_table_id_lock_);
     keys_by_table_id_[table_id].emplace(key);
   }
   VLOG(2) << Substitute("key '$0': added entry for table '$1'", key, table_id);
@@ -100,7 +99,7 @@ TableLocationsCache::EntryHandle TableLocationsCache::Put(
 }
 
 void TableLocationsCache::Remove(const std::string& table_id) {
-  std::lock_guard<simple_spinlock> l(keys_by_table_id_lock_);
+  std::lock_guard l(keys_by_table_id_lock_);
   const auto it = keys_by_table_id_.find(table_id);
   if (it != keys_by_table_id_.end()) {
     VLOG(2) << Substitute("removing cached locations for table '$0'", table_id);

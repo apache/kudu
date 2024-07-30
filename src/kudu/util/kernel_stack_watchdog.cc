@@ -81,7 +81,7 @@ KernelStackWatchdog::~KernelStackWatchdog() {
 }
 
 void KernelStackWatchdog::SaveLogsForTests(bool save_logs) {
-  lock_guard<simple_spinlock> l(log_lock_);
+  lock_guard l(log_lock_);
   if (save_logs) {
     log_collector_.reset(new std::vector<string>());
   } else {
@@ -90,14 +90,14 @@ void KernelStackWatchdog::SaveLogsForTests(bool save_logs) {
 }
 
 std::vector<string> KernelStackWatchdog::LoggedMessagesForTests() const {
-  lock_guard<simple_spinlock> l(log_lock_);
+  lock_guard l(log_lock_);
   CHECK(log_collector_) << "Must call SaveLogsForTests(true) first";
   return *log_collector_;
 }
 
 void KernelStackWatchdog::Register(TLS* tls) {
   int64_t tid = Thread::CurrentThreadId();
-  lock_guard<simple_spinlock> l(tls_lock_);
+  lock_guard l(tls_lock_);
   InsertOrDie(&tls_by_tid_, tid, tls);
 }
 
@@ -107,7 +107,7 @@ void KernelStackWatchdog::Unregister() {
   std::unique_ptr<TLS> tls(tls_);
   {
     std::unique_lock<Mutex> l(unregister_lock_, std::try_to_lock);
-    lock_guard<simple_spinlock> l2(tls_lock_);
+    lock_guard l2(tls_lock_);
     CHECK(tls_by_tid_.erase(tid));
     if (!l.owns_lock()) {
       // The watchdog is in the middle of running and might be accessing
@@ -157,7 +157,7 @@ void KernelStackWatchdog::RunThread() {
     TLSMap tls_map_copy;
     vector<unique_ptr<TLS>> to_delete;
     {
-      lock_guard<simple_spinlock> l(tls_lock_);
+      lock_guard l(tls_lock_);
       to_delete.swap(pending_delete_);
       tls_map_copy = tls_by_tid_;
     }
@@ -194,7 +194,7 @@ void KernelStackWatchdog::RunThread() {
             break;
           }
 
-          lock_guard<simple_spinlock> l(log_lock_);
+          lock_guard l(log_lock_);
           LOG_STRING(WARNING, log_collector_.get())
               << "Thread " << p << " stuck at " << frame->status_
               << " for " << paused_ms << "ms" << ":\n"

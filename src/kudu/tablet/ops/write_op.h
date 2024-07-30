@@ -20,7 +20,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <shared_mutex>
 #include <string>
@@ -195,13 +194,13 @@ class WriteOpState : public OpState {
   void ReleaseMvccTxn(Op::OpResult result);
 
   void set_schema_at_decode_time(const SchemaPtr& schema) {
-    std::lock_guard<simple_spinlock> l(op_state_lock_);
+    std::lock_guard l(op_state_lock_);
     schema_ptr_at_decode_time_ = schema;
     schema_at_decode_time_ = schema.get();
   }
 
   const Schema* schema_at_decode_time() const {
-    std::lock_guard<simple_spinlock> l(op_state_lock_);
+    std::lock_guard l(op_state_lock_);
     return schema_at_decode_time_;
   }
 

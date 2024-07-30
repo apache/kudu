@@ -19,10 +19,10 @@
 
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <ostream>
 #include <string>
+#include <type_traits>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -41,7 +41,6 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
-#include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/transactions/coordinator_rpc.h"
 #include "kudu/transactions/participant_rpc.h"
@@ -162,14 +161,14 @@ Status TxnSystemClient::OpenTxnStatusTable() {
   client::sp::shared_ptr<KuduTable> table;
   RETURN_NOT_OK(client_->OpenTable(TxnStatusTablet::kTxnStatusTableName, &table));
 
-  std::lock_guard<simple_spinlock> l(table_lock_);
+  std::lock_guard l(table_lock_);
   txn_status_table_ = std::move(table);
   return Status::OK();
 }
 
 Status TxnSystemClient::CheckOpenTxnStatusTable() {
   {
-    std::lock_guard<simple_spinlock> l(table_lock_);
+    std::lock_guard l(table_lock_);
     if (txn_status_table_) {
       return Status::OK();
     }
@@ -180,7 +179,7 @@ Status TxnSystemClient::CheckOpenTxnStatusTable() {
   RETURN_NOT_OK(client_->OpenTable(TxnStatusTablet::kTxnStatusTableName, &table));
 
   {
-    std::lock_guard<simple_spinlock> l(table_lock_);
+    std::lock_guard l(table_lock_);
     // Extra check to handle concurrent callers.
     if (!txn_status_table_) {
       txn_status_table_ = std::move(table);

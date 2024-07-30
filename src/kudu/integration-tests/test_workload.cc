@@ -240,7 +240,7 @@ void TestWorkload::WriteThread() {
   const Status& __s = (s);                                  \
   if (read_errors_allowed_) {                               \
     if (PREDICT_FALSE(!__s.ok())) {                         \
-      std::lock_guard<simple_spinlock> l(read_error_lock_); \
+      std::lock_guard l(read_error_lock_); \
       read_errors_.emplace_back(__s);                       \
       return;                                               \
     }                                                       \

@@ -19,7 +19,6 @@
 
 #include <cstdlib>
 #include <functional>
-#include <mutex>
 #include <ostream>
 #include <shared_mutex>
 #include <string>
@@ -172,7 +171,7 @@ int32_t Messenger::GetPendingConnectionsNum() {
   // making a copy of acceptor_pools_ is necessary to avoid data races.
   decltype(acceptor_pools_) acceptor_pools;
   {
-    std::lock_guard<percpu_rwlock> guard(lock_);
+    std::lock_guard guard(lock_);
     if (state_ == kClosing) {
       return -1;
     }
@@ -216,7 +215,7 @@ void Messenger::ShutdownInternal(ShutdownMode mode) {
   acceptor_vec_t pools_to_shutdown;
   RpcServicesMap services_to_release;
   {
-    std::lock_guard<percpu_rwlock> guard(lock_);
+    std::lock_guard guard(lock_);
     if (state_ == kClosing) {
       return;
     }
@@ -265,7 +264,7 @@ Status Messenger::AddAcceptorPool(const Sockaddr& accept_addr,
   RETURN_NOT_OK(sock.GetSocketAddress(&addr));
 
   {
-    std::lock_guard<percpu_rwlock> guard(lock_);
+    std::lock_guard guard(lock_);
     acceptor_pools_.emplace_back(std::make_shared<AcceptorPool>(
         this, &sock, addr, acceptor_listen_backlog_));
     *pool = acceptor_pools_.back();
@@ -290,7 +289,7 @@ Status Messenger::AddAcceptorPool(const Sockaddr& accept_addr,
 Status Messenger::RegisterService(const string& service_name,
                                   const scoped_refptr<RpcService>& service) {
   DCHECK(service);
-  std::lock_guard<percpu_rwlock> guard(lock_);
+  std::lock_guard guard(lock_);
   DCHECK_NE(kServicesUnregistered, state_);
   DCHECK_NE(kClosing, state_);
   if (InsertIfNotPresent(&rpc_services_, service_name, service)) {
@@ -302,7 +301,7 @@ Status Messenger::RegisterService(const string& service_name,
 void Messenger::UnregisterAllServices() {
   RpcServicesMap to_release;
   {
-    std::lock_guard<percpu_rwlock> guard(lock_);
+    std::lock_guard guard(lock_);
     to_release = std::move(rpc_services_);
     state_ = kServicesUnregistered;
   }
@@ -312,7 +311,7 @@ void Messenger::UnregisterAllServices() {
 Status Messenger::UnregisterService(const string& service_name) {
   scoped_refptr<RpcService> to_release;
   {
-    std::lock_guard<percpu_rwlock> guard(lock_);
+    std::lock_guard guard(lock_);
     to_release = EraseKeyReturnValuePtr(&rpc_services_, service_name);
     if (!to_release) {
       return Status::ServiceUnavailable(Substitute(

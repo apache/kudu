@@ -21,7 +21,6 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <ostream>
 #include <type_traits>
@@ -677,14 +676,14 @@ Status TabletCopyClient::DownloadWALs() {
       SetStatusMessage(Substitute("Downloading WAL segment with seq. number $0 ($1/$2)",
                                   seg_seqno, counter.load() + 1, num_segments));
       {
-        std::lock_guard<simple_spinlock> l(simple_lock_);
+        std::lock_guard l(simple_lock_);
         if (!end_status.ok()) {
           return;
         }
       }
       Status s = DownloadWAL(seg_seqno);
       if (!s.ok()) {
-        std::lock_guard<simple_spinlock> l(simple_lock_);
+        std::lock_guard l(simple_lock_);
         if (end_status.ok()) {
           end_status = s;
         }
@@ -720,7 +719,7 @@ void TabletCopyClient::DownloadRowset(const RowSetDataPB& src_rowset,
                                       Status* end_status) {
   RowSetDataPB* dst_rowset;
   {
-    std::lock_guard<simple_spinlock> l(simple_lock_);
+    std::lock_guard l(simple_lock_);
     if (!end_status->ok()) {
       return;
     }
@@ -907,12 +906,12 @@ Status TabletCopyClient::DownloadAndRewriteBlockIfEndStatusOK(const BlockIdPB& s
                                                               BlockIdPB* dest_block_id,
                                                               Status* end_status) {
   {
-    std::lock_guard<simple_spinlock> l(simple_lock_);
+    std::lock_guard l(simple_lock_);
     RETURN_NOT_OK(*end_status);
   }
   Status s = DownloadAndRewriteBlock(src_block_id, num_blocks, block_count, dest_block_id);
   if (!s.ok()) {
-    std::lock_guard<simple_spinlock> l(simple_lock_);
+    std::lock_guard l(simple_lock_);
     if (!s.ok() && end_status->ok()) {
       *end_status = s;
     }
@@ -942,7 +941,7 @@ Status TabletCopyClient::DownloadBlock(const BlockId& old_block_id,
   *new_block_id = block->id();
   RETURN_NOT_OK_PREPEND(block->Finalize(), "Unable to finalize block");
   {
-    std::lock_guard<simple_spinlock> l(simple_lock_);
+    std::lock_guard l(simple_lock_);
     transaction_->AddCreatedBlock(std::move(block));
   }
   return Status::OK();

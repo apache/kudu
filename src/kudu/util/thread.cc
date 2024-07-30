@@ -31,7 +31,6 @@
 #include <cerrno>
 #include <cstring>
 #include <memory>
-#include <mutex>
 #include <shared_mutex>
 #include <sstream>
 #include <type_traits>
@@ -374,7 +373,7 @@ void ThreadMgr::AddThread(const pthread_t& pthread_id, const string& name,
     //   global static container, but bind the container with the life cycle
     //   of some top-level object that uses the ThreadMgr as a singleton.
     {
-      std::lock_guard<decltype(lock_)> l(lock_);
+      std::lock_guard l(lock_);
       thread_categories_[category][pthread_id] = ThreadDescriptor(category, name, tid);
     }
     ++threads_running_metric_;
@@ -388,7 +387,7 @@ void ThreadMgr::RemoveThread(const pthread_t& pthread_id, const string& category
   ANNOTATE_IGNORE_SYNC_BEGIN();
   ANNOTATE_IGNORE_READS_AND_WRITES_BEGIN();
   {
-    std::lock_guard<decltype(lock_)> l(lock_);
+    std::lock_guard l(lock_);
     auto& threads = FindOrDie(thread_categories_, category);
     auto num_erased = threads.erase(pthread_id);
     CHECK_EQ(1, num_erased);

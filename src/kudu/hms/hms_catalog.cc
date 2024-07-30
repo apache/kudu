@@ -21,7 +21,6 @@
 #include <iostream>
 #include <iterator>
 #include <map>
-#include <mutex>
 #include <optional>
 #include <string>
 #include <utility>
@@ -317,7 +316,7 @@ Status HmsCatalog::GetCurrentNotificationEventId(int64_t* event_id) {
 }
 
 Status HmsCatalog::GetUuid(string* uuid) {
-  std::lock_guard<simple_spinlock> l(uuid_lock_);
+  std::lock_guard l(uuid_lock_);
   if (!uuid_) {
     return Status::NotSupported("No HMS UUID available");
   }
@@ -486,7 +485,7 @@ void HmsCatalog::LoopInitializeUuid() {
       });
     if (s.ok()) {
       VLOG(1) << "Connected to HMS with uuid " << uuid;
-      std::lock_guard<simple_spinlock> l(uuid_lock_);
+      std::lock_guard l(uuid_lock_);
       uuid_ = std::move(uuid);
       return;
     }

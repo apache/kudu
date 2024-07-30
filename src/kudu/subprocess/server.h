@@ -24,7 +24,6 @@
 #include <functional>
 #include <map>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -110,7 +109,7 @@ class SubprocessCall {
   // (which may, in turn, delete the request state). If the request couldn't be
   // sent, runs the callback with an appropriate error immediately.
   void SendRequest(SubprocessProtocol* message_protocol) {
-    std::lock_guard<Mutex> l(lock_);
+    std::lock_guard l(lock_);
     // If we've already run the callback, (e.g. we passed the deadline before
     // sending) we shouldn't try sending the message; the request and response
     // may have been destructed.
@@ -127,7 +126,7 @@ class SubprocessCall {
   }
 
   void RespondSuccess(SubprocessResponsePB resp) {
-    std::lock_guard<Mutex> l(lock_);
+    std::lock_guard l(lock_);
     // If we've already run the callback (e.g. we passed the deadline before
     // responding), there's nothing to do.
     if (!cb_) {
@@ -140,7 +139,7 @@ class SubprocessCall {
 
   void RespondError(const Status& s) {
     DCHECK(!s.ok());
-    std::lock_guard<Mutex> l(lock_);
+    std::lock_guard l(lock_);
     // If we've already run the callback (e.g. we failed to send the message),
     // there's nothing to do.
     if (!cb_) {

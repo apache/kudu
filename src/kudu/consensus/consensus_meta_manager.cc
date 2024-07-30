@@ -49,7 +49,7 @@ Status ConsensusMetadataManager::Create(const string& tablet_id,
                                                   &cmeta),
                         Substitute("Unable to create consensus metadata for tablet $0", tablet_id));
 
-  lock_guard<Mutex> l(lock_);
+  lock_guard l(lock_);
   if (!InsertIfNotPresent(&cmeta_cache_, tablet_id, cmeta)) {
     return Status::AlreadyPresent(Substitute("ConsensusMetadata instance for $0 already exists",
                                              tablet_id));
@@ -61,7 +61,7 @@ Status ConsensusMetadataManager::Create(const string& tablet_id,
 Status ConsensusMetadataManager::Load(const string& tablet_id,
                                       scoped_refptr<ConsensusMetadata>* cmeta_out) {
   {
-    lock_guard<Mutex> l(lock_);
+    lock_guard l(lock_);
 
     // Try to get the cmeta instance from cache first.
     scoped_refptr<ConsensusMetadata>* cached_cmeta = FindOrNull(cmeta_cache_, tablet_id);
@@ -79,7 +79,7 @@ Status ConsensusMetadataManager::Load(const string& tablet_id,
 
   // Cache and return the loaded ConsensusMetadata.
   {
-    lock_guard<Mutex> l(lock_);
+    lock_guard l(lock_);
     // Due to our thread-safety contract, no other caller may have interleaved
     // with us for this tablet id, so we use InsertOrDie().
     InsertOrDie(&cmeta_cache_, tablet_id, cmeta);
@@ -103,7 +103,7 @@ Status ConsensusMetadataManager::LoadOrCreate(const string& tablet_id,
 
 Status ConsensusMetadataManager::Delete(const string& tablet_id) {
   {
-    lock_guard<Mutex> l(lock_);
+    lock_guard l(lock_);
     cmeta_cache_.erase(tablet_id); // OK to delete an uncached cmeta; ignore the return value.
   }
   RETURN_NOT_OK_PREPEND(ConsensusMetadata::DeleteOnDiskData(fs_manager_, tablet_id),

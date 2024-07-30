@@ -20,7 +20,6 @@
 #include <cstdint>
 #include <deque>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <string>
 #include <type_traits>
@@ -179,13 +178,13 @@ class DeltaFileReader : public DeltaStore,
   const BlockId& block_id() const { return reader_->block_id(); }
 
   const DeltaStats& delta_stats() const override {
-    std::lock_guard<simple_spinlock> l(stats_lock_);
+    std::lock_guard l(stats_lock_);
     DCHECK(delta_stats_);
     return *delta_stats_;
   }
 
   bool has_delta_stats() const override {
-    std::lock_guard<simple_spinlock> l(stats_lock_);
+    std::lock_guard l(stats_lock_);
     return delta_stats_ != nullptr;
   }
 

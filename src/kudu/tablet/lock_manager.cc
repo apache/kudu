@@ -22,7 +22,6 @@
 #include <cstddef>
 #include <limits>
 #include <memory>
-#include <mutex>
 #include <ostream>
 #include <string>
 #include <utility>
@@ -198,7 +197,7 @@ vector<LockEntry*> LockTable::GetLockEntries(ArrayView<Slice> keys) {
 
   // TODO(todd) prefetch the hash buckets
   {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     for (int i = 0; i < entries.size(); i++) {
       LockEntry* new_entry = entries[i];
       Bucket* bucket = FindBucket(new_entry->key_hash_);
@@ -251,7 +250,7 @@ void LockTable::ReleaseLockEntries(ArrayView<LockEntry*> entries) {
   };
 
   {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
 
     const auto* it = entries.cbegin();
     ssize_t rem = entries.size();
@@ -471,7 +470,7 @@ PartitionLockState* LockManager::TryAcquirePartitionLock(
 
   // The most anticipated case is the lock is being re-acquired multiple times.
   {
-    std::lock_guard<simple_spinlock> l(p_lock_);
+    std::lock_guard l(p_lock_);
     if (partition_lock_ &&
         PREDICT_TRUE(requested_id == partition_lock_->txn_id().value())) {
       DCHECK_GT(partition_lock_refs_, 0);
@@ -497,7 +496,7 @@ PartitionLockState* LockManager::TryAcquirePartitionLock(
         // If we're still unable to take 'partition_sem_', but 'partition_lock_'
         // is unset, just try again -- another thread is likely in the midsts of
         // unsetting it and 'partition_sem_' should be available soon.
-        std::lock_guard<simple_spinlock> l(p_lock_);
+        std::lock_guard l(p_lock_);
         if (!partition_lock_) {
           continue;
         }
@@ -513,7 +512,7 @@ PartitionLockState* LockManager::TryAcquirePartitionLock(
       }
     }
   }
-  std::lock_guard<simple_spinlock> l(p_lock_);
+  std::lock_guard l(p_lock_);
   DCHECK_GE(0, partition_sem_.GetValue());
   DCHECK(!partition_lock_);
   DCHECK_EQ(partition_lock_refs_, 0);
@@ -548,7 +547,7 @@ std::vector<LockEntry*> LockManager::LockBatch(ArrayView<Slice> keys, const OpSt
 void LockManager::ReleaseBatch(ArrayView<LockEntry*> locks) { locks_->ReleaseLockEntries(locks); }
 
 void LockManager::ReleasePartitionLock() {
-  std::lock_guard<simple_spinlock> l(p_lock_);
+  std::lock_guard l(p_lock_);
   DCHECK_GT(partition_lock_refs_, 0);
   if (--partition_lock_refs_ == 0) {
     partition_sem_.unlock();

@@ -122,7 +122,7 @@ Status DeltaMemStore::Update(Timestamp timestamp,
     deleted_row_count_.Increment();
   }
 
-  std::lock_guard<simple_spinlock> l(ts_lock_);
+  std::lock_guard l(ts_lock_);
   highest_timestamp_ = std::max(highest_timestamp_, timestamp);
   return Status::OK();
 }

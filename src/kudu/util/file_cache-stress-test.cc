@@ -20,10 +20,10 @@
 #include <deque>
 #include <iterator>
 #include <memory>
-#include <mutex>
 #include <ostream>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -134,7 +134,7 @@ class FileCacheStressTest : public KuduTest {
         CHECK_OK(next_file->Close());
       }
       {
-        std::lock_guard<simple_spinlock> l(lock_);
+        std::lock_guard l(lock_);
         InsertOrDie(&available_files_, next_file_name, 0);
       }
       metrics[BaseName(next_file_name)]["create"] = 1;
@@ -243,7 +243,7 @@ class FileCacheStressTest : public KuduTest {
   // Retrieve a random file name to be either opened or deleted. If deleting,
   // the file name is made inaccessible to future operations.
   bool GetRandomFile(GetMode mode, Random* rand, string* out) {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     if (available_files_.empty()) {
       return false;
     }
@@ -270,7 +270,7 @@ class FileCacheStressTest : public KuduTest {
   // Signal that a previously in-progress open has finished, allowing the file
   // in question to be deleted.
   void FinishedOpen(const string& opened) {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     int& openers = FindOrDie(available_files_, opened);
     openers--;
   }
@@ -333,7 +333,7 @@ class FileCacheStressTest : public KuduTest {
 
   // Merge the metrics in 'new_metrics' into the global metric map.
   void MergeNewMetrics(MetricMap new_metrics) {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     for (const auto& file_action_pair : new_metrics) {
       for (const auto& action_count_pair : file_action_pair.second) {
         metrics_[file_action_pair.first][action_count_pair.first] += action_count_pair.second;

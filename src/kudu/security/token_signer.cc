@@ -82,7 +82,7 @@ TokenSigner::~TokenSigner() {
 }
 
 Status TokenSigner::ImportKeys(const vector<TokenSigningPrivateKeyPB>& keys) {
-  lock_guard<RWMutex> l(lock_);
+  lock_guard l(lock_);
 
   const int64_t now = WallTime_Now();
   map<int64_t, unique_ptr<TokenSigningPrivateKey>> tsk_by_seq;
@@ -263,7 +263,7 @@ Status TokenSigner::AddKey(unique_ptr<TokenSigningPrivateKey> tsk) {
     return Status::InvalidArgument("key has already expired");
   }
 
-  lock_guard<RWMutex> l(lock_);
+  lock_guard l(lock_);
   if (key_seq_num < last_key_seq_num_ + 1) {
     // The AddKey() method is designed for adding new keys: that should be done
     // using CheckNeedKey()/AddKey() sequence. Use the ImportKeys() method
@@ -284,7 +284,7 @@ Status TokenSigner::AddKey(unique_ptr<TokenSigningPrivateKey> tsk) {
 }
 
 Status TokenSigner::TryRotateKey(bool* has_rotated) {
-  lock_guard<RWMutex> l(lock_);
+  lock_guard l(lock_);
   if (has_rotated) {
     *has_rotated = false;
   }

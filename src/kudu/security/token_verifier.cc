@@ -87,7 +87,7 @@ Status TokenVerifier::ImportKeys(const vector<TokenSigningPublicKeyPB>& keys) {
     RETURN_NOT_OK(tsks.back()->Init());
   }
 
-  lock_guard<RWMutex> l(lock_);
+  lock_guard l(lock_);
   for (auto&& tsk_ptr : tsks) {
     keys_by_seq_.emplace(tsk_ptr->pb().key_seq_num(), std::move(tsk_ptr));
   }

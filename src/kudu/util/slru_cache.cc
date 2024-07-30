@@ -20,7 +20,6 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
-#include <mutex>
 #include <ostream>
 #include <utility>
 #include <vector>
@@ -425,7 +424,7 @@ void SLRUCacheShardPair::SetMetrics(SLRUCacheMetrics* metrics) {
 // Look at Cache::Insert() for more details.
 Handle* SLRUCacheShardPair::Insert(SLRUHandle* handle,
                                    EvictionCallback* eviction_callback) {
-  std::lock_guard<decltype(mutex_)> l(mutex_);
+  std::lock_guard l(mutex_);
   if (!ProtectedContains(handle->key(), handle->hash)) {
     return probationary_shard_.Insert(handle, eviction_callback);
   }
@@ -452,7 +451,7 @@ Handle* SLRUCacheShardPair::Lookup(const Slice& key, uint32_t hash, bool caching
   //      - Miss: Return the handle.
   //
   // Lookup metrics for both segments and the high-level cache are updated with each lookup.
-  std::lock_guard<decltype(mutex_)> l(mutex_);
+  std::lock_guard l(mutex_);
   Handle* protected_handle = protected_shard_.Lookup(key, hash, caching);
 
   // If the key exists in the protected segment, return the result from the lookup of the
@@ -506,7 +505,7 @@ void SLRUCacheShardPair::Release(Handle* handle) {
 }
 
 void SLRUCacheShardPair::Erase(const Slice& key, uint32_t hash) {
-  std::lock_guard<decltype(mutex_)> l(mutex_);
+  std::lock_guard l(mutex_);
   probationary_shard_.Erase(key, hash);
   protected_shard_.Erase(key, hash);
 }

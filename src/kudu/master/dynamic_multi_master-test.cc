@@ -24,7 +24,6 @@
 #include <iterator>
 #include <map>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <ostream>
 #include <string>
@@ -1655,7 +1654,7 @@ TEST_F(AutoAddMasterTest, TestAddWithOnGoingDdl) {
   const auto generate_client = [&] (shared_ptr<KuduClient>* c) {
     vector<string> master_addrs;
     {
-      std::lock_guard<simple_spinlock> l(master_addrs_lock);
+      std::lock_guard l(master_addrs_lock);
       master_addrs = master_addrs_unlocked;
     }
     shared_ptr<KuduClient> client;
@@ -1703,7 +1702,7 @@ TEST_F(AutoAddMasterTest, TestAddWithOnGoingDdl) {
       ASSERT_OK(VerifyVotersOnAllMasters(num_masters, cluster_.get()));
     });
     {
-      std::lock_guard<simple_spinlock> l(master_addrs_lock);
+      std::lock_guard l(master_addrs_lock);
       master_addrs_unlocked.emplace_back(new_master->bound_rpc_hostport().ToString());
     }
     cluster_->Shutdown();

@@ -17,7 +17,6 @@
 
 #include "kudu/rpc/request_tracker.h"
 
-#include <mutex>
 #include <string>
 #include <utility>
 
@@ -33,7 +32,7 @@ RequestTracker::RequestTracker(std::string client_id)
       next_(0) {}
 
 Status RequestTracker::NewSeqNo(SequenceNumber* seq_no) {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   *seq_no = next_;
   InsertOrDie(&incomplete_rpcs_, *seq_no);
   next_++;
@@ -41,13 +40,13 @@ Status RequestTracker::NewSeqNo(SequenceNumber* seq_no) {
 }
 
 RequestTracker::SequenceNumber RequestTracker::FirstIncomplete() {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   if (incomplete_rpcs_.empty()) return kNoSeqNo;
   return *incomplete_rpcs_.begin();
 }
 
 void RequestTracker::RpcCompleted(const SequenceNumber& seq_no) {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   incomplete_rpcs_.erase(seq_no);
 }
 

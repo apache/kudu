@@ -78,7 +78,7 @@ void Txn::AcquireReadLock(shared_lock<rw_semaphore>* txn_lock) {
 void Txn::AdoptPartitionLock(ScopedPartitionLock partition_lock) {
   if (PREDICT_TRUE(FLAGS_enable_txn_partition_lock)) {
     TabletServerErrorPB::Code code = tserver::TabletServerErrorPB::UNKNOWN_ERROR;
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
 #ifndef NDEBUG
     CHECK(partition_lock.IsAcquired(&code)) << code;
     if (partition_lock_.IsAcquired(&code)) {
@@ -96,7 +96,7 @@ void Txn::AdoptPartitionLock(ScopedPartitionLock partition_lock) {
 
 void TxnParticipant::CreateOpenTransaction(int64_t txn_id,
                                            LogAnchorRegistry* log_anchor_registry) {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   EmplaceOrDie(&txns_, txn_id, new Txn(txn_id, log_anchor_registry,
                                        tablet_metadata_, kOpen));
 }
@@ -104,18 +104,18 @@ void TxnParticipant::CreateOpenTransaction(int64_t txn_id,
 scoped_refptr<Txn> TxnParticipant::GetOrCreateTransaction(int64_t txn_id,
                                                           LogAnchorRegistry* log_anchor_registry) {
   // TODO(awong): add a 'user' field to these transactions.
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   return LookupOrInsertNewSharedPtr(&txns_, txn_id, txn_id, log_anchor_registry,
                                     tablet_metadata_);
 }
 
 scoped_refptr<Txn> TxnParticipant::GetTransaction(int64_t txn_id) {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   return FindPtrOrNull(txns_, txn_id);
 }
 
 void TxnParticipant::ClearIfInitFailed(int64_t txn_id) {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   Txn* txn = FindPointeeOrNull(txns_, txn_id);
   // NOTE: If this is the only reference to the transaction, we can forego
   // locking the state.
@@ -125,7 +125,7 @@ void TxnParticipant::ClearIfInitFailed(int64_t txn_id) {
 }
 
 bool TxnParticipant::ClearIfComplete(int64_t txn_id) {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   Txn* txn = FindPointeeOrNull(txns_, txn_id);
   // NOTE: If this is the only reference to the transaction, we can forego
   // locking the state.
@@ -141,7 +141,7 @@ bool TxnParticipant::ClearIfComplete(int64_t txn_id) {
 vector<TxnParticipant::TxnEntry> TxnParticipant::GetTxnsForTests() const {
   vector<TxnEntry> txns;
   {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     for (const auto& txn_id_and_scoped_txn : txns_) {
       const auto& scoped_txn = txn_id_and_scoped_txn.second;
       txns.emplace_back(TxnEntry{

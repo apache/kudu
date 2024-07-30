@@ -145,7 +145,7 @@ Peer::Peer(RaftPeerPB peer_pb,
 
 void Peer::Init() {
   {
-    std::lock_guard<simple_spinlock> l(peer_lock_);
+    std::lock_guard l(peer_lock_);
     queue_->TrackPeer(peer_pb_);
   }
 
@@ -335,7 +335,7 @@ void Peer::StartElection() {
 
 void Peer::ProcessResponse() {
   // Note: This method runs on the reactor thread.
-  std::lock_guard<simple_spinlock> lock(peer_lock_);
+  std::lock_guard lock(peer_lock_);
   if (PREDICT_FALSE(closed_)) {
     return;
   }
@@ -417,7 +417,7 @@ void Peer::DoProcessResponse() {
       queue_->ResponseFromPeer(peer_pb_.permanent_uuid(), response_);
 
   {
-    std::lock_guard<simple_spinlock> lock(peer_lock_);
+    std::lock_guard lock(peer_lock_);
     CHECK(request_pending_);
     failed_attempts_ = 0;
     request_pending_ = false;
@@ -497,7 +497,7 @@ void Peer::ProcessResponseErrorUnlocked(const Status& status) {
 }
 
 bool Peer::CreateProxyIfNeeded() {
-  std::lock_guard<simple_spinlock> l(proxy_lock_);
+  std::lock_guard l(proxy_lock_);
   if (!proxy_) {
     unique_ptr<PeerProxy> peer_proxy;
     Status s = DCHECK_NOTNULL(peer_proxy_factory_)->NewProxy(peer_pb_, &peer_proxy);
@@ -523,7 +523,7 @@ void Peer::Close() {
     return;
   }
   {
-    std::lock_guard<simple_spinlock> lock(peer_lock_);
+    std::lock_guard lock(peer_lock_);
     closed_ = true;
   }
   VLOG_WITH_PREFIX_UNLOCKED(1) << "Closing peer: " << peer_pb_.permanent_uuid();

@@ -178,7 +178,7 @@ Status TSManager::RegisterTS(const NodeInstancePB& instance,
   shared_ptr<TSDescriptor> descriptor;
   bool new_tserver = false;
   {
-    lock_guard<rw_spinlock> l(lock_);
+    lock_guard l(lock_);
     auto* descriptor_ptr = FindOrNull(servers_by_id_, uuid);
     if (descriptor_ptr) {
       descriptor = *descriptor_ptr;
@@ -256,7 +256,7 @@ Status TSManager::SetTServerState(const string& ts_uuid,
                                   TServerStatePB ts_state,
                                   ChangeTServerStateRequestPB::HandleMissingTS handle_missing_ts,
                                   SysCatalogTable* sys_catalog) {
-  lock_guard<RWMutex> l(ts_state_lock_);
+  lock_guard l(ts_state_lock_);
   auto existing_state = FindWithDefault(
       ts_state_by_uuid_, ts_uuid, { TServerStatePB::NONE, -1 }).first;
   if (existing_state == ts_state) {
@@ -306,14 +306,14 @@ TServerStatePB TSManager::GetTServerState(const string& ts_uuid) const {
 }
 
 Status TSManager::ReloadTServerStates(SysCatalogTable* sys_catalog) {
-  lock_guard<RWMutex> l(ts_state_lock_);
+  lock_guard l(ts_state_lock_);
   ts_state_by_uuid_ = {};
   TServerStateLoader loader(this);
   return sys_catalog->VisitTServerStates(&loader);
 }
 
 void TSManager::SetAllTServersNeedFullTabletReports() {
-  lock_guard<rw_spinlock> l(lock_);
+  lock_guard l(lock_);
   for (auto& id_and_desc : servers_by_id_) {
     id_and_desc.second->UpdateNeedsFullTabletReport(true);
   }
@@ -321,7 +321,7 @@ void TSManager::SetAllTServersNeedFullTabletReports() {
 
 Status TSManager::UnregisterTServer(const std::string& ts_uuid,
                                     bool force_unregister_live_tserver) {
-  lock_guard<rw_spinlock> l(lock_);
+  lock_guard l(lock_);
   shared_ptr<TSDescriptor> ts_desc;
   if (!FindCopy(servers_by_id_, ts_uuid, &ts_desc)) {
     return Status::NotFound(Substitute("Requested tserver $0 has not been registered", ts_uuid));

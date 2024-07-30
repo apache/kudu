@@ -20,10 +20,9 @@
 #include <atomic>
 #include <cstdint>
 #include <functional>
-#include <map>
-#include <mutex>
 #include <optional>
 #include <ostream>
+#include <type_traits>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -637,7 +636,7 @@ Status RemoteKsckCluster::RetrieveTablesList() {
       }
       auto table(make_shared<KsckTable>(
           t->id(), table_name, KuduSchema::ToSchema(t->schema()), t->num_replicas()));
-      std::lock_guard<simple_spinlock> l(tables_lock);
+      std::lock_guard l(tables_lock);
       tables.emplace_back(std::move(table));
     }));
   }

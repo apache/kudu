@@ -19,7 +19,6 @@
 
 #include <cstdint>
 #include <map>
-#include <mutex>
 #include <set>
 #include <string>
 #include <utility>
@@ -31,8 +30,6 @@
 #include "kudu/gutil/strings/stringpiece.h"
 
 namespace kudu {
-
-class simple_spinlock;
 
 namespace client {
 
@@ -62,18 +59,18 @@ ResourceMetrics::Data::Data() {
 ResourceMetrics::Data::~Data() {}
 
 void ResourceMetrics::Data::Increment(const std::string& name, int64_t amount) {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   auto it = owned_strings_.insert(name).first;
   counters_[*it] += amount;
 }
 void ResourceMetrics::Data::Increment(StringPiece name, int64_t amount) {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   counters_[name] += amount;
 }
 
 std::map<std::string, int64_t> ResourceMetrics::Data::Get() const {
   std::map<std::string, int64_t> ret;
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   for (const auto& p : counters_) {
     ret.emplace(p.first.as_string(), p.second);
   }
@@ -81,7 +78,7 @@ std::map<std::string, int64_t> ResourceMetrics::Data::Get() const {
 }
 
 int64_t ResourceMetrics::Data::GetMetric(const std::string& name) const {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   return FindWithDefault(counters_, name, 0);
 }
 

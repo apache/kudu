@@ -405,7 +405,7 @@ class BuiltInNtp::ServerState {
   }
 
   void UpdateNextPoll(MonoTime next) {
-    lock_guard<rw_spinlock> l(lock_);
+    lock_guard l(lock_);
 
     // Increment the counter of NTP packets sent.
     ++o_pkt_total_num_;
@@ -420,20 +420,20 @@ class BuiltInNtp::ServerState {
   }
 
   void TimeoutAndSwitchNextServer() {
-    lock_guard<rw_spinlock> l(lock_);
+    lock_guard l(lock_);
     ++o_pkt_timedout_num_;
     ++addr_idx_;
   }
 
   void InvalidatePacket() {
-    lock_guard<rw_spinlock> l(lock_);
+    lock_guard l(lock_);
     ++i_pkt_total_num_;
   }
 
   void RecordPacket(const RecordedResponse& rr) {
     VLOG(1) << Substitute("NTP from $0 ($1):  $2 +/- $3us", host_.ToString(),
                           rr.addr.ToString(), rr.offset_us, rr.error_us);
-    lock_guard<rw_spinlock> l(lock_);
+    lock_guard l(lock_);
     ++i_pkt_total_num_;
     ++i_pkt_valid_num_;
     responses_.emplace_back(rr);
@@ -443,7 +443,7 @@ class BuiltInNtp::ServerState {
   }
 
   bool IsReplayedPacket(const Sockaddr& from, const NtpPacket& packet) const {
-    lock_guard<rw_spinlock> l(lock_);
+    lock_guard l(lock_);
     if (responses_.empty()) {
       return false;
     }
@@ -488,7 +488,7 @@ class BuiltInNtp::ServerState {
     vector<Sockaddr> addrs;
     auto s = host_.ResolveAddresses(&addrs);
     {
-      lock_guard<rw_spinlock> l(lock_);
+      lock_guard l(lock_);
       addrs_ = std::move(addrs);
     }
     return s;
@@ -1094,7 +1094,7 @@ Status BuiltInNtp::CombineClocks() {
   const int64_t compute_error = (best_interval.second - best_interval.first) / 2;
   {
     // Extra sanity check to make sure walltime doesn't go back.
-    std::lock_guard<rw_spinlock> l(last_computed_lock_);
+    std::lock_guard l(last_computed_lock_);
     if (last_computed_.wall > compute_wall) {
       return Status::IllegalState(Substitute(
           "walltime would move into past: "

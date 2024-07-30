@@ -791,7 +791,7 @@ Status Reactor::Init() {
 
 void Reactor::Shutdown(Messenger::ShutdownMode mode) {
   {
-    std::lock_guard<LockType> l(lock_);
+    std::lock_guard l(lock_);
     if (closing_) {
       return;
     }
@@ -819,7 +819,7 @@ const string& Reactor::name() const {
 }
 
 bool Reactor::closing() const {
-  std::lock_guard<LockType> l(lock_);
+  std::lock_guard l(lock_);
   return closing_;
 }
 
@@ -970,7 +970,7 @@ void Reactor::ScheduleReactorTask(ReactorTask* task) {
 }
 
 bool Reactor::DrainTaskQueue(boost::intrusive::list<ReactorTask>* tasks) { // NOLINT(*)
-  std::lock_guard<LockType> l(lock_);
+  std::lock_guard l(lock_);
   if (closing_) {
     return false;
   }

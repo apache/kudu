@@ -26,6 +26,7 @@
 #include <ostream>
 #include <string>
 #include <tuple>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -582,7 +583,7 @@ TxnStatusManager::ScopedLeaderSharedLock::ScopedLeaderSharedLock(
 
   int64_t leader_ready_term;
   {
-    std::lock_guard<simple_spinlock> l(txn_status_manager_->leader_term_lock_);
+    std::lock_guard l(txn_status_manager_->leader_term_lock_);
     replica_status_ = txn_status_manager_->status_tablet_.tablet_replica_->CheckRunning();
     if (PREDICT_FALSE(!replica_status_.ok() ||
                       FLAGS_txn_status_tablet_inject_uninitialized_leader_status_error)) {
@@ -703,7 +704,7 @@ Status TxnStatusManager::LoadFromTabletUnlocked() {
   }
   unordered_map<int64_t, scoped_refptr<CommitTasks>> commits_in_flight;
   {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     highest_txn_id_ = std::max(highest_txn_id, highest_txn_id_);
     txns_by_id_ = std::move(txns_by_id);
     commits_in_flight = std::move(commits_in_flight_);
@@ -754,7 +755,7 @@ void TxnStatusManager::Shutdown() {
   while (true) {
     int num_tasks;
     {
-      std::lock_guard<simple_spinlock> l(lock_);
+      std::lock_guard l(lock_);
       num_tasks = commits_in_flight_.size();
       if (num_tasks == 0) {
         return;
@@ -772,7 +773,7 @@ TxnStatusManager::~TxnStatusManager() {
 Status TxnStatusManager::LoadFromTablet() {
   // Block new transaction status manager operations, and wait
   // for existing operations to finish.
-  std::lock_guard<RWMutex> leader_lock_guard(leader_lock_);
+  std::lock_guard leader_lock_guard(leader_lock_);
   return LoadFromTabletUnlocked();
 }
 
@@ -828,7 +829,7 @@ Status TxnStatusManager::GetTransaction(int64_t txn_id,
                                         scoped_refptr<TransactionEntry>* txn,
                                         TabletServerErrorPB* ts_error) const {
   leader_lock_.AssertAcquiredForReading();
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
 
   // First, make sure the transaction status data has been loaded. If not, then
   // the caller might get an unexpected error response and bail instead of
@@ -859,7 +860,7 @@ void TxnStatusManager::PrepareLeadershipTask() {
   const RaftConsensus* consensus = status_tablet_.tablet_replica_->consensus();
   const int64_t term_before_wait = consensus->CurrentTerm();
   {
-    std::lock_guard<simple_spinlock> l(leader_term_lock_);
+    std::lock_guard l(leader_term_lock_);
     if (leader_ready_term_ == term_before_wait) {
       // The term hasn't changed since the last time this replica was the
       // leader. It's not possible for another replica to be leader for the same
@@ -922,7 +923,7 @@ void TxnStatusManager::PrepareLeadershipTask() {
     };
 
     // Block new operations, and wait for existing operations to finish.
-    std::lock_guard<RWMutex> leader_lock_guard(leader_lock_);
+    std::lock_guard leader_lock_guard(leader_lock_);
 
     static const char* const kLoadMetaOpDescription =
         "Loading transaction status metadata into memory";
@@ -935,7 +936,7 @@ void TxnStatusManager::PrepareLeadershipTask() {
     }
   }
 
-  std::lock_guard<simple_spinlock> l(leader_term_lock_);
+  std::lock_guard l(leader_term_lock_);
   leader_ready_term_ = term;
 }
 
@@ -954,7 +955,7 @@ Status TxnStatusManager::BeginTransaction(int64_t txn_id,
                                           TabletServerErrorPB* ts_error) {
   leader_lock_.AssertAcquiredForReading();
   {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
 
     // First, make sure the transaction status data has been loaded.
     // If not, then there is chance that, being a leader, this replica might
@@ -985,7 +986,7 @@ Status TxnStatusManager::BeginTransaction(int64_t txn_id,
   // the entry into the txn status tablet fails.
   auto cleanup = MakeScopedCleanup([&]() {
     if (highest_seen_txn_id) {
-      std::lock_guard<simple_spinlock> l(lock_);
+      std::lock_guard l(lock_);
       *highest_seen_txn_id = highest_txn_id_;
     }
   });
@@ -1004,7 +1005,7 @@ Status TxnStatusManager::BeginTransaction(int64_t txn_id,
     txn_lock.mutable_data()->pb.set_last_transition_timestamp(start_timestamp);
     txn_lock.Commit();
   }
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   EmplaceOrDie(&txns_by_id_, txn_id, std::move(txn));
   if (highest_seen_txn_id) {
     *highest_seen_txn_id = highest_txn_id_;
@@ -1111,7 +1112,7 @@ Status TxnStatusManager::FinalizeCommitTransaction(
       txn_id, mutable_data->pb, ts_error));
 
   if (PREDICT_TRUE(FLAGS_txn_schedule_background_tasks)) {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     auto& task = FindOrDie(commits_in_flight_, txn_id);
     task->FinalizeCommitAsync();
   }
@@ -1147,7 +1148,7 @@ Status TxnStatusManager::CompleteCommitTransaction(int64_t txn_id) {
       txn_id, mutable_data->pb, &ts_error));
 
   {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     commits_in_flight_.erase(txn_id);
   }
 
@@ -1364,7 +1365,7 @@ void TxnStatusManager::AbortStaleTransactions() {
       MonoDelta::FromMilliseconds(FLAGS_txn_keepalive_interval_ms);
   TransactionsMap txns_by_id;
   {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     for (const auto& elem : txns_by_id_) {
       const auto state = elem.second->state();
       // The tracker is interested only in open transactions. It's not concerned
@@ -1415,7 +1416,7 @@ void TxnStatusManager::AbortStaleTransactions() {
 
 ParticipantIdsByTxnId TxnStatusManager::GetParticipantsByTxnIdForTests() const {
   ParticipantIdsByTxnId ret;
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   for (const auto& [id, txn] : txns_by_id_) {
     vector<string> prt_ids = txn->GetParticipantIds();
     std::sort(prt_ids.begin(), prt_ids.end());

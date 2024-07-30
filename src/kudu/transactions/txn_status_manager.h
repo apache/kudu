@@ -19,7 +19,6 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <shared_mutex>
 #include <string>
@@ -419,7 +418,7 @@ class TxnStatusManager final : public tablet::TxnCoordinator {
   void AbortStaleTransactions() override;
 
   int64_t highest_txn_id() const override {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     return highest_txn_id_;
   }
 
@@ -428,7 +427,7 @@ class TxnStatusManager final : public tablet::TxnCoordinator {
   tablet::ParticipantIdsByTxnId GetParticipantsByTxnIdForTests() const override;
 
   void RemoveCommitTask(int64_t txn_id, const CommitTasks* tasks) {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     const auto& iter = commits_in_flight_.find(txn_id);
     if (iter != commits_in_flight_.end() && iter->second.get() == tasks) {
       commits_in_flight_.erase(iter);

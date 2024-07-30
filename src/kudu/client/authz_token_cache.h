@@ -26,6 +26,7 @@
 #include "kudu/client/master_proxy_rpc.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/master/master.pb.h"
+#include "kudu/security/token.pb.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/status_callback.h"
 
@@ -33,10 +34,6 @@ namespace kudu {
 
 class MonoTime;
 class Status;
-
-namespace security {
-class SignedTokenPB;
-} // namespace security
 
 namespace client {
 

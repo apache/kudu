@@ -144,7 +144,7 @@ void RemoteTabletServer::DnsResolutionFinished(const HostPort& hp,
         client->data_->messenger_, (*addrs)[0], hp.host());
 
   {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     proxy_ = std::move(proxy);
     admin_proxy_ = std::move(admin_proxy);
     proxy_->set_user_credentials(client->data_->user_credentials_);
@@ -199,7 +199,7 @@ void RemoteTabletServer::InitProxy(KuduClient* client, const StatusCallback& cb)
 void RemoteTabletServer::Update(const master::TSInfoPB& pb) {
   CHECK_EQ(pb.permanent_uuid(), uuid_);
 
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
 
   rpc_hostports_.clear();
   for (const HostPortPB& hostport_pb : pb.rpc_addresses()) {
@@ -218,25 +218,25 @@ const string& RemoteTabletServer::permanent_uuid() const {
 }
 
 string RemoteTabletServer::location() const {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   return location_;
 }
 
 shared_ptr<TabletServerServiceProxy> RemoteTabletServer::proxy() const {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   CHECK(proxy_);
   return proxy_;
 }
 
 shared_ptr<TabletServerAdminServiceProxy> RemoteTabletServer::admin_proxy() {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   DCHECK(admin_proxy_);
   return admin_proxy_;
 }
 
 string RemoteTabletServer::ToString() const {
   string ret = uuid_;
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   if (!rpc_hostports_.empty()) {
     strings::SubstituteAndAppend(&ret, " ($0)", rpc_hostports_[0].ToString());
   }
@@ -244,7 +244,7 @@ string RemoteTabletServer::ToString() const {
 }
 
 void RemoteTabletServer::GetHostPorts(vector<HostPort>* host_ports) const {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   *host_ports = rpc_hostports_;
 }
 
@@ -278,7 +278,7 @@ Status RemoteTablet::Refresh(
   }
 
   // Adopt the data from the successful response.
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   replicas_ = std::move(replicas);
 
   stale_ = false;
@@ -296,7 +296,7 @@ bool RemoteTablet::stale() const {
 
 void RemoteTablet::MarkReplicaFailed(RemoteTabletServer *ts,
                                      const Status& status) {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   VLOG(2) << "Tablet " << tablet_id_ << ": Current remote replicas in meta cache: "
           << ReplicasAsStringUnlocked();
   KLOG_EVERY_N_SECS(WARNING, 1) << Substitute(
@@ -311,7 +311,7 @@ void RemoteTablet::MarkReplicaFailed(RemoteTabletServer *ts,
 
 int RemoteTablet::GetNumFailedReplicas() const {
   int failed = 0;
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   for (const RemoteReplica& rep : replicas_) {
     if (rep.failed) {
       failed++;
@@ -321,7 +321,7 @@ int RemoteTablet::GetNumFailedReplicas() const {
 }
 
 RemoteTabletServer* RemoteTablet::LeaderTServer() const {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   for (const RemoteReplica& replica : replicas_) {
     if (!replica.failed && replica.role == RaftPeerPB::LEADER) {
       return replica.ts;
@@ -336,7 +336,7 @@ bool RemoteTablet::HasLeader() const {
 
 void RemoteTablet::GetRemoteTabletServers(vector<RemoteTabletServer*>* servers) const {
   servers->clear();
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   for (const RemoteReplica& replica : replicas_) {
     if (replica.failed) {
       continue;
@@ -347,7 +347,7 @@ void RemoteTablet::GetRemoteTabletServers(vector<RemoteTabletServer*>* servers) 
 
 void RemoteTablet::GetRemoteReplicas(vector<RemoteReplica>* replicas) const {
   replicas->clear();
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   for (const auto& r : replicas_) {
     if (r.failed) {
       continue;
@@ -357,7 +357,7 @@ void RemoteTablet::GetRemoteReplicas(vector<RemoteReplica>* replicas) const {
 }
 
 void RemoteTablet::MarkTServerAsLeader(const RemoteTabletServer* server) {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   for (RemoteReplica& replica : replicas_) {
     if (replica.ts == server) {
       replica.role = RaftPeerPB::LEADER;
@@ -369,7 +369,7 @@ void RemoteTablet::MarkTServerAsLeader(const RemoteTabletServer* server) {
 }
 
 void RemoteTablet::MarkTServerAsFollower(const RemoteTabletServer* server) {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   for (RemoteReplica& replica : replicas_) {
     if (replica.ts == server) {
       replica.role = RaftPeerPB::FOLLOWER;
@@ -379,7 +379,7 @@ void RemoteTablet::MarkTServerAsFollower(const RemoteTabletServer* server) {
 }
 
 string RemoteTablet::ReplicasAsString() const {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard l(lock_);
   return ReplicasAsStringUnlocked();
 }
 
@@ -481,7 +481,7 @@ void MetaCacheServerPicker::PickLeader(const ServerPickedCallback& callback,
 
     bool marked_as_follower = false;
     {
-      std::lock_guard<simple_spinlock> lock(lock_);
+      std::lock_guard lock(lock_);
       marked_as_follower = ContainsKey(followers_, leader);
     }
     if (leader && marked_as_follower) {
@@ -502,7 +502,7 @@ void MetaCacheServerPicker::PickLeader(const ServerPickedCallback& callback,
       tablet_->GetRemoteTabletServers(&replicas);
       set<RemoteTabletServer*> followers_copy;
       {
-        std::lock_guard<simple_spinlock> lock(lock_);
+        std::lock_guard lock(lock_);
         followers_copy = followers_;
 
       }
@@ -600,7 +600,7 @@ void MetaCacheServerPicker::MarkServerFailed(RemoteTabletServer* replica, const 
 
 void MetaCacheServerPicker::MarkReplicaNotLeader(RemoteTabletServer* replica) {
   {
-    std::lock_guard<simple_spinlock> lock(lock_);
+    std::lock_guard lock(lock_);
     followers_.insert(CHECK_NOTNULL(replica));
   }
 }
@@ -615,7 +615,7 @@ void MetaCacheServerPicker::LookUpTabletCb(const ServerPickedCallback& callback,
                                            const Status& status) {
   // Whenever we lookup the tablet, clear the set of followers.
   {
-    std::lock_guard<simple_spinlock> lock(lock_);
+    std::lock_guard lock(lock_);
     followers_.clear();
   }
 
@@ -1052,7 +1052,7 @@ Status MetaCache::ProcessGetTabletLocationsResponse(const string& tablet_id,
   const auto& tablet_lower_bound = tablet.partition().partition_key_start();
   const auto& tablet_upper_bound = tablet.partition().partition_key_end();
 
-  std::lock_guard<percpu_rwlock> l(lock_);
+  std::lock_guard l(lock_);
   for (const auto& ts_info : ts_infos) {
     UpdateTabletServerUnlocked(ts_info);
   }
@@ -1098,7 +1098,7 @@ Status MetaCache::ProcessGetTableLocationsResponse(const KuduTable* table,
   MonoTime expiration_time = MonoTime::Now() +
       MonoDelta::FromMilliseconds(resp.ttl_millis());
 
-  std::lock_guard<percpu_rwlock> l(lock_);
+  std::lock_guard l(lock_);
   TabletMap& tablets_by_key = LookupOrInsert(&tablets_by_table_and_key_,
                                              table->id(), TabletMap());
 
@@ -1358,7 +1358,7 @@ Status MetaCache::DoFastPathLookupById(const string& tablet_id,
 
 void MetaCache::ClearNonCoveredRangeEntries(const std::string& table_id) {
   VLOG(3) << "Clearing non-covered range entries of table " << table_id;
-  std::lock_guard<percpu_rwlock> l(lock_);
+  std::lock_guard l(lock_);
 
   TabletMap* tablets = FindOrNull(tablets_by_table_and_key_, table_id);
   if (PREDICT_FALSE(!tablets)) {
@@ -1377,7 +1377,7 @@ void MetaCache::ClearNonCoveredRangeEntries(const std::string& table_id) {
 
 void MetaCache::ClearCache() {
   VLOG(3) << "Clearing cache";
-  std::lock_guard<percpu_rwlock> l(lock_);
+  std::lock_guard l(lock_);
   ts_cache_.clear();
   tablets_by_id_.clear();
   tablets_by_table_and_key_.clear();

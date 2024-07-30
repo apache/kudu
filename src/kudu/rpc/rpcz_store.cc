@@ -144,7 +144,7 @@ MethodSampler* RpczStore::SamplerForCall(InboundCall* call) {
 
   // If missing, create a new sampler for this method and try to insert it.
   unique_ptr<MethodSampler> ms(new MethodSampler);
-  std::lock_guard<percpu_rwlock> lock(samplers_lock_);
+  std::lock_guard lock(samplers_lock_);
   const auto& [it, _] = method_samplers_.try_emplace(method_info, std::move(ms));
   return it->second.get();
 }
@@ -207,7 +207,7 @@ void MethodSampler::GetSamplePBs(RpczMethodPB* method_pb) {
     }
 
     auto* sample_pb = method_pb->add_samples();
-    std::lock_guard<simple_spinlock> lock(bucket.sample_lock);
+    std::lock_guard lock(bucket.sample_lock);
     sample_pb->mutable_header()->CopyFrom(bucket.sample.header);
     sample_pb->set_trace(bucket.sample.trace->DumpToString(Trace::INCLUDE_TIME_DELTAS));
 

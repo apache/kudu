@@ -18,7 +18,6 @@
 #pragma once
 
 #include <atomic>
-#include <mutex>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -310,12 +309,12 @@ class MvccManager {
   ~MvccManager();
 
   bool AreAllOpsAppliedForTests(Timestamp ts) const {
-    std::lock_guard<LockType> l(lock_);
+    std::lock_guard l(lock_);
     return AreAllOpsAppliedUnlocked(ts);
   }
 
   int GetNumWaitersForTests() const {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard l(lock_);
     return waiters_.size();
   }
 

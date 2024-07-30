@@ -455,7 +455,7 @@ void WriteOpState::ReleaseSchemaLock() {
 }
 
 void WriteOpState::SetRowOps(vector<DecodedRowOperation> decoded_ops) {
-  std::lock_guard<simple_spinlock> l(op_state_lock_);
+  std::lock_guard l(op_state_lock_);
   row_ops_.clear();
   row_ops_.reserve(decoded_ops.size());
 
@@ -675,7 +675,7 @@ void WriteOpState::Reset() {
 }
 
 void WriteOpState::ResetRpcFields() {
-  std::lock_guard<simple_spinlock> l(op_state_lock_);
+  std::lock_guard l(op_state_lock_);
   request_ = nullptr;
   response_ = nullptr;
   // these are allocated from the arena, so just run the dtors.
@@ -696,7 +696,7 @@ string WriteOpState::ToString() const {
   // Stringify the actual row operations (eg INSERT/UPDATE/etc)
   string row_ops_str = "[";
   {
-    std::lock_guard<simple_spinlock> l(op_state_lock_);
+    std::lock_guard l(op_state_lock_);
     const size_t kMaxToStringify = 3;
     for (int i = 0; i < std::min(row_ops_.size(), kMaxToStringify); i++) {
       if (i > 0) {
