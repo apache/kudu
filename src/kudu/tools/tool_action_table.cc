@@ -331,8 +331,8 @@ class TableLister {
             {"live_row_count", GET_NUM_PROPERTY(live_row_count)},
         };
 
-    #undef GET_PROPERTY()
-    #undef GET_NUM_PROPERTY()
+    #undef GET_PROPERTY
+    #undef GET_NUM_PROPERTY
 
     for (const auto& tinfo : tables_info) {
       vector<string> values;
