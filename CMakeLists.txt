@@ -109,8 +109,24 @@ set(JAVA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/java)
 # This solves the problem of escaped spaces in the EXTRA_GRADLE_FLAGS environment variable.
 list(APPEND GRADLE_FLAGS $ENV{EXTRA_GRADLE_FLAGS})
 separate_arguments(GRADLE_FLAGS)
-# We always want Gradle to use the plain console and quiet flag when called from cmake.
-list(APPEND GRADLE_FLAGS --quiet --console=plain)
+# When invoking Gradle:
+#   * Log errors only, reducing the verbosity of the Gradle's output
+#   * Make the output better fit for plain consoles, avoiding garbled logs
+#   * Avoid building projects in parallel: when the kudu-subprocess.jar and
+#     the hms-plugin.jar targets are built in parallel, it often ends up with
+#     java.lang.ArrayIndexOutOfBoundsException while building shadowJar
+#     for corresponding Java dependencies, and while it's not yet clear whether
+#     the issue is in shadowJar implementation or elsewhere, it's quite simple
+#     to address the issue by not building multiple Gradle targets concurrently
+#   * Disable the build cache: sometimes, once a build process is interrupted,
+#     follow-up Gradle invocations end up with an error like below, and while
+#     it's not yet clear whether the issue is in not properly invoking Gradle
+#     or it's a bug in signal handling elsewhere, it's quite simple to address
+#     the issue by not using the Gradle's build cache
+#
+#       Cannot lock Java compile cache (...) as it has already been locked by this process.
+#
+list(APPEND GRADLE_FLAGS --quiet --console=plain --no-parallel --no-build-cache)
 list(REMOVE_DUPLICATES GRADLE_FLAGS)
 
 # Initialize Gradle to ensure the wrapper is downloaded.
