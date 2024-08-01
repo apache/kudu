@@ -249,7 +249,7 @@ Status DirInstanceMetadataFile::LoadFromDisk() {
   uint64_t block_size;
   RETURN_NOT_OK_FAIL_INSTANCE_PREPEND(env_->GetBlockSize(filename_, &block_size),
       Substitute("Failed to load metadata file. Could not get block size of $0", filename_));
-  if (pb->filesystem_block_size_bytes() != block_size) {
+  if (FsManager::IsLogType(dir_type_) && pb->filesystem_block_size_bytes() != block_size) {
     return Status::IOError("Wrong filesystem block size", Substitute(
         "Expected $0 but was $1", pb->filesystem_block_size_bytes(), block_size));
   }
