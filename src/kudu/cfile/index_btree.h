@@ -65,7 +65,7 @@ class IndexTreeBuilder {
   // in 'written'.
   Status FinishAndWriteBlock(size_t level, BlockPointer* written);
 
-  const WriterOptions* options_;
+  const WriterOptions* const options_;
   CFileWriter* writer_;
 
   std::vector<std::unique_ptr<IndexBlockBuilder>> idx_blocks_;

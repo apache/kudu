@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_CFILE_BINARY_PREFIX_BLOCK_H
-#define KUDU_CFILE_BINARY_PREFIX_BLOCK_H
+#pragma once
 
 #include <sys/types.h>
 
@@ -28,7 +27,6 @@
 #include "kudu/cfile/block_encodings.h"
 #include "kudu/cfile/block_handle.h"
 #include "kudu/common/rowid.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/slice.h"
@@ -68,6 +66,8 @@ class BinaryPrefixBlockBuilder final : public BlockBuilder {
   Status GetLastKey(void *key) const override;
 
  private:
+  const WriterOptions* const options_;
+
   faststring header_buf_;
   faststring buffer_;
   faststring last_val_;
@@ -78,8 +78,6 @@ class BinaryPrefixBlockBuilder final : public BlockBuilder {
   int val_count_;
   int vals_since_restart_;
   bool finished_;
-
-  const WriterOptions *options_;
 };
 
 // Decoder for BINARY type, PREFIX encoding
@@ -162,5 +160,3 @@ class BinaryPrefixBlockDecoder final : public BlockDecoder {
 
 } // namespace cfile
 } // namespace kudu
-
-#endif // KUDU_CFILE_BINARY_PREFIX_BLOCK_H

@@ -87,6 +87,8 @@ class BinaryPlainBlockBuilder final : public BlockBuilder {
   static constexpr size_t kHeaderSize = sizeof(uint32_t) * 3;
 
  private:
+  const WriterOptions* const options_;
+
   faststring buffer_;
 
   size_t end_of_data_offset_;
@@ -96,9 +98,6 @@ class BinaryPlainBlockBuilder final : public BlockBuilder {
   std::vector<uint32_t> offsets_;
 
   bool finished_;
-
-  const WriterOptions *options_;
-
 };
 
 class BinaryPlainBlockDecoder final : public BlockDecoder {

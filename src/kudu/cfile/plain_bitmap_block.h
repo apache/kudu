@@ -14,9 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
-#ifndef KUDU_CFILE_PLAIN_BITMAP_BLOCK_H_
-#define KUDU_CFILE_PLAIN_BITMAP_BLOCK_H_
+#pragma once
 
 #include <algorithm>
 #include <string>
@@ -46,8 +44,8 @@ struct WriterOptions;
 class PlainBitMapBlockBuilder final : public BlockBuilder {
  public:
   explicit PlainBitMapBlockBuilder(const WriterOptions* options)
-      : writer_(&buf_),
-        options_(options) {
+      : options_(options),
+        writer_(&buf_) {
     Reset();
   }
 
@@ -97,11 +95,11 @@ class PlainBitMapBlockBuilder final : public BlockBuilder {
   }
 
  private:
+  const WriterOptions* const options_;
+
   faststring buf_;
   BitWriter writer_;
   size_t count_;
-
-  const WriterOptions* const options_;
 };
 
 
@@ -220,5 +218,3 @@ class PlainBitMapBlockDecoder final : public BlockDecoder {
 
 } // namespace cfile
 } // namespace kudu
-
-#endif

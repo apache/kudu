@@ -49,9 +49,9 @@ namespace kudu {
 namespace cfile {
 
 BinaryPlainBlockBuilder::BinaryPlainBlockBuilder(const WriterOptions *options)
-  : end_of_data_offset_(0),
-    size_estimate_(0),
-    options_(options) {
+  : options_(options),
+    end_of_data_offset_(0),
+    size_estimate_(0) {
   Reset();
 }
 BinaryPlainBlockBuilder::~BinaryPlainBlockBuilder() = default;

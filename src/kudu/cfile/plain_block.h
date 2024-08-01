@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_CFILE_PLAIN_BLOCK_H
-#define KUDU_CFILE_PLAIN_BLOCK_H
+#pragma once
 
 #include <algorithm>
 #include <string>
@@ -98,14 +97,14 @@ class PlainBlockBuilder final : public BlockBuilder {
   }
 
  private:
-  faststring buffer_;
-  const WriterOptions *options_;
-  size_t count_;
   typedef typename TypeTraits<Type>::cpp_type CppType;
   enum {
     kCppTypeSize = TypeTraits<Type>::size
   };
 
+  const WriterOptions* const options_;
+  faststring buffer_;
+  size_t count_;
 };
 
 //
@@ -244,5 +243,3 @@ class PlainBlockDecoder final : public BlockDecoder {
 
 } // namespace cfile
 } // namespace kudu
-
-#endif

@@ -98,18 +98,17 @@ class BinaryDictBlockBuilder final : public BlockBuilder {
 
   Status GetLastKey(void* key) const override;
 
-  static const size_t kMaxHeaderSize = sizeof(uint32_t) * 1;
-
  private:
   int AddCodeWords(const uint8_t* vals, size_t count);
 
   ATTRIBUTE_COLD
   bool AddToDict(Slice val, uint32_t* codeword);
 
+  const WriterOptions* const options_;
+
   // Buffer used in Finish() for holding the encoded header.
   faststring header_buffer_;
   bool finished_;
-  const WriterOptions* options_;
 
   std::unique_ptr<BlockBuilder> data_builder_;
 

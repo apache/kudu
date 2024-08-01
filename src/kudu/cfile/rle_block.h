@@ -14,9 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
-#ifndef KUDU_CFILE_RLE_BLOCK_H
-#define KUDU_CFILE_RLE_BLOCK_H
+#pragma once
 
 #include <algorithm>
 #include <string>
@@ -51,8 +49,8 @@ enum {
 class RleBitMapBlockBuilder final : public BlockBuilder {
  public:
   explicit RleBitMapBlockBuilder(const WriterOptions* options)
-      : encoder_(&buf_, 1),
-        options_(options) {
+      : options_(options),
+        encoder_(&buf_, 1) {
     Reset();
   }
 
@@ -100,9 +98,9 @@ class RleBitMapBlockBuilder final : public BlockBuilder {
   }
 
  private:
+  const WriterOptions* const options_;
   faststring buf_;
   RleEncoder<bool> encoder_;
-  const WriterOptions* const options_;
   size_t count_;
 };
 
@@ -227,8 +225,8 @@ template <DataType IntType>
 class RleIntBlockBuilder final : public BlockBuilder {
  public:
   explicit RleIntBlockBuilder(const WriterOptions* options)
-      : rle_encoder_(&buf_, kCppTypeSize * 8),
-        options_(options) {
+      : options_(options),
+        rle_encoder_(&buf_, kCppTypeSize * 8) {
     Reset();
   }
 
@@ -289,17 +287,16 @@ class RleIntBlockBuilder final : public BlockBuilder {
 
  private:
   typedef typename TypeTraits<IntType>::cpp_type CppType;
-
   enum {
     kCppTypeSize = TypeTraits<IntType>::size
   };
 
+  const WriterOptions* const options_;
   CppType first_key_;
   CppType last_key_;
   faststring buf_;
   size_t count_;
   RleEncoder<CppType> rle_encoder_;
-  const WriterOptions* const options_;
 };
 
 //
@@ -510,5 +507,3 @@ class RleIntBlockDecoder final : public BlockDecoder {
 
 } // namespace cfile
 } // namespace kudu
-
-#endif

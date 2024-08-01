@@ -74,10 +74,10 @@ static const uint8_t *DecodeEntryLengths(
 ////////////////////////////////////////////////////////////
 
 BinaryPrefixBlockBuilder::BinaryPrefixBlockBuilder(const WriterOptions *options)
-  : val_count_(0),
+  : options_(options),
+    val_count_(0),
     vals_since_restart_(0),
-    finished_(false),
-    options_(options) {
+    finished_(false) {
   Reset();
 }
 
