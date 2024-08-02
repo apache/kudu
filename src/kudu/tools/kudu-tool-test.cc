@@ -5990,6 +5990,46 @@ TEST_F(ToolTest, TableScanFaultTolerant) {
   }
 }
 
+TEST_F(ToolTest, TableCopyCreateEmptyPartition) {
+  NO_FATALS(StartExternalMiniCluster());
+  shared_ptr<KuduClient> client;
+  ASSERT_OK(cluster_->CreateClient(nullptr, &client));
+  unique_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
+  KuduSchema schema = KuduSchema::FromSchema(GetSimpleTestSchema());
+  const string& kSrcTableName = "test1";
+  const string& kDstTableName = "test2";
+  // Create a table with empty range partition.
+  ASSERT_OK(table_creator->table_name(kSrcTableName)
+                         .schema(&schema)
+                         .num_replicas(1)
+                         .add_hash_partitions({"key"}, 2)
+                         .set_range_partition_columns({"key"})
+                         .set_allow_empty_partition(true)
+                         .Create());
+
+  const string& master_addr = cluster_->master()->bound_rpc_addr().ToString();
+  string stdout;
+  NO_FATALS(RunActionStdoutString(Substitute("table describe $0 $1",
+                                             master_addr,
+                                             kSrcTableName), &stdout));
+  // Check the source table's range partition schema.
+  ASSERT_STR_CONTAINS(stdout, "RANGE (key) ()");
+
+  // Table copy the source table and create the destination table.
+  NO_FATALS(RunTool(
+      Substitute("table copy $0 $1 $2 --dst_table=$3 "
+                 "--create_table=true",
+                 master_addr, kSrcTableName,
+                 master_addr, kDstTableName
+                ), nullptr, nullptr));
+  stdout.clear();
+  NO_FATALS(RunActionStdoutString(Substitute("table describe $0 $1",
+                                             master_addr,
+                                             kDstTableName), &stdout));
+  // Check the destination table's range partition schema.
+  ASSERT_STR_CONTAINS(stdout, "RANGE (key) ()");
+}
+
 TEST_F(ToolTest, TableCopyLimitSpeed) {
   SKIP_IF_SLOW_NOT_ALLOWED();
 

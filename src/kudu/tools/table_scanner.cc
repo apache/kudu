@@ -553,6 +553,8 @@ Status CreateDstTableIfNeeded(const client::sp::shared_ptr<KuduTable>& src_table
     table_creator->set_range_partition_columns({});
   }
 
+  table_creator->set_allow_empty_partition(true);
+
   // Create table.
   RETURN_NOT_OK(table_creator->Create());
   LOG(INFO) << "Table " << dst_table_name << " created successfully";
