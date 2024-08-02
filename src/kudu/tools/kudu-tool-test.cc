@@ -1781,6 +1781,103 @@ TEST_P(CreateEmptyPartitionTableTest, TestCreateEmptyPartitionTable) {
   }
 }
 
+
+enum class PartitionCombinationMode {
+  kOnlyHashPartition,
+  kOnlyRangePartition,
+  kNoAnyPartition
+};
+
+class CreateNoRangePartitionTable :
+    public ToolTest,
+    public ::testing::WithParamInterface<PartitionCombinationMode> {
+};
+
+INSTANTIATE_TEST_SUITE_P(, CreateNoRangePartitionTable,
+                         ::testing::Values(PartitionCombinationMode::kOnlyHashPartition,
+                                           PartitionCombinationMode::kOnlyRangePartition,
+                                           PartitionCombinationMode::kNoAnyPartition));
+
+TEST_P(CreateNoRangePartitionTable, TestCreateNoRangePartitionTable) {
+  PartitionCombinationMode create_table_mode = GetParam();
+  const string& kSrcTableName = "test1";
+  const string& kDstTableName = "test2";
+  NO_FATALS(StartExternalMiniCluster());
+  shared_ptr<KuduClient> client;
+  ASSERT_OK(cluster_->CreateClient(nullptr, &client));
+  unique_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
+  KuduSchema schema = KuduSchema::FromSchema(GetSimpleTestSchema());
+  // Create a table in different modes.
+  switch (create_table_mode) {
+    case PartitionCombinationMode::kOnlyHashPartition:
+      ASSERT_OK(table_creator->table_name(kSrcTableName)
+                         .schema(&schema)
+                         .num_replicas(1)
+                         .add_hash_partitions({"key"}, 2)
+                         .set_range_partition_columns({})
+                         .Create());
+      break;
+    case PartitionCombinationMode::kOnlyRangePartition:
+      ASSERT_OK(table_creator->table_name(kSrcTableName)
+                         .schema(&schema)
+                         .num_replicas(1)
+                         .set_range_partition_columns({"key"})
+                         .Create());
+      break;
+    case PartitionCombinationMode::kNoAnyPartition:
+      ASSERT_OK(table_creator->table_name(kSrcTableName)
+                         .schema(&schema)
+                         .num_replicas(1)
+                         .set_range_partition_columns({})
+                         .Create());
+      break;
+    default:
+      ASSERT_TRUE(false);
+  }
+
+  // Describe the source table and check the partition schema.
+  const string& master_addr = cluster_->master()->bound_rpc_addr().ToString();
+  vector<string> stdout_before;
+  NO_FATALS(RunActionStdoutLines(Substitute("table describe $0 $1",
+                                             master_addr,
+                                             kSrcTableName), &stdout_before));
+  const string& src_table_schema = JoinStrings(stdout_before, "\\");
+  switch (create_table_mode) {
+    case PartitionCombinationMode::kOnlyHashPartition:
+      ASSERT_STR_CONTAINS(src_table_schema, "HASH (key) PARTITIONS");
+      ASSERT_STR_NOT_CONTAINS(src_table_schema, "RANG");
+      break;
+    case PartitionCombinationMode::kOnlyRangePartition:
+      ASSERT_STR_CONTAINS(src_table_schema, "RANGE (key)");
+      ASSERT_STR_NOT_CONTAINS(src_table_schema, "HASH");
+      break;
+    case PartitionCombinationMode::kNoAnyPartition:
+      ASSERT_STR_NOT_CONTAINS(src_table_schema, "HASH");
+      ASSERT_STR_NOT_CONTAINS(src_table_schema, "RANG");
+      break;
+    default:
+      ASSERT_TRUE(false);
+  }
+
+  // Table copy the source table and create the destination table.
+  NO_FATALS(RunTool(
+      Substitute("table copy $0 $1 $2 --dst_table=$3 --create_table=true ",
+                 master_addr, kSrcTableName,
+                 master_addr, kDstTableName
+                ), nullptr, nullptr));
+  // Describe the destination table and check the partition schema.
+  vector<string> stdout_after;
+  NO_FATALS(RunActionStdoutLines(Substitute("table describe $0 $1",
+                                            master_addr,
+                                            kDstTableName), &stdout_after));
+  ASSERT_EQ(stdout_before.size(), stdout_after.size());
+  // Other than the table names, the schemas are the same.
+  // Therefore, compare the content from the second line.
+  for (int i = 1; i < stdout_after.size(); i++) {
+    ASSERT_EQ(stdout_before[i], stdout_after[i]);
+  }
+}
+
 TEST_F(ToolTest, TestFsCheck) {
   const string kTestDir = GetTestPath("test");
   const string kTabletId = "ffffffffffffffffffffffffffffffff";
