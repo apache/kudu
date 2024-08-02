@@ -6222,7 +6222,7 @@ Status CatalogManager::SelectReplicasForTablet(const PlacementPolicy& policy,
       return Status::InvalidArgument(
           Substitute("need at least $0 out of $1 replicas to form a Raft quorum, "
                      "but only $2 tablet servers are online",
-                     consensus::MajoritySize(nreplicas), policy.ts_num()));
+                     consensus::MajoritySize(nreplicas), nreplicas, policy.ts_num()));
     }
     nreplicas = policy.ts_num();
   }
