@@ -36,7 +36,6 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
 #include "kudu/gutil/port.h"
-#include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/coding.h"
 #include "kudu/util/coding-inl.h"
@@ -44,17 +43,17 @@
 #include "kudu/util/hexdump.h"
 
 using std::vector;
+using strings::Substitute;
 
 namespace kudu {
 namespace cfile {
 
-BinaryPlainBlockBuilder::BinaryPlainBlockBuilder(const WriterOptions *options)
-  : options_(options),
-    end_of_data_offset_(0),
-    size_estimate_(0) {
+BinaryPlainBlockBuilder::BinaryPlainBlockBuilder(const WriterOptions* options)
+    : options_(options),
+      end_of_data_offset_(0),
+      size_estimate_(0) {
   Reset();
 }
-BinaryPlainBlockBuilder::~BinaryPlainBlockBuilder() = default;
 
 void BinaryPlainBlockBuilder::Reset() {
   offsets_.clear();
@@ -89,7 +88,7 @@ void BinaryPlainBlockBuilder::Finish(rowid_t ordinal_pos, vector<Slice>* slices)
   *slices = { Slice(buffer_) };
 }
 
-int BinaryPlainBlockBuilder::Add(const uint8_t *vals, size_t count) {
+int BinaryPlainBlockBuilder::Add(const uint8_t* vals, size_t count) {
   DCHECK(!finished_);
   DCHECK_GT(count, 0);
   size_t i = 0;
@@ -104,7 +103,7 @@ int BinaryPlainBlockBuilder::Add(const uint8_t *vals, size_t count) {
       size_estimate_++;
     }
 
-    const Slice *src = reinterpret_cast<const Slice *>(vals);
+    const Slice* src = reinterpret_cast<const Slice*>(vals);
     size_t offset = buffer_.size();
     offsets_.push_back(offset);
     size_estimate_ += coding::CalcRequiredBytes32(offset);
@@ -126,10 +125,10 @@ size_t BinaryPlainBlockBuilder::Count() const {
   return offsets_.size();
 }
 
-Status BinaryPlainBlockBuilder::GetKeyAtIdx(void *key_void, int idx) const {
-  Slice *slice = reinterpret_cast<Slice *>(key_void);
+Status BinaryPlainBlockBuilder::GetKeyAtIdx(void* key_void, uint32_t idx) const {
+  Slice* slice = reinterpret_cast<Slice*>(key_void);
 
-  if (idx >= offsets_.size()) {
+  if (PREDICT_FALSE(idx >= offsets_.size())) {
     return Status::InvalidArgument("index too large");
   }
 
@@ -138,25 +137,23 @@ Status BinaryPlainBlockBuilder::GetKeyAtIdx(void *key_void, int idx) const {
   }
 
   if (PREDICT_FALSE(offsets_.size() == 1)) {
-    *slice = Slice(&buffer_[kHeaderSize],
-                   end_of_data_offset_ - kHeaderSize);
+    *slice = Slice(&buffer_[kHeaderSize], end_of_data_offset_ - kHeaderSize);
   } else if (idx + 1 == offsets_.size()) {
-    *slice = Slice(&buffer_[offsets_[idx]],
-                   end_of_data_offset_ - offsets_[idx]);
+    *slice = Slice(&buffer_[offsets_[idx]], end_of_data_offset_ - offsets_[idx]);
   } else {
-    *slice = Slice(&buffer_[offsets_[idx]],
-                   offsets_[idx + 1] - offsets_[idx]);
+    *slice = Slice(&buffer_[offsets_[idx]], offsets_[idx + 1] - offsets_[idx]);
   }
   return Status::OK();
 }
 
-Status BinaryPlainBlockBuilder::GetFirstKey(void *key_void) const {
-  CHECK(finished_);
+Status BinaryPlainBlockBuilder::GetFirstKey(void* key_void) const {
+  DCHECK(finished_);
   return GetKeyAtIdx(key_void, 0);
 }
 
-Status BinaryPlainBlockBuilder::GetLastKey(void *key_void) const {
-  CHECK(finished_);
+Status BinaryPlainBlockBuilder::GetLastKey(void* key_void) const {
+  DCHECK(finished_);
+  DCHECK(!offsets_.empty());
   return GetKeyAtIdx(key_void, offsets_.size() - 1);
 }
 
@@ -172,14 +169,13 @@ BinaryPlainBlockDecoder::BinaryPlainBlockDecoder(scoped_refptr<BlockHandle> bloc
       ordinal_pos_base_(0),
       cur_idx_(0) {
 }
-BinaryPlainBlockDecoder::~BinaryPlainBlockDecoder() = default;
 
 Status BinaryPlainBlockDecoder::ParseHeader() {
-  CHECK(!parsed_);
+  DCHECK(!parsed_);
 
-  if (data_.size() < kMinHeaderSize) {
-    return Status::Corruption(
-      strings::Substitute("not enough bytes for header: string block header "
+  if (PREDICT_FALSE(data_.size() < kMinHeaderSize)) {
+    return Status::Corruption(Substitute(
+        "not enough bytes for header: string block header "
         "size ($0) less than minimum possible header length ($1)",
         data_.size(), kMinHeaderSize));
   }
@@ -190,15 +186,15 @@ Status BinaryPlainBlockDecoder::ParseHeader() {
   size_t offsets_pos = DecodeFixed32(&data_[8]);
 
   // Sanity check.
-  if (offsets_pos > data_.size()) {
-    return Status::Corruption(
-      StringPrintf("offsets_pos %ld > block size %ld in plain string block",
-                   offsets_pos, data_.size()));
+  if (PREDICT_FALSE(offsets_pos > data_.size())) {
+    return Status::Corruption(Substitute(
+        "offsets_pos $0 > block size $0 in plain string block",
+        offsets_pos, data_.size()));
   }
 
   // Decode the string offsets themselves
-  const uint8_t *p = data_.data() + offsets_pos;
-  const uint8_t *limit = data_.data() + data_.size();
+  const uint8_t* p = data_.data() + offsets_pos;
+  const uint8_t* limit = data_.data() + data_.size();
 
   // Reserve one extra element, which we'll fill in at the end
   // with an offset past the last element.
@@ -264,10 +260,10 @@ void BinaryPlainBlockDecoder::SeekToPositionInBlock(uint pos) {
   cur_idx_ = pos;
 }
 
-Status BinaryPlainBlockDecoder::SeekAtOrAfterValue(const void *value_void, bool *exact) {
+Status BinaryPlainBlockDecoder::SeekAtOrAfterValue(const void* value_void, bool* exact) {
   DCHECK(value_void != nullptr);
 
-  const Slice &target = *reinterpret_cast<const Slice *>(value_void);
+  const Slice& target = *reinterpret_cast<const Slice*>(value_void);
 
   // Binary search in restart array to find the first restart point
   // with a key >= target
@@ -299,7 +295,7 @@ Status BinaryPlainBlockDecoder::SeekAtOrAfterValue(const void *value_void, bool 
 template <typename CellHandler>
 Status BinaryPlainBlockDecoder::HandleBatch(size_t* n, ColumnDataView* dst, CellHandler c) {
   DCHECK(parsed_);
-  CHECK_EQ(dst->type_info()->physical_type(), BINARY);
+  DCHECK_EQ(dst->type_info()->physical_type(), BINARY);
   DCHECK_LE(*n, dst->nrows());
   DCHECK_EQ(dst->stride(), sizeof(Slice));
   if (PREDICT_FALSE(*n == 0 || cur_idx_ >= num_elems_)) {
@@ -308,7 +304,7 @@ Status BinaryPlainBlockDecoder::HandleBatch(size_t* n, ColumnDataView* dst, Cell
   }
   size_t max_fetch = std::min(*n, static_cast<size_t>(num_elems_ - cur_idx_));
 
-  Slice *out = reinterpret_cast<Slice*>(dst->data());
+  Slice* out = reinterpret_cast<Slice*>(dst->data());
   for (size_t i = 0; i < max_fetch; i++, out++, cur_idx_++) {
     Slice elem(string_at_index(cur_idx_));
     c(i, elem, out);
@@ -320,7 +316,7 @@ Status BinaryPlainBlockDecoder::HandleBatch(size_t* n, ColumnDataView* dst, Cell
 Status BinaryPlainBlockDecoder::CopyNextValues(size_t* n, ColumnDataView* dst) {
   dst->memory()->RetainReference(block_);
   return HandleBatch(n, dst, [&](size_t /*i*/, Slice elem, Slice* out) {
-                               *out = elem;
+    *out = elem;
   });
 }
 

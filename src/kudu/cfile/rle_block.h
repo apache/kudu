@@ -119,9 +119,9 @@ class RleBitMapBlockDecoder final : public BlockDecoder {
   }
 
   Status ParseHeader() override {
-    CHECK(!parsed_);
+    DCHECK(!parsed_);
 
-    if (data_.size() < kRleBitmapBlockHeaderSize) {
+    if (PREDICT_FALSE(data_.size() < kRleBitmapBlockHeaderSize)) {
       return Status::Corruption(
           "not enough bytes for header in RleBitMapBlockDecoder");
     }
@@ -140,7 +140,7 @@ class RleBitMapBlockDecoder final : public BlockDecoder {
   }
 
   void SeekToPositionInBlock(uint pos) override {
-    CHECK(parsed_) << "Must call ParseHeader()";
+    DCHECK(parsed_) << "Must call ParseHeader()";
     DCHECK_LE(pos, num_elems_)
       << "Tried to seek to " << pos << " which is > number of elements ("
       << num_elems_ << ") in the block!";
@@ -165,7 +165,7 @@ class RleBitMapBlockDecoder final : public BlockDecoder {
     cur_idx_ = pos;
   }
 
-  Status CopyNextValues(size_t *n, ColumnDataView* dst) override {
+  Status CopyNextValues(size_t* n, ColumnDataView* dst) override {
     DCHECK(parsed_);
 
     DCHECK_LE(*n, dst->nrows());
@@ -319,9 +319,9 @@ class RleIntBlockDecoder final : public BlockDecoder {
   }
 
   Status ParseHeader() override {
-    CHECK(!parsed_);
+    DCHECK(!parsed_);
 
-    if (data_.size() < kRleBitmapBlockHeaderSize) {
+    if (PREDICT_FALSE(data_.size() < kRleBitmapBlockHeaderSize)) {
       return Status::Corruption(
           "not enough bytes for header in RleIntBlockDecoder");
     }
@@ -341,7 +341,7 @@ class RleIntBlockDecoder final : public BlockDecoder {
   }
 
   void SeekToPositionInBlock(uint pos) override {
-    CHECK(parsed_) << "Must call ParseHeader()";
+    DCHECK(parsed_) << "Must call ParseHeader()";
     DCHECK_LE(pos, num_elems_)
         << "Tried to seek to " << pos << " which is > number of elements ("
         << num_elems_ << ") in the block!";
@@ -365,7 +365,7 @@ class RleIntBlockDecoder final : public BlockDecoder {
     cur_idx_ = pos;
   }
 
-  Status SeekAtOrAfterValue(const void *value_void, bool *exact_match) override {
+  Status SeekAtOrAfterValue(const void* value_void, bool* exact_match) override {
     // Currently using linear search as we do not check whether a
     // mid-point of a buffer will fall on a literal or not.
     //
@@ -399,7 +399,7 @@ class RleIntBlockDecoder final : public BlockDecoder {
     return Status::NotFound("not in block");
   }
 
-  Status CopyNextValues(size_t *n, ColumnDataView *dst) override {
+  Status CopyNextValues(size_t* n, ColumnDataView* dst) override {
     DCHECK(parsed_);
 
     DCHECK_LE(*n, dst->nrows());
@@ -457,7 +457,7 @@ class RleIntBlockDecoder final : public BlockDecoder {
           if (!sel->TestBit(row_idx)) {
             continue;
           }
-          *(reinterpret_cast<CppType *>(data_ptr)) = val;
+          *(reinterpret_cast<CppType*>(data_ptr)) = val;
         }
       } else {
         // Mark that the rows will not be returned.

@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_CFILE_BLOCK_COMPRESSION_H
-#define KUDU_CFILE_BLOCK_COMPRESSION_H
+#pragma once
 
 #include <cstddef>
 #include <cstdint>
@@ -133,4 +132,3 @@ class CompressedBlockDecoder {
 
 } // namespace cfile
 } // namespace kudu
-#endif

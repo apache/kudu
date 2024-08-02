@@ -767,7 +767,7 @@ Status CFileIterator::SeekToOrdinal(rowid_t ord_idx) {
   last_prepare_count_ = 0;
   seeked_ = posidx_iter_.get();
 
-  CHECK_EQ(ord_idx, GetCurrentOrdinal());
+  DCHECK_EQ(ord_idx, GetCurrentOrdinal());
   return Status::OK();
 }
 
@@ -928,7 +928,7 @@ Status CFileIterator::PrepareForNewSeek() {
 }
 
 rowid_t CFileIterator::GetCurrentOrdinal() const {
-  CHECK(seeked_) << "not seeked";
+  DCHECK(seeked_) << "not seeked";
   return last_prepare_idx_;
 }
 
@@ -1015,15 +1015,15 @@ Status CFileIterator::QueueCurrentDataBlock(const IndexTreeIterator& idx_iter) {
 }
 
 bool CFileIterator::HasNext() const {
-  CHECK(seeked_) << "not seeked";
-  CHECK(!prepared_) << "Cannot call HasNext() mid-batch";
+  DCHECK(seeked_) << "not seeked";
+  DCHECK(!prepared_) << "Cannot call HasNext() mid-batch";
 
   return !prepared_blocks_.empty() || seeked_->HasNext();
 }
 
 Status CFileIterator::PrepareBatch(size_t* n) {
-  CHECK(!prepared_) << "Should call FinishBatch() first";
-  CHECK(seeked_ != nullptr) << "must be seeked";
+  DCHECK(!prepared_) << "Should call FinishBatch() first";
+  DCHECK(seeked_ != nullptr) << "must be seeked";
 
   CHECK(!prepared_blocks_.empty());
 
@@ -1073,7 +1073,7 @@ Status CFileIterator::PrepareBatch(size_t* n) {
 }
 
 Status CFileIterator::FinishBatch() {
-  CHECK(prepared_) << "no batch prepared";
+  DCHECK(prepared_) << "no batch prepared";
   prepared_ = false;
 
   DVLOG(1) << "Finishing batch " << last_prepare_idx_ << "-"
@@ -1115,7 +1115,7 @@ Status CFileIterator::FinishBatch() {
 }
 
 Status CFileIterator::Scan(ColumnMaterializationContext* ctx) {
-  CHECK(seeked_) << "not seeked";
+  DCHECK(seeked_) << "not seeked";
 
   // Use views to advance the block and selection vector as we read into them.
   ColumnDataView remaining_dst(ctx->block());

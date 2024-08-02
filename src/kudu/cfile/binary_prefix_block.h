@@ -45,11 +45,11 @@ struct WriterOptions;
 // This encodes in a manner similar to LevelDB (prefix coding).
 class BinaryPrefixBlockBuilder final : public BlockBuilder {
  public:
-  explicit BinaryPrefixBlockBuilder(const WriterOptions *options);
+  explicit BinaryPrefixBlockBuilder(const WriterOptions* options);
 
   bool IsBlockFull() const override;
 
-  int Add(const uint8_t *vals, size_t count) override;
+  int Add(const uint8_t* vals, size_t count) override;
 
   void Finish(rowid_t ordinal_pos, std::vector<Slice>* slices) override;
 
@@ -58,12 +58,12 @@ class BinaryPrefixBlockBuilder final : public BlockBuilder {
   size_t Count() const override;
 
   // Return the first added key.
-  // key should be a Slice *
-  Status GetFirstKey(void *key) const override;
+  // key should be a Slice*
+  Status GetFirstKey(void* key) const override;
 
   // Return the last added key.
-  // key should be a Slice *
-  Status GetLastKey(void *key) const override;
+  // key should be a Slice*
+  Status GetLastKey(void* key) const override;
 
  private:
   const WriterOptions* const options_;
@@ -87,9 +87,9 @@ class BinaryPrefixBlockDecoder final : public BlockDecoder {
 
   Status ParseHeader() override;
   void SeekToPositionInBlock(uint pos) override;
-  Status SeekAtOrAfterValue(const void *value,
-                            bool *exact_match) override;
-  Status CopyNextValues(size_t *n, ColumnDataView *dst) override;
+  Status SeekAtOrAfterValue(const void* value,
+                            bool* exact_match) override;
+  Status CopyNextValues(size_t* n, ColumnDataView* dst) override;
 
   bool HasNext() const override {
     DCHECK(parsed_);
@@ -113,19 +113,19 @@ class BinaryPrefixBlockDecoder final : public BlockDecoder {
 
   // Minimum length of a header.
   // Currently one group of varints for an empty block, so minimum is 5 bytes.
-  static const size_t kMinHeaderSize = 5;
+  static constexpr const size_t kMinHeaderSize = 5;
 
  private:
   Status SkipForward(int n);
   Status CheckNextPtr();
   Status ParseNextValue();
-  Status ParseNextIntoArena(Slice prev_val, Arena *dst, Slice *copied);
+  Status ParseNextIntoArena(Slice prev_val, Arena* dst, Slice* copied);
 
-  const uint8_t *DecodeEntryLengths(const uint8_t *ptr,
-                           uint32_t *shared,
-                           uint32_t *non_shared) const;
+  const uint8_t* DecodeEntryLengths(const uint8_t* ptr,
+                                    uint32_t* shared,
+                                    uint32_t* non_shared) const;
 
-  const uint8_t *GetRestartPoint(uint32_t idx) const;
+  const uint8_t* GetRestartPoint(uint32_t idx) const;
   void SeekToRestartPoint(uint32_t idx);
 
   void SeekToStart();
@@ -139,10 +139,10 @@ class BinaryPrefixBlockDecoder final : public BlockDecoder {
   rowid_t ordinal_pos_base_;
 
   uint32_t num_restarts_;
-  const uint32_t *restarts_;
+  const uint32_t* restarts_;
   uint32_t restart_interval_;
 
-  const uint8_t *data_start_;
+  const uint8_t* data_start_;
 
   // Index of the next row to be returned by CopyNextValues, relative to
   // the block's base offset.
@@ -155,7 +155,7 @@ class BinaryPrefixBlockDecoder final : public BlockDecoder {
   // The ptr pointing to the next element to parse. This is for the entry
   // following cur_val_
   // This is advanced by ParseNextValue()
-  const uint8_t *next_ptr_;
+  const uint8_t* next_ptr_;
 };
 
 } // namespace cfile

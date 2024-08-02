@@ -139,7 +139,7 @@ Status CompressedBlockDecoder::Init() {
     p += 4;
 
     // Check that the on-disk data size matches with the buffer.
-    if (data_.size() != header_length() + compressed_size) {
+    if (PREDICT_FALSE(data_.size() != header_length() + compressed_size)) {
       return Status::Corruption(
           Substitute("compressed size $0 does not match remaining length in buffer $1, buffer: $2",
                      compressed_size, data_.size() - header_length(),

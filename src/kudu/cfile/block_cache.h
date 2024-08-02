@@ -184,8 +184,6 @@ class BlockCacheHandle {
     return *this;
   }
 
-  ~BlockCacheHandle() = default;
-
   // Swap this handle with another handle.
   // This can be useful to transfer ownership of a handle by swapping
   // with an empty BlockCacheHandle.

@@ -21,6 +21,8 @@
 #include <cstdlib>
 #include <memory>
 #include <ostream>
+#include <string>
+#include <type_traits>
 #include <utility>
 
 #include <gflags/gflags_declare.h>
@@ -60,7 +62,7 @@ class BloomFileTest : public BloomFileTestBase {
     // Verify all the keys that we inserted probe as present.
     for (uint64_t i = 0; i < FLAGS_n_keys; i++) {
       uint64_t i_byteswapped = BigEndian::FromHost64(i << kKeyShift);
-      Slice s(reinterpret_cast<char *>(&i_byteswapped), sizeof(i));
+      Slice s(reinterpret_cast<char*>(&i_byteswapped), sizeof(i));
 
       bool present = false;
       ASSERT_OK_FAST(bfr()->CheckKeyPresent(BloomKeyProbe(s), nullptr, &present));
@@ -71,7 +73,7 @@ class BloomFileTest : public BloomFileTestBase {
     // Check that the FP rate for keys we didn't insert is what we expect.
     for (uint64_t i = 0; i < FLAGS_n_keys; i++) {
       uint64_t key = random();
-      Slice s(reinterpret_cast<char *>(&key), sizeof(key));
+      Slice s(reinterpret_cast<char*>(&key), sizeof(key));
 
       bool present = false;
       ASSERT_OK_FAST(bfr()->CheckKeyPresent(BloomKeyProbe(s), nullptr, &present));

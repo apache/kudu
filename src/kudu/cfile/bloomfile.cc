@@ -134,9 +134,7 @@ size_t BloomFileWriter::written_size() const {
   return writer_.written_size();
 }
 
-Status BloomFileWriter::AppendKeys(
-  const Slice *keys, size_t n_keys) {
-
+Status BloomFileWriter::AppendKeys(const Slice* keys, size_t n_keys) {
   // If this is the call on a new bloom, copy the first key.
   if (bloom_builder_.count() == 0 && n_keys > 0) {
     first_key_.assign_copy(keys[0].data(), keys[0].size());
@@ -198,7 +196,7 @@ Status BloomFileWriter::FinishCurrentBloomBlock() {
 
 Status BloomFileReader::Open(unique_ptr<ReadableBlock> block,
                              ReaderOptions options,
-                             unique_ptr<BloomFileReader> *reader) {
+                             unique_ptr<BloomFileReader>* reader) {
   unique_ptr<BloomFileReader> bf_reader;
   const IOContext* io_context = options.io_context;
   RETURN_NOT_OK(OpenNoInit(std::move(block),
@@ -211,10 +209,9 @@ Status BloomFileReader::Open(unique_ptr<ReadableBlock> block,
 
 Status BloomFileReader::OpenNoInit(unique_ptr<ReadableBlock> block,
                                    ReaderOptions options,
-                                   unique_ptr<BloomFileReader> *reader) {
+                                   unique_ptr<BloomFileReader>* reader) {
   unique_ptr<CFileReader> cf_reader;
-  RETURN_NOT_OK(CFileReader::OpenNoInit(std::move(block),
-                                        options, &cf_reader));
+  RETURN_NOT_OK(CFileReader::OpenNoInit(std::move(block), options, &cf_reader));
   const IOContext* io_context = options.io_context;
   unique_ptr<BloomFileReader> bf_reader(new BloomFileReader(
       std::move(cf_reader), std::move(options)));
@@ -245,13 +242,14 @@ Status BloomFileReader::InitOnce(const IOContext* io_context) {
   // If it's already initialized, this is a no-op.
   RETURN_NOT_OK(reader_->Init(io_context));
 
-  if (reader_->is_compressed()) {
-    return Status::NotSupported("bloom file is compressed (compression not supported)",
-                              reader_->ToString());
+  if (PREDICT_FALSE(reader_->is_compressed())) {
+    return Status::NotSupported(
+        "bloom file is compressed (compression not supported)",
+        reader_->ToString());
   }
-  if (!reader_->has_validx()) {
-    return Status::NotSupported("bloom file missing value index",
-                              reader_->ToString());
+  if (PREDICT_FALSE(!reader_->has_validx())) {
+    return Status::NotSupported(
+        "bloom file missing value index", reader_->ToString());
   }
   return Status::OK();
 }
@@ -267,13 +265,13 @@ Status BloomFileReader::ParseBlockHeader(const Slice& block,
   uint32_t header_len = DecodeFixed32(data.data());
   data.remove_prefix(sizeof(header_len));
 
-  if (header_len > data.size()) {
+  if (PREDICT_FALSE(header_len > data.size())) {
     return Status::Corruption(
       StringPrintf("Header length %d doesn't fit in buffer of size %ld",
                    header_len, data.size()));
   }
 
-  if (!hdr->ParseFromArray(data.data(), header_len)) {
+  if (PREDICT_FALSE(!hdr->ParseFromArray(data.data(), header_len))) {
     return Status::Corruption(
       string("Invalid bloom block header: ") +
       hdr->InitializationErrorString() +
@@ -285,9 +283,9 @@ Status BloomFileReader::ParseBlockHeader(const Slice& block,
   return Status::OK();
 }
 
-Status BloomFileReader::CheckKeyPresent(const BloomKeyProbe &probe,
+Status BloomFileReader::CheckKeyPresent(const BloomKeyProbe& probe,
                                         const IOContext* io_context,
-                                        bool *maybe_present) {
+                                        bool* maybe_present) {
   DCHECK(init_once_.init_succeeded());
 
   // Since we frequently will access the same BloomFile many times in a row

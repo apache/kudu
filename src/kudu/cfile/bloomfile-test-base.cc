@@ -113,7 +113,7 @@ uint64_t BloomFileTestBase::ReadBenchmark() {
 
       key = BigEndian::FromHost64(key);
 
-      Slice s(reinterpret_cast<uint8_t *>(&key), sizeof(key));
+      Slice s(reinterpret_cast<uint8_t*>(&key), sizeof(key));
       bool present;
       CHECK_OK(bfr_->CheckKeyPresent(BloomKeyProbe(s), nullptr, &present));
       if (present) count_present++;

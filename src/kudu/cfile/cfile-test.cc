@@ -278,7 +278,7 @@ class TestCFile : public CFileTestBase {
       slices.emplace_back("Head");
       slices.emplace_back("Body");
       slices.emplace_back("Tail");
-      slices.emplace_back(reinterpret_cast<uint8_t *>(&i), 4);
+      slices.emplace_back(reinterpret_cast<uint8_t*>(&i), 4);
       ASSERT_OK(w.AppendRawBlock(std::move(slices), i, nullptr, Slice(), "raw-data"));
     }
     ASSERT_OK(w.Finish());
@@ -826,7 +826,7 @@ TEST_P(TestCFileBothCacheMemoryTypes, TestDefaultColumnIter) {
   ColumnMaterializationContext int_ctx = CreateNonDecoderEvalContext(&int_col, &sel);
   ASSERT_OK(iter.Scan(&int_ctx));
   for (size_t i = 0; i < int_col.nrows(); ++i) {
-    ASSERT_EQ(int_value, *reinterpret_cast<const uint32_t *>(int_col.cell_ptr(i)));
+    ASSERT_EQ(int_value, *reinterpret_cast<const uint32_t*>(int_col.cell_ptr(i)));
   }
 
   // Test Int Nullable Default Value
@@ -837,7 +837,7 @@ TEST_P(TestCFileBothCacheMemoryTypes, TestDefaultColumnIter) {
   ASSERT_OK(nullable_iter.Scan(&nullable_ctx));
   for (size_t i = 0; i < nullable_col.nrows(); ++i) {
     ASSERT_FALSE(nullable_col.is_null(i));
-    ASSERT_EQ(int_value, *reinterpret_cast<const uint32_t *>(nullable_col.cell_ptr(i)));
+    ASSERT_EQ(int_value, *reinterpret_cast<const uint32_t*>(nullable_col.cell_ptr(i)));
   }
 
   // Test NULL Default Value
@@ -858,7 +858,7 @@ TEST_P(TestCFileBothCacheMemoryTypes, TestDefaultColumnIter) {
   ColumnMaterializationContext str_ctx = CreateNonDecoderEvalContext(&str_col, &sel);
   ASSERT_OK(str_iter.Scan(&str_ctx));
   for (size_t i = 0; i < str_col.nrows(); ++i) {
-    ASSERT_EQ(str_value, *reinterpret_cast<const Slice *>(str_col.cell_ptr(i)));
+    ASSERT_EQ(str_value, *reinterpret_cast<const Slice*>(str_col.cell_ptr(i)));
   }
 }
 

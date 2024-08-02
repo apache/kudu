@@ -20,8 +20,7 @@
 //                      UINT32, INT32, FLOAT, DOUBLE.
 // Reference:
 // https://github.com/kiyo-masui/bitshuffle.git
-#ifndef KUDU_CFILE_BSHUF_BLOCK_H
-#define KUDU_CFILE_BSHUF_BLOCK_H
+#pragma once
 
 #include <sys/types.h>
 
@@ -245,8 +244,8 @@ class BShufBlockDecoder final : public BlockDecoder {
   }
 
   Status ParseHeader() override {
-    CHECK(!parsed_);
-    if (data_.size() < kHeaderSize) {
+    DCHECK(!parsed_);
+    if (PREDICT_FALSE(data_.size() < kHeaderSize)) {
       return Status::Corruption(
         strings::Substitute("not enough bytes for header: bitshuffle block header "
           "size ($0) less than expected header length ($1)",
@@ -256,11 +255,12 @@ class BShufBlockDecoder final : public BlockDecoder {
     ordinal_pos_base_  = DecodeFixed32(&data_[0]);
     num_elems_         = DecodeFixed32(&data_[4]);
     compressed_size_   = DecodeFixed32(&data_[8]);
-    if (compressed_size_ != data_.size()) {
+    if (PREDICT_FALSE(compressed_size_ != data_.size())) {
       return Status::Corruption("Size Information unmatched");
     }
     num_elems_after_padding_ = DecodeFixed32(&data_[12]);
-    if (num_elems_after_padding_ != KUDU_ALIGN_UP(num_elems_, 8)) {
+    if (PREDICT_FALSE(num_elems_after_padding_ !=
+          KUDU_ALIGN_UP(num_elems_, 8))) {
       return Status::Corruption("num of element information corrupted");
     }
     size_of_elem_ = DecodeFixed32(&data_[16]);
@@ -292,7 +292,7 @@ class BShufBlockDecoder final : public BlockDecoder {
   }
 
   void SeekToPositionInBlock(uint pos) override {
-    CHECK(parsed_) << "Must call ParseHeader()";
+    DCHECK(parsed_) << "Must call ParseHeader()";
     if (PREDICT_FALSE(num_elems_ == 0)) {
       DCHECK_EQ(0, pos);
       return;
@@ -426,7 +426,5 @@ Status BShufBlockDecoder<UINT32>::SeekAtOrAfterValue(const void* value_void, boo
 template<>
 Status BShufBlockDecoder<UINT32>::CopyNextValuesToArray(size_t* n, uint8_t* array);
 
-
 } // namespace cfile
 } // namespace kudu
-#endif

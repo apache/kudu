@@ -14,9 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
-#ifndef KUDU_CFILE_BLOCK_HANDLE_H
-#define KUDU_CFILE_BLOCK_HANDLE_H
+#pragma once
 
 #include <memory>
 
@@ -102,4 +100,3 @@ class BlockHandle final : public RefCountedThreadSafe<BlockHandle> {
 
 } // namespace cfile
 } // namespace kudu
-#endif

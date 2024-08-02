@@ -33,13 +33,13 @@ namespace kudu {
 namespace cfile {
 
 template<typename Type>
-inline Type Decode(const uint8_t *ptr) {
+inline Type Decode(const uint8_t* ptr) {
   Type result;
   memcpy(&result, ptr, sizeof(result));
   return result;
 }
 
-static const size_t kPlainBlockHeaderSize = sizeof(uint32_t) * 2;
+static constexpr const size_t kPlainBlockHeaderSize = sizeof(uint32_t) * 2;
 
 //
 // A plain encoder for generic fixed size data types.
@@ -47,7 +47,7 @@ static const size_t kPlainBlockHeaderSize = sizeof(uint32_t) * 2;
 template<DataType Type>
 class PlainBlockBuilder final : public BlockBuilder {
  public:
-  explicit PlainBlockBuilder(const WriterOptions *options)
+  explicit PlainBlockBuilder(const WriterOptions* options)
       : options_(options) {
     // Reserve enough space for the block, plus a bit of slop since
     // we often overrun the block by a few values.
@@ -55,7 +55,7 @@ class PlainBlockBuilder final : public BlockBuilder {
     Reset();
   }
 
-  int Add(const uint8_t *vals_void, size_t count) override {
+  int Add(const uint8_t* vals_void, size_t count) override {
     int old_size = buffer_.size();
     buffer_.resize(old_size + count * kCppTypeSize);
     memcpy(&buffer_[old_size], vals_void, count * kCppTypeSize);
@@ -83,13 +83,13 @@ class PlainBlockBuilder final : public BlockBuilder {
     return count_;
   }
 
-  Status GetFirstKey(void *key) const override {
+  Status GetFirstKey(void* key) const override {
     DCHECK_GT(count_, 0);
     UnalignedStore(key, Decode<CppType>(&buffer_[kPlainBlockHeaderSize]));
     return Status::OK();
   }
 
-  Status GetLastKey(void *key) const override {
+  Status GetLastKey(void* key) const override {
     DCHECK_GT(count_, 0);
     size_t idx = kPlainBlockHeaderSize + (count_ - 1) * kCppTypeSize;
     UnalignedStore(key, Decode<CppType>(&buffer_[idx]));
@@ -123,9 +123,9 @@ class PlainBlockDecoder final : public BlockDecoder {
   }
 
   Status ParseHeader() override {
-    CHECK(!parsed_);
+    DCHECK(!parsed_);
 
-    if (data_.size() < kPlainBlockHeaderSize) {
+    if (PREDICT_FALSE(data_.size() < kPlainBlockHeaderSize)) {
       return Status::Corruption(
           "not enough bytes for header in PlainBlockDecoder");
     }
@@ -133,11 +133,11 @@ class PlainBlockDecoder final : public BlockDecoder {
     num_elems_ = DecodeFixed32(&data_[0]);
     ordinal_pos_base_ = DecodeFixed32(&data_[4]);
 
-    if (data_.size() != kPlainBlockHeaderSize + num_elems_ * size_of_type) {
+    if (PREDICT_FALSE(data_.size() !=
+          kPlainBlockHeaderSize + num_elems_ * size_of_type)) {
       return Status::Corruption(
           std::string("unexpected data size. ") + "\nFirst 100 bytes: "
-              + HexDump(
-                  Slice(data_.data(),
+              + HexDump(Slice(data_.data(),
                         (data_.size() < 100 ? data_.size() : 100))));
     }
 
@@ -149,7 +149,7 @@ class PlainBlockDecoder final : public BlockDecoder {
   }
 
   void SeekToPositionInBlock(uint pos) override {
-    CHECK(parsed_) << "Must call ParseHeader()";
+    DCHECK(parsed_) << "Must call ParseHeader()";
 
     if (PREDICT_FALSE(num_elems_ == 0)) {
       DCHECK_EQ(0, pos);
@@ -160,7 +160,7 @@ class PlainBlockDecoder final : public BlockDecoder {
     cur_idx_ = pos;
   }
 
-  Status SeekAtOrAfterValue(const void *value, bool *exact_match) override {
+  Status SeekAtOrAfterValue(const void* value, bool* exact_match) override {
     DCHECK(value != nullptr);
 
     CppType target = UnalignedLoad<CppType>(value);
@@ -192,7 +192,7 @@ class PlainBlockDecoder final : public BlockDecoder {
     return Status::OK();
   }
 
-  Status CopyNextValues(size_t *n, ColumnDataView *dst) override {
+  Status CopyNextValues(size_t* n, ColumnDataView* dst) override {
     DCHECK(parsed_);
     DCHECK_LE(*n, dst->nrows());
     DCHECK_EQ(dst->stride(), sizeof(CppType));
@@ -238,7 +238,6 @@ class PlainBlockDecoder final : public BlockDecoder {
   enum {
     size_of_type = TypeTraits<Type>::size
   };
-
 };
 
 } // namespace cfile

@@ -86,8 +86,8 @@ class TestEncoding : public KuduTest {
   }
 
   template<DataType type>
-  void CopyOne(BlockDecoder *decoder,
-               typename TypeTraits<type>::cpp_type *ret) {
+  void CopyOne(BlockDecoder* decoder,
+               typename TypeTraits<type>::cpp_type* ret) {
     ColumnBlock cb(GetTypeInfo(type), nullptr, ret, 1, &memory_);
     ColumnDataView cdv(&cb);
     size_t n = 1;
@@ -128,9 +128,9 @@ class TestEncoding : public KuduTest {
     }
 
     int rem = slices.size();
-    Slice *ptr = &slices[0];
+    Slice* ptr = &slices[0];
     while (rem > 0) {
-      int added = sbb->Add(reinterpret_cast<const uint8_t *>(ptr),
+      int added = sbb->Add(reinterpret_cast<const uint8_t*>(ptr),
                            rem);
       CHECK(added > 0);
       rem -= added;
@@ -384,7 +384,7 @@ class TestEncoding : public KuduTest {
     const CppType max_seek_target = data[num_ints - 1] + 1;
 
     auto ibb = CreateBlockBuilderOrDie(IntType, encoding);
-    CHECK_EQ(num_ints, ibb->Add(reinterpret_cast<uint8_t *>(&data[0]),
+    CHECK_EQ(num_ints, ibb->Add(reinterpret_cast<uint8_t*>(&data[0]),
                                num_ints));
     scoped_refptr<BlockHandle> block = FinishAndMakeContiguous(ibb.get(), 0);
     LOG(INFO) << "Created " << TypeTraits<IntType>::name() << " block with " << num_ints
@@ -450,7 +450,7 @@ class TestEncoding : public KuduTest {
     const uint32_t kOrdinalPosBase = 12345;
 
     auto bb = CreateBlockBuilderOrDie(Type, encoding);
-    bb->Add(reinterpret_cast<const uint8_t *>(src), size);
+    bb->Add(reinterpret_cast<const uint8_t*>(src), size);
     scoped_refptr<BlockHandle> block = FinishAndMakeContiguous(bb.get(), kOrdinalPosBase);
 
     LOG(INFO) << "Encoded size for " << size << " elems: " << block->data().size();
@@ -561,7 +561,7 @@ class TestEncoding : public KuduTest {
       }
     }
     auto ibb = CreateBlockBuilderOrDie(IntType, encoding);
-    ibb->Add(reinterpret_cast<const uint8_t *>(&to_insert[0]),
+    ibb->Add(reinterpret_cast<const uint8_t*>(&to_insert[0]),
              to_insert.size());
     scoped_refptr<BlockHandle> block = FinishAndMakeContiguous(ibb.get(), kOrdinalPosBase);
 
@@ -591,7 +591,7 @@ class TestEncoding : public KuduTest {
                                   static_cast<size_t>((random() % 30) + 1));
       size_t n = to_decode;
       ColumnDataView dst_data(&dst_block, dec_count);
-      DCHECK_EQ((unsigned char *)(&decoded[dec_count]), dst_data.data());
+      DCHECK_EQ((unsigned char*)(&decoded[dec_count]), dst_data.data());
       ASSERT_OK_FAST(ibd->CopyNextValues(&n, &dst_data));
       ASSERT_GE(to_decode, n);
       dec_count += n;
@@ -651,7 +651,7 @@ class TestEncoding : public KuduTest {
     }
 
     auto bb = CreateBlockBuilderOrDie(BOOL, encoding);
-    bb->Add(reinterpret_cast<const uint8_t *>(&to_insert[0]),
+    bb->Add(reinterpret_cast<const uint8_t*>(&to_insert[0]),
             to_insert.size());
     scoped_refptr<BlockHandle> block = FinishAndMakeContiguous(bb.get(), kOrdinalPosBase);
 
@@ -675,7 +675,7 @@ class TestEncoding : public KuduTest {
                                   static_cast<size_t>((random() % 30) + 1));
       size_t n = to_decode;
       ColumnDataView dst_data(&dst_block, dec_count);
-      DCHECK_EQ((unsigned char *)(&decoded[dec_count]), dst_data.data());
+      DCHECK_EQ((unsigned char*)(&decoded[dec_count]), dst_data.data());
       ASSERT_OK_FAST(bd->CopyNextValues(&n, &dst_data));
       ASSERT_GE(to_decode, n);
       dec_count += n;
@@ -788,7 +788,7 @@ TEST_F(TestEncoding, TestRleIntBlockEncoder) {
   Random rand(SeedRandom());
   auto ints = CreateRandomIntegersInRange<uint32_t>(10000, 0, std::numeric_limits<uint32_t>::max(),
                                                     &rand);
-  ibb->Add(reinterpret_cast<const uint8_t *>(ints.data()), 10000);
+  ibb->Add(reinterpret_cast<const uint8_t*>(ints.data()), 10000);
 
   scoped_refptr<BlockHandle> block = FinishAndMakeContiguous(ibb.get(), 12345);
   LOG(INFO) << "RLE Encoded size for 10k ints: " << block->data().size();
@@ -798,7 +798,7 @@ TEST_F(TestEncoding, TestRleIntBlockEncoder) {
   for (int i = 0; i < 100; i++) {
     ints[i] = 0;
   }
-  ibb->Add(reinterpret_cast<const uint8_t *>(ints.data()), 100);
+  ibb->Add(reinterpret_cast<const uint8_t*>(ints.data()), 100);
   block = FinishAndMakeContiguous(ibb.get(), 12345);
   ASSERT_EQ(14UL, block->data().size());
 }

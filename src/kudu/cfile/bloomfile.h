@@ -48,10 +48,10 @@ struct ReaderOptions;
 class BloomFileWriter {
  public:
   BloomFileWriter(std::unique_ptr<fs::WritableBlock> block,
-                  const BloomFilterSizing &sizing);
+                  const BloomFilterSizing& sizing);
 
   Status Start();
-  Status AppendKeys(const Slice *keys, size_t n_keys);
+  Status AppendKeys(const Slice* keys, size_t n_keys);
 
   // Close the bloom's CFile, closing the underlying writable block.
   Status Finish();
@@ -132,7 +132,7 @@ class BloomFileReader {
   // Returns the parsed header inside *hdr, and returns
   // a Slice to the true bloom filter data inside
   // *bloom_data.
-  Status ParseBlockHeader(const Slice &block,
+  Status ParseBlockHeader(const Slice& block,
                           BloomBlockHeaderPB* hdr,
                           Slice* bloom_data) const;
 

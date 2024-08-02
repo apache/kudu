@@ -33,7 +33,6 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
 #include "kudu/gutil/port.h"
-#include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/fastmem.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/coding.h"
@@ -44,24 +43,28 @@
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/slice.h"
 
-namespace kudu {
-namespace cfile {
-
 using kudu::coding::AppendGroupVarInt32;
 using std::string;
 using std::vector;
 using strings::Substitute;
 
+namespace kudu {
+namespace cfile {
+
 ////////////////////////////////////////////////////////////
 // Utility code used by both encoding and decoding
 ////////////////////////////////////////////////////////////
 
-static const uint8_t *DecodeEntryLengths(
-  const uint8_t *ptr, const uint8_t *limit,
-  uint32_t *shared, uint32_t *non_shared) {
-
-  if ((ptr = GetVarint32Ptr(ptr, limit, shared)) == nullptr) return nullptr;
-  if ((ptr = GetVarint32Ptr(ptr, limit, non_shared)) == nullptr) return nullptr;
+static const uint8_t* DecodeEntryLengths(const uint8_t* ptr,
+                                         const uint8_t* limit,
+                                         uint32_t* shared,
+                                         uint32_t* non_shared) {
+  if ((ptr = GetVarint32Ptr(ptr, limit, shared)) == nullptr) {
+    return nullptr;
+  }
+  if ((ptr = GetVarint32Ptr(ptr, limit, non_shared)) == nullptr) {
+    return nullptr;
+  }
   if (limit - ptr < *non_shared) {
     return nullptr;
   }
@@ -73,11 +76,11 @@ static const uint8_t *DecodeEntryLengths(
 // StringPrefixBlockBuilder encoding
 ////////////////////////////////////////////////////////////
 
-BinaryPrefixBlockBuilder::BinaryPrefixBlockBuilder(const WriterOptions *options)
-  : options_(options),
-    val_count_(0),
-    vals_since_restart_(0),
-    finished_(false) {
+BinaryPrefixBlockBuilder::BinaryPrefixBlockBuilder(const WriterOptions* options)
+    : options_(options),
+      val_count_(0),
+      vals_since_restart_(0),
+      finished_(false) {
   Reset();
 }
 
@@ -99,7 +102,7 @@ bool BinaryPrefixBlockBuilder::IsBlockFull() const {
 }
 
 void BinaryPrefixBlockBuilder::Finish(rowid_t ordinal_pos, vector<Slice>* slices) {
-  CHECK(!finished_) << "already finished";
+  DCHECK(!finished_) << "already finished";
 
   header_buf_.clear();
   AppendGroupVarInt32(&header_buf_, val_count_, ordinal_pos,
@@ -123,15 +126,15 @@ void BinaryPrefixBlockBuilder::Finish(rowid_t ordinal_pos, vector<Slice>* slices
   *slices = { Slice(header_buf_), Slice(buffer_) };
 }
 
-int BinaryPrefixBlockBuilder::Add(const uint8_t *vals, size_t count) {
+int BinaryPrefixBlockBuilder::Add(const uint8_t* vals, size_t count) {
   DCHECK_GT(count, 0);
   DCHECK(!finished_);
   DCHECK_LE(vals_since_restart_, options_->block_restart_interval);
 
-  int added = 0;
+  size_t added = 0;
   const Slice* slices = reinterpret_cast<const Slice*>(vals);
   Slice prev_val(last_val_);
-  while (!IsBlockFull() && added < count) {
+  while (added < count && !IsBlockFull()) {
     const Slice val = slices[added];
 
     int old_size = buffer_.size();
@@ -177,31 +180,33 @@ size_t BinaryPrefixBlockBuilder::Count() const {
 }
 
 
-Status BinaryPrefixBlockBuilder::GetFirstKey(void *key) const {
+Status BinaryPrefixBlockBuilder::GetFirstKey(void* key) const {
   if (val_count_ == 0) {
     return Status::NotFound("no keys in data block");
   }
 
-  const uint8_t *p = &buffer_[0];
+  const uint8_t* p = &buffer_[0];
   uint32_t shared;
   uint32_t non_shared;
   p = DecodeEntryLengths(p, &buffer_[buffer_.size()], &shared, &non_shared);
-  if (p == nullptr) {
+  if (PREDICT_FALSE(p == nullptr)) {
     return Status::Corruption("Could not decode first entry in string block");
   }
 
-  CHECK(shared == 0) << "first entry in string block had a non-zero 'shared': "
-                     << shared;
+  if (PREDICT_FALSE(shared != 0)) {
+    return Status::Corruption(Substitute(
+        "first entry in string block had a non-zero 'shared': $0", shared));
+  }
 
-  *reinterpret_cast<Slice *>(key) = Slice(p, non_shared);
+  *reinterpret_cast<Slice*>(key) = Slice(p, non_shared);
   return Status::OK();
 }
 
-Status BinaryPrefixBlockBuilder::GetLastKey(void *key) const {
-  if (val_count_ == 0) {
+Status BinaryPrefixBlockBuilder::GetLastKey(void* key) const {
+  if (PREDICT_FALSE(val_count_ == 0)) {
     return Status::NotFound("no keys in data block");
   }
-  *reinterpret_cast<Slice *>(key) = Slice(last_val_);
+  *reinterpret_cast<Slice*>(key) = Slice(last_val_);
   return Status::OK();
 }
 
@@ -229,21 +234,21 @@ Status BinaryPrefixBlockDecoder::ParseHeader() {
   // Make sure the Slice we are referring to is at least the size of the
   // minimum possible header
   if (PREDICT_FALSE(data_.size() < kMinHeaderSize)) {
-    return Status::Corruption(
-      strings::Substitute("not enough bytes for header: string block header "
+    return Status::Corruption(Substitute(
+        "not enough bytes for header: string block header "
         "size ($0) less than minimum possible header length ($1)",
         data_.size(), kMinHeaderSize));
-    // TODO include hexdump
+    // TODO(dsw): include hexdump
   }
 
   // Make sure the actual size of the group varints in the Slice we are
   // referring to is as big as it claims to be
   size_t header_size = coding::DecodeGroupVarInt32_GetGroupSize(data_.data());
   if (PREDICT_FALSE(data_.size() < header_size)) {
-    return Status::Corruption(
-      strings::Substitute("string block header size ($0) less than length "
+    return Status::Corruption(Substitute(
+        "string block header size ($0) less than length "
         "from in header ($1)", data_.size(), header_size));
-    // TODO include hexdump
+    // TODO(dsw): include hexdump
   }
 
   // We should have enough space in the Slice to decode the group varints
@@ -255,24 +260,24 @@ Status BinaryPrefixBlockDecoder::ParseHeader() {
       &restart_interval_, &unused);
 
   // Then the footer, which points us to the restarts array
-  num_restarts_ = DecodeFixed32(
-    data_.data() + data_.size() - sizeof(uint32_t));
+  num_restarts_ = DecodeFixed32(data_.data() + data_.size() - sizeof(uint32_t));
 
   // sanity check the restarts size
   uint32_t restarts_size = num_restarts_ * sizeof(uint32_t);
-  if (restarts_size > data_.size()) {
-    return Status::Corruption(
-      StringPrintf("restart count %d too big to fit in block size %d",
-                   num_restarts_, static_cast<int>(data_.size())));
+  if (PREDICT_FALSE(restarts_size > data_.size())) {
+    return Status::Corruption(Substitute(
+        "restart count $0 too big to fit in block size $1",
+        num_restarts_, static_cast<int>(data_.size())));
   }
 
-  // TODO: check relationship between num_elems, num_restarts_,
+  // TODO(todd): check relationship between num_elems, num_restarts_,
   // and restart_interval_
 
-  restarts_ = reinterpret_cast<const uint32_t *>(
-    data_.data() + data_.size()
-    - sizeof(uint32_t) // rewind before the restart length
-    - restarts_size);
+  restarts_ = reinterpret_cast<const uint32_t*>(
+      data_.data() + data_.size() -
+      // rewind before the restart length
+      sizeof(uint32_t) -
+      restarts_size);
 
   SeekToStart();
   parsed_ = true;
@@ -313,7 +318,7 @@ void BinaryPrefixBlockDecoder::SeekToPositionInBlock(uint pos) {
 // the '0' restart point, since that is simply the beginning of
 // the data and hence a waste of space. So, 'idx' may range from
 // 0 (first record) through num_restarts_ (exclusive).
-const uint8_t * BinaryPrefixBlockDecoder::GetRestartPoint(uint32_t idx) const {
+const uint8_t* BinaryPrefixBlockDecoder::GetRestartPoint(uint32_t idx) const {
   DCHECK_LE(idx, num_restarts_);
 
   if (PREDICT_TRUE(idx > 0)) {
@@ -332,14 +337,14 @@ void BinaryPrefixBlockDecoder::SeekToRestartPoint(uint32_t idx) {
 
   next_ptr_ = GetRestartPoint(idx);
   cur_idx_ = idx * restart_interval_;
-  CHECK_OK(ParseNextValue()); // TODO: handle corrupted blocks
+  CHECK_OK(ParseNextValue()); // TODO(todd): handle corrupted blocks
 }
 
-Status BinaryPrefixBlockDecoder::SeekAtOrAfterValue(const void *value_void,
-                                              bool *exact_match) {
+Status BinaryPrefixBlockDecoder::SeekAtOrAfterValue(const void* value_void,
+                                                    bool* exact_match) {
   DCHECK(value_void != nullptr);
 
-  const Slice &target = *reinterpret_cast<const Slice *>(value_void);
+  const Slice& target = *reinterpret_cast<const Slice*>(value_void);
 
   // Binary search in restart array to find the first restart point
   // with a key >= target
@@ -347,14 +352,14 @@ Status BinaryPrefixBlockDecoder::SeekAtOrAfterValue(const void *value_void,
   int32_t right = num_restarts_;
   while (left < right) {
     uint32_t mid = (left + right + 1) / 2;
-    const uint8_t *entry = GetRestartPoint(mid);
-    uint32_t shared, non_shared;
-    const uint8_t *key_ptr = DecodeEntryLengths(entry, &shared, &non_shared);
-    if (key_ptr == nullptr || (shared != 0)) {
-      string err =
-        StringPrintf("bad entry restart=%d shared=%d\n", mid, shared) +
-        HexDump(Slice(entry, 16));
-      return Status::Corruption(err);
+    const uint8_t* entry = GetRestartPoint(mid);
+    uint32_t shared;
+    uint32_t non_shared;
+    const uint8_t* key_ptr = DecodeEntryLengths(entry, &shared, &non_shared);
+    if (PREDICT_FALSE(key_ptr == nullptr || shared != 0)) {
+      return Status::Corruption(Substitute(
+          "bad entry restart=$0 shared=$1\n$2",
+          mid, shared, HexDump(Slice(entry, 16))));
     }
     const Slice mid_key(key_ptr, non_shared);
     if (mid_key < target) {
@@ -388,15 +393,15 @@ Status BinaryPrefixBlockDecoder::SeekAtOrAfterValue(const void *value_void,
   }
 }
 
-Status BinaryPrefixBlockDecoder::CopyNextValues(size_t *n, ColumnDataView *dst) {
+Status BinaryPrefixBlockDecoder::CopyNextValues(size_t* n, ColumnDataView* dst) {
   DCHECK(parsed_);
-  CHECK_EQ(dst->type_info()->physical_type(), BINARY);
+  DCHECK_EQ(dst->type_info()->physical_type(), BINARY);
 
   DCHECK_EQ(dst->stride(), sizeof(Slice));
   DCHECK_LE(*n, dst->nrows());
 
-  Arena *out_arena = dst->arena();
-  Slice *out = reinterpret_cast<Slice *>(dst->data());
+  Arena* out_arena = dst->arena();
+  Slice* out = reinterpret_cast<Slice*>(dst->data());
 
   if (PREDICT_FALSE(*n == 0 || cur_idx_ >= num_elems_)) {
     *n = 0;
@@ -407,11 +412,11 @@ Status BinaryPrefixBlockDecoder::CopyNextValues(size_t *n, ColumnDataView *dst) 
   size_t max_fetch = std::min(*n, static_cast<size_t>(num_elems_ - cur_idx_));
 
   // Grab the first row, which we've cached from the last call or seek.
-  const uint8_t *out_data = out_arena->AddSlice(cur_val_);
+  const uint8_t* out_data = out_arena->AddSlice(cur_val_);
   if (PREDICT_FALSE(out_data == nullptr)) {
     return Status::IOError(
-      "Out of memory",
-      StringPrintf("Failed to allocate %d bytes in output arena",
+        "out of memory",
+        Substitute("failed to allocate $0 bytes in output arena",
                    static_cast<int>(cur_val_.size())));
   }
 
@@ -454,11 +459,11 @@ Status BinaryPrefixBlockDecoder::CopyNextValues(size_t *n, ColumnDataView *dst) 
 // Returns a pointer to where the value itself starts.
 // Returns NULL if the varints themselves, or the value that
 // they prefix extend past the end of the block data.
-const uint8_t *BinaryPrefixBlockDecoder::DecodeEntryLengths(
-  const uint8_t *ptr, uint32_t *shared, uint32_t *non_shared) const {
+const uint8_t* BinaryPrefixBlockDecoder::DecodeEntryLengths(
+  const uint8_t* ptr, uint32_t* shared, uint32_t* non_shared) const {
 
   // data ends where the restart info begins
-  const uint8_t *limit = reinterpret_cast<const uint8_t *>(restarts_);
+  const uint8_t* limit = reinterpret_cast<const uint8_t*>(restarts_);
   return kudu::cfile::DecodeEntryLengths(ptr, limit, shared, non_shared);
 }
 
@@ -486,7 +491,7 @@ Status BinaryPrefixBlockDecoder::SkipForward(int n) {
 Status BinaryPrefixBlockDecoder::CheckNextPtr() {
   DCHECK(next_ptr_ != nullptr);
 
-  if (PREDICT_FALSE(next_ptr_ == reinterpret_cast<const uint8_t *>(restarts_))) {
+  if (PREDICT_FALSE(next_ptr_ == reinterpret_cast<const uint8_t*>(restarts_))) {
     DCHECK_EQ(cur_idx_, num_elems_ - 1);
     return Status::NotFound("Trying to parse past end of array");
   }
@@ -494,21 +499,21 @@ Status BinaryPrefixBlockDecoder::CheckNextPtr() {
 }
 
 inline Status BinaryPrefixBlockDecoder::ParseNextIntoArena(Slice prev_val,
-                                                           Arena *dst,
-                                                           Slice *copied) {
+                                                           Arena* dst,
+                                                           Slice* copied) {
   RETURN_NOT_OK(CheckNextPtr());
-  uint32_t shared, non_shared;
-  const uint8_t *val_delta = DecodeEntryLengths(next_ptr_, &shared, &non_shared);
-  if (val_delta == nullptr) {
-    return Status::Corruption(
-      StringPrintf("Could not decode value length data at idx %d",
-                   cur_idx_));
+  uint32_t shared;
+  uint32_t non_shared;
+  const uint8_t* val_delta = DecodeEntryLengths(next_ptr_, &shared, &non_shared);
+  if (PREDICT_FALSE(val_delta == nullptr)) {
+    return Status::Corruption(Substitute(
+        "could not decode value length data at idx $0", cur_idx_));
   }
 
   DCHECK_LE(shared, prev_val.size())
-    << "Spcified longer shared amount than previous key length";
+      << "Specified longer shared amount than previous key length";
 
-  uint8_t *buf = reinterpret_cast<uint8_t *>(dst->AllocateBytes(non_shared + shared));
+  uint8_t* buf = reinterpret_cast<uint8_t*>(dst->AllocateBytes(non_shared + shared));
   strings::memcpy_inlined(buf, prev_val.data(), shared);
   strings::memcpy_inlined(buf + shared, val_delta, non_shared);
 
@@ -523,12 +528,12 @@ inline Status BinaryPrefixBlockDecoder::ParseNextIntoArena(Slice prev_val,
 inline Status BinaryPrefixBlockDecoder::ParseNextValue() {
   RETURN_NOT_OK(CheckNextPtr());
 
-  uint32_t shared, non_shared;
-  const uint8_t *val_delta = DecodeEntryLengths(next_ptr_, &shared, &non_shared);
-  if (val_delta == nullptr) {
-    return Status::Corruption(
-      StringPrintf("Could not decode value length data at idx %d",
-                   cur_idx_));
+  uint32_t shared;
+  uint32_t non_shared;
+  const uint8_t* val_delta = DecodeEntryLengths(next_ptr_, &shared, &non_shared);
+  if (PREDICT_FALSE(val_delta == nullptr)) {
+    return Status::Corruption(Substitute(
+        "could not decode value length data at idx $0", cur_idx_));
   }
 
   // Chop the current key to the length that is shared with the next

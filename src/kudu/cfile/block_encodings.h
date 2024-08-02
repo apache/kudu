@@ -14,9 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
-#ifndef KUDU_CFILE_BLOCK_ENCODINGS_H
-#define KUDU_CFILE_BLOCK_ENCODINGS_H
+#pragma once
 
 #include <algorithm>
 #include <cstdint>
@@ -46,7 +44,8 @@ class BlockBuilder {
 
   // Append extra information to the end of the current cfile, for example:
   // append the dictionary block for under dictionary encoding mode.
-  virtual Status AppendExtraInfo(CFileWriter *c_writer, CFileFooterPB* footer) {
+  virtual Status AppendExtraInfo(CFileWriter* /*c_writer*/,
+                                 CFileFooterPB* /*footer*/) {
     return Status::OK();
   }
 
@@ -59,7 +58,7 @@ class BlockBuilder {
   // Add a sequence of values to the block.
   // Returns the number of values actually added, which may be less
   // than requested if the block is full.
-  virtual int Add(const uint8_t *vals, size_t count) = 0;
+  virtual int Add(const uint8_t* vals, size_t count) = 0;
 
   // Return one or more Slices which represents the encoded data.
   // The multiple slices will be concatenated when appended to the file.
@@ -86,14 +85,14 @@ class BlockBuilder {
   // data is only valid until the next call to Reset().
   //
   // If no keys have been added, returns Status::NotFound
-  virtual Status GetFirstKey(void *key) const = 0;
+  virtual Status GetFirstKey(void* key) const = 0;
 
   // Return the key of the last entry in this index block.
   // For pointer-based types (such as strings), the pointed-to
   // data is only valid until the next call to Reset().
   //
   // If no keys have been added, returns Status::NotFound
-  virtual Status GetLastKey(void *key) const = 0;
+  virtual Status GetLastKey(void* key) const = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(BlockBuilder);
@@ -133,8 +132,8 @@ class BlockDecoder {
   //
   // This will only return valid results when the data block
   // consists of values in sorted order.
-  virtual Status SeekAtOrAfterValue(const void *value,
-                                    bool *exact_match) = 0;
+  virtual Status SeekAtOrAfterValue(const void* value,
+                                    bool* exact_match) = 0;
 
   // Seek the decoder forward by a given number of rows, or to the end
   // of the block. This is primarily used to skip over data.
@@ -156,7 +155,7 @@ class BlockDecoder {
   // In the case that the values are themselves references
   // to other memory (eg Slices), the referred-to memory is
   // allocated in the dst block's arena.
-  virtual Status CopyNextValues(size_t *n, ColumnDataView *dst) = 0;
+  virtual Status CopyNextValues(size_t* n, ColumnDataView* dst) = 0;
 
   // Fetch the next values from the block and evaluate whether they satisfy
   // the predicate. Mark the row in the view into the selection vector. This
@@ -199,5 +198,3 @@ class BlockDecoder {
 
 } // namespace cfile
 } // namespace kudu
-
-#endif

@@ -169,9 +169,9 @@ Status IndexTreeBuilder::FinishAndWriteBlock(size_t level, BlockPointer* written
 
 
 struct IndexTreeIterator::SeekedIndex {
-  SeekedIndex() :
-      iter(&reader)
-  {}
+  SeekedIndex()
+      : iter(&reader) {
+  }
 
   // Hold a copy of the underlying block data, which would
   // otherwise go out of scope. The reader and iter

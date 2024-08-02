@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_CFILE_TYPE_ENCODINGS_H_
-#define KUDU_CFILE_TYPE_ENCODINGS_H_
+#pragma once
 
 #include <memory>
 
@@ -78,5 +77,3 @@ class TypeEncodingInfo {
 
 } // namespace cfile
 } // namespace kudu
-
-#endif /* KUDU_CFILE_TYPE_ENCODINGS_H_ */

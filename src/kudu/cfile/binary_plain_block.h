@@ -58,12 +58,11 @@ struct WriterOptions;
 
 class BinaryPlainBlockBuilder final : public BlockBuilder {
  public:
-  explicit BinaryPlainBlockBuilder(const WriterOptions *options);
-  ~BinaryPlainBlockBuilder() override;
+  explicit BinaryPlainBlockBuilder(const WriterOptions* options);
 
   bool IsBlockFull() const override;
 
-  int Add(const uint8_t *vals, size_t count) override;
+  int Add(const uint8_t* vals, size_t count) override;
 
   void Finish(rowid_t ordinal_pos, std::vector<Slice>* slices) override;
 
@@ -73,7 +72,7 @@ class BinaryPlainBlockBuilder final : public BlockBuilder {
 
   // Return the key at index idx.
   // key should be a Slice*
-  Status GetKeyAtIdx(void* key_void, int idx) const;
+  Status GetKeyAtIdx(void* key_void, uint32_t idx) const;
 
   // Return the first added key.
   // key should be a Slice*
@@ -106,7 +105,6 @@ class BinaryPlainBlockDecoder final : public BlockDecoder {
   BinaryPlainBlockDecoder(BinaryPlainBlockDecoder&& other) noexcept {
     *this = std::move(other);
   }
-  ~BinaryPlainBlockDecoder() override;
 
   BinaryPlainBlockDecoder& operator=(BinaryPlainBlockDecoder&& other) noexcept {
     block_ = std::move(other.block_);
@@ -122,9 +120,9 @@ class BinaryPlainBlockDecoder final : public BlockDecoder {
 
   Status ParseHeader() override;
   void SeekToPositionInBlock(uint pos) override;
-  Status SeekAtOrAfterValue(const void *value,
-                            bool *exact_match) override;
-  Status CopyNextValues(size_t *n, ColumnDataView *dst) override;
+  Status SeekAtOrAfterValue(const void* value,
+                            bool* exact_match) override;
+  Status CopyNextValues(size_t* n, ColumnDataView* dst) override;
   Status CopyNextAndEval(size_t* n,
                          ColumnMaterializationContext* ctx,
                          SelectionVectorView* sel,
@@ -160,7 +158,7 @@ class BinaryPlainBlockDecoder final : public BlockDecoder {
   }
 
   // Minimum length of a header.
-  static const size_t kMinHeaderSize = sizeof(uint32_t) * 3;
+  static constexpr const size_t kMinHeaderSize = sizeof(uint32_t) * 3;
 
  private:
   // Helper template for handling batches of rows. CellHandler is a lambda that

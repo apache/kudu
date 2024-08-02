@@ -139,8 +139,8 @@ class DataGenerator {
   size_t block_entries() const { return block_entries_; }
   size_t total_entries() const { return total_entries_; }
 
-  const cpp_type *values() const { return values_.get(); }
-  const uint8_t *non_null_bitmap() const { return non_null_bitmap_.get(); }
+  const cpp_type* values() const { return values_.get(); }
+  const uint8_t* non_null_bitmap() const { return non_null_bitmap_.get(); }
 
   const cpp_type& operator[](size_t index) const {
     return values_[index];
@@ -302,7 +302,7 @@ class DuplicateStringDataGenerator : public DataGenerator<STRING, HAS_NULLS> {
   Slice BuildTestValue(size_t block_index, size_t value) override {
     // random number from 0 ~ num_-1
     value = random() % num_;
-    char *buf = data_buffer_[block_index].data;
+    char* buf = data_buffer_[block_index].data;
     int len = snprintf(buf, kItemBufferSize - 1, format_, value);
     DCHECK_LT(len, kItemBufferSize);
     return Slice(buf, len);
@@ -419,7 +419,7 @@ class CFileTestBase : public KuduTest {
 // constant stride.
 template<class Indexable, typename SumType>
 ATTRIBUTE_NO_SANITIZE_INTEGER
-SumType FastSum(const Indexable &data, size_t n) {
+SumType FastSum(const Indexable& data, size_t n) {
   SumType sums[4] = {0, 0, 0, 0};
   size_t rem = n;
   int i = 0;
@@ -476,7 +476,7 @@ void ReadBinaryFile(CFileIterator* iter, int* count) {
   LOG(INFO) << "Count: " << *count;
 }
 
-void TimeReadFile(FsManager* fs_manager, const BlockId& block_id, size_t *count_ret) {
+void TimeReadFile(FsManager* fs_manager, const BlockId& block_id, size_t* count_ret) {
   Status s;
 
   std::unique_ptr<fs::ReadableBlock> source;

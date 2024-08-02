@@ -48,6 +48,7 @@
 #include "kudu/util/memory/arena.h"
 
 using std::vector;
+using strings::Substitute;
 
 namespace kudu {
 namespace cfile {
@@ -171,7 +172,7 @@ size_t BinaryDictBlockBuilder::Count() const {
 
 Status BinaryDictBlockBuilder::GetFirstKey(void* key_void) const {
   if (mode_ == kCodeWordMode) {
-    CHECK(finished_);
+    DCHECK(finished_);
     Slice* slice = reinterpret_cast<Slice*>(key_void);
     *slice = Slice(first_key_);
     return Status::OK();
@@ -182,7 +183,7 @@ Status BinaryDictBlockBuilder::GetFirstKey(void* key_void) const {
 
 Status BinaryDictBlockBuilder::GetLastKey(void* key_void) const {
   if (mode_ == kCodeWordMode) {
-    CHECK(finished_);
+    DCHECK(finished_);
     uint32_t last_codeword;
     RETURN_NOT_OK(data_builder_->GetLastKey(reinterpret_cast<void*>(&last_codeword)));
     return dict_block_.GetKeyAtIdx(key_void, last_codeword);
@@ -206,17 +207,17 @@ BinaryDictBlockDecoder::BinaryDictBlockDecoder(scoped_refptr<BlockHandle> block,
 }
 
 Status BinaryDictBlockDecoder::ParseHeader() {
-  CHECK(!parsed_);
+  DCHECK(!parsed_);
 
-  if (data_.size() < kMinHeaderSize) {
-    return Status::Corruption(
-      strings::Substitute("not enough bytes for header: dictionary block header "
+  if (PREDICT_FALSE(data_.size() < kMinHeaderSize)) {
+    return Status::Corruption(Substitute(
+        "not enough bytes for header: dictionary block header "
         "size ($0) less than minimum possible header length ($1)",
         data_.size(), kMinHeaderSize));
   }
 
-  bool valid = tight_enum_test_cast<DictEncodingMode>(DecodeFixed32(&data_[0]), &mode_);
-  if (PREDICT_FALSE(!valid)) {
+  if (PREDICT_FALSE(!tight_enum_test_cast<DictEncodingMode>(
+          DecodeFixed32(&data_[0]), &mode_))) {
     return Status::Corruption("header Mode information corrupted");
   }
   auto sub_block = block_->SubrangeBlock(4, data_.size() - 4);
@@ -224,7 +225,7 @@ Status BinaryDictBlockDecoder::ParseHeader() {
   if (mode_ == kCodeWordMode) {
     data_decoder_.reset(new BShufBlockDecoder<UINT32>(std::move(sub_block)));
   } else {
-    if (mode_ != kPlainBinaryMode) {
+    if (PREDICT_FALSE(mode_ != kPlainBinaryMode)) {
       return Status::Corruption("Unrecognized Dictionary encoded data block header");
     }
     data_decoder_.reset(new BinaryPlainBlockDecoder(std::move(sub_block)));
@@ -277,7 +278,7 @@ Status BinaryDictBlockDecoder::CopyNextAndEval(size_t* n,
 
   // Predicates that have no matching words should return no data.
   SelectionVector* codewords_matching_pred = parent_cfile_iter_->GetCodeWordsMatchingPredicate();
-  CHECK(codewords_matching_pred != nullptr);
+  DCHECK(codewords_matching_pred != nullptr);
   if (!codewords_matching_pred->AnySelected()) {
     // If nothing is selected, move the data_decoder_ pointer forward and clear
     // the corresponding bits in the selection vector.
@@ -306,7 +307,7 @@ Status BinaryDictBlockDecoder::CopyNextAndEval(size_t* n,
     if (!sel->TestBit(i)) {
       continue;
     }
-    uint32_t codeword = *reinterpret_cast<uint32_t*>(&codeword_buf_[i*sizeof(uint32_t)]);
+    uint32_t codeword = *reinterpret_cast<uint32_t*>(&codeword_buf_[i * sizeof(uint32_t)]);
     if (BitmapTest(codewords_matching_pred->bitmap(), codeword)) {
       // Row is included in predicate: point the cell in the block
       // to the entry in the dictionary.
@@ -325,7 +326,7 @@ Status BinaryDictBlockDecoder::CopyNextAndEval(size_t* n,
 
 Status BinaryDictBlockDecoder::CopyNextDecodeStrings(size_t* n, ColumnDataView* dst) {
   DCHECK(parsed_);
-  CHECK_EQ(dst->type_info()->physical_type(), BINARY);
+  DCHECK_EQ(dst->type_info()->physical_type(), BINARY);
   DCHECK_LE(*n, dst->nrows());
   DCHECK_EQ(dst->stride(), sizeof(Slice));
 
@@ -340,7 +341,7 @@ Status BinaryDictBlockDecoder::CopyNextDecodeStrings(size_t* n, ColumnDataView* 
   // Now point the cells in the destination block to the string data in the dictionary
   // block.
   for (int i = 0; i < *n; i++) {
-    uint32_t codeword = *reinterpret_cast<uint32_t*>(&codeword_buf_[i*sizeof(uint32_t)]);
+    uint32_t codeword = *reinterpret_cast<uint32_t*>(&codeword_buf_[i * sizeof(uint32_t)]);
     *out++ = dict_decoder_->string_at_index(codeword);
   }
   dst->memory()->RetainReference(dict_decoder_->block_handle());

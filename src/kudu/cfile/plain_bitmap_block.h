@@ -118,7 +118,7 @@ class PlainBitMapBlockDecoder final : public BlockDecoder {
   }
 
   Status ParseHeader() override {
-    CHECK(!parsed_);
+    DCHECK(!parsed_);
 
     if (data_.size() < kHeaderSize) {
       return Status::Corruption(
@@ -147,7 +147,7 @@ class PlainBitMapBlockDecoder final : public BlockDecoder {
   }
 
   void SeekToPositionInBlock(uint pos) override {
-    CHECK(parsed_) << "Must call ParseHeader()";
+    DCHECK(parsed_) << "Must call ParseHeader()";
 
     if (PREDICT_FALSE(num_elems_ == 0)) {
       DCHECK_EQ(0, pos);
@@ -167,7 +167,7 @@ class PlainBitMapBlockDecoder final : public BlockDecoder {
     return Status::NotSupported("BOOL keys are not supported!");
   }
 
-  Status CopyNextValues(size_t *n, ColumnDataView *dst) override {
+  Status CopyNextValues(size_t* n, ColumnDataView* dst) override {
     DCHECK(parsed_);
     DCHECK_LE(*n, dst->nrows());
     DCHECK_EQ(dst->stride(), sizeof(bool));

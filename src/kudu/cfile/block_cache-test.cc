@@ -20,6 +20,8 @@
 #include <cstring>
 #include <memory>
 #include <ostream>
+#include <string>
+#include <type_traits>
 
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
@@ -34,14 +36,14 @@ DECLARE_double(cache_memtracker_approximation_ratio);
 namespace kudu {
 namespace cfile {
 
-static const char *DATA_TO_CACHE = "hello world";
+static const char* const kDataToCache = "hello world";
 
 TEST(TestBlockCache, TestBasics) {
   // Disable approximate tracking of cache memory since we make specific
   // assertions on the MemTracker in this test.
   FLAGS_cache_memtracker_approximation_ratio = 0;
 
-  size_t data_size = strlen(DATA_TO_CACHE) + 1;
+  size_t data_size = strlen(kDataToCache) + 1;
   BlockCache cache(512 * 1024 * 1024);
   BlockCache::FileId id(1234);
   BlockCache::CacheKey key(id, 1);
@@ -59,7 +61,7 @@ TEST(TestBlockCache, TestBasics) {
   }
 
   BlockCache::PendingEntry data = cache.Allocate(key, data_size);
-  memcpy(data.val_ptr(), DATA_TO_CACHE, data_size);
+  memcpy(data.val_ptr(), kDataToCache, data_size);
 
   // Insert and re-lookup
   BlockCacheHandle inserted_handle;
@@ -77,7 +79,7 @@ TEST(TestBlockCache, TestBasics) {
   ASSERT_TRUE(cache.Lookup(key, Cache::EXPECT_IN_CACHE, &retrieved_handle));
   ASSERT_TRUE(retrieved_handle.valid());
 
-  ASSERT_EQ(0, memcmp(retrieved_handle.data().data(), DATA_TO_CACHE, data_size));
+  ASSERT_EQ(0, memcmp(retrieved_handle.data().data(), kDataToCache, data_size));
 
   // Ensure that a lookup for a different offset doesn't
   // return this data.

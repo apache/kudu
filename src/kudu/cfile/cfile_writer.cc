@@ -145,8 +145,7 @@ CFileWriter::~CFileWriter() {
 
 Status CFileWriter::Start() {
   TRACE_EVENT0("cfile", "CFileWriter::Start");
-  CHECK(state_ == kWriterInitialized) <<
-    "bad state for Start(): " << state_;
+  DCHECK(state_ == kWriterInitialized) << "bad state for Start(): " << state_;
 
   if (compression_ != NO_COMPRESSION) {
     const CompressionCodec* codec;
@@ -201,8 +200,7 @@ Status CFileWriter::Finish() {
 
 Status CFileWriter::FinishAndReleaseBlock(BlockCreationTransaction* transaction) {
   TRACE_EVENT0("cfile", "CFileWriter::FinishAndReleaseBlock");
-  CHECK(state_ == kWriterWriting) <<
-    "Bad state for Finish(): " << state_;
+  DCHECK(state_ == kWriterWriting) << "Bad state for Finish(): " << state_;
 
   // Write out any pending values as the last data block.
   RETURN_NOT_OK(FinishCurDataBlock());
@@ -268,8 +266,8 @@ Status CFileWriter::FinishAndReleaseBlock(BlockCreationTransaction* transaction)
   return Status::OK();
 }
 
-void CFileWriter::AddMetadataPair(const Slice &key, const Slice &value) {
-  CHECK_NE(state_, kWriterFinished);
+void CFileWriter::AddMetadataPair(const Slice& key, const Slice& value) {
+  DCHECK_NE(state_, kWriterFinished);
 
   unflushed_metadata_.emplace_back(key.ToString(), value.ToString());
 }
@@ -284,22 +282,22 @@ string CFileWriter::GetMetaValueOrDie(Slice key) const {
   LOG(FATAL) << "Missing metadata entry: " << KUDU_REDACT(key.ToDebugString());
 }
 
-void CFileWriter::FlushMetadataToPB(RepeatedPtrField<FileMetadataPairPB> *field) {
+void CFileWriter::FlushMetadataToPB(RepeatedPtrField<FileMetadataPairPB>* field) {
   typedef pair<string, string> ss_pair;
-  for (const ss_pair &entry : unflushed_metadata_) {
-    FileMetadataPairPB *pb = field->Add();
+  for (const ss_pair& entry : unflushed_metadata_) {
+    FileMetadataPairPB* pb = field->Add();
     pb->set_key(entry.first);
     pb->set_value(entry.second);
   }
   unflushed_metadata_.clear();
 }
 
-Status CFileWriter::AppendEntries(const void *entries, size_t count) {
+Status CFileWriter::AppendEntries(const void* entries, size_t count) {
   DCHECK(!is_nullable_);
 
   int rem = count;
 
-  const uint8_t *ptr = reinterpret_cast<const uint8_t *>(entries);
+  const uint8_t* ptr = reinterpret_cast<const uint8_t*>(entries);
 
   while (rem > 0) {
     int n = data_block_->Add(ptr, rem);
@@ -318,12 +316,12 @@ Status CFileWriter::AppendEntries(const void *entries, size_t count) {
   return Status::OK();
 }
 
-Status CFileWriter::AppendNullableEntries(const uint8_t *bitmap,
-                                          const void *entries,
+Status CFileWriter::AppendNullableEntries(const uint8_t* bitmap,
+                                          const void* entries,
                                           size_t count) {
   DCHECK(is_nullable_ && bitmap != nullptr);
 
-  const uint8_t *ptr = reinterpret_cast<const uint8_t *>(entries);
+  const uint8_t* ptr = reinterpret_cast<const uint8_t*>(entries);
 
   size_t nitems;
   bool is_non_null = false;
@@ -398,7 +396,7 @@ Status CFileWriter::FinishCurDataBlock() {
     }
     std::move(data_slices.begin(), data_slices.end(), std::back_inserter(v));
     s = AppendRawBlock(std::move(v), first_elem_ord,
-                       reinterpret_cast<const void *>(key_tmp_space),
+                       reinterpret_cast<const void*>(key_tmp_space),
                        Slice(last_key_),
                        "data block");
   }
@@ -421,7 +419,7 @@ Status CFileWriter::AppendRawBlock(vector<Slice> data_slices,
                                    const void* validx_curr,
                                    const Slice& validx_prev,
                                    const char* name_for_log) {
-  CHECK_EQ(state_, kWriterWriting);
+  DCHECK_EQ(state_, kWriterWriting);
 
   BlockPointer ptr;
   Status s = AddBlock(std::move(data_slices), &ptr, name_for_log);
@@ -438,7 +436,7 @@ Status CFileWriter::AppendRawBlock(vector<Slice> data_slices,
   }
 
   if (validx_builder_ != nullptr) {
-    CHECK(validx_curr != nullptr) <<
+    DCHECK(validx_curr != nullptr) <<
       "must pass a key for raw block if validx is configured";
 
     (*options_.validx_key_encoder)(validx_curr, &tmp_buf_);
