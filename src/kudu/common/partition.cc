@@ -71,15 +71,63 @@ bool Partition::operator==(const Partition& rhs) const {
   if (this == &rhs) {
     return true;
   }
-  if (begin_ != rhs.begin_) {
-    return false;
-  }
-  if (end_ != rhs.end_) {
-    return false;
-  }
   if (hash_buckets_ != rhs.hash_buckets_) {
     return false;
   }
+
+  DCHECK(hash_buckets_ == rhs.hash_buckets_);
+  const bool this_begin_is_legacy = PartitionKey::IsLegacy(begin_, hash_buckets_);
+  const bool other_begin_is_legacy = PartitionKey::IsLegacy(rhs.begin_, rhs.hash_buckets_);
+  // If both are legacy or both not, we can compare them directly.
+  if (this_begin_is_legacy == other_begin_is_legacy) {
+    if (begin_ != rhs.begin_) {
+      return false;
+    }
+  }
+
+  const bool this_end_is_legacy =  PartitionKey::IsLegacy(end_, hash_buckets_);
+  const bool other_end_is_legacy = PartitionKey::IsLegacy(rhs.end_, rhs.hash_buckets_);;
+  // If both are legacy or both not, we can compare them directly.
+  if (this_end_is_legacy == other_end_is_legacy) {
+    if (end_ != rhs.end_) {
+      return false;
+    }
+  }
+
+  if (this_begin_is_legacy != other_begin_is_legacy) {
+    // If one is legacy and the other is not, we need to convert the legacy one.
+    if (this_begin_is_legacy) {
+      DCHECK(!other_begin_is_legacy);
+      PartitionKey this_begin = PartitionKey::LowerBoundFromLegacy(begin_, hash_buckets_);
+      if (this_begin != rhs.begin_) {
+        return false;
+      }
+    } else {
+      DCHECK(other_begin_is_legacy);
+      PartitionKey other_begin = PartitionKey::LowerBoundFromLegacy(rhs.begin_, rhs.hash_buckets_);
+      if (begin_ != other_begin) {
+        return false;
+      }
+    }
+  }
+
+  if (this_end_is_legacy != other_end_is_legacy) {
+    // If one is legacy and the other is not, we need to convert the legacy one.
+    if (this_end_is_legacy) {
+      DCHECK(!other_end_is_legacy);
+      PartitionKey this_end = PartitionKey::UpperBoundFromLegacy(end_, hash_buckets_);
+      if (this_end != rhs.end_) {
+        return false;
+      }
+    } else {
+      DCHECK(other_end_is_legacy);
+      PartitionKey other_end = PartitionKey::UpperBoundFromLegacy(rhs.end_, rhs.hash_buckets_);
+      if (end_ != other_end) {
+        return false;
+      }
+    }
+  }
+
   return true;
 }
 

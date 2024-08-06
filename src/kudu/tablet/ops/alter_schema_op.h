@@ -81,6 +81,10 @@ class AlterSchemaOpState : public OpState {
     return request_->schema_version();
   }
 
+  bool force() const {
+    return request_->has_force() && request_->force();
+  }
+
   void AcquireSchemaLock(rw_semaphore* l);
 
   // Release the acquired schema lock.

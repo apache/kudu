@@ -102,20 +102,20 @@ class TabletCopyClient {
 
   // Start up a tablet copy session to bootstrap from the specified
   // bootstrap peer. Place a new superblock indicating that tablet copy is
-  // in progress. If the 'metadata' pointer is passed as NULL, it is ignored,
+  // in progress. If the 'tmeta' pointer is passed as NULL, it is ignored,
   // otherwise the TabletMetadata object resulting from the initial remote
   // bootstrap response is returned.
   //
   // Upon success, tablet metadata will be created and the tablet will be
   // assigned to a data directory group.
   virtual Status Start(const HostPort& /*copy_source_addr*/,
-                       scoped_refptr<tablet::TabletMetadata>* /*meta*/) {
+                       scoped_refptr<tablet::TabletMetadata>* /*tmeta*/) {
     return Status::NotSupported("copy from remote peer not supported");
   }
 
   // Similar to above, but copy from local filesystem.
   virtual Status Start(const std::string& /*tablet_id*/,
-                       scoped_refptr<tablet::TabletMetadata>* /*meta*/) {
+                       scoped_refptr<tablet::TabletMetadata>* /*tmeta*/) {
     return Status::NotSupported("copy from local filesystem not supported");
   }
 
@@ -150,7 +150,8 @@ class TabletCopyClient {
   // Construct the tablet copy client.
   //
   // Objects behind raw pointers must remain valid until this object is destroyed.
-  TabletCopyClient(std::string tablet_id,
+  TabletCopyClient(std::string dst_tablet_id,
+                   std::string src_tablet_id,
                    FsManager* dst_fs_manager,
                    scoped_refptr<consensus::ConsensusMetadataManager> cmeta_manager,
                    std::shared_ptr<rpc::Messenger> messenger,
@@ -171,7 +172,7 @@ class TabletCopyClient {
 
     // The copy has begun updating metadata on disk, but has not begun
     // receiving WAL segments or blocks from the tablet copy source. Being in
-    // this state or beyond implies that 'meta_' is non-null.
+    // this state or beyond implies that 'tmeta_' is non-null.
     kStarting,
 
     // The metadata has been updated on disk to indicate the start of a new
@@ -275,7 +276,8 @@ class TabletCopyClient {
   std::string LogPrefix();
 
   // Set-once members.
-  const std::string tablet_id_;
+  const std::string dst_tablet_id_;
+  const std::string src_tablet_id_;
   FsManager* const dst_fs_manager_;
   const scoped_refptr<consensus::ConsensusMetadataManager> cmeta_manager_;
   const std::shared_ptr<rpc::Messenger> messenger_;
@@ -287,7 +289,7 @@ class TabletCopyClient {
   bool replace_tombstoned_tablet_;
 
   // Local tablet metadata file.
-  scoped_refptr<tablet::TabletMetadata> meta_;
+  scoped_refptr<tablet::TabletMetadata> tmeta_;
 
   // Local Consensus metadata file. This may initially be NULL if this is
   // bootstrapping a new replica (rather than replacing an old one) but it is
@@ -328,7 +330,16 @@ class TabletCopyClient {
 class RemoteTabletCopyClient : public TabletCopyClient {
  public:
   RemoteTabletCopyClient(
-      std::string tablet_id,
+      const std::string& tablet_id,
+      FsManager* dst_fs_manager,
+      scoped_refptr<consensus::ConsensusMetadataManager> cmeta_manager,
+      std::shared_ptr<rpc::Messenger> messenger,
+      TabletCopyClientMetrics* dst_tablet_copy_metrics,
+      std::shared_ptr<Throttler> throttler = nullptr);
+
+  RemoteTabletCopyClient(
+      std::string dst_tablet_id,
+      std::string src_tablet_id,
       FsManager* dst_fs_manager,
       scoped_refptr<consensus::ConsensusMetadataManager> cmeta_manager,
       std::shared_ptr<rpc::Messenger> messenger,
@@ -338,7 +349,7 @@ class RemoteTabletCopyClient : public TabletCopyClient {
   ~RemoteTabletCopyClient() override;
 
   Status Start(const HostPort& copy_source_addr,
-               scoped_refptr<tablet::TabletMetadata>* meta) override;
+               scoped_refptr<tablet::TabletMetadata>* tmeta) override;
 
  private:
   Status TransferFile(const DataIdPB& data_id, fs::WritableBlock* appendable) override;
@@ -371,7 +382,7 @@ class LocalTabletCopyClient : public TabletCopyClient {
       TabletCopySourceMetrics* src_tablet_copy_metrics);
 
   Status Start(const std::string& tablet_id,
-               scoped_refptr<tablet::TabletMetadata>* meta) override;
+               scoped_refptr<tablet::TabletMetadata>* tmeta) override;
 
  private:
   Status TransferFile(const DataIdPB& data_id, fs::WritableBlock* appendable) override;

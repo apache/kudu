@@ -551,6 +551,9 @@ message StartTabletCopyRequestPB {
   // The caller's term. In the case that the target of this request has a
   // TOMBSTONED replica with a term higher than this one, the request will fail.
   optional int64 caller_term = 4 [ default = -1 ];
+
+  // The identifier of the tablet to copy from.
+  optional bytes src_tablet_id = 6;
 }
 
 message StartTabletCopyResponsePB {

@@ -1160,23 +1160,25 @@ void TabletServiceAdminImpl::AlterSchema(const AlterSchemaRequestPB* req,
     return;
   }
 
+  Schema req_schema;
+  Status s = SchemaFromPB(req->schema(), &req_schema);
+  if (!s.ok()) {
+    SetupErrorAndRespond(resp->mutable_error(), s,
+                         TabletServerErrorPB::INVALID_SCHEMA, context);
+    return;
+  }
+
+  const SchemaPtr tablet_schema_ptr = replica->tablet_metadata()->schema();
+  const Schema& tablet_schema = *tablet_schema_ptr;
+  const bool same_schema = (req_schema == tablet_schema);
+
   uint32_t schema_version = replica->tablet_metadata()->schema_version();
 
-  // If the schema was already applied, respond as succeded
+  // If the schema was already applied, respond as succeeded
   if (schema_version == req->schema_version()) {
     // Sanity check, to verify that the tablet should have the same schema
     // specified in the request.
-    Schema req_schema;
-    Status s = SchemaFromPB(req->schema(), &req_schema);
-    if (!s.ok()) {
-      SetupErrorAndRespond(resp->mutable_error(), s,
-                           TabletServerErrorPB::INVALID_SCHEMA, context);
-      return;
-    }
-
-    const SchemaPtr tablet_schema_ptr = replica->tablet_metadata()->schema();
-    const Schema& tablet_schema = *tablet_schema_ptr;
-    if (req_schema == tablet_schema) {
+    if (same_schema) {
       context->RespondSuccess();
       return;
     }
@@ -1195,12 +1197,24 @@ void TabletServiceAdminImpl::AlterSchema(const AlterSchemaRequestPB* req,
     }
   }
 
-  // If the current schema is newer than the one in the request reject the request.
+  // If the current schema is newer than the one in the request.
   if (schema_version > req->schema_version()) {
-    SetupErrorAndRespond(resp->mutable_error(),
-                         Status::InvalidArgument("Tablet has a newer schema"),
-                         TabletServerErrorPB::TABLET_HAS_A_NEWER_SCHEMA, context);
-    return;
+    // Reject the request if not on force.
+    if (!req->has_force() || !req->force()) {
+      SetupErrorAndRespond(resp->mutable_error(),
+                           Status::InvalidArgument("Tablet has a newer schema"),
+                           TabletServerErrorPB::TABLET_HAS_A_NEWER_SCHEMA, context);
+      return;
+    }
+
+    DCHECK(req->has_force() && req->force());
+    if (!same_schema) {
+      SetupErrorAndRespond(resp->mutable_error(),
+                           Status::InvalidArgument("Only allowed to force schema change to the "
+                                                   "same schema, in this case, only the schema "
+                                                   "version is changed"),
+                           TabletServerErrorPB::TABLET_HAS_A_NEWER_SCHEMA, context);
+    }
   }
 
   unique_ptr<AlterSchemaOpState> op_state(
@@ -1210,8 +1224,8 @@ void TabletServiceAdminImpl::AlterSchema(const AlterSchemaRequestPB* req,
       new RpcOpCompletionCallback<AlterSchemaResponsePB>(context, resp)));
 
   // Submit the alter schema op. The RPC will be responded to asynchronously.
-  Status s = replica->SubmitAlterSchema(std::move(op_state),
-                                        context->GetClientDeadline());
+  s = replica->SubmitAlterSchema(std::move(op_state),
+                                 context->GetClientDeadline());
   if (PREDICT_FALSE(!s.ok())) {
     SetupErrorAndRespond(resp->mutable_error(), s,
                          TabletServerErrorPB::UNKNOWN_ERROR,

@@ -27,6 +27,7 @@
 #include <thread>
 #include <tuple>
 #include <type_traits>
+#include <unordered_map>
 #include <vector>
 
 #include <gflags/gflags.h>
@@ -35,6 +36,10 @@
 #include <gtest/gtest.h>
 #include <gtest/gtest_prod.h>
 
+#include "kudu/common/common.pb.h"
+#include "kudu/common/partition.h"
+#include "kudu/common/schema.h"
+#include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus_meta_manager.h"
 #include "kudu/consensus/log.h"
@@ -42,6 +47,7 @@
 #include "kudu/consensus/log_reader.h" // IWYU pragma: keep
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/metadata.pb.h"
+#include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/fs/block_id.h"
@@ -55,13 +61,16 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/tablet/metadata.pb.h"
+#include "kudu/tablet/tablet-harness.h"
+#include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_copy-test-base.h"
 #include "kudu/tserver/tablet_copy.pb.h"
-#include "kudu/tserver/tablet_copy_source_session.h"
+#include "kudu/tserver/tablet_server-test-base.h"
 #include "kudu/tserver/tablet_server.h"
+#include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
@@ -69,6 +78,7 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
+#include "kudu/util/oid_generator.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/random.h"
 #include "kudu/util/slice.h"
@@ -90,10 +100,13 @@ METRIC_DECLARE_counter(block_manager_total_disk_sync);
 using kudu::consensus::ConsensusMetadataManager;
 using kudu::consensus::ConsensusStatePB;
 using kudu::consensus::GetRaftConfigLeader;
+using kudu::consensus::OpId;
 using kudu::consensus::RaftPeerPB;
 using kudu::fs::DataDirManager;
+using kudu::tablet::TABLET_DATA_TOMBSTONED;
 using kudu::tablet::TabletMetadata;
 using std::nullopt;
+using std::optional;
 using std::shared_ptr;
 using std::string;
 using std::thread;
@@ -105,84 +118,142 @@ using strings::Substitute;
 namespace kudu {
 namespace tserver {
 
+enum class TestTabletCopyMode {
+  kRemoteAndSameTabletId = 0,
+  kRemoteAndDiffTabletId,
+  kLocal,
+};
+
 class TabletCopyClientTest : public TabletCopyTest {
  public:
   TabletCopyClientTest()
-      : mode_(TabletCopyMode::REMOTE),
+      : mode_(TestTabletCopyMode::kRemoteAndSameTabletId),
         rand_(SeedRandom()) {
+    dst_table_id_ = kTableId;
+    dst_schema_ = schema_;
   }
 
   void SetUp() override {
+    // tablet_replica_ is initialized in TabletCopyTest::SetUp().
     NO_FATALS(TabletCopyTest::SetUp());
 
-    // To be a bit more flexible in testing, create a FS layout with multiple disks.
+    // To be a bit more flexible in testing, create an FS layout with multiple disks.
     const string kTestWalDir = GetTestPath("client_tablet_wal");
     const string kTestDataDirPrefix = GetTestPath("client_tablet_data");
-    FsManagerOpts opts;
-    opts.wal_root = kTestWalDir;
-    for (int dir = 0; dir < kNumDataDirs; dir++) {
-      opts.data_roots.emplace_back(Substitute("$0-$1", kTestDataDirPrefix, dir));
-    }
-
     metric_entity_ = METRIC_ENTITY_server.Instantiate(&metric_registry_, "test");
-    opts.metric_entity = metric_entity_;
-    fs_manager_.reset(new FsManager(Env::Default(), opts));
-    string tenant_name;
-    string tenant_id;
-    string encryption_key;
-    string encryption_key_iv;
-    string encryption_key_version;
-    GetEncryptionKey(&tenant_name, &tenant_id, &encryption_key,
-                     &encryption_key_iv, &encryption_key_version);
-    if (tenant_name.empty() && encryption_key.empty()) {
-      ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
-    } else if (tenant_name.empty()) {
-      ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout(nullopt,
-                                                           nullopt,
-                                                           nullopt,
-                                                           encryption_key,
-                                                           encryption_key_iv,
-                                                           encryption_key_version));
+    // Store tablet id in cache, because tablet_replica_ will be reset later.
+    src_tablet_id_ = GetTabletId();
+    InitDstParameters();
+    if (mode_ == TestTabletCopyMode::kRemoteAndDiffTabletId) {
+      // Generate a new tablet id for the destination tablet.
+      static ObjectIdGenerator oid_generator;
+      dst_tablet_id_ = oid_generator.Next();
+      ASSERT_OK(mini_server_->AddTestTablet(dst_table_id_,
+                                            dst_tablet_id_,
+                                            dst_schema_,
+                                            dst_config_,
+                                            dst_partition_schema_,
+                                            dst_partition_,
+                                            dst_table_id_,
+                                            dst_extra_config_,
+                                            dst_dimension_label_,
+                                            dst_table_type_));
+      // Creating a tablet is async, we wait here instead of having to handle errors later.
+      ASSERT_OK(WaitForTabletRunning(dst_tablet_id_.c_str(), false));
+      // Share the fs manager to simplify the test.
+      dst_fs_manager_.reset(mini_server_->server()->fs_manager());
     } else {
-      ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout(nullopt,
-                                                           tenant_name,
-                                                           tenant_id,
-                                                           encryption_key,
-                                                           encryption_key_iv,
-                                                           encryption_key_version));
+      dst_tablet_id_ = GetTabletId();
+      FsManagerOpts opts;
+      opts.wal_root = kTestWalDir;
+      for (int dir = 0; dir < kNumDataDirs; dir++) {
+        opts.data_roots.emplace_back(Substitute("$0-$1", kTestDataDirPrefix, dir));
+      }
+
+      opts.metric_entity = metric_entity_;
+      dst_fs_manager_.reset(new FsManager(Env::Default(), opts));
+      string tenant_name;
+      string tenant_id;
+      string encryption_key;
+      string encryption_key_iv;
+      string encryption_key_version;
+      GetEncryptionKey(&tenant_name, &tenant_id, &encryption_key,
+                       &encryption_key_iv, &encryption_key_version);
+      if (tenant_name.empty() && encryption_key.empty()) {
+        ASSERT_OK(dst_fs_manager_->CreateInitialFileSystemLayout());
+      } else if (tenant_name.empty()) {
+        ASSERT_OK(dst_fs_manager_->CreateInitialFileSystemLayout(nullopt,
+                                                                 nullopt,
+                                                                 nullopt,
+                                                                 encryption_key,
+                                                                 encryption_key_iv,
+                                                                 encryption_key_version));
+      } else {
+        ASSERT_OK(dst_fs_manager_->CreateInitialFileSystemLayout(nullopt,
+                                                                 tenant_name,
+                                                                 tenant_id,
+                                                                 encryption_key,
+                                                                 encryption_key_iv,
+                                                                 encryption_key_version));
+      }
+      ASSERT_OK(dst_fs_manager_->Open());
     }
-    ASSERT_OK(fs_manager_->Open());
     ASSERT_OK(ResetTabletCopyClient());
+  }
+
+  void TearDown() override {
+    NO_FATALS(TabletCopyTest::TearDown());
+    // Because the destination fs manager is shared, release the std::unique_ptr to avoid
+    // double freeing the original pointer.
+    if (mode_ == TestTabletCopyMode::kRemoteAndDiffTabletId) {
+      dst_fs_manager_.release();  // NOLINT(bugprone-unused-return-value)
+    }
+  }
+
+  virtual void InitDstParameters() {
+    const auto tmeta = tablet_replica_->tablet_metadata();
+    dst_partition_schema_ = tmeta->partition_schema();
+    dst_partition_ = tmeta->partition();
+    dst_extra_config_ = tmeta->extra_config();
+    dst_dimension_label_ = tmeta->dimension_label();
+    dst_table_type_ = tmeta->table_type();
+  }
+
+  bool IsRemoteCopy() const {
+    return mode_ != TestTabletCopyMode::kLocal;
   }
 
   // Sets up a new tablet copy client.
   Status ResetTabletCopyClient() {
-    if (mode_ == TabletCopyMode::REMOTE) {
+    if (IsRemoteCopy()) {
       return ResetRemoteTabletCopyClient();
     }
 
-    CHECK(mode_ == TabletCopyMode::LOCAL);
+    CHECK(!IsRemoteCopy());
     return ResetLocalTabletCopyClient();
   }
 
   // Starts the tablet copy.
   Status StartCopy() {
-    if (mode_ == TabletCopyMode::REMOTE) {
+    if (IsRemoteCopy()) {
       HostPort host_port = HostPortFromPB(leader_.last_known_addr());
-      return client_->Start(host_port, &meta_);
+      return client_->Start(host_port, &dst_tmeta_);
     }
 
-    CHECK(mode_ == TabletCopyMode::LOCAL);
-    return client_->Start(tablet_id_, &meta_);
+    CHECK(!IsRemoteCopy());
+    return client_->Start(dst_tablet_id_, &dst_tmeta_);
   }
 
-  const std::string& GetTabletId() const override {
-    if (mode_ == TabletCopyMode::REMOTE) {
-      return tablet_replica_->tablet_id();
-    }
+  const std::string& GetDstTabletId() const {
+    return dst_tablet_id_;
+  }
 
-    CHECK(mode_ == TabletCopyMode::LOCAL);
-    return tablet_id_;
+  const std::string& GetSrcTabletId() const {
+    return src_tablet_id_;
+  }
+
+  FsManager* fs_manager() {
+    return dst_fs_manager_.get();
   }
 
  protected:
@@ -201,15 +272,26 @@ class TabletCopyClientTest : public TabletCopyTest {
     NO_FATALS(TabletCopyTest::GenerateTestData());
   }
 
-  TabletCopyMode mode_;
+  TestTabletCopyMode mode_;
   Random rand_;
-  string tablet_id_;
+  string dst_table_id_;
+  string dst_table_name_;
+  string dst_tablet_id_;
+  Schema dst_schema_;
+  optional<consensus::RaftConfigPB> dst_config_;
+  PartitionSchema dst_partition_schema_;
+  Partition dst_partition_;
+  optional<TableExtraConfigPB> dst_extra_config_;
+  optional<string> dst_dimension_label_;
+  optional<TableTypePB> dst_table_type_;
+
+  string src_tablet_id_;
   MetricRegistry metric_registry_;
   scoped_refptr<MetricEntity> metric_entity_;
-  unique_ptr<FsManager> fs_manager_;
+  unique_ptr<FsManager> dst_fs_manager_;
   shared_ptr<rpc::Messenger> messenger_;
   unique_ptr<TabletCopyClient> client_;
-  scoped_refptr<TabletMetadata> meta_;
+  scoped_refptr<TabletMetadata> dst_tmeta_;
   RaftPeerPB leader_;
 
   unique_ptr<FsManager> src_fs_manager_;
@@ -223,8 +305,8 @@ Status TabletCopyClientTest::CompareFileContents(const string& path1, const stri
   shared_ptr<RandomAccessFile> file2;
   RandomAccessFileOptions opts;
   opts.is_sensitive = true;
-  RETURN_NOT_OK(env_util::OpenFileForRandom(opts, fs_manager_->GetEnv(), path1, &file1));
-  RETURN_NOT_OK(env_util::OpenFileForRandom(opts, fs_manager_->GetEnv(), path2, &file2));
+  RETURN_NOT_OK(env_util::OpenFileForRandom(opts, dst_fs_manager_->GetEnv(), path1, &file1));
+  RETURN_NOT_OK(env_util::OpenFileForRandom(opts, dst_fs_manager_->GetEnv(), path2, &file2));
 
   uint64_t size1;
   RETURN_NOT_OK(file1->Size(&size1));
@@ -254,17 +336,32 @@ Status TabletCopyClientTest::CompareFileContents(const string& path1, const stri
 Status TabletCopyClientTest::ResetRemoteTabletCopyClient(
     TabletCopyClientMetrics* tablet_copy_client_metrics) {
   scoped_refptr<ConsensusMetadataManager> cmeta_manager(
-      new ConsensusMetadataManager(fs_manager_.get()));
-
+      new ConsensusMetadataManager(dst_fs_manager_.get()));
   tablet_replica_->WaitUntilConsensusRunning(MonoDelta::FromSeconds(10.0));
   rpc::MessengerBuilder(CURRENT_TEST_NAME()).Build(&messenger_);
-  client_.reset(new RemoteTabletCopyClient(GetTabletId(),
-                                           fs_manager_.get(),
+  client_.reset(new RemoteTabletCopyClient(dst_tablet_id_,
+                                           src_tablet_id_,
+                                           dst_fs_manager_.get(),
                                            cmeta_manager,
                                            messenger_,
                                            tablet_copy_client_metrics,
                                            throttler_));
 
+  // To simulate a remote copy, we need to shutdown the destination tablet firstly.
+  if (mode_ == TestTabletCopyMode::kRemoteAndDiffTabletId) {
+    scoped_refptr<tablet::TabletReplica> dst_replica;
+    CHECK(mini_server_->server()->tablet_manager()->LookupTablet(dst_tablet_id_,
+                                                                 &dst_replica));
+    dst_replica->Shutdown();
+    optional<OpId> opt_last_logged_opid;
+    RETURN_NOT_OK(mini_server_->server()->tablet_manager()->DeleteTabletData(
+        dst_replica->tablet_metadata(),
+        cmeta_manager,
+        TABLET_DATA_TOMBSTONED,
+        opt_last_logged_opid));
+    RETURN_NOT_OK(client_->SetTabletToReplace(dst_replica->tablet_metadata(),
+                                              std::numeric_limits<int64_t>::max()));
+  }
   RaftPeerPB* cstate_leader;
   ConsensusStatePB cstate;
   RETURN_NOT_OK(tablet_replica_->consensus()->ConsensusState(&cstate));
@@ -277,9 +374,6 @@ Status TabletCopyClientTest::ResetLocalTabletCopyClient() {
   // client_ will be reset many times in test cases, we only shutdown mini_server_
   // at the first time, and will not start it again.
   if (mini_server_->is_started()) {
-    // Store tablet id in cache, because tablet_replica_ will be reset later.
-    tablet_id_ = tablet_replica_->tablet_id();
-
     // Prepare parameters to create source FsManager.
     rpc::MessengerBuilder(CURRENT_TEST_NAME()).Build(&messenger_);
 
@@ -301,10 +395,10 @@ Status TabletCopyClientTest::ResetLocalTabletCopyClient() {
   }
 
   scoped_refptr<ConsensusMetadataManager> cmeta_manager(
-      new ConsensusMetadataManager(fs_manager_.get()));
+      new ConsensusMetadataManager(dst_fs_manager_.get()));
 
-  client_.reset(new LocalTabletCopyClient(tablet_id_,
-                                          fs_manager_.get(),
+  client_.reset(new LocalTabletCopyClient(dst_tablet_id_,
+                                          dst_fs_manager_.get(),
                                           cmeta_manager,
                                           messenger_,
                                           /* tablet_copy_client_metrics */ nullptr,
@@ -317,7 +411,7 @@ Status TabletCopyClientTest::ResetLocalTabletCopyClient() {
 class TabletCopyThrottlerTest : public TabletCopyClientTest {
  public:
   TabletCopyThrottlerTest() {
-    mode_ = TabletCopyMode::REMOTE;
+    mode_ = TestTabletCopyMode::kRemoteAndSameTabletId;
     throttler_ = std::make_shared<Throttler>(
         0,
         FLAGS_tablet_copy_transfer_chunk_size_bytes,
@@ -341,7 +435,7 @@ TEST_F(TabletCopyThrottlerTest, TestThrottler) {
   faststring scratch;
 
   // Ensure the block wasn't there before (it shouldn't be, we use our own FsManager dir).
-  Status s = ReadLocalBlockFile(fs_manager_.get(), block_id, &scratch, &slice);
+  Status s = ReadLocalBlockFile(dst_fs_manager_.get(), block_id, &scratch, &slice);
   ASSERT_TRUE(s.IsNotFound()) << "Expected block not found: " << s.ToString();
 
   // Check that the client downloaded the block and verification passed.
@@ -356,7 +450,7 @@ TEST_F(TabletCopyThrottlerTest, TestThrottler) {
   ASSERT_GE(FLAGS_tablet_copy_transfer_chunk_size_bytes, download_speed);
   ASSERT_OK(client_->transaction_->CommitCreatedBlocks());
   // Ensure it placed the block where we expected it to.
-  ASSERT_OK(ReadLocalBlockFile(fs_manager_.get(), new_block_id, &scratch, &slice));
+  ASSERT_OK(ReadLocalBlockFile(dst_fs_manager_.get(), new_block_id, &scratch, &slice));
   // 'client_' must be destroyed before 'tablet_copy_client_metrics', because client
   // holds the pointer of 'tablet_copy_client_metrics', and uses 'tablet_copy_client_metrics'
   // while being destroyed. See tablet_copy_client.cc.
@@ -364,7 +458,7 @@ TEST_F(TabletCopyThrottlerTest, TestThrottler) {
 }
 
 class TabletCopyClientBasicTest : public TabletCopyClientTest,
-                                  public ::testing::WithParamInterface<TabletCopyMode> {
+                                  public ::testing::WithParamInterface<TestTabletCopyMode> {
  public:
   TabletCopyClientBasicTest() {
     mode_ = GetParam();
@@ -372,8 +466,9 @@ class TabletCopyClientBasicTest : public TabletCopyClientTest,
 };
 
 INSTANTIATE_TEST_SUITE_P(TabletCopyClientBasicTestModes, TabletCopyClientBasicTest,
-                         testing::Values(TabletCopyMode::REMOTE,
-                                         TabletCopyMode::LOCAL));
+                         testing::Values(TestTabletCopyMode::kRemoteAndSameTabletId,
+                                         TestTabletCopyMode::kRemoteAndDiffTabletId,
+                                         TestTabletCopyMode::kLocal));
 
 // Test a tablet copy going through the various states in the copy state
 // machine.
@@ -393,10 +488,16 @@ TEST_P(TabletCopyClientBasicTest, TestLifeCycle) {
     google::FlagSaver fs;
     FLAGS_env_inject_eio = 1.0;
     s = StartCopy();
-    ASSERT_TRUE(s.IsIOError()) << s.ToString();
-    ASSERT_STR_CONTAINS(s.ToString(), "Failed to write tablet metadata");
+    if (mode_ == TestTabletCopyMode::kRemoteAndDiffTabletId) {
+      // It's a remote error rather than an IO error in kRemoteAndDiffTabletId mode.
+      ASSERT_TRUE(s.IsRemoteError()) << s.ToString();
+      ASSERT_STR_CONTAINS(s.ToString(), "Unable to access superblock for tablet");
+    } else {
+      ASSERT_TRUE(s.IsIOError()) << s.ToString();
+      ASSERT_STR_CONTAINS(s.ToString(), "Failed to write tablet metadata");
+    }
     ASSERT_EQ(TabletCopyClient::State::kInitialized, client_->state_);
-    ASSERT_FALSE(meta_);
+    ASSERT_FALSE(dst_tmeta_);
   }
 
   // Now let's try replacing a tablet. Set a metadata that we can replace.
@@ -408,9 +509,9 @@ TEST_P(TabletCopyClientBasicTest, TestLifeCycle) {
 
   // Since we're going to replace the tablet, we need to tombstone the existing
   // metadata first.
-  meta_->set_tablet_data_state(tablet::TABLET_DATA_TOMBSTONED);
+  dst_tmeta_->set_tablet_data_state(tablet::TABLET_DATA_TOMBSTONED);
   ASSERT_OK(ResetTabletCopyClient());
-  ASSERT_OK(client_->SetTabletToReplace(meta_, 0));
+  ASSERT_OK(client_->SetTabletToReplace(dst_tmeta_, 0));
 
   // If we're replacing a tablet, failing to start will yield changes
   // in-memory, and it is thus necessary to recognize the copy is in the
@@ -419,14 +520,21 @@ TEST_P(TabletCopyClientBasicTest, TestLifeCycle) {
     google::FlagSaver fs;
     FLAGS_env_inject_eio = 1.0;
     s = StartCopy();
-    ASSERT_TRUE(s.IsIOError()) << s.ToString();
-    ASSERT_STR_CONTAINS(s.ToString(), "Could not replace superblock");
-    ASSERT_EQ(TabletCopyClient::State::kStarting, client_->state_);
+    if (mode_ == TestTabletCopyMode::kRemoteAndDiffTabletId) {
+      // It's a remote error rather than an IO error in kRemoteAndDiffTabletId mode.
+      ASSERT_TRUE(s.IsRemoteError()) << s.ToString();
+      ASSERT_STR_CONTAINS(s.ToString(), "Unable to access superblock for tablet");
+      ASSERT_EQ(TabletCopyClient::State::kInitialized, client_->state_);
+    } else {
+      ASSERT_TRUE(s.IsIOError()) << s.ToString();
+      ASSERT_STR_CONTAINS(s.ToString(), "Could not replace superblock");
+      ASSERT_EQ(TabletCopyClient::State::kStarting, client_->state_);
+    }
   }
 
   // Make sure we are still in the appropriate state if we fail to finish.
   ASSERT_OK(ResetTabletCopyClient());
-  s = client_->SetTabletToReplace(meta_, 0);
+  s = client_->SetTabletToReplace(dst_tmeta_, 0);
   ASSERT_TRUE(s.ok()) << s.ToString();
   ASSERT_OK(StartCopy());
   FLAGS_env_inject_eio = 1.0;
@@ -439,7 +547,7 @@ TEST_P(TabletCopyClientBasicTest, TestLifeCycle) {
   s = client_->Abort();
   ASSERT_TRUE(s.IsIOError()) << s.ToString();
   ASSERT_EQ(TabletCopyClient::State::kFinished, client_->state_);
-  ASSERT_EQ(tablet::TABLET_DATA_TOMBSTONED, meta_->tablet_data_state());
+  ASSERT_EQ(tablet::TABLET_DATA_TOMBSTONED, dst_tmeta_->tablet_data_state());
 }
 
 // Implementation test that no blocks exist in the new superblock before fetching.
@@ -463,10 +571,14 @@ TEST_P(TabletCopyClientBasicTest, TestDownloadBlock) {
   Slice slice;
   faststring scratch;
 
-  // Ensure the block wasn't there before (it shouldn't be, we use our own FsManager dir).
-  Status s;
-  s = ReadLocalBlockFile(fs_manager_.get(), block_id, &scratch, &slice);
-  ASSERT_TRUE(s.IsNotFound()) << "Expected block not found: " << s.ToString();
+  Status s = ReadLocalBlockFile(dst_fs_manager_.get(), block_id, &scratch, &slice);
+  if (mode_ == TestTabletCopyMode::kRemoteAndDiffTabletId) {
+    // Ensure the block was there before (it should be, we use the shared FsManager dir).
+    ASSERT_TRUE(s.ok()) << "Expected block (" << block_id << ") not found: " << s.ToString();
+  } else {
+    // Ensure the block wasn't there before (it shouldn't be, we use our own FsManager dir).
+    ASSERT_TRUE(s.IsNotFound()) << "Unexpected block (" << block_id << ") found: " << s.ToString();
+  }
 
   // Check that the client downloaded the block and verification passed.
   BlockId new_block_id;
@@ -474,7 +586,14 @@ TEST_P(TabletCopyClientBasicTest, TestDownloadBlock) {
   ASSERT_OK(client_->transaction_->CommitCreatedBlocks());
 
   // Ensure it placed the block where we expected it to.
-  ASSERT_OK(ReadLocalBlockFile(fs_manager_.get(), new_block_id, &scratch, &slice));
+  ASSERT_OK(ReadLocalBlockFile(dst_fs_manager_.get(), new_block_id, &scratch, &slice));
+  if (mode_ == TestTabletCopyMode::kRemoteAndDiffTabletId) {
+    // In kRemoteAndDiffTabletId mode, the fs is shared between the source and destination, the
+    // block id must be different.
+    // In other modes, the block id may be the same in very low probability, so we don't check they
+    // are different.
+    ASSERT_NE(block_id, new_block_id);
+  }
 }
 
 // Test that error status is properly reported if there was a failure in any
@@ -507,27 +626,27 @@ TEST_P(TabletCopyClientBasicTest, TestDownloadWalMayFail) {
 TEST_P(TabletCopyClientBasicTest, TestDownloadWalSegment) {
   ASSERT_OK(StartCopy());
   ASSERT_OK(env_util::CreateDirIfMissing(
-      env_, fs_manager_->GetTabletWalDir(GetTabletId())));
+      env_, dst_fs_manager_->GetTabletWalDir(GetDstTabletId())));
 
   uint64_t seqno = client_->wal_seqnos_[0];
-  string path = fs_manager_->GetWalSegmentFileName(GetTabletId(), seqno);
+  string dst_path = dst_fs_manager_->GetWalSegmentFileName(GetDstTabletId(), seqno);
 
-  ASSERT_FALSE(fs_manager_->Exists(path));
+  ASSERT_FALSE(dst_fs_manager_->Exists(dst_path));
   ASSERT_OK(client_->DownloadWAL(seqno));
-  ASSERT_TRUE(fs_manager_->Exists(path));
+  ASSERT_TRUE(dst_fs_manager_->Exists(dst_path));
 
-  string server_path;
-  if (mode_ == TabletCopyMode::REMOTE) {
+  string src_path;
+  if (IsRemoteCopy()) {
     log::SegmentSequence local_segments;
     tablet_replica_->log()->reader()->GetSegmentsSnapshot(&local_segments);
     const scoped_refptr<log::ReadableLogSegment>& segment = local_segments[0];
-    server_path = segment->path();
+    src_path = segment->path();
   } else {
-    server_path = src_fs_manager_->GetWalSegmentFileName(GetTabletId(), seqno);
+    src_path = src_fs_manager_->GetWalSegmentFileName(GetSrcTabletId(), seqno);
   }
 
   // Compare the downloaded file with the source file.
-  ASSERT_OK(CompareFileContents(path, server_path));
+  ASSERT_OK(CompareFileContents(dst_path, src_path));
 }
 
 // Ensure that we detect data corruption at the per-transfer level.
@@ -568,6 +687,16 @@ TEST_P(TabletCopyClientBasicTest, TestVerifyData) {
 }
 
 TEST_P(TabletCopyClientBasicTest, TestDownloadAllBlocks) {
+  scoped_refptr<MetricEntity> metric_entity;
+  if (mode_ == TestTabletCopyMode::kRemoteAndDiffTabletId) {
+    metric_entity = mini_server_->server()->metric_entity();
+  } else {
+    metric_entity = metric_entity_;
+  }
+
+  const auto init_sync_count = down_cast<Counter*>(
+      metric_entity->FindOrNull(METRIC_block_manager_total_disk_sync).get())->value();
+
   ASSERT_OK(StartCopy());
   // Download and commit all the blocks.
   ASSERT_OK(client_->DownloadBlocks());
@@ -578,13 +707,9 @@ TEST_P(TabletCopyClientBasicTest, TestDownloadAllBlocks) {
   // If kNumDataDirs changes, these values may also change. The point of this
   // test is to exemplify the difference in syncs between the log and file
   // block managers, but it would be nice to formulate a bound here.
-  if (FLAGS_block_manager == "log") {
-    ASSERT_GE(15, down_cast<Counter*>(
-        metric_entity_->FindOrNull(METRIC_block_manager_total_disk_sync).get())->value());
-  } else {
-    ASSERT_GE(22, down_cast<Counter*>(
-        metric_entity_->FindOrNull(METRIC_block_manager_total_disk_sync).get())->value());
-  }
+  const auto finish_sync_count = down_cast<Counter*>(
+      metric_entity->FindOrNull(METRIC_block_manager_total_disk_sync).get())->value();
+  ASSERT_GT(finish_sync_count, init_sync_count);
 
   // After downloading blocks, verify that the old and remote and local
   // superblock point to the same number of blocks.
@@ -595,7 +720,7 @@ TEST_P(TabletCopyClientBasicTest, TestDownloadAllBlocks) {
   // Verify that the new blocks are all present.
   for (const BlockId& block_id : new_data_blocks) {
     unique_ptr<fs::ReadableBlock> block;
-    ASSERT_OK(fs_manager_->OpenBlock(block_id, &block));
+    ASSERT_OK(dst_fs_manager_->OpenBlock(block_id, &block));
   }
 }
 
@@ -603,7 +728,7 @@ TEST_P(TabletCopyClientBasicTest, TestDownloadAllBlocks) {
 // stop the copy client and cause it to fail.
 TEST_P(TabletCopyClientBasicTest, TestFailedDiskStopsClient) {
   ASSERT_OK(StartCopy());
-  scoped_refptr<DataDirManager> dd_manager = fs_manager_->dd_manager();
+  scoped_refptr<DataDirManager> dd_manager = dst_fs_manager_->dd_manager();
 
   // Repeatedly fetch files for the client.
   Status s;
@@ -626,20 +751,34 @@ TEST_P(TabletCopyClientBasicTest, TestFailedDiskStopsClient) {
 
   // The copy thread should stop and the copy client should return an error.
   copy_thread.join();
-  ASSERT_TRUE(s.IsIOError()) << s.ToString();
+  if (mode_ == TestTabletCopyMode::kRemoteAndDiffTabletId) {
+    // It may be a remote error rather than an IO error in kRemoteAndDiffTabletId mode.
+    ASSERT_TRUE(s.IsRemoteError() || s.IsIOError()) << s.ToString();
+  } else {
+    ASSERT_TRUE(s.IsIOError()) << s.ToString();
+  }
 }
 
 TEST_P(TabletCopyClientBasicTest, TestSupportsLiveRowCount) {
   ASSERT_OK(StartCopy());
-  bool supports_live_row_count = false;
-  if (mode_ == TabletCopyMode::REMOTE) {
-    supports_live_row_count = tablet_replica_->tablet_metadata()->supports_live_row_count();
+  bool src_supports_live_row_count = false;
+  scoped_refptr<TabletMetadata> dst_meta = dst_tmeta_;
+  if (IsRemoteCopy()) {
+    if (mode_ == TestTabletCopyMode::kRemoteAndDiffTabletId) {
+      // The state is updated after the whole procedure finished.
+      ASSERT_OK(client_->Finish());
+      scoped_refptr<tablet::TabletReplica> dst_replica;
+      ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(
+          dst_tablet_id_, &dst_replica));
+      dst_meta = dst_replica->tablet_metadata();
+    }
+    src_supports_live_row_count = tablet_replica_->tablet_metadata()->supports_live_row_count();
   } else {
     scoped_refptr<TabletMetadata> metadata;
-    ASSERT_OK(TabletMetadata::Load(src_fs_manager_.get(), GetTabletId(), &metadata));
-    supports_live_row_count = metadata->supports_live_row_count();
+    ASSERT_OK(TabletMetadata::Load(src_fs_manager_.get(), GetSrcTabletId(), &metadata));
+    src_supports_live_row_count = metadata->supports_live_row_count();
   }
-  ASSERT_EQ(meta_->supports_live_row_count(), supports_live_row_count);
+  ASSERT_EQ(src_supports_live_row_count, dst_meta->supports_live_row_count());
 }
 
 enum DownloadBlocks {
@@ -659,10 +798,10 @@ struct AbortTestParams {
 
 class TabletCopyClientAbortTest : public TabletCopyClientTest,
                                   public ::testing::WithParamInterface<
-                                      tuple<DownloadBlocks, DeleteTrigger, TabletCopyMode>> {
+                                      tuple<DownloadBlocks, DeleteTrigger, TestTabletCopyMode>> {
  public:
   TabletCopyClientAbortTest() {
-    tuple<DownloadBlocks, DeleteTrigger, TabletCopyMode> param = GetParam();
+    tuple<DownloadBlocks, DeleteTrigger, TestTabletCopyMode> param = GetParam();
     mode_ = std::get<2>(param);
   }
 
@@ -680,12 +819,14 @@ INSTANTIATE_TEST_SUITE_P(BlockDeleteTriggers,
                          ::testing::Combine(
                              ::testing::Values(kDownloadBlocks, kNoDownloadBlocks),
                              ::testing::Values(kAbortMethod, kDestructor, kNoDelete),
-                             ::testing::Values(TabletCopyMode::REMOTE, TabletCopyMode::LOCAL)));
+                             ::testing::Values(TestTabletCopyMode::kRemoteAndSameTabletId,
+                                               TestTabletCopyMode::kRemoteAndDiffTabletId,
+                                               TestTabletCopyMode::kLocal)));
 
 void TabletCopyClientAbortTest::CreateTestBlocks(int num_blocks) {
   for (int i = 0; i < num_blocks; i++) {
     unique_ptr<fs::WritableBlock> block;
-    ASSERT_OK(fs_manager_->CreateNewBlock({}, &block));
+    ASSERT_OK(dst_fs_manager_->CreateNewBlock({}, &block));
     block->Append("Test");
     ASSERT_OK(block->Close());
   }
@@ -695,7 +836,7 @@ void TabletCopyClientAbortTest::CreateTestBlocks(int num_blocks) {
 // Abort() or implicitly by destroying the TabletCopyClient instance before
 // calling Finish(). Also ensure that no data loss occurs.
 TEST_P(TabletCopyClientAbortTest, TestAbort) {
-  tuple<DownloadBlocks, DeleteTrigger, TabletCopyMode> param = GetParam();
+  tuple<DownloadBlocks, DeleteTrigger, TestTabletCopyMode> param = GetParam();
   DownloadBlocks download_blocks = std::get<0>(param);
   DeleteTrigger trigger = std::get<1>(param);
 
@@ -711,12 +852,14 @@ TEST_P(TabletCopyClientAbortTest, TestAbort) {
   // trigger until we fix KUDU-1980 because there is a workaround / hack in the
   // LBM that randomizes the starting block id for each BlockManager instance.
   // Therefore the block ids will never overlap.
+  vector<BlockId> local_block_ids;
+  ASSERT_OK(dst_fs_manager_->block_manager()->GetAllBlockIds(&local_block_ids));
+  const int kBaseNumBlocksToCreate = local_block_ids.size();
   const int kNumBlocksToCreate = 100;
   NO_FATALS(CreateTestBlocks(kNumBlocksToCreate));
 
-  vector<BlockId> local_block_ids;
-  ASSERT_OK(fs_manager_->block_manager()->GetAllBlockIds(&local_block_ids));
-  ASSERT_EQ(kNumBlocksToCreate, local_block_ids.size());
+  ASSERT_OK(dst_fs_manager_->block_manager()->GetAllBlockIds(&local_block_ids));
+  ASSERT_EQ(kBaseNumBlocksToCreate + kNumBlocksToCreate, local_block_ids.size());
   VLOG(1) << "Local blocks: " << local_block_ids;
 
   int num_blocks_downloaded = 0;
@@ -727,18 +870,19 @@ TEST_P(TabletCopyClientAbortTest, TestAbort) {
   }
 
   vector<BlockId> new_local_block_ids;
-  ASSERT_OK(fs_manager_->block_manager()->GetAllBlockIds(&new_local_block_ids));
-  ASSERT_EQ(kNumBlocksToCreate + num_blocks_downloaded, new_local_block_ids.size());
+  ASSERT_OK(dst_fs_manager_->block_manager()->GetAllBlockIds(&new_local_block_ids));
+  ASSERT_EQ(kBaseNumBlocksToCreate + kNumBlocksToCreate + num_blocks_downloaded,
+            new_local_block_ids.size());
 
   // Download a WAL segment.
   ASSERT_OK(env_util::CreateDirIfMissing(
-      env_, fs_manager_->GetTabletWalDir(GetTabletId())));
+      env_, dst_fs_manager_->GetTabletWalDir(GetDstTabletId())));
   uint64_t seqno = client_->wal_seqnos_[0];
   ASSERT_OK(client_->DownloadWAL(seqno));
-  string wal_path = fs_manager_->GetWalSegmentFileName(GetTabletId(), seqno);
-  ASSERT_TRUE(fs_manager_->Exists(wal_path));
+  string wal_path = dst_fs_manager_->GetWalSegmentFileName(GetDstTabletId(), seqno);
+  ASSERT_TRUE(dst_fs_manager_->Exists(wal_path));
 
-  scoped_refptr<TabletMetadata> meta = client_->meta_;
+  scoped_refptr<TabletMetadata> meta = client_->tmeta_;
 
   switch (trigger) {
     case kAbortMethod:
@@ -759,19 +903,144 @@ TEST_P(TabletCopyClientAbortTest, TestAbort) {
 
   if (trigger == kNoDelete) {
     vector<BlockId> new_local_block_ids;
-    ASSERT_OK(fs_manager_->block_manager()->GetAllBlockIds(&new_local_block_ids));
-    ASSERT_EQ(kNumBlocksToCreate + num_blocks_downloaded, new_local_block_ids.size());
+    ASSERT_OK(dst_fs_manager_->block_manager()->GetAllBlockIds(&new_local_block_ids));
+    ASSERT_EQ(kBaseNumBlocksToCreate + kNumBlocksToCreate + num_blocks_downloaded,
+              new_local_block_ids.size());
   } else {
     ASSERT_EQ(tablet::TABLET_DATA_TOMBSTONED, meta->tablet_data_state());
-    ASSERT_FALSE(fs_manager_->Exists(wal_path));
+    ASSERT_FALSE(dst_fs_manager_->Exists(wal_path));
     vector<BlockId> latest_blocks;
-    fs_manager_->block_manager()->GetAllBlockIds(&latest_blocks);
+    dst_fs_manager_->block_manager()->GetAllBlockIds(&latest_blocks);
     ASSERT_EQ(local_block_ids.size(), latest_blocks.size());
   }
   for (const auto& block_id : local_block_ids) {
-    ASSERT_TRUE(fs_manager_->BlockExists(block_id)) << "Missing block: " << block_id;
+    ASSERT_TRUE(dst_fs_manager_->BlockExists(block_id)) << "Missing block: " << block_id;
   }
 }
 
+class DifferentRemoteTabletCopyClientTest :
+  public TabletCopyClientTest {
+public:
+  DifferentRemoteTabletCopyClientTest() {
+    mode_ = TestTabletCopyMode::kRemoteAndDiffTabletId;
+  }
+  void InitDstParameters() override {
+    TabletCopyClientTest::InitDstParameters();
+
+    dst_table_id_.append("DifferentRemoteTabletCopyClientTest");
+    TableExtraConfigPB extra_config;
+    extra_config.set_history_max_age_sec(7200);
+    dst_extra_config_ = extra_config;
+    dst_dimension_label_ = "test dimension label";
+  }
+};
+
+TEST_F(DifferentRemoteTabletCopyClientTest, TestMetadataNotChange) {
+  ASSERT_OK(StartCopy());
+  scoped_refptr<tablet::TabletReplica> dst_tablet_replica;
+  ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(dst_tablet_id_,
+                                                                     &dst_tablet_replica));
+  const auto tmeta = dst_tablet_replica->tablet_metadata();
+  ASSERT_EQ(dst_table_id_, tmeta->table_id());
+  ASSERT_EQ(dst_table_id_, tmeta->table_name());
+  ASSERT_STR_CONTAINS(tmeta->table_name(), "DifferentRemoteTabletCopyClientTest");
+  ASSERT_EQ(dst_tablet_id_, tmeta->tablet_id());
+  ASSERT_TRUE(tmeta->extra_config()->has_history_max_age_sec());
+  ASSERT_EQ(7200, tmeta->extra_config()->history_max_age_sec());
+  ASSERT_EQ(*tmeta->dimension_label(), "test dimension label");
+  ASSERT_EQ(dst_dimension_label_.value(), tmeta->dimension_label().value());
+  ASSERT_TRUE(tmeta->GetTxnMetadata().empty());
+}
+
+enum class DifferentSchemaType {
+  kRaftConfig = 0,
+  kTableType,
+  kSchema,
+  kPartitionSchema,
+  kPartition
+};
+
+class DifferentRemoteTabletCopyClientCheckSchemaTest :
+  public DifferentRemoteTabletCopyClientTest,
+  public ::testing::WithParamInterface<DifferentSchemaType> {
+ public:
+  DifferentRemoteTabletCopyClientCheckSchemaTest() {
+      partition_schema_pb_ = GetSimpleTestPartitionSchemaPB(dst_schema_, 2);
+      // Don't generate data to prevent errors like: "Row not in tablet partition"
+      // This is because we create a partition schema with more than 1 partition, but the data
+      // generated required only 1 partition.
+      generate_data_ = false;
+  }
+
+  void InitDstParameters() final {
+    TabletCopyClientTest::InitDstParameters();  // NOLINT(bugprone-parent-virtual-call)
+    // Reset parameter according to the test case.
+    switch (GetParam()) {
+      case DifferentSchemaType::kRaftConfig: {
+        dst_config_ = BuildConfig({mini_server_->uuid(), "new_peer2", "new_peer3"});
+        break;
+      }
+      case DifferentSchemaType::kTableType:
+        CHECK(!dst_table_type_);
+        dst_table_type_ = TableTypePB::TXN_STATUS_TABLE;
+        break;
+      case DifferentSchemaType::kSchema: {
+        SchemaBuilder builder(dst_schema_);
+        CHECK_OK(builder.AddColumn("new_col", INT32));
+        dst_schema_ = builder.Build();
+        break;
+      }
+      case DifferentSchemaType::kPartitionSchema: {
+        CHECK(!dst_partition_schema_.hash_schema_.empty());
+        partition_schema_pb_ = GetSimpleTestPartitionSchemaPB(dst_schema_, 4);
+        CHECK_OK(PartitionSchema::FromPB(partition_schema_pb_,
+                                         SchemaBuilder(dst_schema_).Build(),
+                                         &dst_partition_schema_));
+        break;
+      }
+      case DifferentSchemaType::kPartition: {
+        CHECK(!dst_partition_.hash_buckets_.empty());
+        auto& first_hash_bucket = dst_partition_.hash_buckets_[0];
+        first_hash_bucket += 1;
+        break;
+      }
+      default:
+        LOG(FATAL) << "Unknown mode";
+    }
+  }
+};
+
+INSTANTIATE_TEST_SUITE_P(
+  CheckSchema,
+  DifferentRemoteTabletCopyClientCheckSchemaTest,
+  testing::Values(DifferentSchemaType::kRaftConfig,
+                  DifferentSchemaType::kTableType,
+                  DifferentSchemaType::kSchema,
+                  DifferentSchemaType::kPartitionSchema,
+                  DifferentSchemaType::kPartition));
+
+TEST_P(DifferentRemoteTabletCopyClientCheckSchemaTest, CheckSchema) {
+  Status s = StartCopy();
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  switch (GetParam()) {
+    case DifferentSchemaType::kRaftConfig:
+      ASSERT_STR_CONTAINS(s.ToString(), "the local tablet schema has more than 1 replicas");
+      break;
+    case DifferentSchemaType::kTableType:
+      ASSERT_STR_CONTAINS(s.ToString(), "Table type not match");
+      break;
+    case DifferentSchemaType::kSchema:
+      ASSERT_STR_CONTAINS(s.ToString(), "Schema not match");
+      break;
+    case DifferentSchemaType::kPartitionSchema:
+      ASSERT_STR_CONTAINS(s.ToString(), "Partition schema not match");
+      break;
+    case DifferentSchemaType::kPartition:
+      ASSERT_STR_CONTAINS(s.ToString(), "Partition not match");
+      break;
+    default:
+      ASSERT_TRUE(false) << "Unknown test mode";
+  }
+}
 } // namespace tserver
 } // namespace kudu

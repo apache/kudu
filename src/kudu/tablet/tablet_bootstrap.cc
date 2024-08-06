@@ -1558,7 +1558,8 @@ Status TabletBootstrap::PlayChangeConfigRequest(const IOContext* /*io_context*/,
                                                 const CommitMsg& commit_msg) {
   // Invariant: The committed config change request is always locally persisted
   // in the consensus metadata before the commit message is written to the WAL.
-  if (PREDICT_FALSE(replicate_msg->id().index() > committed_raft_config_.opid_index())) {
+  if (PREDICT_FALSE(replicate_msg->id().index() > committed_raft_config_.opid_index() &&
+                    replicate_msg->change_config_record().tablet_id() == tablet_->tablet_id())) {
     string msg = Substitute("Committed config change op in WAL has opid index ($0) greater than "
                             "config persisted in the consensus metadata ($1). "
                             "Replicate message: {$2}. "

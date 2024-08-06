@@ -19,7 +19,9 @@
 #include <functional>
 #include <iostream>
 #include <limits>
+#include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -59,6 +61,7 @@
 #include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 
@@ -66,6 +69,13 @@ DEFINE_bool(force_copy, false,
             "Force the copy when the destination tablet server has this replica");
 DEFINE_bool(include_schema, true,
             "Whether to include the schema of each replica");
+DEFINE_string(src_tablet_id, "",
+              "The source tablet id. If not specified, use <tablet_id>.");
+DEFINE_bool(ignore_address_from_rpc, false,
+            "Whether to ignore the source address from the response when consulting the "
+            "source peer. If true, use the <src_address> directly from the command line.");
+DEFINE_uint64(schema_version, 0, "The new schema version to set.");
+DECLARE_bool(force);
 DECLARE_string(table_name);
 DECLARE_string(tablets);
 DECLARE_int64(timeout_ms); // defined in ksck
@@ -95,6 +105,8 @@ using kudu::tserver::TabletServerServiceProxy;
 using std::cerr;
 using std::cout;
 using std::endl;
+using std::map;
+using std::set;
 using std::string;
 using std::unique_ptr;
 using std::unordered_set;
@@ -325,7 +337,13 @@ Status ListReplicas(const RunnerContext& context) {
 Status CopyReplica(const RunnerContext& context) {
   const string& src_address = FindOrDie(context.required_args, kSrcAddressArg);
   const string& dst_address = FindOrDie(context.required_args, kDstAddressArg);
-  const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
+  const string& dst_tablet_id = FindOrDie(context.required_args, kTabletIdArg);
+  string src_tablet_id;
+  if (FLAGS_src_tablet_id.empty()) {
+    src_tablet_id = dst_tablet_id;
+  } else {
+    src_tablet_id = FLAGS_src_tablet_id;
+  }
 
   ServerStatusPB dst_status;
   RETURN_NOT_OK(GetServerStatus(dst_address, TabletServer::kDefaultPort,
@@ -341,9 +359,16 @@ Status CopyReplica(const RunnerContext& context) {
   StartTabletCopyResponsePB resp;
   RpcController rpc;
   req.set_dest_uuid(dst_status.node_instance().permanent_uuid());
-  req.set_tablet_id(tablet_id);
+  req.set_tablet_id(dst_tablet_id);
+  req.set_src_tablet_id(src_tablet_id);
   req.set_copy_peer_uuid(src_status.node_instance().permanent_uuid());
-  *req.mutable_copy_peer_addr() = src_status.bound_rpc_addresses(0);
+  if (FLAGS_ignore_address_from_rpc) {
+    HostPort hp;
+    RETURN_NOT_OK(hp.ParseString(src_address, TabletServer::kDefaultPort));
+    *req.mutable_copy_peer_addr() = HostPortToPB(hp);
+  } else {
+    *req.mutable_copy_peer_addr() = src_status.bound_rpc_addresses(0);
+  }
   // Provide a force option if the destination tablet server has the
   // replica otherwise tablet-copy will fail.
   if (FLAGS_force_copy) {
@@ -402,6 +427,76 @@ Status UnsafeChangeConfig(const RunnerContext& context) {
   return Status::OK();
 }
 
+Status UnsafeSetSchemaVersion(const RunnerContext& context) {
+  // Parse and validate arguments.
+  const string& dst_address = FindOrDie(context.required_args, kTServerAddressArg);
+  const string& tablet_ids_str = FindOrDie(context.required_args, kTabletIdsCsvArg);
+  const vector<string> tablet_ids = strings::Split(tablet_ids_str, ",", strings::SkipEmpty());
+  if (tablet_ids.empty()) {
+    return Status::InvalidArgument("no tablet identifiers provided");
+  }
+  const set<string> unique_tablet_ids(tablet_ids.begin(), tablet_ids.end());
+  if (unique_tablet_ids.size() != tablet_ids.size()) {
+    LOG(WARNING) << "Please notice that there are some duplicate tablet ids.";
+  }
+
+  ServerStatusPB dst_status;
+  RETURN_NOT_OK(GetServerStatus(dst_address, TabletServer::kDefaultPort,
+                                &dst_status));
+
+  unique_ptr<TabletServerServiceProxy> tss_proxy;
+  RETURN_NOT_OK(BuildProxy(dst_address, tserver::TabletServer::kDefaultPort,
+                           &tss_proxy));
+
+  vector<ListTabletsResponsePB::StatusAndSchemaPB> replicas;
+  RETURN_NOT_OK(GetReplicas(tss_proxy.get(), &replicas));
+
+  map<std::string, ListTabletsResponsePB::StatusAndSchemaPB> replicas_by_id;
+  for (const auto& replica : replicas) {
+    InsertOrDie(&replicas_by_id, replica.tablet_status().tablet_id(), replica);
+  }
+
+  unique_ptr<TabletServerAdminServiceProxy> tsas_proxy;
+  RETURN_NOT_OK(BuildProxy(dst_address, TabletServer::kDefaultPort, &tsas_proxy));
+  vector<string> failed_tablet_ids;
+  for (const auto& tablet_id : unique_tablet_ids) {
+    const auto* replica = FindOrNull(replicas_by_id, tablet_id);
+    if (replica == nullptr) {
+      failed_tablet_ids.push_back(tablet_id);
+      LOG(WARNING) << strings::Substitute("Tablet $0 is not found", tablet_id);
+      continue;
+    }
+
+    // Send a request to set the schema_version to node dst_address
+    RpcController rpc;
+    rpc.set_timeout(MonoDelta::FromMilliseconds(FLAGS_timeout_ms));
+    tserver::AlterSchemaRequestPB req;
+    req.set_dest_uuid(dst_status.node_instance().permanent_uuid());
+    req.set_schema_version(FLAGS_schema_version);
+    req.set_force(FLAGS_force);
+    req.set_tablet_id(tablet_id);
+    req.mutable_schema()->CopyFrom(replica->schema());
+    tserver::AlterSchemaResponsePB resp;
+    RETURN_NOT_OK(tsas_proxy->AlterSchema(req, &resp, &rpc));
+    if (resp.has_error()) {
+      failed_tablet_ids.push_back(tablet_id);
+      LOG(WARNING) << strings::Substitute("Tablet $0 failed: $1",
+                                          tablet_id,
+                                          StatusFromPB(resp.error().status()).ToString());
+      continue;
+    }
+    LOG(INFO) << strings::Substitute("Tablet $0 success", tablet_id);
+  }
+
+  if (!failed_tablet_ids.empty()) {
+    return Status::IOError(strings::Substitute("Some tablets failed to set schema version. Failed "
+                                               "tablets: $0",
+                                               JoinStrings(failed_tablet_ids, ", ")));
+  }
+
+  return Status::OK();
+}
+
 } // anonymous namespace
 
 unique_ptr<Mode> BuildRemoteReplicaMode() {
@@ -420,6 +515,8 @@ unique_ptr<Mode> BuildRemoteReplicaMode() {
       .AddRequiredParameter({ kSrcAddressArg, kTServerAddressDesc })
       .AddRequiredParameter({ kDstAddressArg, kTServerAddressDesc })
       .AddOptionalParameter("force_copy")
+      .AddOptionalParameter("ignore_address_from_rpc")
+      .AddOptionalParameter("src_tablet_id")
       .Build();
 
   unique_ptr<Action> delete_replica =
@@ -460,6 +557,14 @@ unique_ptr<Mode> BuildRemoteReplicaMode() {
       .AddRequiredVariadicParameter({ kPeerUUIDsArg, kPeerUUIDsArgDesc })
       .Build();
 
+  unique_ptr<Action> unsafe_set_schema_version =
+      TServerActionBuilder("unsafe_set_schema_version", &UnsafeSetSchemaVersion)
+          .Description("Set a new schema version on tablet replicas on a Kudu tablet server")
+          .AddRequiredParameter({ kTabletIdsCsvArg, kTabletIdsCsvArgDesc })
+          .AddOptionalParameter("force")
+          .AddOptionalParameter("schema_version")
+          .Build();
+
   return ModeBuilder("remote_replica")
       .Description("Operate on remote tablet replicas on a Kudu Tablet Server")
       .AddAction(std::move(check_replicas))
@@ -468,6 +573,7 @@ unique_ptr<Mode> BuildRemoteReplicaMode() {
       .AddAction(std::move(dump_replica))
       .AddAction(std::move(list))
       .AddAction(std::move(unsafe_change_config))
+      .AddAction(std::move(unsafe_set_schema_version))
       .Build();
 }
 

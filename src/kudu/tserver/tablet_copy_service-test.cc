@@ -101,6 +101,7 @@ class TabletCopyServiceTest : public TabletCopyTest {
     BeginTabletCopySessionRequestPB req;
     req.set_tablet_id(tablet_id);
     req.set_requestor_uuid(requestor_uuid);
+    req.set_dst_tablet_id(tablet_id);
     return UnwindRemoteError(
         tablet_copy_proxy_->BeginTabletCopySession(req, resp, controller), controller);
   }

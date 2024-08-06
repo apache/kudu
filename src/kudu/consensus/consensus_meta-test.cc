@@ -29,14 +29,12 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/common/common.pb.h"
-#include "kudu/common/wire_protocol.h"
+#include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/util/net/net_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
@@ -183,18 +181,6 @@ TEST_P(ConsensusMetadataTest, TestFlush) {
     NO_FATALS(AssertValuesEqual(cmeta_read, kInvalidOpIdIndex, fs_manager_->uuid(), kNewTerm));
     ASSERT_EQ(cmeta_size, cmeta_read->on_disk_size());
   }
-}
-
-// Builds a distributed configuration of voters with the given uuids.
-RaftConfigPB BuildConfig(const vector<string>& uuids) {
-  RaftConfigPB config;
-  for (const string& uuid : uuids) {
-    RaftPeerPB* peer = config.add_peers();
-    peer->set_permanent_uuid(uuid);
-    peer->set_member_type(RaftPeerPB::VOTER);
-    *peer->mutable_last_known_addr() = HostPortToPB(HostPort("255.255.255.255", 0));
-  }
-  return config;
 }
 
 // Test ConsensusMetadata active role calculation.

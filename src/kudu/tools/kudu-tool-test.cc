@@ -168,6 +168,8 @@ DECLARE_int32(tserver_unresponsive_timeout_ms);
 DECLARE_int32(rpc_negotiation_inject_delay_ms);
 DECLARE_string(block_manager);
 DECLARE_string(hive_metastore_uris);
+DECLARE_string(rpc_authentication);
+DECLARE_string(rpc_encryption);
 
 METRIC_DECLARE_counter(bloom_lookups);
 METRIC_DECLARE_entity(tablet);
@@ -1525,11 +1527,12 @@ TEST_F(ToolTest, TestModeHelp) {
     const string kCmd = "remote_replica";
     const vector<string> kRemoteReplicaModeRegexes = {
         "check.*Check if all tablet replicas",
-        "copy.*Copy a tablet replica from one Kudu Tablet Server",
+        "copy.*Copy a tablet replica from one Kudu Tablet",
         "delete.*Delete a tablet replica",
         "dump.*Dump the data of a tablet replica",
         "list.*List all tablet replicas",
         "unsafe_change_config.*Force the specified replica to adopt",
+        "unsafe_set_schema_version.*Set a new schema version",
     };
     NO_FATALS(RunTestHelp(kCmd, kRemoteReplicaModeRegexes));
     NO_FATALS(RunTestHelpRpcFlags(kCmd,
@@ -1539,6 +1542,7 @@ TEST_F(ToolTest, TestModeHelp) {
           "dump",
           "list",
           "unsafe_change_config",
+          "unsafe_set_schema_version",
         }));
   }
   {
@@ -4460,6 +4464,252 @@ TEST_F(ToolTest, TestRemoteReplicaCopy) {
                                            deleted_tablet_id, src_ts_addr, dst_ts_addr)));
   ASSERT_OK(WaitUntilTabletInState(dst_ts, deleted_tablet_id,
                                    tablet::RUNNING, kTimeout));
+}
+
+// The relationship between the source and destination tablet term.
+enum class TermType {
+  kSrcLtDst = 0,
+  kSrcEqDst,
+  kSrcGtDst
+};
+
+class TestRemoteReplicaCopyFromAnotherTable :
+  public ToolTest,
+  public ::testing::WithParamInterface<std::tuple<TermType, bool>> {
+};
+
+INSTANTIATE_TEST_SUITE_P(,
+                         TestRemoteReplicaCopyFromAnotherTable,
+                         ::testing::Combine(testing::Values(TermType::kSrcLtDst,
+                                                            TermType::kSrcEqDst,
+                                                            TermType::kSrcGtDst),
+                                            ::testing::Bool()));
+
+// Test 'kudu remote_replica copy' tool to copy data from another table.
+TEST_P(TestRemoteReplicaCopyFromAnotherTable, TestBasic) {
+  constexpr const char* const kSrcTableName = "source.TestRemoteReplicaCopyFromAnotherTable";
+  constexpr const char* const kDstTableName = "destination.TestRemoteReplicaCopyFromAnotherTable";
+#if defined(THREAD_SANITIZER)
+  constexpr auto kNumRows = 1000;
+#else
+  constexpr auto kNumRows = 10000;
+#endif
+  const int kNumTablets = 4;
+  const int64_t kTerm = 123;
+  const MonoDelta kTimeout = MonoDelta::FromMilliseconds(100);
+  // Disable authentication and encryption for this test, otherwise it may cause fatal error like:
+  // Runtime error: TLS Handshake error: error:0407008A:rsa routines:RSA_padding_check_PKCS1_type_1
+  // This is not related to this test case.
+  FLAGS_rpc_authentication = "disabled";
+  FLAGS_rpc_encryption = "disabled";
+
+  // Lower the thresholds for flushes to generate some data blocks.
+  FLAGS_flush_threshold_mb = 1;
+  FLAGS_flush_threshold_secs = 1;
+
+  // Start the source cluster.
+  ExternalMiniClusterOptions opts;
+  opts.extra_tserver_flags = {"--flush_threshold_mb=1", "--flush_threshold_secs=1"};
+  NO_FATALS(StartExternalMiniCluster(std::move(opts)));
+
+  // Create a table in the source cluster and write some data to it.
+  int total_row_count;
+  {
+    TestWorkload workload(cluster_.get(), TestWorkload::PartitioningType::HASH);
+    workload.set_table_name(kSrcTableName);
+    workload.set_num_tablets(kNumTablets);
+    workload.set_num_replicas(1);
+    workload.Setup();
+    workload.Start();
+    ASSERT_EVENTUALLY([&]() {
+      ASSERT_GE(workload.rows_inserted(), kNumRows);
+    });
+    workload.StopAndJoin();
+    total_row_count = workload.rows_inserted();
+  }
+
+  // Set the term of the source tablets.
+  const string kTestDir = GetTestPath("test");
+  FsManager fs(env_, FsManagerOpts(kTestDir));
+  string src_encryption_args;
+  if (env_->IsEncryptionEnabled()) {
+    src_encryption_args = " --instance_file=" +
+        fs.GetInstanceMetadataPath(kTestDir);
+  }
+  const auto term_type = std::get<0>(GetParam());
+  const auto ignore_address_from_rpc = std::get<1>(GetParam());
+  if (term_type == TermType::kSrcGtDst || term_type == TermType::kSrcEqDst) {
+    auto* ts = cluster_->tablet_server(0);
+    auto* tsd = ts_map_[ts->uuid()];
+    vector<string> tablet_ids;
+    ASSERT_OK(ListRunningTabletIds(tsd, kTimeout, &tablet_ids));
+    ts->Shutdown();
+    for (const auto &tablet_id : tablet_ids) {
+      NO_FATALS(RunActionStdoutNone(Substitute(
+        "local_replica cmeta set_term $0 $1 --fs_wal_dir=$2 --fs_data_dirs=$3 $4",
+        tablet_id,
+        kTerm,
+        ts->wal_dir(),
+        JoinStrings(ts->data_dirs(), ","),
+        src_encryption_args)));
+    }
+    ASSERT_OK(ts->Restart());
+    for (const auto &tablet_id : tablet_ids) {
+      ASSERT_OK(WaitUntilTabletRunning(tsd, tablet_id, MonoDelta::FromSeconds(10)));
+    }
+  }
+
+  // Start the destination cluster.
+  NO_FATALS(StartMiniCluster());
+
+  // Create a table in the destination cluster but don't write any data to it.
+  {
+    TestWorkload workload(mini_cluster_.get(), TestWorkload::PartitioningType::HASH);
+    workload.set_table_name(kDstTableName);
+    workload.set_num_tablets(kNumTablets);
+    workload.set_num_replicas(1);
+    workload.Setup();
+  }
+
+  // Set the term of the destination tablets.
+  string dst_encryption_args;
+  if (env_->IsEncryptionEnabled()) {
+    dst_encryption_args = " --instance_file=" +
+        JoinPathSegments(mini_cluster_->mini_tablet_server(0)->options()->fs_opts.wal_root,
+                         "instance");
+  }
+  if (term_type == TermType::kSrcLtDst || term_type == TermType::kSrcEqDst) {
+    MiniTabletServer* ts = mini_cluster_->mini_tablet_server(0);
+    vector<scoped_refptr<TabletReplica>> tablet_replicas;
+    ts->server()->tablet_manager()->GetTabletReplicas(&tablet_replicas);
+    vector<string> tablet_ids;
+    tablet_ids.reserve(tablet_replicas.size());
+    for (const auto& replica : tablet_replicas) {
+      tablet_ids.emplace_back(replica->tablet_id());
+    }
+
+    // Release the referenced resources before shutting down tserver.
+    tablet_replicas.clear();
+    ts->Shutdown();
+    for (const auto &tablet_id : tablet_ids) {
+    NO_FATALS(RunActionStdoutNone(Substitute(
+      "local_replica cmeta set_term $0 $1 --fs_wal_dir=$2 --fs_data_dirs=$3 $4",
+      tablet_id,
+      kTerm,
+      ts->options()->fs_opts.wal_root,
+      JoinStrings(ts->options()->fs_opts.data_roots, ","),
+      dst_encryption_args)));
+    }
+    ASSERT_OK(ts->Start());
+    ASSERT_OK(ts->WaitStarted());
+  }
+
+  // Collect and sort source tablets.
+  TServerDetails* src_ts = ts_map_[cluster_->tablet_server(0)->uuid()];
+  const auto src_ts_addr = cluster_->tablet_server(0)->bound_rpc_addr().ToString();
+  vector<ListTabletsResponsePB::StatusAndSchemaPB> src_tablets;
+  ASSERT_OK(WaitForNumTabletsOnTS(src_ts, kNumTablets, kTimeout, &src_tablets));
+  std::sort(src_tablets.begin(),
+            src_tablets.end(),
+            [](const ListTabletsResponsePB::StatusAndSchemaPB& lhs,
+               const ListTabletsResponsePB::StatusAndSchemaPB& rhs) {
+    const auto& lhs_hash_buckets = lhs.tablet_status().partition().hash_buckets();
+    const auto& rhs_hash_buckets = rhs.tablet_status().partition().hash_buckets();
+    CHECK(!lhs_hash_buckets.empty());
+    CHECK(!rhs_hash_buckets.empty());
+    return lhs_hash_buckets[0] < rhs_hash_buckets[0];
+  });
+
+  // Collect and sort destination tablets.
+  auto* dst_ts = mini_cluster_->mini_tablet_server(0);
+  const auto dst_ts_addr = dst_ts->bound_rpc_addr().ToString();
+  vector<scoped_refptr<TabletReplica>> dst_tablet_replicas;
+  dst_ts->server()->tablet_manager()->GetTabletReplicas(&dst_tablet_replicas);
+  std::sort(dst_tablet_replicas.begin(),
+            dst_tablet_replicas.end(),
+            [](const scoped_refptr<TabletReplica>& lhs, const scoped_refptr<TabletReplica>& rhs) {
+    const auto& lhs_hash_buckets = lhs->tablet()->metadata()->partition().hash_buckets();
+    const auto& rhs_hash_buckets = rhs->tablet()->metadata()->partition().hash_buckets();
+    CHECK(!lhs_hash_buckets.empty());
+    CHECK(!rhs_hash_buckets.empty());
+    return lhs_hash_buckets[0] < rhs_hash_buckets[0];
+  });
+  ASSERT_EQ(src_tablets.size(), dst_tablet_replicas.size());
+
+  vector<string> dst_tablet_ids;
+  dst_tablet_ids.reserve(dst_tablet_replicas.size());
+  for (const auto& dst_tablet_replica : dst_tablet_replicas) {
+    dst_tablet_ids.push_back(dst_tablet_replica->tablet_id());
+  }
+  // Release the referenced resources before restarting tserver.
+  dst_tablet_replicas.clear();
+
+  // Check the row count is 0 before copying.
+  const auto dst_master_addrs_str = mini_cluster_->mini_master()->bound_rpc_addr().ToString();
+  const auto CheckDstTableRowCount = [&] (int expected_row_count) {
+    ASSERT_EVENTUALLY([&]() {
+      string out;
+      ASSERT_OK(RunTool(Substitute("perf table_scan $0 $1", dst_master_addrs_str, kDstTableName),
+        &out));
+      ASSERT_STR_CONTAINS(out, Substitute("Total count $0 ", expected_row_count));
+    });
+  };
+  NO_FATALS(CheckDstTableRowCount(0));
+
+  // Start tablet copying for these tablets in the table.
+  SleepFor(MonoDelta::FromMilliseconds(1100));
+  for (int i = 0; i < src_tablets.size(); i++) {
+    NO_FATALS(RunActionStdoutNone(
+        Substitute("remote_replica copy $0 $1 $2 --src_tablet_id=$3 "
+                   "--force_copy --ignore_address_from_rpc=$4",
+                   dst_tablet_ids[i],
+                   src_ts_addr,
+                   dst_ts_addr,
+                   src_tablets[i].tablet_status().tablet_id(),
+                   ignore_address_from_rpc)));
+  }
+  ASSERT_EVENTUALLY([&]() {
+    string out;
+    NO_FATALS(RunActionStdoutString(Substitute("cluster ksck $0", dst_master_addrs_str), &out));
+  });
+
+  // Check the row count in the destination table.
+  NO_FATALS(CheckDstTableRowCount(total_row_count));
+
+  // Restart the destination tserver and check the row count again.
+  mini_cluster_->mini_tablet_server(0)->Shutdown();
+  ASSERT_OK(mini_cluster_->mini_tablet_server(0)->Start());
+  ASSERT_OK(mini_cluster_->mini_tablet_server(0)->WaitStarted());
+  ASSERT_EVENTUALLY([&]() {
+    string out;
+    NO_FATALS(RunActionStdoutString(Substitute("cluster ksck $0", dst_master_addrs_str), &out));
+  });
+  NO_FATALS(CheckDstTableRowCount(total_row_count));
+
+  // Set the schema version at first.
+  const std::string dst_tablet_ids_str = JoinStrings(dst_tablet_ids, ",");
+  NO_FATALS(RunActionStdoutNone(
+      Substitute("remote_replica unsafe_set_schema_version $0 $1 --force",
+                 dst_ts_addr,
+                 dst_tablet_ids_str)));
+
+  // Alter the destination table.
+  NO_FATALS(RunActionStdoutNone(Substitute("table add_column $0 $1 new_column STRING",
+                                           dst_master_addrs_str, kDstTableName)));
+  ASSERT_EVENTUALLY([&]() {
+    string out;
+    NO_FATALS(RunActionStdoutString(Substitute("cluster ksck $0", dst_master_addrs_str), &out));
+  });
+  NO_FATALS(CheckDstTableRowCount(total_row_count));
+
+  // Check the table statistics for the destination table.
+  ASSERT_EVENTUALLY([&]() {
+    string out;
+    NO_FATALS(RunActionStdoutString(
+      Substitute("table statistics $0 $1", dst_master_addrs_str, kDstTableName),
+      &out));
+    ASSERT_STR_CONTAINS(out, Substitute("live row count: $0", total_row_count));
+  });
 }
 
 // Test the 'kudu remote_replica list' tool.

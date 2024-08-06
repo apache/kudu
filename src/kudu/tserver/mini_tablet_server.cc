@@ -17,7 +17,6 @@
 
 #include "kudu/tserver/mini_tablet_server.h"
 
-#include <optional>
 #include <ostream>
 #include <utility>
 #include <vector>
@@ -26,16 +25,16 @@
 #include <glog/logging.h>
 
 #include "kudu/common/common.pb.h"
+#include "kudu/common/partial_row.h"
 #include "kudu/common/partition.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.pb.h"
-#include "kudu/consensus/metadata.pb.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/server/rpc_server.h"
 #include "kudu/server/webserver_options.h"
-#include "kudu/tablet/tablet-harness.h"
+#include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
@@ -53,7 +52,7 @@ using kudu::tablet::TabletReplica;
 using kudu::consensus::RaftPeerPB;
 using kudu::consensus::RaftConfigPB;
 using std::nullopt;
-using std::pair;
+using std::optional;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -144,20 +143,35 @@ RaftConfigPB MiniTabletServer::CreateLocalConfig() const {
 
 Status MiniTabletServer::AddTestTablet(const std::string& table_id,
                                        const std::string& tablet_id,
-                                       const Schema& schema) {
-  return AddTestTablet(table_id, tablet_id, schema, CreateLocalConfig());
-}
-
-Status MiniTabletServer::AddTestTablet(const std::string& table_id,
-                                       const std::string& tablet_id,
                                        const Schema& schema,
-                                       const RaftConfigPB& config) {
-  Schema schema_with_ids = SchemaBuilder(schema).Build();
-  pair<PartitionSchema, Partition> partition = tablet::CreateDefaultPartition(schema_with_ids);
+                                       const optional<consensus::RaftConfigPB>& config,
+                                       const optional<PartitionSchema>& partition_schema,
+                                       const optional<Partition>& partition,
+                                       const optional<string>& table_name,
+                                       const optional<TableExtraConfigPB>& extra_config,
+                                       const optional<string>& dimension_label,
+                                       const optional<TableTypePB>& table_type) {
+  const Schema &schema_with_ids = SchemaBuilder(schema).Build();
+  PartitionSchema ps;
+  if (partition_schema == nullopt) {
+    RETURN_NOT_OK(PartitionSchema::FromPB(PartitionSchemaPB(), schema_with_ids, &ps));
+  } else {
+    ps = partition_schema.value();
+  }
+  Partition pt;
+  if (partition == nullopt) {
+    std::vector<Partition> partitions;
+    CHECK_OK(ps.CreatePartitions({}, {}, schema_with_ids, &partitions));
+    CHECK_LE(1, partitions.size());
+    pt = partitions[0];
+  } else {
+    pt = partition.value();
+  }
 
   return server_->tablet_manager()->CreateNewTablet(
-      table_id, tablet_id, partition.second, table_id,
-      schema_with_ids, partition.first, config, nullopt, nullopt, nullopt, nullptr);
+      table_id, tablet_id, pt, table_name.value_or(table_id),
+      schema_with_ids, ps, config.value_or(CreateLocalConfig()),
+      extra_config, dimension_label, table_type, nullptr);
 }
 
 vector<string> MiniTabletServer::ListTablets() const {

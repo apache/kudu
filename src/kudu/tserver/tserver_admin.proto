@@ -142,6 +142,7 @@ message AlterSchemaRequestPB {
   required uint32 schema_version = 3;
   optional string new_table_name = 4;
   optional TableExtraConfigPB new_extra_config = 6;
+  optional bool force = 7 [ default = false ];
 }
 
 message AlterSchemaResponsePB {

@@ -18,9 +18,13 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
+#include "kudu/common/common.pb.h"
+#include "kudu/common/partition.h" // IWYU pragma: keep
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/tserver/tablet_server_options.h"
 #include "kudu/util/net/sockaddr.h"
 
@@ -29,10 +33,6 @@ class HostPort;
 class Schema;
 class Status;
 struct FsManagerOpts;
-
-namespace consensus {
-class RaftConfigPB;
-} // namespace consensus
 
 namespace tserver {
 
@@ -67,19 +67,19 @@ class MiniTabletServer {
   // Restart a tablet server on the same RPC and webserver ports.
   Status Restart();
 
-  // Add a new tablet to the test server, use the default consensus configuration.
+  // Add a new tablet to the test server, use the specified configurations.
   //
   // Requires that the server has already been started with Start().
   Status AddTestTablet(const std::string& table_id,
                        const std::string& tablet_id,
-                       const Schema& schema);
-
-  // Add a new tablet to the test server and specify the consensus configuration
-  // for the tablet.
-  Status AddTestTablet(const std::string& table_id,
-                       const std::string& tablet_id,
                        const Schema& schema,
-                       const consensus::RaftConfigPB& config);
+                       const std::optional<consensus::RaftConfigPB>& config = std::nullopt,
+                       const std::optional<PartitionSchema>& partition_schema = std::nullopt,
+                       const std::optional<Partition>& partition = std::nullopt,
+                       const std::optional<std::string>& table_name = std::nullopt,
+                       const std::optional<TableExtraConfigPB>& extra_config = std::nullopt,
+                       const std::optional<std::string>& dimension_label = std::nullopt,
+                       const std::optional<TableTypePB>& table_type = std::nullopt);
 
   // Return the ids of all non-tombstoned tablets on this server.
   std::vector<std::string> ListTablets() const;

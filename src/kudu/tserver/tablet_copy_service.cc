@@ -40,6 +40,7 @@
 #include "kudu/rpc/transfer.h"
 #include "kudu/server/server_base.h"
 #include "kudu/tablet/metadata.pb.h"
+#include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/tablet_replica_lookup.h"
 #include "kudu/util/crc.h"
@@ -135,20 +136,21 @@ void TabletCopyServiceImpl::BeginTabletCopySession(
         BeginTabletCopySessionResponsePB* resp,
         rpc::RpcContext* context) {
   const string& requestor_uuid = req->requestor_uuid();
-  const string& tablet_id = req->tablet_id();
+  const string& src_tablet_id = req->tablet_id();
+  const string& dst_tablet_id = req->has_dst_tablet_id() ? req->dst_tablet_id() : src_tablet_id;
 
   LOG_WITH_PREFIX(INFO) << Substitute(
       "Received BeginTabletCopySession request for tablet $0 from peer $1 ($2)",
-      tablet_id, requestor_uuid, context->requestor_string());
+      src_tablet_id, requestor_uuid, context->requestor_string());
 
   // For now, we use the requestor_uuid with the tablet id as the session id,
   // but there is no guarantee this will not change in the future.
-  const string session_id = Substitute("$0-$1", requestor_uuid, tablet_id);
+  const string session_id = Substitute("$0-$1-$2", requestor_uuid, src_tablet_id, dst_tablet_id);
 
   scoped_refptr<TabletReplica> tablet_replica;
-  RPC_RETURN_NOT_OK(tablet_replica_lookup_->GetTabletReplica(tablet_id, &tablet_replica),
+  RPC_RETURN_NOT_OK(tablet_replica_lookup_->GetTabletReplica(src_tablet_id, &tablet_replica),
                     TabletCopyErrorPB::TABLET_NOT_FOUND,
-                    Substitute("Unable to find specified tablet: $0", tablet_id),
+                    Substitute("Unable to find specified tablet: $0", src_tablet_id),
                     context);
 
   scoped_refptr<RemoteTabletCopySourceSession> session;
@@ -161,7 +163,7 @@ void TabletCopyServiceImpl::BeginTabletCopySession(
       LOG_WITH_PREFIX(INFO) << Substitute(
           "Beginning new tablet copy session on tablet $0 from peer $1"
           " at $2: session id = $3",
-          tablet_id, requestor_uuid, context->requestor_string(), session_id);
+          src_tablet_id, requestor_uuid, context->requestor_string(), session_id);
       session.reset(new RemoteTabletCopySourceSession(tablet_replica, session_id,
                                                       requestor_uuid, fs_manager_,
                                                       &tablet_copy_metrics_));
@@ -171,7 +173,7 @@ void TabletCopyServiceImpl::BeginTabletCopySession(
       LOG_WITH_PREFIX(INFO) << Substitute(
           "Re-sending initialization info for existing tablet copy session on tablet $0"
           " from peer $1 at $2: session_id = $3",
-          tablet_id, requestor_uuid, context->requestor_string(), session_id);
+          src_tablet_id, requestor_uuid, context->requestor_string(), session_id);
     }
     ResetSessionExpirationUnlocked(session_id);
   }
@@ -179,7 +181,7 @@ void TabletCopyServiceImpl::BeginTabletCopySession(
   if (!new_session && !session->IsInitialized()) {
     RPC_RETURN_NOT_OK(
         Status::ServiceUnavailable(
-            Substitute("tablet copy session for tablet $0 is initializing", tablet_id)),
+            Substitute("tablet copy session for tablet $0 is initializing", src_tablet_id)),
         TabletCopyErrorPB::UNKNOWN_ERROR,
         "try again later",
         context);
@@ -199,7 +201,7 @@ void TabletCopyServiceImpl::BeginTabletCopySession(
   }
   RPC_RETURN_NOT_OK(status,
                     TabletCopyErrorPB::UNKNOWN_ERROR,
-                    Substitute("Error beginning tablet copy session for tablet $0", tablet_id),
+                    Substitute("Error beginning tablet copy session for tablet $0", src_tablet_id),
                     context);
 
   resp->set_responder_uuid(fs_manager_->uuid());

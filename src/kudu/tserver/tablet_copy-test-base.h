@@ -41,6 +41,7 @@ static const int kNumLogRolls = 2;
 
 class TabletCopyTest : public TabletServerTestBase {
  public:
+  TabletCopyTest() : generate_data_(true) {}
   void SetUp() override {
     NO_FATALS(TabletServerTestBase::SetUp());
     // Create a tablet server with multiple data dirs. In most cases, this is
@@ -53,7 +54,9 @@ class TabletCopyTest : public TabletServerTestBase {
     // starting a tablet copy session.
     tablet_replica_->log_anchor_registry()->Register(
         consensus::MinimumOpId().index(), CURRENT_TEST_NAME(), &anchor_);
-    NO_FATALS(GenerateTestData());
+    if (generate_data_) {
+      NO_FATALS(GenerateTestData());
+    }
   }
 
   void TearDown() override {
@@ -126,7 +129,7 @@ class TabletCopyTest : public TabletServerTestBase {
     return tablet_replica_->permanent_uuid();
   }
 
-  virtual const std::string& GetTabletId() const {
+  const std::string& GetTabletId() const {
     return tablet_replica_->tablet_id();
   }
 
@@ -145,6 +148,7 @@ class TabletCopyTest : public TabletServerTestBase {
     return Status::OK();
   }
 
+  bool generate_data_;
   log::LogAnchor anchor_;
 };
 

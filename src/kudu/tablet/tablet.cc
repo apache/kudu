@@ -1710,12 +1710,27 @@ Status Tablet::AlterSchema(AlterSchemaOpState* op_state) {
   // If the current version >= new version, there is nothing to do.
   const bool same_schema = (*schema() == *op_state->schema());
   if (metadata_->schema_version() >= op_state->schema_version()) {
-    const string msg =
-        Substitute("Skipping requested alter to schema version $0, tablet already "
-                   "version $1", op_state->schema_version(), metadata_->schema_version());
-    LOG_WITH_PREFIX(INFO) << msg;
-    op_state->SetError(Status::InvalidArgument(msg));
-    return Status::OK();
+    if (!op_state->force()) {
+      const string msg =
+          Substitute("Skipping requested alter to schema version $0, tablet already "
+                     "version $1", op_state->schema_version(), metadata_->schema_version());
+      LOG_WITH_PREFIX(INFO) << msg;
+      op_state->SetError(Status::InvalidArgument(msg));
+      return Status::OK();
+    }
+
+    DCHECK(op_state->force());
+    if (!same_schema) {
+      const string msg =
+          Substitute("Skipping requested alter to schema version $0, the same schema is needed, "
+                     "but local $1 vs requested $2",
+                     op_state->schema_version(),
+                     schema()->ToString(),
+                     op_state->schema()->ToString());
+      LOG_WITH_PREFIX(INFO) << msg;
+      op_state->SetError(Status::InvalidArgument(msg));
+      return Status::OK();
+    }
   }
 
   LOG_WITH_PREFIX(INFO) << "Alter schema from " << schema()->ToString()

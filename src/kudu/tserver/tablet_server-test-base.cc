@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -32,12 +33,14 @@
 #include "kudu/common/common.pb.h"
 #include "kudu/common/iterator.h"
 #include "kudu/common/partial_row.h"
+#include "kudu/common/partition.h"
 #include "kudu/common/row_operations.pb.h"
 #include "kudu/common/rowblock.h"
 #include "kudu/common/rowblock_memory.h"
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -45,6 +48,7 @@
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/mvcc.h"
+#include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/mini_tablet_server.h"
@@ -74,6 +78,7 @@ METRIC_DEFINE_entity(test);
 using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
 using kudu::rpc::RpcController;
+using std::nullopt;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -129,7 +134,12 @@ void TabletServerTestBase::StartTabletServer(int num_data_dirs) {
   ASSERT_OK(mini_server_->Start());
 
   // Set up a tablet inside the server.
-  ASSERT_OK(mini_server_->AddTestTablet(kTableId, kTabletId, schema_));
+  const Schema &schema_with_ids = SchemaBuilder(schema_).Build();
+  PartitionSchema partition_schema;
+  CHECK_OK(PartitionSchema::FromPB(partition_schema_pb_,
+                                   schema_with_ids,
+                                   &partition_schema));
+  ASSERT_OK(mini_server_->AddTestTablet(kTableId, kTabletId, schema_, nullopt, partition_schema));
   ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId,
                                                                      &tablet_replica_));
 
@@ -140,24 +150,27 @@ void TabletServerTestBase::StartTabletServer(int num_data_dirs) {
   ResetClientProxies();
 }
 
-Status TabletServerTestBase::WaitForTabletRunning(const char *tablet_id) {
+Status TabletServerTestBase::WaitForTabletRunning(const char *tablet_id, bool check_consensus) {
   scoped_refptr<tablet::TabletReplica> tablet_replica;
   const auto* tablet_manager = mini_server_->server()->tablet_manager();
   const auto kTimeout = MonoDelta::FromSeconds(10);
   RETURN_NOT_OK(tablet_manager->GetTabletReplica(tablet_id, &tablet_replica));
-  RETURN_NOT_OK(tablet_replica->WaitUntilConsensusRunning(kTimeout));
-  RETURN_NOT_OK(
+  const auto s = tablet_replica->WaitUntilConsensusRunning(kTimeout);
+  if (check_consensus) {
+    RETURN_NOT_OK(s);
+    RETURN_NOT_OK(
       tablet_replica->consensus()->WaitUntilLeader(kTimeout));
 
-  // KUDU-2463: Even though the tablet thinks its leader, for correctness, it
-  // must wait to finish replicating its no-op (even as a single replica)
-  // before being available to scans.
-  MonoTime deadline = MonoTime::Now() + kTimeout;
-  while (!tablet_replica->tablet()->mvcc_manager()->CheckIsCleanTimeInitialized().ok()) {
-    if (MonoTime::Now() >= deadline) {
-      return Status::TimedOut("mvcc did not advance safe time within timeout");
+    // KUDU-2463: Even though the tablet thinks its leader, for correctness, it
+    // must wait to finish replicating its no-op (even as a single replica)
+    // before being available to scans.
+    MonoTime deadline = MonoTime::Now() + kTimeout;
+    while (!tablet_replica->tablet()->mvcc_manager()->CheckIsCleanTimeInitialized().ok()) {
+      if (MonoTime::Now() >= deadline) {
+        return Status::TimedOut("mvcc did not advance safe time within timeout");
+      }
+      SleepFor(MonoDelta::FromMilliseconds(10));
     }
-    SleepFor(MonoDelta::FromMilliseconds(10));
   }
 
   // KUDU-2444: Even though the tablet replica is fully running, the tablet

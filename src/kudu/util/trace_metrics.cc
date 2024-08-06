@@ -65,10 +65,11 @@ const char* TraceMetrics::InternName(const string& name) {
   (*g_intern_map)[name] = dup;
 
   // We don't expect this map to grow large.
-  DCHECK_LT(g_intern_map->size(), 100) <<
+  // TODO(yingchun): In some tests, we may have a lot of interned strings, consider to release the
+  //  strings dynamically.
+  DCHECK_LT(g_intern_map->size(), 1000) <<
       "Too many interned strings: " << *g_intern_map;
 
   return dup;
 }
-
 } // namespace kudu

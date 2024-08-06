@@ -22,11 +22,14 @@
 
 #include <map>
 #include <string>
+#include <vector>
 
 #include "kudu/client/schema.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row.h"
 #include "kudu/common/row_operations.h"
+#include "kudu/consensus/metadata.pb.h"
+#include "kudu/util/net/net_util.h"
 
 namespace kudu {
 
@@ -35,6 +38,33 @@ inline Schema GetSimpleTestSchema() {
                   ColumnSchema("int_val", INT32),
                   ColumnSchema("string_val", STRING, true) },
                 1);
+}
+
+inline PartitionSchemaPB GetSimpleTestPartitionSchemaPB(const Schema& schema, int num_buckets) {
+  if (num_buckets == 0) {
+    return {};
+  }
+  CHECK_GT(num_buckets, 1);
+  PartitionSchemaPB pb;
+  auto* hash_dimension = pb.add_hash_schema();
+  for (int i = 0; i < schema.num_key_columns(); i++) {
+    hash_dimension->add_columns()->set_name(schema.column(i).name());
+  }
+  hash_dimension->set_num_buckets(num_buckets);
+  hash_dimension->set_seed(0);
+  return pb;
+}
+
+// Builds a distributed configuration of voters with the given uuids.
+inline consensus::RaftConfigPB BuildConfig(const std::vector<std::string>& uuids) {
+  consensus::RaftConfigPB config;
+  for (const auto& uuid : uuids) {
+    auto* peer = config.add_peers();
+    peer->set_permanent_uuid(uuid);
+    peer->set_member_type(consensus::RaftPeerPB::VOTER);
+    *peer->mutable_last_known_addr() = HostPortToPB(HostPort("255.255.255.255", 0));
+  }
+  return config;
 }
 
 inline client::KuduSchema GetAutoIncrementingTestSchema() {

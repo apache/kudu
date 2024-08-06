@@ -62,7 +62,7 @@ class TabletServerTestBase : public KuduTest {
 
   virtual void StartTabletServer(int num_data_dirs);
 
-  Status WaitForTabletRunning(const char *tablet_id);
+  Status WaitForTabletRunning(const char *tablet_id, bool check_consensus = true);
 
   void UpdateTestRowRemote(int32_t row_idx,
                            int32_t new_val,
@@ -138,6 +138,7 @@ class TabletServerTestBase : public KuduTest {
 
  protected:
   const Schema schema_;
+  PartitionSchemaPB partition_schema_pb_;
   Schema key_schema_;
   std::unique_ptr<RowBuilder> rb_;
 

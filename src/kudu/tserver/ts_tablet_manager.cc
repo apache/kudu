@@ -826,7 +826,13 @@ void TSTabletManager::RunTabletCopy(
   TabletServerErrorPB::Code error_code = TabletServerErrorPB::UNKNOWN_ERROR;
 
   // Copy these strings so they stay valid even after responding to the request.
-  string tablet_id = req->tablet_id(); // NOLINT(*)
+  string dst_tablet_id = req->tablet_id(); // NOLINT(*)
+  string src_tablet_id;
+  if (req->has_src_tablet_id()) {
+    src_tablet_id = req->src_tablet_id();
+  } else {
+    src_tablet_id = dst_tablet_id;
+  }
   string copy_source_uuid = req->copy_peer_uuid(); // NOLINT(*)
   HostPort copy_source_addr = HostPortFromPB(req->copy_peer_addr());
   int64_t leader_term = req->caller_term();
@@ -837,11 +843,11 @@ void TSTabletManager::RunTabletCopy(
   scoped_refptr<TransitionInProgressDeleter> deleter;
   {
     std::lock_guard<RWMutex> lock(lock_);
-    if (LookupTabletUnlocked(tablet_id, &old_replica)) {
+    if (LookupTabletUnlocked(dst_tablet_id, &old_replica)) {
       meta = old_replica->tablet_metadata();
       replacing_tablet = true;
     }
-    Status ret = StartTabletStateTransitionUnlocked(tablet_id, "copying tablet",
+    Status ret = StartTabletStateTransitionUnlocked(dst_tablet_id, "copying tablet",
                                                     &deleter);
     if (!ret.ok()) {
       error_code = TabletServerErrorPB::ALREADY_INPROGRESS;
@@ -855,12 +861,12 @@ void TSTabletManager::RunTabletCopy(
     switch (data_state) {
       case TABLET_DATA_COPYING:
         // This should not be possible due to the transition_in_progress_ "lock".
-        LOG(FATAL) << LogPrefix(tablet_id) << "Tablet Copy: "
+        LOG(FATAL) << LogPrefix(dst_tablet_id) << "Tablet Copy: "
                    << "Found tablet in TABLET_DATA_COPYING state during StartTabletCopy()";
       case TABLET_DATA_TOMBSTONED: {
         optional<OpId> last_logged_opid = meta->tombstone_last_logged_opid();
         if (last_logged_opid) {
-          CALLBACK_RETURN_NOT_OK_WITH_ERROR(CheckLeaderTermNotLower(tablet_id, leader_term,
+          CALLBACK_RETURN_NOT_OK_WITH_ERROR(CheckLeaderTermNotLower(dst_tablet_id, leader_term,
                                                                     last_logged_opid->term()),
                                             TabletServerErrorPB::INVALID_CONFIG);
         }
@@ -873,17 +879,17 @@ void TSTabletManager::RunTabletCopy(
         shared_ptr<RaftConsensus> consensus = old_replica->shared_consensus();
         if (!consensus) {
           CALLBACK_AND_RETURN(
-              Status::IllegalState("consensus unavailable: tablet not running", tablet_id));
+              Status::IllegalState("consensus unavailable: tablet not running", dst_tablet_id));
         }
         optional<OpId> opt_last_logged_opid = consensus->GetLastOpId(RECEIVED_OPID);
         if (!opt_last_logged_opid) {
           CALLBACK_AND_RETURN(
               Status::IllegalState("cannot determine last-logged opid: tablet not running",
-                                   tablet_id));
+                                   dst_tablet_id));
         }
         CHECK(opt_last_logged_opid);
         CALLBACK_RETURN_NOT_OK_WITH_ERROR(
-            CheckLeaderTermNotLower(tablet_id, leader_term, opt_last_logged_opid->term()),
+            CheckLeaderTermNotLower(dst_tablet_id, leader_term, opt_last_logged_opid->term()),
             TabletServerErrorPB::INVALID_CONFIG);
 
         // Shut down the old TabletReplica so that it is no longer allowed to
@@ -891,7 +897,7 @@ void TSTabletManager::RunTabletCopy(
         old_replica->Shutdown();
 
         // Note that this leaves the data dir manager without any references to
-        // tablet_id. This is okay because the tablet_copy_client should
+        // dst_tablet_id. This is okay because the tablet_copy_client should
         // generate a new disk group during the call to Start().
 
         // Tombstone the tablet and store the last-logged OpId.
@@ -908,7 +914,7 @@ void TSTabletManager::RunTabletCopy(
         if (PREDICT_FALSE(!s.ok())) {
           CALLBACK_AND_RETURN(
               s.CloneAndPrepend(Substitute("Unable to delete on-disk data from tablet $0",
-                                           tablet_id)));
+                                           dst_tablet_id)));
         }
         TRACE("Shutdown and deleted data from running replica");
         break;
@@ -916,13 +922,13 @@ void TSTabletManager::RunTabletCopy(
       default:
         CALLBACK_AND_RETURN(Status::IllegalState(
             Substitute("Found tablet in unsupported state for tablet copy. "
-                        "Tablet: $0, tablet data state: $1",
-                        tablet_id, TabletDataState_Name(data_state))));
+                       "Tablet: $0, tablet data state: $1",
+                       dst_tablet_id, TabletDataState_Name(data_state))));
     }
   }
 
   const string kSrcPeerInfo = Substitute("$0 ($1)", copy_source_uuid, copy_source_addr.ToString());
-  string init_msg = LogPrefix(tablet_id) +
+  string init_msg = LogPrefix(dst_tablet_id) +
                     Substitute("Initiating tablet copy from peer $0", kSrcPeerInfo);
   LOG(INFO) << init_msg;
   TRACE(init_msg);
@@ -960,7 +966,7 @@ void TSTabletManager::RunTabletCopy(
   //   to the leader.
   //
   // TODO(aserbin): make this robust and more optimal than it is now.
-  RemoteTabletCopyClient tc_client(tablet_id, fs_manager_, cmeta_manager_,
+  RemoteTabletCopyClient tc_client(dst_tablet_id, src_tablet_id, fs_manager_, cmeta_manager_,
                                    server_->messenger(), &tablet_copy_metrics_);
 
   // Download and persist the remote superblock in TABLET_DATA_COPYING state.
@@ -1002,8 +1008,9 @@ void TSTabletManager::RunTabletCopy(
   // Go through and synchronously download the remote blocks and WAL segments.
   s = tc_client.FetchAll(replica);
   if (!s.ok()) {
-    LOG(WARNING) << LogPrefix(tablet_id) << "Tablet Copy: Unable to fetch data from remote peer "
-                                         << kSrcPeerInfo << ": " << s.ToString();
+    LOG(WARNING) << LogPrefix(dst_tablet_id)
+        << "Tablet Copy: Unable to fetch data from remote peer "
+        << kSrcPeerInfo << ": " << s.ToString();
     return;
   }
 
@@ -1013,8 +1020,8 @@ void TSTabletManager::RunTabletCopy(
   // TabletDataState in the superblock to TABLET_DATA_READY.
   s = tc_client.Finish();
   if (!s.ok()) {
-    LOG(WARNING) << LogPrefix(tablet_id) << "Tablet Copy: Failure calling Finish(): "
-                                         << s.ToString();
+    LOG(WARNING) << LogPrefix(dst_tablet_id)
+        << "Tablet Copy: Failure calling Finish(): " << s.ToString();
     return;
   }
   fail_tablet.cancel();

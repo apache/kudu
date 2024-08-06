@@ -43,6 +43,10 @@ namespace master {
 class MasterTest_AlterTableAddAndDropRangeWithSpecificHashSchema_Test;
 }
 
+namespace tserver {
+class DifferentRemoteTabletCopyClientCheckSchemaTest;
+}
+
 class Arena;
 class ConstContiguousRow;
 class KuduPartialRow;
@@ -202,6 +206,7 @@ class Partition {
   static PartitionKey StringToPartitionKey(const std::string& key_str,
                                            size_t hash_dimensions_num);
  private:
+  friend class tserver::DifferentRemoteTabletCopyClientCheckSchemaTest;
   friend class PartitionSchema;
 
   std::vector<int32_t> hash_buckets_;
@@ -537,6 +542,7 @@ class PartitionSchema {
                    const Schema& schema);
 
  private:
+  friend class tserver::DifferentRemoteTabletCopyClientCheckSchemaTest;
   friend class PartitionPruner;
   friend class PartitionPrunerTest;
   FRIEND_TEST(master::MasterTest, AlterTableAddAndDropRangeWithSpecificHashSchema);

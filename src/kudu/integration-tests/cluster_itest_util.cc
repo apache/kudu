@@ -22,6 +22,7 @@
 #include <optional>
 #include <ostream>
 #include <set>
+#include <type_traits>
 #include <utility>
 
 #include <glog/logging.h>
@@ -46,7 +47,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/master/master.pb.h"
-#include "kudu/master/master.proxy.h"
+#include "kudu/master/master.proxy.h" // IWYU pragma: keep
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/rpc_header.pb.h"
@@ -1228,6 +1229,7 @@ Status BeginTabletCopySession(const TServerDetails* ts,
   BeginTabletCopySessionResponsePB resp;
   req.set_tablet_id(tablet_id);
   req.set_requestor_uuid(caller_uuid);
+  req.set_dst_tablet_id(tablet_id);
 
   RpcController rpc;
   rpc.set_timeout(timeout);

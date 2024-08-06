@@ -93,11 +93,14 @@ message BeginTabletCopySessionRequestPB {
   // permanent_uuid of the requesting peer.
   required bytes requestor_uuid = 1;
 
-  // tablet_id of the tablet the requester desires to bootstrap from.
+  // Source tablet_id of the tablet the requester desires to bootstrap from.
   required bytes tablet_id = 2;
 
   // Whether to download superblock in batch.
   optional bool auto_download_superblock_in_batch = 3 [default = false];
+
+  // Destination tablet_id of the tablet the requester desires to bootstrap as.
+  optional bytes dst_tablet_id = 4;
 }
 
 message BeginTabletCopySessionResponsePB {
