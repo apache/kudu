@@ -606,7 +606,7 @@ shared_ptr<MemTracker> CreateMemTrackerForServer() {
   if (id != 0) {
     StrAppend(&id_str, " ", id);
   }
-  return shared_ptr<MemTracker>(MemTracker::CreateTracker(-1, id_str));
+  return MemTracker::CreateTracker(-1, id_str);
 }
 
 // Calculates the free space on the given WAL/data directory's disk. Returns -1 in case of disk
@@ -736,8 +736,8 @@ ServerBase::ServerBase(string name, const ServerBaseOptions& options,
                                 GetFileCacheCapacity(options.env), metric_entity_)),
       rpc_server_(new RpcServer(options.rpc_opts)),
       startup_path_handler_(new StartupPathHandler(metric_entity_)),
-      result_tracker_(new rpc::ResultTracker(shared_ptr<MemTracker>(
-          MemTracker::CreateTracker(-1, "result-tracker", mem_tracker_)))),
+      result_tracker_(new rpc::ResultTracker(
+          MemTracker::CreateTracker(-1, "result-tracker", mem_tracker_))),
       is_first_run_(false),
       stop_background_threads_latch_(1),
       dns_resolver_(new DnsResolver(
