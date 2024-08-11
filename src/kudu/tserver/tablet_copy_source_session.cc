@@ -515,7 +515,8 @@ Status RemoteTabletCopySourceSession::UnregisterAnchorIfNeededUnlocked() {
 }
 
 void RemoteTabletCopySourceSession::UpdateTabletMetrics() {
-  if (PREDICT_TRUE(start_time_.Initialized())) {
+  if (PREDICT_TRUE(IsInitialized())) {
+    DCHECK(start_time_.Initialized());
     tablet_copy_metrics_->copy_duration->Increment(
         (MonoTime::Now() - start_time_).ToMilliseconds());
   }
