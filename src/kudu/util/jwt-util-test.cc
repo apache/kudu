@@ -850,8 +850,8 @@ class JWKSMockServer {
     opts.port = 0;
     opts.bind_interface = "127.0.0.1";
     webserver_.reset(new Webserver(opts));
-    webserver_->RegisterPrerenderedPathHandler("/jwks", "JWKS", SimpleJWKSHandler,
-                                               StyleMode::UNSTYLED, /*is_on_nav_bar*/false);
+    webserver_->RegisterJsonPathHandler("/jwks", "JWKS", SimpleJWKSHandler,
+                                               /*is_on_nav_bar*/false);
     RETURN_NOT_OK(webserver_->Start());
     vector<Sockaddr> addrs;
     RETURN_NOT_OK(webserver_->GetBoundAddresses(&addrs));
@@ -870,13 +870,13 @@ class JWKSMockServer {
     for (const auto& ar : account_id_to_resp) {
       const auto& account_id = ar.first;
       const auto& jwks = ar.second;
-      webserver_->RegisterPrerenderedPathHandler(Substitute("/jwks/$0", account_id), account_id,
+      webserver_->RegisterJsonPathHandler(Substitute("/jwks/$0", account_id), account_id,
           [account_id, jwks] (const Webserver::WebRequest& /*req*/,
                               Webserver::PrerenderedWebResponse* resp) {
             resp->output << jwks;
             resp->status_code = HttpStatusCode::Ok;
           },
-          StyleMode::UNSTYLED, /*is_on_nav_bar*/false);
+          /*is_on_nav_bar*/false);
     }
     RETURN_NOT_OK(webserver_->Start());
     vector<Sockaddr> addrs;

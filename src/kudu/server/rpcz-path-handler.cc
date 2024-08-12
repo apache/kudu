@@ -77,12 +77,12 @@ void RpczPathHandler(const shared_ptr<Messenger>& messenger,
 } // anonymous namespace
 
 void AddRpczPathHandlers(const shared_ptr<Messenger>& messenger, Webserver* webserver) {
-  webserver->RegisterPrerenderedPathHandler(
+  webserver->RegisterJsonPathHandler(
       "/rpcz", "RPCs",
       [messenger](const Webserver::WebRequest& req, Webserver::PrerenderedWebResponse* resp) {
         RpczPathHandler(messenger, req, resp);
       },
-      StyleMode::UNSTYLED, true /*is_on_nav_bar*/);
+      true /*is_on_nav_bar*/);
 }
 
 } // namespace kudu

@@ -100,6 +100,7 @@ static const uint64_t kTestBeganAtMicros = Env::Default()->NowMicros();
 static const char* const kContentTypeTextPlain = "text/plain";
 static const char* const kContentTypeTextHtml = "text/html";
 static const char* const kContentTypeApplicationOctet = "application/octet-stream";
+static const char* const kContentTypeApplicationJson = "application/json";
 
 // Global which production code can check to see if it is running
 // in a GTest environment (assuming the test binary links in this module,
@@ -667,10 +668,10 @@ const unordered_map<string, string>& GetCommonWebserverEndpoints() {
       {"stacks", kContentTypeTextPlain},
       {"version", kContentTypeTextPlain},
       {"healthz", kContentTypeTextPlain},
-      {"metrics", kContentTypeTextPlain},
-      {"jsonmetricz", kContentTypeTextPlain},
+      {"metrics", kContentTypeApplicationJson},
+      {"jsonmetricz", kContentTypeApplicationJson},
       {"metrics_prometheus", kContentTypeTextPlain},
-      {"rpcz", kContentTypeTextPlain},
+      {"rpcz", kContentTypeApplicationJson},
       {"startup", kContentTypeTextHtml},
       {"pprof/cmdline", kContentTypeTextPlain},
       {"pprof/heap", kContentTypeTextPlain},
@@ -678,16 +679,16 @@ const unordered_map<string, string>& GetCommonWebserverEndpoints() {
       {"pprof/profile", kContentTypeTextPlain},
       {"pprof/symbol", kContentTypeTextPlain},
       {"pprof/contention", kContentTypeTextPlain},
-      {"tracing/json/begin_monitoring", kContentTypeTextPlain},
-      {"tracing/json/end_monitoring", kContentTypeTextPlain},
-      {"tracing/json/capture_monitoring", kContentTypeTextPlain},
-      {"tracing/json/get_monitoring_status", kContentTypeTextPlain},
-      {"tracing/json/categories", kContentTypeTextPlain},
-      {"tracing/json/begin_recording", kContentTypeTextPlain},
-      {"tracing/json/get_buffer_percent_full", kContentTypeTextPlain},
-      {"tracing/json/end_recording", kContentTypeTextPlain},
-      {"tracing/json/end_recording_compressed", kContentTypeTextPlain},
-      {"tracing/json/simple_dump", kContentTypeTextPlain}};
+      {"tracing/json/begin_monitoring", kContentTypeApplicationJson},
+      {"tracing/json/end_monitoring", kContentTypeApplicationJson},
+      {"tracing/json/capture_monitoring", kContentTypeApplicationJson},
+      {"tracing/json/get_monitoring_status", kContentTypeApplicationJson},
+      {"tracing/json/categories", kContentTypeApplicationJson},
+      {"tracing/json/begin_recording", kContentTypeApplicationJson},
+      {"tracing/json/get_buffer_percent_full", kContentTypeApplicationJson},
+      {"tracing/json/end_recording", kContentTypeApplicationJson},
+      {"tracing/json/end_recording_compressed", kContentTypeApplicationJson},
+      {"tracing/json/simple_dump", kContentTypeApplicationJson}};
   return common_endpoints;
 }
 
@@ -716,7 +717,7 @@ const unordered_map<string, string>& GetMasterWebserverEndpoints(const string& t
       {"ipki-ca-cert", kContentTypeTextPlain},
       {"ipki-ca-cert-pem", kContentTypeTextPlain},
       {"ipki-ca-cert-der", kContentTypeApplicationOctet},
-      {"dump-entities", kContentTypeTextPlain}};
+      {"dump-entities", kContentTypeApplicationJson}};
   return master_endpoints;
 }
 

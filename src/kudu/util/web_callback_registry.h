@@ -46,7 +46,9 @@ enum class StyleMode {
   // In this mode, the response is sent without any styling elements.
   UNSTYLED,
   // In rare cases when a binary data is sent as a response.
-  BINARY
+  BINARY,
+  // This mode is used when the server response is in JSON format.
+  JSON
 };
 
 // Interface for registering webserver callbacks.
@@ -145,6 +147,13 @@ class WebCallbackRegistry {
       const std::string& path,
       const std::string& alias,
       const PrerenderedPathHandlerCallback& callback) = 0;
+
+  // Register a callback for a URL path that returns JSON.
+  virtual void RegisterJsonPathHandler(
+      const std::string& path,
+      const std::string& alias,
+      const PrerenderedPathHandlerCallback& callback,
+      bool is_on_nav_bar) = 0;
 
   // Returns true if 'req' was proxied via Knox, false otherwise.
   static bool IsProxiedViaKnox(const WebRequest& req);

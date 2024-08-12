@@ -273,11 +273,11 @@ void TracingPathHandlers::RegisterHandlers(Webserver* server) {
 
   typedef pair<const string, Handler> HandlerPair;
   for (const HandlerPair& e : handlers) {
-    server->RegisterPrerenderedPathHandler(
+    server->RegisterJsonPathHandler(
         e.first, "", [e](const Webserver::WebRequest& req,
                          Webserver::PrerenderedWebResponse* resp) {
           HandleRequest(e.second, req, resp);
-        }, StyleMode::UNSTYLED, false /* is_on_nav_bar */);
+        }, false /* is_on_nav_bar */);
   }
 }
 

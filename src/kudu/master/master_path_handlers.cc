@@ -915,12 +915,12 @@ Status MasterPathHandlers::Register(Webserver* server) {
       [this](const Webserver::WebRequest& req, Webserver::PrerenderedWebResponse* resp) {
         this->HandleIpkiCaCert(DataFormat::DER, req, resp);
       });
-  server->RegisterPrerenderedPathHandler(
+  server->RegisterJsonPathHandler(
       "/dump-entities", "Dump Entities",
       [this](const Webserver::WebRequest& req, Webserver::PrerenderedWebResponse* resp) {
         this->HandleDumpEntities(req, resp);
       },
-      StyleMode::UNSTYLED, false);
+      false /*is_on_nav_bar*/);
   return Status::OK();
 }
 

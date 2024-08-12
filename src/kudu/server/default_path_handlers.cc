@@ -533,13 +533,11 @@ void RegisterMetricsJsonHandler(Webserver* webserver, const MetricRegistry* cons
   };
   bool not_on_nav_bar = false;
   bool is_on_nav_bar = true;
-  webserver->RegisterPrerenderedPathHandler("/metrics", "JSON Metrics", callback,
-                                            StyleMode::UNSTYLED, is_on_nav_bar);
+  webserver->RegisterJsonPathHandler("/metrics", "JSON Metrics", callback, is_on_nav_bar);
 
   // The old name -- this is preserved for compatibility with older releases of
   // monitoring software which expects the old name.
-  webserver->RegisterPrerenderedPathHandler("/jsonmetricz", "Metrics", callback,
-                                            StyleMode::UNSTYLED, not_on_nav_bar);
+  webserver->RegisterJsonPathHandler("/jsonmetricz", "Metrics", callback, not_on_nav_bar);
 }
 
 void RegisterMetricsPrometheusHandler(Webserver* webserver, const MetricRegistry* const metrics) {

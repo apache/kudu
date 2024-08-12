@@ -754,6 +754,9 @@ void Webserver::SendResponse(struct sq_connection* connection,
     case StyleMode::BINARY:
       content_type = "application/octet-stream";
       break;
+    case StyleMode::JSON:
+      content_type = "application/json";
+      break;
     default:
       LOG(DFATAL) << "unexpected style mode: " << static_cast<uint32_t>(mode);
       break;
@@ -866,6 +869,18 @@ void Webserver::RegisterBinaryDataPathHandler(
   std::lock_guard l(lock_);
   InsertOrDie(&path_handlers_, path, new PathHandler(StyleMode::BINARY,
                                                      false /*is_on_nav_bar*/,
+                                                     alias,
+                                                     callback));
+}
+
+void Webserver::RegisterJsonPathHandler(
+    const string& path,
+    const string& alias,
+    const PrerenderedPathHandlerCallback& callback,
+    bool is_on_nav_bar) {
+  std::lock_guard l(lock_);
+  InsertOrDie(&path_handlers_, path, new PathHandler(StyleMode::JSON,
+                                                     is_on_nav_bar,
                                                      alias,
                                                      callback));
 }

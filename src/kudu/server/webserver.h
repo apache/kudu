@@ -86,6 +86,13 @@ class Webserver : public WebCallbackRegistry {
       const std::string& alias,
       const PrerenderedPathHandlerCallback& callback) override;
 
+  // Register route 'path' for application/json responses.
+  void RegisterJsonPathHandler(
+      const std::string& path,
+      const std::string& alias,
+      const PrerenderedPathHandlerCallback& callback,
+      bool is_on_nav_bar) override;
+
   // Change the footer HTML to be displayed at the bottom of all styled web pages.
   void set_footer_html(const std::string& html);
 
