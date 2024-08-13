@@ -531,6 +531,7 @@ class ToolTest : public KuduTest {
     COPY_SCHEMA_ONLY = 3,
     INSERT_IGNORE_TO_EXISTING_TABLE = 4,
     UPSERT_IGNORE_TO_EXISTING_TABLE = 5,
+    COPY_SCHEMA_THEN_COPY_DATA = 6,
   };
 
   struct RunCopyTableCheckArgs {
@@ -542,6 +543,7 @@ class ToolTest : public KuduTest {
     TableCopyMode mode;
     int32_t create_table_replication_factor;
     string create_table_hash_bucket_nums;
+    bool strict_column_id;
   };
 
   void RunCopyTableCheck(const RunCopyTableCheckArgs& args) {
@@ -608,8 +610,23 @@ class ToolTest : public KuduTest {
         write_type = "";
         create_table = "true";
         break;
+      case TableCopyMode::COPY_SCHEMA_THEN_COPY_DATA:
+        write_type = "insert";
+        create_table = "false";
+        break;
       default:
         ASSERT_TRUE(false);
+    }
+
+    // Only copy schema.
+    if (args.mode == TableCopyMode::COPY_SCHEMA_THEN_COPY_DATA) {
+      RunActionStdoutNone(
+          Substitute("table copy $0 $1 $2 -dst_table=$3 -write_type="" "
+                     "-create_table=true",
+                     cluster_->master()->bound_rpc_addr().ToString(),
+                     args.src_table_name,
+                     cluster_->master()->bound_rpc_addr().ToString(),
+                     kDstTableName));
     }
 
     // Execute copy command.
@@ -618,7 +635,7 @@ class ToolTest : public KuduTest {
     Status s = RunActionStdoutStderrString(
                 Substitute("table copy $0 $1 $2 -dst_table=$3 -predicates=$4 -write_type=$5 "
                            "-create_table=$6 -create_table_replication_factor=$7 "
-                           "-create_table_hash_bucket_nums=$8",
+                           "-create_table_hash_bucket_nums=$8 -strict_column_id=$9",
                            cluster_->master()->bound_rpc_addr().ToString(),
                            args.src_table_name,
                            cluster_->master()->bound_rpc_addr().ToString(),
@@ -627,7 +644,8 @@ class ToolTest : public KuduTest {
                            write_type,
                            create_table,
                            args.create_table_replication_factor,
-                           args.create_table_hash_bucket_nums),
+                           args.create_table_hash_bucket_nums,
+                           args.strict_column_id),
                 &stdout, &stderr);
     if (args.create_table_hash_bucket_nums == "10,aa") {
       ASSERT_STR_CONTAINS(stderr, "cannot parse the number of hash buckets.");
@@ -655,7 +673,7 @@ class ToolTest : public KuduTest {
       ASSERT_STR_CONTAINS(stderr, "There are no hash partitions defined in this table.");
       return;
     }
-    ASSERT_TRUE(s.ok());
+    ASSERT_TRUE(s.ok()) << s.ToString() << ": " << stderr;
 
     // Check total count.
     int64_t total = max<int64_t>(args.max_value - args.min_value + 1, 0);
@@ -865,7 +883,8 @@ enum RunCopyTableCheckArgsType {
   kTestCopyUnpartitionedTable,
   kTestCopyTablePredicates,
   kTestCopyTableWithStringBounds,
-  kTestCopyTableAutoIncrementingColumn
+  kTestCopyTableAutoIncrementingColumn,
+  kTestCopyTableWithColumnIdHoles,
 };
 // Subclass of ToolTest that allows running individual test cases with different parameters to run
 // 'kudu table copy' CLI tool.
@@ -910,6 +929,10 @@ class ToolTestCopyTableParameterized :
       KuduSchema schema;
       ASSERT_OK(CreateAutoIncrementingTable(&schema));
       ww.set_schema(schema);
+    } else if (test_case_ == kTestCopyTableWithColumnIdHoles) {
+      KuduSchema schema;
+      ASSERT_OK(CreateTableWithColumnIdHoles(&schema));
+      ww.set_schema(schema);
     }
     ww.Setup();
     ww.Start();
@@ -932,7 +955,9 @@ class ToolTestCopyTableParameterized :
                                    total_rows_,
                                    kSimpleSchemaColumns,
                                    TableCopyMode::INSERT_TO_EXISTING_TABLE,
-                                   -1 };
+                                   -1,
+                                   "",
+                                   false };
     switch (test_case_) {
       case kTestCopyTableDstTableExist:
         return { args };
@@ -1091,6 +1116,11 @@ class ToolTestCopyTableParameterized :
         args.mode = TableCopyMode::COPY_SCHEMA_ONLY;
         args.columns = "";
         return {args};
+      case kTestCopyTableWithColumnIdHoles:
+        args.mode = TableCopyMode::COPY_SCHEMA_THEN_COPY_DATA;
+        args.columns = "";
+        args.strict_column_id = true;
+        return { args };
       default:
         LOG(FATAL) << "Unknown type " << test_case_;
     }
@@ -1224,6 +1254,42 @@ class ToolTestCopyTableParameterized :
         .Create();
   }
 
+  Status CreateTableWithColumnIdHoles(KuduSchema* schema) {
+    shared_ptr<KuduClient> client;
+    RETURN_NOT_OK(cluster_->CreateClient(nullptr, &client));
+    unique_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
+    KuduSchemaBuilder b;
+    b.AddColumn("key")->Type(client::KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+    b.AddColumn("int_val1")->Type(client::KuduColumnSchema::INT32);
+    b.AddColumn("string_val1")->Type(client::KuduColumnSchema::STRING)->Nullable();
+    // The columns with 'delete' word will be dropped to construct column id holes.
+    b.AddColumn("to_delete_col1")->Type(client::KuduColumnSchema::INT32)->Nullable();
+    b.AddColumn("int_val2")->Type(client::KuduColumnSchema::STRING)->Nullable();
+    b.AddColumn("to_delete_col2")->Type(client::KuduColumnSchema::INT32)->Nullable();
+    b.AddColumn("to_delete_col3")->Type(client::KuduColumnSchema::STRING)->Nullable();
+    b.AddColumn("string_val2")->Type(client::KuduColumnSchema::STRING)->Nullable();
+    b.AddColumn("to_delete_col4")->Type(client::KuduColumnSchema::INT32)->Nullable();
+    RETURN_NOT_OK(b.Build(schema));
+
+    RETURN_NOT_OK(table_creator->table_name(kTableName)
+        .schema(schema)
+        .set_range_partition_columns({})
+        .num_replicas(1)
+        .Create());
+
+    unique_ptr<client::KuduTableAlterer> alterer(client->NewTableAlterer(kTableName));
+    RETURN_NOT_OK(alterer->DropColumn("to_delete_col1")
+        ->DropColumn("to_delete_col2")
+        ->DropColumn("to_delete_col3")
+        ->DropColumn("to_delete_col4")
+        ->Alter());
+
+    client::sp::shared_ptr<KuduTable> table;
+    RETURN_NOT_OK(client->OpenTable(kTableName, &table));
+    *schema = table->schema();
+    return Status::OK();
+  }
+
   void InsertOneRowWithNullCell() {
     shared_ptr<KuduClient> client;
     ASSERT_OK(cluster_->CreateClient(nullptr, &client));
@@ -1266,7 +1332,8 @@ INSTANTIATE_TEST_SUITE_P(CopyTableParameterized,
                                            kTestCopyUnpartitionedTable,
                                            kTestCopyTablePredicates,
                                            kTestCopyTableWithStringBounds,
-                                           kTestCopyTableAutoIncrementingColumn));
+                                           kTestCopyTableAutoIncrementingColumn,
+                                           kTestCopyTableWithColumnIdHoles));
 
 void ToolTest::StartExternalMiniCluster(ExternalMiniClusterOptions opts) {
   cluster_.reset(new ExternalMiniCluster(std::move(opts)));

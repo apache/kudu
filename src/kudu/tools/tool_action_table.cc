@@ -216,6 +216,7 @@ DECLARE_bool(fault_tolerant);
 DECLARE_int32(create_table_replication_factor);
 DECLARE_bool(row_count_only);
 DECLARE_bool(show_scanner_stats);
+DECLARE_bool(strict_column_id);
 
 DEFINE_string(encoding_type, "AUTO_ENCODING",
               "Type of encoding for the column including AUTO_ENCODING, PLAIN_ENCODING, "
@@ -2028,6 +2029,7 @@ unique_ptr<Mode> BuildTableMode() {
       .AddOptionalParameter("num_threads")
       .AddOptionalParameter("predicates")
       .AddOptionalParameter("scan_batch_size")
+      .AddOptionalParameter("strict_column_id")
       .AddOptionalParameter("tablets")
       .AddOptionalParameter("write_type")
       .AddOptionalParameter("table_copy_throttler_bytes_per_sec")
