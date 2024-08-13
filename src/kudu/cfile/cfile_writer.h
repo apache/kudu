@@ -28,10 +28,8 @@
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/util/bitmap.h"
 #include "kudu/util/compression/compression.pb.h"
 #include "kudu/util/faststring.h"
-#include "kudu/util/rle-encoding.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
@@ -54,43 +52,10 @@ extern const char kMagicStringV2[];
 extern const int kMagicLength;
 extern const size_t kChecksumSize;
 
-class NullBitmapBuilder {
- public:
-  explicit NullBitmapBuilder(size_t initial_row_capacity)
-    : nitems_(0),
-      bitmap_(BitmapSize(initial_row_capacity)),
-      rle_encoder_(&bitmap_, 1) {
-  }
-
-  size_t nitems() const {
-    return nitems_;
-  }
-
-  // If value parameter is true, it means that all values in this run are null
-  void AddRun(bool value, size_t run_length = 1) {
-    nitems_ += run_length;
-    rle_encoder_.Put(value, run_length);
-  }
-
-  // the returned Slice is only valid until this Builder is destroyed or Reset
-  Slice Finish() {
-    int len = rle_encoder_.Flush();
-    return Slice(bitmap_.data(), len);
-  }
-
-  void Reset() {
-    nitems_ = 0;
-    rle_encoder_.Clear();
-  }
-
- private:
-  size_t nitems_;
-  faststring bitmap_;
-  RleEncoder<bool> rle_encoder_;
-};
+class NullBitmapBuilder;
 
 // Main class used to write a CFile.
-class CFileWriter {
+class CFileWriter final {
  public:
   explicit CFileWriter(WriterOptions options,
                        const TypeInfo* typeinfo,
@@ -166,7 +131,7 @@ class CFileWriter {
 
   std::string ToString() const { return block_->id().ToString(); }
 
-  fs::WritableBlock* block() const { return block_.get(); }
+  const fs::WritableBlock* block() const { return block_.get(); }
 
   // Wrapper for AddBlock() to append the dictionary block to the end of a Cfile.
   Status AppendDictBlock(std::vector<Slice> data_slices,
@@ -218,7 +183,7 @@ class CFileWriter {
   faststring tmp_buf_;
 
   // Metadata which has been added to the writer but not yet flushed.
-  std::vector<std::pair<std::string, std::string> > unflushed_metadata_;
+  std::vector<std::pair<std::string, std::string>> unflushed_metadata_;
 
   std::unique_ptr<BlockBuilder> data_block_;
   std::unique_ptr<IndexTreeBuilder> posidx_builder_;
@@ -235,7 +200,6 @@ class CFileWriter {
 
   DISALLOW_COPY_AND_ASSIGN(CFileWriter);
 };
-
 
 } // namespace cfile
 } // namespace kudu
