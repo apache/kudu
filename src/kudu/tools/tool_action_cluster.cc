@@ -25,12 +25,12 @@
 #include <optional>
 #include <string>
 #include <tuple>
+#include <type_traits>
 #include <vector>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
-#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rebalance/cluster_status.h"
@@ -255,10 +255,13 @@ Status EvaluateMoveSingleReplicasFlag(const vector<string>& master_addresses,
                         "unable to build KsckCluster");
   auto ksck(make_shared<Ksck>(cluster));
 
-  // Ignoring the result of the Ksck::Run() method: it's possible the cluster
-  // is not completely healthy but rebalancing can proceed; for example,
-  // if a leader election is occurring.
-  ignore_result(ksck->Run());
+  // Ignoring the result of the Ksck::Run() method but IsNotAuthorized:
+  // it's possible the cluster is not completely healthy but rebalancing
+  // can proceed; for example, if a leader election is occurring.
+  Status status = ksck->Run();
+  if (status.IsNotAuthorized()) {
+    RETURN_NOT_OK_PREPEND(status, "re-run ksck with administrator privileges");
+  }
   const auto& ksck_results = ksck->results();
 
   for (const auto& summaries : { ksck_results.cluster_status.tserver_summaries,

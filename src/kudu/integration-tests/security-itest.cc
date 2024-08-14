@@ -67,6 +67,7 @@
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_service.pb.h"
 #include "kudu/tserver/tserver_service.proxy.h"
+#include "kudu/tools/tool_test_util.h"
 #include "kudu/util/curl_util.h"
 #include "kudu/util/env.h"
 #include "kudu/util/faststring.h"
@@ -100,6 +101,7 @@ using kudu::cluster::ExternalMiniClusterOptions;
 using kudu::rpc::Messenger;
 using kudu::security::CreateTestSSLCertWithChainSignedByRoot;
 using kudu::security::CreateTestSSLExpiredCertWithChainSignedByRoot;
+using kudu::tools::RunKuduTool;
 using std::get;
 using std::string;
 using std::tuple;
@@ -455,6 +457,25 @@ TEST_F(SecurityITest, TestNoKerberosCredentials) {
                      "Client connection negotiation failed: client connection "
                      "to .*: server requires authentication, "
                      "but client does not have Kerberos credentials available");
+}
+
+// Test trying to access the rebalance report without Kerberos credentials.
+TEST_F(SecurityITest, TestRebalanceReportUnauthorized) {
+  ASSERT_OK(StartCluster());
+  ASSERT_OK(cluster_->kdc()->Kdestroy());
+
+  const auto& master_addr = cluster_->master(0)->bound_rpc_addr().ToString();
+  string out;
+  string err;
+  Status s = RunKuduTool({
+    "cluster",
+    "rebalance",
+    master_addr,
+    "--report_only",
+  }, &out, &err);
+  ASSERT_TRUE(s.IsRuntimeError());
+  ASSERT_STR_CONTAINS(err,
+      "Not authorized: re-run ksck with administrator privileges");
 }
 
 // Regression test for KUDU-2121. Set up a Kerberized cluster with optional
