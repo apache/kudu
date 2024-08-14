@@ -72,7 +72,9 @@ add_custom_command(OUTPUT ${HMS_PLUGIN_JAR}
     "${HMS_PLUGIN_JAR}"
   WORKING_DIRECTORY "${JAVA_DIR}"
   DEPENDS proto_jar)
-add_custom_target(hms_plugin_jar DEPENDS ${HMS_PLUGIN_JAR})
+# NOTE: 'subprocess_jar_seq' is an artificial dependency for 'hms_plugin_jar';
+# see the comment in the project's top-level CMakeLists.txt.
+add_custom_target(hms_plugin_jar DEPENDS ${HMS_PLUGIN_JAR} subprocess_jar_seq)
 
 # The mini_hms is used only for tests.
 if (KUDU_CLI_TEST_TOOL_ENABLED)

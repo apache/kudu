@@ -112,21 +112,7 @@ separate_arguments(GRADLE_FLAGS)
 # When invoking Gradle:
 #   * Log errors only, reducing the verbosity of the Gradle's output
 #   * Make the output better fit for plain consoles, avoiding garbled logs
-#   * Avoid building projects in parallel: when the kudu-subprocess.jar and
-#     the hms-plugin.jar targets are built in parallel, it often ends up with
-#     java.lang.ArrayIndexOutOfBoundsException while building shadowJar
-#     for corresponding Java dependencies, and while it's not yet clear whether
-#     the issue is in shadowJar implementation or elsewhere, it's quite simple
-#     to address the issue by not building multiple Gradle targets concurrently
-#   * Disable the build cache: sometimes, once a build process is interrupted,
-#     follow-up Gradle invocations end up with an error like below, and while
-#     it's not yet clear whether the issue is in not properly invoking Gradle
-#     or it's a bug in signal handling elsewhere, it's quite simple to address
-#     the issue by not using the Gradle's build cache
-#
-#       Cannot lock Java compile cache (...) as it has already been locked by this process.
-#
-list(APPEND GRADLE_FLAGS --quiet --console=plain --no-parallel --no-build-cache)
+list(APPEND GRADLE_FLAGS --quiet --console=plain)
 list(REMOVE_DUPLICATES GRADLE_FLAGS)
 
 # Initialize Gradle to ensure the wrapper is downloaded.
@@ -149,6 +135,26 @@ add_custom_command(OUTPUT ${PROTO_JAR}
         WORKING_DIRECTORY "${JAVA_DIR}"
         DEPENDS init_gradle)
 add_custom_target(proto_jar DEPENDS ${PROTO_JAR})
+
+# An artificial target for sequencing of building the subprocess_jar and the
+# hms_plugin_jar targets. The sequencing is to work around the following issues
+# when running multiple gradle instances in parallel, concurrently building
+# the targets:
+#
+#   * Sometimes it ends up with java.lang.ArrayIndexOutOfBoundsException
+#     while building shadowJar for corresponding Java dependencies,
+#     and while it's not yet clear whether the issue is in shadowJar
+#     implementation or elsewhere, it's quite simple to address the issue
+#     by not running multiple Gradle instances concurrently
+#
+#   * Sometimes the following error is reported, as seen elsewhere [1][2]:
+#
+#       Timeout waiting to lock Java compile cache (...). It is currently in use by another Gradle instance.
+#
+# [1] https://github.com/gradle/gradle/issues/8375
+# [2] https://github.com/gradle/gradle/issues/11861
+#
+add_custom_target(subprocess_jar_seq DEPENDS subprocess_jar)
 
 # Allow "make install" to not depend on all targets.
 #
