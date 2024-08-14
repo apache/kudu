@@ -17,18 +17,34 @@
 
 #include "kudu/ranger-kms/ranger_kms_client.h"
 
+#include <ostream>
 #include <string>
 #include <vector>
 
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <rapidjson/document.h>
 
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/escaping.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/curl_util.h"
 #include "kudu/util/easy_json.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/jsonreader.h"
+#include "kudu/util/monotime.h"
+
+// We should set a value greater than the Apache Ranger to ensure the
+// robustness of the key generation.
+// The default value of Apache Ranger we can get from [1].
+//
+// [1]https://github.com/apache/ranger/blob/4e365456f6533ee5515c5070c92e355198922c81/agents-common/src/main/java/org/apache/ranger/plugin/util/PolicyRefresher.java#L92
+DEFINE_int32(ranger_kms_client_generate_key_max_retry_time_s, 40,
+             "The maximum retry time for generating encryption keys using "
+             "the Ranger KMS client. The maximum effective time for adding "
+             "a new account to Apache Ranger is about 30 seconds, and the retry "
+             "time for using the client to generate the key should be greater "
+             "than this value.");
 
 using rapidjson::Value;
 using std::string;
@@ -91,8 +107,38 @@ Status RangerKMSClient::GenerateEncryptionKeyFromKMS(const string& key_name,
     urls.emplace_back(Substitute("$0/v1/key/$1/_eek?eek_op=generate&num_keys=1",
                       url, key_name));
   }
+
   faststring resp;
-  RETURN_NOT_OK_PREPEND(curl.FetchURL(urls, &resp), "failed to generate encryption key");
+  const MonoTime deadline = MonoTime::Now() +
+      MonoDelta::FromSeconds(FLAGS_ranger_kms_client_generate_key_max_retry_time_s);
+  Status s;
+  int backoff_ms = 300;
+  constexpr const char* const kErrorMsg = "Failed to generate server key.";
+
+  do {
+    s = curl.FetchURL(urls, &resp);
+    if (s.ok()) {
+      break;
+    }
+
+    LOG(WARNING) << kErrorMsg << " Status: " << s.ToString();
+    if (MonoTime::Now() >= deadline) {
+      // Timeout
+      break;
+    }
+    SleepFor(MonoDelta::FromMilliseconds(backoff_ms));
+
+    backoff_ms += 300;
+    // Sleep for a maximum of 1800 milliseconds.
+    if (backoff_ms > 1800) {
+      backoff_ms = 1800;
+    }
+  } while (true);
+
+  if (PREDICT_FALSE(!s.ok())) {
+    LOG_AND_RETURN(ERROR, s.CloneAndPrepend(kErrorMsg));
+  }
+
   JsonReader r(resp.ToString());
   RETURN_NOT_OK(r.Init());
   vector<const Value*> keys;
