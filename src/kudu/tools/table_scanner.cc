@@ -416,7 +416,7 @@ Status CreateDstTableIfNeeded(const client::sp::shared_ptr<KuduTable>& src_table
                               const string& dst_table_name) {
   client::sp::shared_ptr<KuduTable> dst_table;
   Status s = dst_client->OpenTable(dst_table_name, &dst_table);
-  if (!s.IsNotFound()) {
+  if (!s.IsNotFound() && !s.ok()) {
     return s;
   }
 
