@@ -219,6 +219,8 @@ def get_test_executions(tests_regex, extra_args=None):
       argv.extend(extra_args)
     # Next line should b the 'Environment variables' heading
     l = lines.popleft()
+    if "Working Directory:" in l: # ctest 3.10+ may print this line too
+        l = lines.popleft()
     if "Environment variables:" not in l:
       raise Exception("Unexpected line in ctest -V output: %s" % l)
     # Following lines should be environment variable pairs.
