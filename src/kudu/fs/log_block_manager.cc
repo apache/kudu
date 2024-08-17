@@ -864,6 +864,8 @@ class LogBlockContainerNativeMeta final : public LogBlockContainer {
   void PostWorkOfBlocksDeleted() override;
 
  private:
+  friend class fs::LogBlockManagerNativeMeta;
+
   // Performs sanity checks on it and removing it from 'live_blocks' and
   // 'live_block_records', adds it to 'dead_blocks'.
   //
@@ -3846,6 +3848,11 @@ Status LogBlockManagerNativeMeta::DoRepair(
   }
 
   return Status::OK();
+}
+
+bool LogBlockManagerNativeMeta::ContainerShouldCompactForTests(
+    LogBlockContainer* container) {
+  return down_cast<LogBlockContainerNativeMeta*>(container)->ShouldCompact();
 }
 
 Status LogBlockManager::Repair(

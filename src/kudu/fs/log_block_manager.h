@@ -221,6 +221,8 @@ class LogBlockManager : public BlockManager {
                   BlockManagerOptions opts,
                   std::string tenant_id);
 
+  FRIEND_TEST(LogBlockManagerNativeMetaTest,
+              TestContainerBlockLimitingByMetadataSizeWithCompaction);
   FRIEND_TEST(LogBlockManagerNativeMetaTest, TestMetadataTruncation);
   FRIEND_TEST(LogBlockManagerTest, TestAbortBlock);
   FRIEND_TEST(LogBlockManagerTest, TestCloseFinalizedBlock);
@@ -592,6 +594,12 @@ class LogBlockManagerNativeMeta : public LogBlockManager {
                   FsReport* report,
                   const ContainerBlocksByName& low_live_block_containers,
                   const ContainersByName& containers_by_name) override;
+
+private:
+  FRIEND_TEST(LogBlockManagerNativeMetaTest,
+              TestContainerBlockLimitingByMetadataSizeWithCompaction);
+
+  static bool ContainerShouldCompactForTests(internal::LogBlockContainer* container);
 };
 
 #if !defined(NO_ROCKSDB)

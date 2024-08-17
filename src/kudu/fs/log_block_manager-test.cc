@@ -1349,6 +1349,8 @@ TEST_P(LogBlockManagerNativeMetaTest, TestContainerBlockLimitingByMetadataSizeWi
   const int kNumBlocks = 2000;
   const int kNumThreads = 10;
   const double kLiveBlockRatio = 0.1;
+  // Make sure the ratio values are set properly for the tests.
+  ASSERT_LT(FLAGS_log_container_metadata_size_before_compact_ratio, 1 - kLiveBlockRatio);
 
   // Creates and deletes some blocks.
   auto create_and_delete_blocks = [&]() {
@@ -1363,15 +1365,16 @@ TEST_P(LogBlockManagerNativeMetaTest, TestContainerBlockLimitingByMetadataSizeWi
     }
 
     // Deletes 'kNumBlocks * (1 - kLiveBlockRatio)' blocks.
-    shared_ptr<BlockDeletionTransaction> deletion_transaction =
-        bm_->NewDeletionTransaction();
+    std::mt19937 gen(SeedRandom());
+    std::shuffle(ids.begin(), ids.end(), gen);
+    ids.resize(ids.size() * (1 - kLiveBlockRatio));
+    auto deletion_transaction = bm_->NewDeletionTransaction();
     for (const auto& id : ids) {
-      if (rand() % 100 < 100 * kLiveBlockRatio) {
-        continue;
-      }
       deletion_transaction->AddDeletedBlock(id);
     }
-    CHECK_OK(deletion_transaction->CommitDeletedBlocks(nullptr));
+    vector<BlockId> deleted_blocks;
+    CHECK_OK(deletion_transaction->CommitDeletedBlocks(&deleted_blocks));
+    CHECK_EQ(ids.size(), deleted_blocks.size());
   };
 
   // Create a thread pool to create and delete blocks.
@@ -1391,27 +1394,51 @@ TEST_P(LogBlockManagerNativeMetaTest, TestContainerBlockLimitingByMetadataSizeWi
   // Define a small value to make metadata easy to be full.
   FLAGS_log_container_metadata_max_size = 32 * 1024;
   NO_FATALS(mt_create_and_delete_blocks());
+
+  // After creating and deleting blocks, compaction will be triggered. All the containers are left
+  // in the state of not satisfy compaction.
+  for (const auto &[_, container] : bm_->all_containers_by_name_) {
+    ASSERT_FALSE(LogBlockManagerNativeMeta::ContainerShouldCompactForTests(container.get()));
+  }
   vector<string> metadata_files;
   NO_FATALS(GetContainerMetadataFiles(&metadata_files));
+  int small_file_count = 0;
   for (const auto& metadata_file : metadata_files) {
     uint64_t file_size;
     NO_FATALS(env_->GetFileSize(metadata_file, &file_size));
-    ASSERT_GE(FLAGS_log_container_metadata_max_size *
-                  FLAGS_log_container_metadata_size_before_compact_ratio,
-              file_size);
+    // When calculate compaction condition, we use metadata_file_->Offset(), it is the encryption
+    // header size and real data size. So we need to add the encryption header size here.
+    if (FLAGS_log_container_metadata_max_size *
+            FLAGS_log_container_metadata_size_before_compact_ratio >
+        Env::Default()->GetEncryptionHeaderSize() + file_size) {
+      small_file_count++;
+    }
   }
+  // Most of the metadata files are smaller than the threshold.
+  // NOTE: It's possible that some metadata files are larger than the threshold. When creating and
+  // deleting blocks, we delete 90% of the blocks, but they are randomly selected, the delete ratio
+  // for a container may be less than (1 - kLiveBlockRatio), which means the container will not be
+  // compacted.
+  ASSERT_GT(small_file_count, 0);
 
   // Reopen and test again.
   ASSERT_OK(ReopenBlockManager());
   NO_FATALS(mt_create_and_delete_blocks());
+  for (const auto &[_, container] : bm_->all_containers_by_name_) {
+    ASSERT_FALSE(LogBlockManagerNativeMeta::ContainerShouldCompactForTests(container.get()));
+  }
   NO_FATALS(GetContainerMetadataFiles(&metadata_files));
+  small_file_count = 0;
   for (const auto& metadata_file : metadata_files) {
     uint64_t file_size;
     NO_FATALS(env_->GetFileSize(metadata_file, &file_size));
-    ASSERT_GE(FLAGS_log_container_metadata_max_size *
-                  FLAGS_log_container_metadata_size_before_compact_ratio,
-              file_size);
+    if (FLAGS_log_container_metadata_max_size *
+            FLAGS_log_container_metadata_size_before_compact_ratio >
+        Env::Default()->GetEncryptionHeaderSize() + file_size) {
+        small_file_count++;
+    }
   }
+  ASSERT_GT(small_file_count, 0);
 
   // Now remove the limit and create more blocks. They should go into existing
   // containers, which are now no longer full.
@@ -1419,17 +1446,18 @@ TEST_P(LogBlockManagerNativeMetaTest, TestContainerBlockLimitingByMetadataSizeWi
   ASSERT_OK(ReopenBlockManager());
   NO_FATALS(mt_create_and_delete_blocks());
   NO_FATALS(GetContainerMetadataFiles(&metadata_files));
-  bool exist_larger_one = false;
+  small_file_count = 0;
   for (const auto& metadata_file : metadata_files) {
-    uint64_t file_size = 0;
+    uint64_t file_size;
     NO_FATALS(env_->GetFileSize(metadata_file, &file_size));
-    if (file_size > FLAGS_log_container_metadata_max_size *
-                         FLAGS_log_container_metadata_size_before_compact_ratio) {
-      exist_larger_one = true;
-      break;
+    if (FLAGS_log_container_metadata_max_size *
+            FLAGS_log_container_metadata_size_before_compact_ratio >
+        Env::Default()->GetEncryptionHeaderSize() + file_size) {
+        small_file_count++;
     }
   }
-  ASSERT_TRUE(exist_larger_one);
+  // There must be some files larger than the threshold.
+  ASSERT_GT(metadata_files.size() - small_file_count, 0);
 }
 
 TEST_P(LogBlockManagerTest, TestMisalignedBlocksFuzz) {
