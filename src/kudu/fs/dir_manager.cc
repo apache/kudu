@@ -882,7 +882,7 @@ Dir* DirManager::FindDirByFullPathForTests(const std::string& full_path) const {
   return nullptr;
 }
 
-bool DirManager::FindUuidIndexByDir(Dir* dir, int* uuid_idx) const {
+bool DirManager::FindUuidIndexByDir(const Dir* dir, int* uuid_idx) const {
   return FindCopy(uuid_idx_by_dir_, dir, uuid_idx);
 }
 

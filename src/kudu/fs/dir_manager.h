@@ -336,7 +336,7 @@ class DirManager {
   Dir* FindDirByUuidIndex(int uuid_idx) const;
 
   // Finds a uuid index by directory, returning false if it can't be found.
-  bool FindUuidIndexByDir(Dir* dir, int* uuid_idx) const;
+  bool FindUuidIndexByDir(const Dir* dir, int* uuid_idx) const;
 
   // Finds a uuid index by root path, returning false if it can't be found.
   bool FindUuidIndexByRoot(const std::string& root, int* uuid_idx) const;
@@ -506,7 +506,7 @@ class DirManager {
   typedef std::unordered_map<int, Dir*> UuidIndexMap;
   UuidIndexMap dir_by_uuid_idx_;
 
-  typedef std::unordered_map<Dir*, int> ReverseUuidIndexMap;
+  typedef std::unordered_map<const Dir*, int> ReverseUuidIndexMap;
   ReverseUuidIndexMap uuid_idx_by_dir_;
 
   typedef std::unordered_map<int, std::set<std::string>> TabletsByUuidIndexMap;

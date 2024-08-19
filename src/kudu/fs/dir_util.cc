@@ -137,13 +137,14 @@ Status CheckHolePunch(Env* env, const string& path) {
 } while (0)
 
 DirInstanceMetadataFile::DirInstanceMetadataFile(Env* env,
-                                                   string uuid,
-                                                   string dir_type,
-                                                   string filename)
+                                                 string uuid,
+                                                 string dir_type,
+                                                 string filename)
     : env_(env),
       uuid_(std::move(uuid)),
       dir_type_(std::move(dir_type)),
-      filename_(std::move(filename)) {}
+      filename_(std::move(filename)) {
+}
 
 DirInstanceMetadataFile::~DirInstanceMetadataFile() {
   if (lock_) {

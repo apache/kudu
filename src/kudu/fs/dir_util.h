@@ -93,10 +93,10 @@ class DirInstanceMetadataFile {
     return health_status_;
   }
 
-  std::string uuid() const { return uuid_; }
+  const std::string& uuid() const { return uuid_; }
   std::string dir() const { return DirName(filename_); }
   const std::string& path() const { return filename_; }
-  DirInstanceMetadataPB* metadata() const { return metadata_.get(); }
+  const DirInstanceMetadataPB* metadata() const { return metadata_.get(); }
 
  private:
   Env* env_;

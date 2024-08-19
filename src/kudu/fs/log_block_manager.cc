@@ -619,7 +619,7 @@ class LogBlockContainer: public RefCountedThreadSafe<LogBlockContainer> {
   virtual bool full() const { return data_full(); }
   bool dead() const { return dead_; }
   const LogBlockManagerMetrics* metrics() const { return metrics_; }
-  Dir* data_dir() const { return data_dir_; }
+  const Dir* data_dir() const { return data_dir_; }
   const DirInstanceMetadataPB* instance() const { return data_dir_->instance()->metadata(); }
 
   // Adjusts the number of blocks being written.
@@ -719,7 +719,7 @@ class LogBlockContainer: public RefCountedThreadSafe<LogBlockContainer> {
   Dir* data_dir_;
 
   // The unique id of this container.
-  string id_;
+  const string id_;
 
   const optional<int64_t> max_num_blocks_;
 
