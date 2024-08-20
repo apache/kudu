@@ -168,7 +168,7 @@ void EncodeRangeKeysFromPredicates(const Schema& schema,
   uint8_t* buf = static_cast<uint8_t*>(CHECK_NOTNULL(arena.AllocateBytes(schema.key_byte_size())));
   ContiguousRow row(&schema, buf);
 
-  if (key_util::PushLowerBoundKeyPredicates(col_idxs, predicates, &row, &arena) > 0) {
+  if (key_util::PushLowerBoundKeyPredicates(col_idxs, predicates, &row) > 0) {
     key_util::EncodeKey(col_idxs, row, range_key_start);
   }
 

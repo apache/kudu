@@ -71,11 +71,9 @@ bool TryDecrementCell(const ColumnSchema &col, void *cell_ptr);
 // Pushes lower bound key predicates into the row. Returns the number of pushed
 // predicates. Unpushed predicate columns will be set to the minimum value
 // (unless no predicates are pushed at all).
-int PushLowerBoundKeyPredicates(
-    const std::vector<int32_t>& col_idxs,
-    const std::unordered_map<std::string, ColumnPredicate>& predicates,
-    ContiguousRow* row,
-    Arena* arena);
+int PushLowerBoundKeyPredicates(const std::vector<int32_t>& col_idxs,
+                                const std::unordered_map<std::string, ColumnPredicate>& predicates,
+                                ContiguousRow* row);
 
 // Pushes upper bound key predicates into the row. Returns the number of pushed
 // predicates. Unpushed predicate columns will be set to the minimum value
@@ -90,9 +88,7 @@ int PushUpperBoundKeyPredicates(
 // predicates. Unpushed predicate columns will be set to the minimum value
 // (unless no predicates are pushed at all).
 int PushLowerBoundPrimaryKeyPredicates(
-    const std::unordered_map<std::string, ColumnPredicate>& predicates,
-    ContiguousRow* row,
-    Arena* arena);
+    const std::unordered_map<std::string, ColumnPredicate>& predicates, ContiguousRow* row);
 
 // Pushes upper bound key predicates into the row. Returns the number of pushed
 // predicates. Unpushed predicate columns will be set to the minimum value

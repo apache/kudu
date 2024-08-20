@@ -233,8 +233,8 @@ void ScanSpec::PushPredicatesIntoPrimaryKeyBounds(const Schema& schema,
   ContiguousRow lower_key(&schema, lower_buf);
   ContiguousRow upper_key(&schema, upper_buf);
 
-  int lower_bound_predicates_pushed = key_util::PushLowerBoundPrimaryKeyPredicates(
-      predicates_, &lower_key, arena);
+  int lower_bound_predicates_pushed =
+      key_util::PushLowerBoundPrimaryKeyPredicates(predicates_, &lower_key);
   int upper_bound_predicates_pushed = key_util::PushUpperBoundPrimaryKeyPredicates(
       predicates_, &upper_key, arena);
 

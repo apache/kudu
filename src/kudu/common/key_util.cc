@@ -278,12 +278,11 @@ int PushUpperBoundKeyPredicates(ColIdxIter first,
   return pushed_predicates;
 }
 
-template<typename ColIdxIter>
+template <typename ColIdxIter>
 int PushLowerBoundKeyPredicates(ColIdxIter first,
                                 ColIdxIter last,
                                 const unordered_map<string, ColumnPredicate>& predicates,
-                                ContiguousRow* row,
-                                Arena* arena) {
+                                ContiguousRow* row) {
   const Schema& schema = *CHECK_NOTNULL(row->schema());
   int pushed_predicates = 0;
 
@@ -409,9 +408,8 @@ bool TryDecrementCell(const ColumnSchema &col, void *cell_ptr) {
 
 int PushLowerBoundKeyPredicates(const vector<int32_t>& col_idxs,
                                 const unordered_map<string, ColumnPredicate>& predicates,
-                                ContiguousRow* row,
-                                Arena* arena) {
-  return PushLowerBoundKeyPredicates(col_idxs.begin(), col_idxs.end(), predicates, row, arena);
+                                ContiguousRow* row) {
+  return PushLowerBoundKeyPredicates(col_idxs.begin(), col_idxs.end(), predicates, row);
 }
 
 int PushUpperBoundKeyPredicates(const vector<int32_t>& col_idxs,
@@ -422,14 +420,12 @@ int PushUpperBoundKeyPredicates(const vector<int32_t>& col_idxs,
 }
 
 int PushLowerBoundPrimaryKeyPredicates(const unordered_map<string, ColumnPredicate>& predicates,
-                                       ContiguousRow* row,
-                                       Arena* arena) {
+                                       ContiguousRow* row) {
   int32_t num_pk_cols = row->schema()->num_key_columns();
   return PushLowerBoundKeyPredicates(boost::make_counting_iterator(0),
                                      boost::make_counting_iterator(num_pk_cols),
                                      predicates,
-                                     row,
-                                     arena);
+                                     row);
 }
 
 int PushUpperBoundPrimaryKeyPredicates(const unordered_map<string, ColumnPredicate>& predicates,
