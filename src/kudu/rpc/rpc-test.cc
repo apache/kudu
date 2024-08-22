@@ -1423,8 +1423,13 @@ TEST_P(TestRpc, TimedOutOnResponseMetricServiceQueue) {
   // Wait for the completion of both requests sent asynchronously above.
   latch.Wait();
 
-  // The have been 3 requests total in this scenario.
-  ASSERT_EQ(3, latency_histogram->TotalCount());
+  // The Histogram::TotalCount() metric is read in lock-free/no-barrier manner,
+  // so ASSERT_EVENTUALLY helps in very rare cases when TotalCount() reads
+  // something less than 3 in the very first pass.
+  ASSERT_EVENTUALLY([&]{
+    // There were three requests in total: the warm-up one and req0, req1.
+    ASSERT_EQ(3, latency_histogram->TotalCount());
+  });
 
   // The first RPC should return OK.
   ASSERT_OK(ctl0.status());
