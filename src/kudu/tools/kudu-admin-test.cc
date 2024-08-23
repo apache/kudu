@@ -2068,7 +2068,7 @@ TEST_F(AdminCliTest, TestDescribeTable) {
                       "REPLICAS 1\n"
                       "COMMENT table comment");
 
-  // Test the describe output with `-show_attributes=true`.
+  // Test the describe output with show_attributes, show_column_comment and show_column_id as true.
   stdout.clear();
   stderr.clear();
   s = RunKuduTool({
@@ -2077,40 +2077,51 @@ TEST_F(AdminCliTest, TestDescribeTable) {
     cluster_->master()->bound_rpc_addr().ToString(),
     kAnotherTableId,
     "-show_attributes=true",
-    "-show_column_comment=true"
+    "-show_column_comment=true",
+    "-show_column_id=true"
   }, &stdout, &stderr);
   ASSERT_TRUE(s.ok()) << ToolRunInfo(s, stdout, stderr);
 
   ASSERT_STR_CONTAINS(
       stdout,
-      "(\n"
-      "    key_hash0 INT32 NOT NULL AUTO_ENCODING DEFAULT_COMPRESSION - -,\n"
-      "    key_hash1 INT32 NOT NULL AUTO_ENCODING DEFAULT_COMPRESSION - -,\n"
-      "    key_hash2 INT32 NOT NULL AUTO_ENCODING DEFAULT_COMPRESSION - -,\n"
-      "    key_range INT32 NOT NULL AUTO_ENCODING DEFAULT_COMPRESSION - -,\n"
-      "    int8_val INT8 NULLABLE PLAIN_ENCODING NO_COMPRESSION - -,\n"
-      "    int16_val INT16 NULLABLE RLE SNAPPY - -,\n"
-      "    int32_val INT32 NULLABLE BIT_SHUFFLE LZ4 - -,\n"
-      "    int64_val INT64 NULLABLE AUTO_ENCODING ZLIB 123 123,\n"
-      "    timestamp_val UNIXTIME_MICROS NULLABLE AUTO_ENCODING DEFAULT_COMPRESSION - -,\n"
-      "    date_val DATE NULLABLE AUTO_ENCODING DEFAULT_COMPRESSION - -,\n"
-      "    string_val STRING NULLABLE PREFIX_ENCODING DEFAULT_COMPRESSION \"hello\" \"hello\" "
-      "comment for hello,\n"
-      "    bool_val BOOL NULLABLE AUTO_ENCODING DEFAULT_COMPRESSION false false,\n"
-      "    float_val FLOAT NULLABLE AUTO_ENCODING DEFAULT_COMPRESSION - -,\n"
-      "    double_val DOUBLE NULLABLE AUTO_ENCODING DEFAULT_COMPRESSION 123.4 123.4,\n"
-      "    binary_val BINARY NULLABLE DICT_ENCODING DEFAULT_COMPRESSION - -,\n"
-      "    decimal_val DECIMAL(30, 4) NULLABLE AUTO_ENCODING DEFAULT_COMPRESSION - -,\n"
-      "    PRIMARY KEY (key_hash0, key_hash1, key_hash2, key_range)\n"
-      ")\n"
-      "HASH (key_hash0) PARTITIONS 2,\n"
-      "HASH (key_hash1, key_hash2) PARTITIONS 3,\n"
-      "RANGE (key_range) (\n"
-      "    PARTITION 0 <= VALUES < 1,\n"
-      "    PARTITION 2 <= VALUES < 3\n"
-      ")\n"
-      "OWNER alice\n"
-      "REPLICAS 1");
+      Substitute("(\n"
+                 "    $00:key_hash0 INT32 NOT NULL AUTO_ENCODING DEFAULT_COMPRESSION - -,\n"
+                 "    $01:key_hash1 INT32 NOT NULL AUTO_ENCODING DEFAULT_COMPRESSION - -,\n"
+                 "    $02:key_hash2 INT32 NOT NULL AUTO_ENCODING DEFAULT_COMPRESSION - -,\n"
+                 "    $03:key_range INT32 NOT NULL AUTO_ENCODING DEFAULT_COMPRESSION - -,\n"
+                 "    $04:int8_val INT8 NULLABLE PLAIN_ENCODING NO_COMPRESSION - -,\n"
+                 "    $05:int16_val INT16 NULLABLE RLE SNAPPY - -,\n"
+                 "    $06:int32_val INT32 NULLABLE BIT_SHUFFLE LZ4 - -,\n"
+                 "    $07:int64_val INT64 NULLABLE AUTO_ENCODING ZLIB 123 123,\n"
+                 "    $08:timestamp_val UNIXTIME_MICROS NULLABLE AUTO_ENCODING DEFAULT_COMPRESSION "
+                 "- -,\n"
+                 "    $09:date_val DATE NULLABLE AUTO_ENCODING DEFAULT_COMPRESSION - -,\n"
+                 "    $10:string_val STRING NULLABLE PREFIX_ENCODING DEFAULT_COMPRESSION "
+                 "\"hello\" \"hello\" "
+                 "comment for hello,\n"
+                 "    $11:bool_val BOOL NULLABLE AUTO_ENCODING DEFAULT_COMPRESSION false false,\n"
+                 "    $12:float_val FLOAT NULLABLE AUTO_ENCODING DEFAULT_COMPRESSION - -,\n"
+                 "    $13:double_val DOUBLE NULLABLE AUTO_ENCODING DEFAULT_COMPRESSION "
+                 "123.4 123.4,\n"
+                 "    $14:binary_val BINARY NULLABLE DICT_ENCODING DEFAULT_COMPRESSION - -,\n"
+                 "    $15:decimal_val DECIMAL(30, 4) NULLABLE AUTO_ENCODING DEFAULT_COMPRESSION "
+                 "- -,\n"
+                 "    PRIMARY KEY (key_hash0, key_hash1, key_hash2, key_range)\n"
+                 ")\n"
+                 "HASH (key_hash0) PARTITIONS 2,\n"
+                 "HASH (key_hash1, key_hash2) PARTITIONS 3,\n"
+                 "RANGE (key_range) (\n"
+                 "    PARTITION 0 <= VALUES < 1,\n"
+                 "    PARTITION 2 <= VALUES < 3\n"
+                 ")\n"
+                 "OWNER alice\n"
+                 "REPLICAS 1",
+// In DEBUG builds, column id starts from 10 while in RELEASE builds it starts from 0.
+#ifdef NDEBUG
+                 "", "1"));
+#else
+                 "1", "2"));
+#endif
 
   s = RunKuduTool({
                       "table",
@@ -2304,16 +2315,43 @@ TEST_F(AdminCliTest, TestDescribeTableColumnFlags) {
                          "describe",
                          cluster_->master()->bound_rpc_addr().ToString(),
                          kTableName,
+                         "-show_column_id"},
+                        &stdout));
+  ASSERT_STR_CONTAINS(stdout,
+                      Substitute("(\n"
+                                 "    $00:foo INT32 NOT NULL,\n"
+                                 "    $01:bar INT32 NOT NULL,\n"
+                                 "    PRIMARY KEY (foo)\n"
+                                 ")\n",
+#ifdef NDEBUG
+                                 ""));
+#else
+                                 "1"));
+#endif
+  stdout.clear();
+
+  ASSERT_OK(RunKuduTool({"table",
+                         "describe",
+                         cluster_->master()->bound_rpc_addr().ToString(),
+                         kTableName,
                          "-show_attributes",
-                         "-show_column_comment"},
+                         "-show_column_comment",
+                         "-show_column_id"},
                         &stdout));
   ASSERT_STR_CONTAINS(
       stdout,
-      "(\n"
-      "    foo INT32 NOT NULL AUTO_ENCODING DEFAULT_COMPRESSION - -,\n"
-      "    bar INT32 NOT NULL AUTO_ENCODING DEFAULT_COMPRESSION - - comment for bar,\n"
-      "    PRIMARY KEY (foo)\n"
-      ")\n");
+      Substitute("(\n"
+                 "    $00:foo INT32 NOT NULL AUTO_ENCODING DEFAULT_COMPRESSION - -,\n"
+                 "    $01:bar INT32 NOT NULL AUTO_ENCODING DEFAULT_COMPRESSION - - comment for "
+                 "bar,\n"
+                 "    PRIMARY KEY (foo)\n"
+                 ")\n",
+#ifdef NDEBUG
+                 ""));
+#else
+                 "1"));
+#endif
+
 }
 
 TEST_F(AdminCliTest, TestDescribeTableNoOwner) {

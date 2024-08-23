@@ -50,6 +50,9 @@ DEFINE_bool(show_attributes, false,
 DEFINE_bool(show_column_comment, false,
             "Whether to show column comment.");
 
+DEFINE_bool(show_column_id, false,
+            "Whether to show column id.");
+
 MAKE_ENUM_LIMITS(kudu::client::KuduColumnStorageAttributes::EncodingType,
                  kudu::client::KuduColumnStorageAttributes::AUTO_ENCODING,
                  kudu::client::KuduColumnStorageAttributes::RLE);
@@ -1045,6 +1048,9 @@ string KuduSchema::ToString() const {
   }
   if (FLAGS_show_column_comment) {
     mode |= Schema::ToStringMode::WITH_COLUMN_COMMENTS;
+  }
+  if (FLAGS_show_column_id) {
+    mode |= Schema::ToStringMode::WITH_COLUMN_IDS;
   }
   return schema_->ToString(mode);
 }
