@@ -1482,11 +1482,11 @@ TEST_P(TestRpc, RpcPendingConnectionsMetric) {
           server_messenger_->metric_entity(), []() { return -3; });
 
   // No connection attempts have been made yet.
-#if defined(__linux__)
+#if defined(KUDU_HAS_DIAGNOSTIC_SOCKET)
   ASSERT_EQ(0, pending_connections_gauge->value());
 #else
-  ASSERT_EQ(-1, pending_connections_gauge->value());
-#endif
+  ASSERT_EQ(-3, pending_connections_gauge->value());
+#endif // #if defined(KUDU_HAS_DIAGNOSTIC_SOCKET) ...
 
   {
     Socket socket;
@@ -1501,11 +1501,11 @@ TEST_P(TestRpc, RpcPendingConnectionsMetric) {
 
   // At this point, there should be no connection pending: the only received
   // connection request has already been handled above.
-#if defined(__linux__)
+#if defined(KUDU_HAS_DIAGNOSTIC_SOCKET)
   ASSERT_EQ(0, pending_connections_gauge->value());
 #else
-  ASSERT_EQ(-1, pending_connections_gauge->value());
-#endif
+  ASSERT_EQ(-3, pending_connections_gauge->value());
+#endif // #if defined(KUDU_HAS_DIAGNOSTIC_SOCKET) ...
 }
 
 static void DestroyMessengerCallback(shared_ptr<Messenger>* messenger,
@@ -1897,7 +1897,7 @@ TEST_P(TestRpc, TestCallId) {
   }
 }
 
-#if defined(__linux__)
+#if defined(KUDU_HAS_DIAGNOSTIC_SOCKET)
 // A test to verify collecting information on the RX queue size of a listening
 // socket using the DiagnosticSocket wrapper.
 class TestRpcSocketTxRxQueue : public TestRpc {
@@ -2104,7 +2104,7 @@ TEST_P(TestRpcSocketTxRxQueue, CustomAcceptorRxQueueSamplingFrequency) {
     ASSERT_EQ(2, rx_queue_size->TotalCount());
   });
 }
-#endif
+#endif // #if defined(KUDU_HAS_DIAGNOSTIC_SOCKET) ...
 
 } // namespace rpc
 } // namespace kudu

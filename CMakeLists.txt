@@ -738,6 +738,25 @@ endif()
 endfunction()
 
 ############################################################
+# Features that depend on Linux kernel version
+############################################################
+
+# The diagnostic socket is a Linux-specific functionality based on
+# the sock_diag netlink subsystem: see the DiagnosticSocket class
+# in src/kudu/util/net/diagnostic_socket.cc and its usage elsewhere.
+# For more information on the sock_diag netlink subsystem in Linux see [1].
+#
+# [1] https://man7.org/linux/man-pages/man7/sock_diag.7.html
+if (${CMAKE_SYSTEM_NAME} STREQUAL "Linux" AND
+    "${CMAKE_HOST_SYSTEM_VERSION}" VERSION_GREATER_EQUAL "3.3")
+  set(KUDU_HAS_DIAGNOSTIC_SOCKET 1)
+  add_definitions(-DKUDU_HAS_DIAGNOSTIC_SOCKET)
+  message(STATUS "Diagnostic Socket is AVAILABLE")
+else()
+  message(STATUS "Diagnostic Socket is NOT AVAILABLE")
+endif()
+
+############################################################
 # Testing
 ############################################################
 

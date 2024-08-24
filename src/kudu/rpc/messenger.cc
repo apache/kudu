@@ -269,7 +269,7 @@ Status Messenger::AddAcceptorPool(const Sockaddr& accept_addr,
         this, &sock, addr, acceptor_listen_backlog_));
     *pool = acceptor_pools_.back();
 
-#if defined(__linux__)
+#if defined(KUDU_HAS_DIAGNOSTIC_SOCKET)
     if (acceptor_pools_.size() == 1) {
       // 'rpc_pending_connections' metric is instantiated when the messenger
       // contains exactly one acceptor pool: this metric makes sense
@@ -279,7 +279,7 @@ Status Messenger::AddAcceptorPool(const Sockaddr& accept_addr,
           metric_entity_, [this]() { return this->GetPendingConnectionsNum(); })->
           AutoDetachToLastValue(&metric_detacher_);
     }
-#endif // #if defined(__linux__) ...
+#endif // #if defined(KUDU_HAS_DIAGNOSTIC_SOCKET) ...
   }
 
   return Status::OK();

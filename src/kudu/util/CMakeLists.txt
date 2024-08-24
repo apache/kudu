@@ -595,6 +595,9 @@ ADD_KUDU_TEST(yamlreader-test)
 
 if (NOT APPLE)
   ADD_KUDU_TEST(minidump-test)
+endif()
+
+if (KUDU_HAS_DIAGNOSTIC_SOCKET)
   ADD_KUDU_TEST(net/diagnostic_socket-test)
 endif()
 

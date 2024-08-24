@@ -90,7 +90,12 @@ DEFINE_int32(rpc_acceptor_listen_backlog,
              "the server ride over bursts of new inbound connection requests.");
 TAG_FLAG(rpc_acceptor_listen_backlog, advanced);
 
-DEFINE_int32(rpc_listen_socket_stats_every_log2, 3,
+DEFINE_int32(rpc_listen_socket_stats_every_log2,
+#if defined(KUDU_HAS_DIAGNOSTIC_SOCKET)
+             3,
+#else
+             -1,
+#endif
              "Listening RPC socket's statistics sampling frequency. With "
              "--rpc_listen_socket_stats_every_log2=N, the statistics are "
              "sampled every 2^N connection request by each acceptor thread. "
@@ -155,7 +160,7 @@ AcceptorPool::~AcceptorPool() {
 
 Status AcceptorPool::Start(int num_threads) {
   RETURN_NOT_OK(socket_.Listen(listen_backlog_));
-#if defined(__linux__)
+#if defined(KUDU_HAS_DIAGNOSTIC_SOCKET)
   WARN_NOT_OK(diag_socket_.Init(), "could not initialize diagnostic socket");
 #endif
 
