@@ -9,5 +9,3 @@ To install from PyPI, run
 ```
 pip install kudu-python
 ```
-
-Installation from source requires Cython.
