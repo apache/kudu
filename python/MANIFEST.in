@@ -2,9 +2,12 @@ include LICENSE.txt
 include MANIFEST.in
 include README.md
 include setup.py
+include setup_prerequisites.py
 include version.txt
+include requirements.txt
 
 graft kudu
+prune kudu/tests
 
 global-exclude *.so
 global-exclude *.pyc

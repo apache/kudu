@@ -18,6 +18,9 @@
 # specific language governing permissions and limitations
 # under the License.
 
+# setup-prerequisites must be the very first import in this file!
+import setup_prerequisites
+
 from Cython.Distutils import build_ext
 from Cython.Build import cythonize
 import Cython
@@ -30,8 +33,6 @@ import os
 import re
 import subprocess
 
-if Cython.__version__ < '0.21.0':
-    raise Exception('Please upgrade to Cython 0.21.0 or newer')
 
 setup_dir = os.path.abspath(os.path.dirname(__file__))
 
@@ -90,8 +91,8 @@ def generate_config_pxi(include_dirs):
     dst = os.path.join(setup_dir, 'kudu/config.pxi')
     dst_tmp = dst + '.tmp'
     cc = os.getenv("CC","cc")
-    subprocess.check_call([cc, "-x", "c++", "-o", dst_tmp,
-                           "-E", '-imacros', int128_h, src])
+    compilation_cmd = [cc, "-x", "c++", "-o", dst_tmp, "-E", '-imacros', int128_h, src]
+    subprocess.check_call(compilation_cmd)
     # If our generated file is the same as the prior version,
     # don't replace it. This avoids rebuilding everything on every
     # run of setup.py.
@@ -101,6 +102,14 @@ def generate_config_pxi(include_dirs):
       os.rename(dst_tmp, dst)
 
 VERSION = find_version()
+
+def get_requirements():
+    """
+    Gets the prerequisite requirements for the package.
+    """
+    with open("requirements.txt") as f:
+        requirements = f.read().splitlines()
+    return requirements
 
 # If we're in the context of the Kudu git repository, build against the
 # latest in-tree build artifacts
@@ -179,6 +188,7 @@ CLASSIFIERS = [
     'Programming Language :: Python :: 3.8',
     'Programming Language :: Python :: 3.9',
     'Programming Language :: Python :: 3.10',
+    'Programming Language :: Python :: 3.11',
     'Programming Language :: Cython'
 ]
 
@@ -186,30 +196,15 @@ URL = 'http://kudu.apache.org/'
 
 setup(
     name="kudu-python",
-    packages=['kudu', 'kudu.tests'],
+    packages=['kudu'],
     version=VERSION,
-    package_data={'kudu': ['*.pxd', '*.pyx']},
+    package_data={'kudu': ['*.pxd', '*.pyx', 'requirements.txt']},
     ext_modules=extensions,
     cmdclass={
         'clean': clean,
         'build_ext': build_ext
     },
-    setup_requires=['pytest-runner <5.3.0; python_version == "2.7"',
-                    'pytest-runner ==5.3.2; python_version >= "3.6"'],
-
-    # Note: dependencies in tests_require should also be listed in
-    # requirements.txt so that dependencies aren't downloaded at test-time
-    # (when it's more difficult to override various pip installation options).
-    tests_require=['pytest ==4.6.11; python_version == "2.7"',
-                   'pytest ==6.2.5; python_version >= "3.6"',
-                   'pytest-timeout ==1.4.2; python_version == "2.7"',
-                   'pytest-timeout ==2.1.0; python_version >= "3.6"',
-                   'unittest2 ==1.1.0'],
-
-    install_requires=['cython ==0.29.14; python_version == "2.7"',
-                      'cython ==0.29.37; python_version >= "3.6"',
-                      'six ==1.16.0',
-                      'pytz ==2024.1'],
+    install_requires=get_requirements(),
     description=DESCRIPTION,
     long_description=LONG_DESCRIPTION,
     license='Apache License, Version 2.0',
