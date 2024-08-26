@@ -84,7 +84,9 @@ class AcceptorPool {
   const Sockaddr bind_address_;
   const int listen_backlog_;
   std::vector<scoped_refptr<Thread>> threads_;
+#if defined(KUDU_HAS_DIAGNOSTIC_SOCKET)
   DiagnosticSocket diag_socket_;
+#endif // #if defined(KUDU_HAS_DIAGNOSTIC_SOCKET) ...
 
   std::atomic<bool> closing_;
 

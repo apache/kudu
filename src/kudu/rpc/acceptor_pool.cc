@@ -36,12 +36,15 @@
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/metrics.h"
-#include "kudu/util/net/diagnostic_socket.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/thread.h"
+
+#if defined(KUDU_HAS_DIAGNOSTIC_SOCKET)
+#include "kudu/util/net/diagnostic_socket.h"
+#endif
 
 using std::string;
 using strings::Substitute;
@@ -205,7 +208,9 @@ void AcceptorPool::Shutdown() {
   }
   threads_.clear();
 
+#if defined(KUDU_HAS_DIAGNOSTIC_SOCKET)
   WARN_NOT_OK(diag_socket_.Close(), "error closing diagnostic socket");
+#endif
 
   // Close the socket: keeping the descriptor open and, possibly, receiving late
   // not-to-be-read messages from the peer does not make much sense. The
@@ -231,11 +236,16 @@ int64_t AcceptorPool::num_rpc_connections_accepted() const {
 }
 
 Status AcceptorPool::GetPendingConnectionsNum(uint32_t* result) const {
+#if defined(KUDU_HAS_DIAGNOSTIC_SOCKET)
   DiagnosticSocket::TcpSocketInfo info;
   RETURN_NOT_OK(diag_socket_.Query(socket_, &info));
   *result = info.rx_queue_size;
 
   return Status::OK();
+#else // #if defined(KUDU_HAS_DIAGNOSTIC_SOCKET) ...
+  return Status::NotSupported(
+      "pending connections metric is not available for this platform");
+#endif // #if defined(KUDU_HAS_DIAGNOSTIC_SOCKET) ... else ...
 }
 
 void AcceptorPool::RunThread() {
@@ -249,11 +259,14 @@ void AcceptorPool::RunThread() {
               "unable to get address info on RPC socket");
   const auto& cur_addr_str = cur_addr.ToString();
 
-  DiagnosticSocket ds;
   const int ds_query_freq_log2 = FLAGS_rpc_listen_socket_stats_every_log2;
   const bool ds_query_enabled = (ds_query_freq_log2 >= 0);
   const uint64_t ds_query_freq_mask =
       ds_query_enabled ? (1ULL << ds_query_freq_log2) - 1 : 0;
+
+#if defined(KUDU_HAS_DIAGNOSTIC_SOCKET)
+  DiagnosticSocket ds;
+  uint64_t counter = 0;
   if (ds_query_enabled) {
     if (const auto s = ds.Init(); s.ok()) {
       LOG(INFO) << Substitute(
@@ -267,8 +280,15 @@ void AcceptorPool::RunThread() {
         "collecting diagnostics on the listening RPC socket $0 is disabled",
         cur_addr_str);
   }
+#else
+  if (ds_query_enabled) {
+    LOG(WARNING) << Substitute(
+        "--rpc_listen_socket_stats_every_log2 is set to $0, but collecting "
+        "stats on listening RPC sockets is not supported on this platform",
+        ds_query_freq_log2);
+  }
+#endif // #if defined(KUDU_HAS_DIAGNOSTIC_SOCKET) ... else ...
 
-  uint64_t counter = 0;
   while (true) {
     Socket new_sock;
     Sockaddr remote;
@@ -277,6 +297,7 @@ void AcceptorPool::RunThread() {
     const auto s = socket_.Accept(&new_sock, &remote, Socket::FLAG_NONBLOCKING);
     const auto accepted_at = CycleClock::Now();
 
+#if defined(KUDU_HAS_DIAGNOSTIC_SOCKET)
     if (ds_query_enabled && ds.IsInitialized() &&
         (counter & ds_query_freq_mask) == ds_query_freq_mask) {
       VLOG(2) << "getting stats on the listening socket";
@@ -293,6 +314,7 @@ void AcceptorPool::RunThread() {
       }
     }
     ++counter;
+#endif // #if defined(KUDU_HAS_DIAGNOSTIC_SOCKET) ...
 
     const auto dispatch_times_recorder = MakeScopedCleanup([&]() {
       // The timings are captured for both success and failure paths, so the

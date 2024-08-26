@@ -17,12 +17,10 @@
 
 #include "kudu/util/net/diagnostic_socket.h"
 
-#if defined(KUDU_HAS_DIAGNOSTIC_SOCKET)
 #include <linux/inet_diag.h>
 #include <linux/netlink.h>
 #include <linux/sock_diag.h>
 #include <linux/types.h>
-#endif // #if defined(KUDU_HAS_DIAGNOSTIC_SOCKET) ...
 
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -65,13 +63,6 @@ const vector<DiagnosticSocket::SocketState>& DiagnosticSocket::SocketStateWildca
   return kSocketStateWildcard;
 }
 
-#if !defined(KUDU_HAS_DIAGNOSTIC_SOCKET)
-namespace {
-  constexpr const char* const kNotSupportedMsg =
-      "DiagnosticSocket functionality is currently supported on Linux only";
-} // anonymous namespace
-#endif // #if !defined(KUDU_HAS_DIAGNOSTIC_SOCKET) ...
-
 DiagnosticSocket::DiagnosticSocket()
     : fd_(-1) {
 }
@@ -81,7 +72,6 @@ DiagnosticSocket::~DiagnosticSocket() {
 }
 
 Status DiagnosticSocket::Init() {
-#if defined(KUDU_HAS_DIAGNOSTIC_SOCKET)
   auto fd = ::socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_SOCK_DIAG);
   if (fd < 0) {
     int err = errno;
@@ -91,9 +81,6 @@ Status DiagnosticSocket::Init() {
   fd_ = fd;
 
   return Status::OK();
-#else
-  return Status::NotSupported(kNotSupportedMsg);
-#endif // #if defined(KUDU_HAS_DIAGNOSTIC_SOCKET) ... #else ...
 }
 
 Status DiagnosticSocket::Close() {
@@ -114,7 +101,6 @@ Status DiagnosticSocket::Query(const Sockaddr& socket_src_addr,
                                const Sockaddr& socket_dst_addr,
                                const vector<SocketState>& socket_states,
                                vector<TcpSocketInfo>* info) const {
-#if defined(KUDU_HAS_DIAGNOSTIC_SOCKET)
   DCHECK_GE(fd_, 0) << "requires calling Init() first";
   DCHECK(info);
 
@@ -129,14 +115,10 @@ Status DiagnosticSocket::Query(const Sockaddr& socket_src_addr,
   RETURN_NOT_OK(ReceiveResponse(&result));
   *info = std::move(result);
   return Status::OK();
-#else
-  return Status::NotSupported(kNotSupportedMsg);
-#endif // #if defined(KUDU_HAS_DIAGNOSTIC_SOCKET) ... #else ...
 }
 
 Status DiagnosticSocket::Query(const Socket& socket,
                                TcpSocketInfo* info) const {
-#if defined(KUDU_HAS_DIAGNOSTIC_SOCKET)
   DCHECK_GE(fd_, 0) << "requires calling Init() first";
   DCHECK(info);
 
@@ -152,14 +134,10 @@ Status DiagnosticSocket::Query(const Socket& socket,
 
   *info = result.front();
   return Status::OK();
-#else
-  return Status::NotSupported(kNotSupportedMsg);
-#endif // #if defined(KUDU_HAS_DIAGNOSTIC_SOCKET) ... #else ...
 }
 
 // Send query about the specified socket.
 Status DiagnosticSocket::SendRequest(const Socket& socket) const {
-#if defined(KUDU_HAS_DIAGNOSTIC_SOCKET)
   DCHECK_GE(fd_, 0);
   static constexpr const char* const kNonIpErrMsg =
       "netlink diagnostics is currently supported only on IPv4 TCP sockets";
@@ -188,15 +166,11 @@ Status DiagnosticSocket::SendRequest(const Socket& socket) const {
   const uint32_t socket_state_bitmask =
       dst_addr.IsWildcard() ? (1U << SS_LISTEN) : (1U << SS_ESTABLISHED);
   return SendRequest(src_addr, dst_addr, socket_state_bitmask);
-#else
-  return Status::NotSupported(kNotSupportedMsg);
-#endif // #if defined(KUDU_HAS_DIAGNOSTIC_SOCKET) ... #else ...
 }
 
 Status DiagnosticSocket::SendRequest(const Sockaddr& socket_src_addr,
                                      const Sockaddr& socket_dst_addr,
                                      uint32_t socket_states_bitmask) const {
-#if defined(KUDU_HAS_DIAGNOSTIC_SOCKET)
   DCHECK_GE(fd_, 0);
   const in_addr& src_ipv4 = socket_src_addr.ipv4_addr().sin_addr;
   const auto src_port = socket_src_addr.port();
@@ -254,13 +228,9 @@ Status DiagnosticSocket::SendRequest(const Sockaddr& socket_src_addr,
     return Status::NetworkError("sendmsg() failed", ErrnoToString(err), err);
   }
   return Status::OK();
-#else
-  return Status::NotSupported(kNotSupportedMsg);
-#endif // #if defined(KUDU_HAS_DIAGNOSTIC_SOCKET) ... #else ...
 }
 
 Status DiagnosticSocket::ReceiveResponse(vector<TcpSocketInfo>* result) const {
-#if defined(KUDU_HAS_DIAGNOSTIC_SOCKET)
   DCHECK_GE(fd_, 0);
   uint8_t buf[8192];
   struct iovec iov = {
@@ -351,9 +321,6 @@ Status DiagnosticSocket::ReceiveResponse(vector<TcpSocketInfo>* result) const {
     }
   }
   return Status::OK();
-#else
-  return Status::NotSupported(kNotSupportedMsg);
-#endif // #if defined(KUDU_HAS_DIAGNOSTIC_SOCKET) ... #else ...
 }
 
 } // namespace kudu
