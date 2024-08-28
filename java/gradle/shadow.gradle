@@ -19,7 +19,6 @@
 // consistently when a subproject requires shaded artifacts.
 
 import org.gradle.api.internal.artifacts.publish.ArchivePublishArtifact
-
 apply plugin: "com.github.johnrengelman.shadow"
 
 knows.enabled = false // Disable the "easter egg" knows task.
@@ -87,19 +86,6 @@ configurations.implementation.extendsFrom(configurations.compileUnshaded)
 // We use afterEvaluate to add additional configuration once all the definitions
 // in the projects build script have been applied
 afterEvaluate {
-//   Ensure compileUnshaded dependencies are included in the pom.
-  tasks.withType(Upload) { task ->
-    task.repositories.each {
-      configure(it.pom.scopeMappings) {
-        // The priority value is arbitrary.
-        addMapping(
-            MavenPlugin.COMPILE_PRIORITY,
-            configurations.compileUnshaded,
-            Conf2ScopeMappingContainer.COMPILE)
-      }
-    }
-  }
-
   // Ensure we never shade SLF4J unless we explicitly specify it.
   // This is a workaround because in the shadow plugin exclusions from
   // parent modules are not respected in modules that use them.
@@ -123,39 +109,3 @@ afterEvaluate {
   }
 }
 
-// Remove the shaded dependencies from the generated pom.
-// This hack allows the project to support partially shaded jars,
-// where the shadow plugin by default would remove all compile and runtime dependencies.
-tasks.withType(Upload) {
-  def installer = install.repositories.mavenInstaller
-  def deployer = uploadArchives.repositories.mavenDeployer
-
-  // Handle install and deploy in the same way.
-  [installer, deployer]*.pom*.whenConfigured { pom ->
-    def filter = shadowJar.getDependencyFilter()
-    def configs = shadowJar.getConfigurations()
-
-    def shadowDependencies = configs.collectMany {
-      // Find all dependencies included in the shaded jar.
-      it.resolvedConfiguration.firstLevelModuleDependencies.findAll {
-        filter.isIncluded(it)
-      }
-    }
-
-    // Remove the shaded dependencies from the pom.
-    shadowDependencies.each { shaded ->
-      def depStr = "${shaded.getModuleGroup()}:${shaded.getModuleName()}:${shaded.getModuleVersion()}"
-      logger.info "Excluding ${depStr} from the generated pom."
-      pom.dependencies.removeAll { dep ->
-        dep.groupId == shaded.getModuleGroup() &&
-        dep.artifactId == shaded.getModuleName() &&
-        dep.version == shaded.getModuleVersion()
-      }
-    }
-
-    // Re-sort the generated maven dependencies to make pom comparisons easier.
-    pom.dependencies = pom.dependencies.sort { dep ->
-      "$dep.scope:$dep.optional:$dep.groupId:$dep.artifactId"
-    }
-  }
-}

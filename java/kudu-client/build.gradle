@@ -15,12 +15,16 @@
 // specific language governing permissions and limitations
 // under the License.
 
+plugins {
+  id("java-library")
+}
+
 apply from: "$rootDir/gradle/shadow.gradle"
 apply from: "$rootDir/gradle/benchmarks.gradle"
 
 dependencies {
   implementation project(path: ":kudu-proto")
-  implementation libs.protobufJava
+  api libs.protobufJava
 
   // Not shaded in the client JAR because it's part of the public API.
   compileUnshaded (libs.async) {
