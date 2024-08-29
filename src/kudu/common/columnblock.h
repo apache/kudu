@@ -63,26 +63,26 @@ class ColumnBlock {
     BitmapChange(non_null_bitmap_, idx, !is_null);
   }
 
-  void SetCellValue(size_t idx, const void *new_val) {
+  void SetCellValue(size_t idx, const void* new_val) {
     strings::memcpy_inlined(mutable_cell_ptr(idx), new_val, type_->size());
   }
 
 #ifndef NDEBUG
   void OverwriteWithPattern(size_t idx, StringPiece pattern) {
-    char *col_data = reinterpret_cast<char *>(mutable_cell_ptr(idx));
+    char* col_data = reinterpret_cast<char*>(mutable_cell_ptr(idx));
     kudu::OverwriteWithPattern(col_data, type_->size(), pattern);
   }
 #endif
 
   // Return a pointer to the given cell.
-  const uint8_t *cell_ptr(size_t idx) const {
+  const uint8_t* cell_ptr(size_t idx) const {
     DCHECK_LT(idx, nrows_);
     return data_ + type_->size() * idx;
   }
 
   // Returns a pointer to the given cell or NULL.
-  const uint8_t *nullable_cell_ptr(size_t idx) const {
-    return is_null(idx) ? NULL : cell_ptr(idx);
+  const uint8_t* nullable_cell_ptr(size_t idx) const {
+    return is_null(idx) ? nullptr : cell_ptr(idx);
   }
 
   Cell cell(size_t idx) const;
@@ -91,7 +91,11 @@ class ColumnBlock {
   // A set bit indicates non-NULL.
   //
   // This returns nullptr for a non-nullable column.
-  uint8_t *non_null_bitmap() const {
+  const uint8_t* non_null_bitmap() const {
+    return non_null_bitmap_;
+  }
+
+  uint8_t* mutable_non_null_bitmap() {
     return non_null_bitmap_;
   }
 
@@ -145,24 +149,26 @@ class ColumnBlock {
   // TODO(adar): for columns with indirect data, existing arena allocations
   // belonging to cells in 'dst' that are overwritten will NOT be deallocated.
   Status CopyTo(const SelectionVector& sel_vec,
-                ColumnBlock* dst, size_t src_cell_off,
-                size_t dst_cell_off, size_t num_cells) const;
+                ColumnBlock* dst,
+                size_t src_cell_off,
+                size_t dst_cell_off,
+                size_t num_cells) const;
 
- private:
+ protected:
   friend class ColumnBlockCell;
   friend class ColumnDataView;
 
   // Return a pointer to the given cell.
-  uint8_t *mutable_cell_ptr(size_t idx) {
+  uint8_t* mutable_cell_ptr(size_t idx) {
     DCHECK_LT(idx, nrows_);
     return data_ + type_->size() * idx;
   }
 
-  const TypeInfo *type_;
-  uint8_t *non_null_bitmap_;
+  const TypeInfo* const type_;
+  uint8_t* non_null_bitmap_;
 
-  uint8_t *data_;
-  size_t nrows_;
+  uint8_t* data_;
+  const size_t nrows_;
 
   RowBlockMemory* memory_;
 };
@@ -231,8 +237,9 @@ inline ColumnBlockCell ColumnBlock::cell(size_t idx) const {
 // Used by the reader and block encoders to read/write raw data.
 class ColumnDataView {
  public:
-  explicit ColumnDataView(ColumnBlock *column_block, size_t first_row_idx = 0)
-    : column_block_(column_block), row_offset_(0) {
+  explicit ColumnDataView(ColumnBlock* column_block, size_t first_row_idx = 0)
+      : column_block_(column_block),
+        row_offset_(0) {
     Advance(first_row_idx);
   }
 
@@ -250,14 +257,14 @@ class ColumnDataView {
   // Set 'nrows' bits of the the null-bitmap to "value"
   // true if not null, false if null.
   void SetNullBits(size_t nrows, bool value) {
-    BitmapChangeBits(column_block_->non_null_bitmap(), row_offset_, nrows, value);
+    BitmapChangeBits(column_block_->mutable_non_null_bitmap(), row_offset_, nrows, value);
   }
 
-  uint8_t *data() {
+  uint8_t* data() {
     return column_block_->mutable_cell_ptr(row_offset_);
   }
 
-  const uint8_t *data() const {
+  const uint8_t* data() const {
     return column_block_->cell_ptr(row_offset_);
   }
 
@@ -269,7 +276,7 @@ class ColumnDataView {
     return column_block_->nrows() - row_offset_;
   }
 
-  const size_t stride() const {
+  size_t stride() const {
     return column_block_->stride();
   }
 
@@ -278,7 +285,7 @@ class ColumnDataView {
   }
 
  private:
-  ColumnBlock *column_block_;
+  ColumnBlock* column_block_;
   size_t row_offset_;
 };
 

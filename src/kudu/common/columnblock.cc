@@ -22,13 +22,14 @@
 #include "kudu/common/common.pb.h"
 #include "kudu/common/row.h"
 #include "kudu/common/rowblock.h"
-#include "kudu/util/memory/arena.h"
 
 namespace kudu {
 
 Status ColumnBlock::CopyTo(const SelectionVector& sel_vec,
-                           ColumnBlock* dst, size_t src_cell_off,
-                           size_t dst_cell_off, size_t num_cells) const {
+                           ColumnBlock* dst,
+                           size_t src_cell_off,
+                           size_t dst_cell_off,
+                           size_t num_cells) const {
   DCHECK_EQ(type_, dst->type_);
   DCHECK_EQ(is_nullable(), dst->is_nullable());
   DCHECK_GE(nrows_, src_cell_off + num_cells);

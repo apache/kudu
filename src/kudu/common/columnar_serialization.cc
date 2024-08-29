@@ -71,7 +71,7 @@ struct BitWriter {
   }
 
   ~BitWriter() {
-    CHECK(flushed_) << "must flush";
+    DCHECK(flushed_) << "must flush";
   }
 
   void Put(uint64_t v, int num_bits) {
@@ -92,7 +92,7 @@ struct BitWriter {
   }
 
   void Flush() {
-    CHECK(!flushed_) << "must only flush once";
+    DCHECK(!flushed_) << "must only flush once";
     while (num_buffered_bits_ > 0) {
       *dst_++ = buffered_values_ & 0xff;
       buffered_values_ >>= 8;
@@ -126,8 +126,8 @@ template<int sizeof_type>
 ATTRIBUTE_NOINLINE
 void ZeroNullValuesImpl(int dst_idx,
                         int n_rows,
-                        uint8_t* __restrict__ dst_values_buf,
-                        uint8_t* __restrict__ non_null_bitmap) {
+                        const uint8_t* __restrict__ non_null_bitmap,
+                        uint8_t* __restrict__ dst_values_buf) {
   int aligned_dst_idx = KUDU_ALIGN_DOWN(dst_idx, 8);
   int aligned_n_sel = n_rows + (dst_idx - aligned_dst_idx);
 
@@ -156,14 +156,14 @@ void ZeroNullValuesImpl(int dst_idx,
 void ZeroNullValues(int sizeof_type,
                     int dst_idx,
                     int n_rows,
-                    uint8_t* dst_values_buf,
-                    uint8_t* dst_non_null_bitmap) {
+                    const uint8_t* dst_non_null_bitmap,
+                    uint8_t* dst_values_buf) {
   // Delegate to specialized implementations for each type size.
   // This changes variable-length memsets into inlinable single instructions.
   switch (sizeof_type) {
 #define CASE(size)                                                      \
     case size:                                                          \
-      ZeroNullValuesImpl<size>(dst_idx, n_rows, dst_values_buf, dst_non_null_bitmap); \
+      ZeroNullValuesImpl<size>(dst_idx, n_rows, dst_non_null_bitmap, dst_values_buf); \
       break;
     CASE(1);
     CASE(2);
@@ -504,7 +504,7 @@ void CopySelectedCellsFromColumn(const ColumnBlock& cblock,
                       initial_rows, cblock.nrows(),
                       dst->non_null_bitmap->data());
     ZeroNullValues(sizeof_type, initial_rows, n_sel,
-        dst->data.data(), dst->non_null_bitmap->data());
+                   dst->non_null_bitmap->data(), dst->data.data());
   }
 }
 
@@ -560,7 +560,7 @@ void CopySelectedVarlenCellsFromColumn(const ColumnBlock& cblock,
 
   // If this is the first call, append a '0' entry for the offset of the first string.
   if (dst->data.size() == 0) {
-    CHECK_EQ(dst->varlen_data->size(), 0);
+    DCHECK_EQ(dst->varlen_data->size(), 0);
     offset_type zero_offset = 0;
     dst->data.append(&zero_offset, sizeof(zero_offset));
   }
@@ -580,7 +580,8 @@ void CopySelectedVarlenCellsFromColumn(const ColumnBlock& cblock,
                       initial_rows, cblock.nrows(),
                       dst->non_null_bitmap->data());
     ZeroNullValues(sizeof(Slice), 0, cblock.nrows(),
-                   const_cast<ColumnBlock&>(cblock).data(), cblock.non_null_bitmap());
+                   cblock.non_null_bitmap(),
+                   const_cast<ColumnBlock&>(cblock).data());
   }
   dst->data.resize_with_extra_capacity(sizeof(offset_type) * new_offset_count);
   offset_type* dst_offset = reinterpret_cast<offset_type*>(dst->data.data()) + initial_offset_count;
@@ -603,7 +604,7 @@ ColumnarSerializedBatch::ColumnarSerializedBatch(const Schema& rowblock_schema,
     auto& col = columns_.back();
 
     col.rowblock_schema_col_idx = rowblock_schema.find_column(schema_col.name());
-    CHECK_NE(col.rowblock_schema_col_idx, -1);
+    DCHECK_NE(col.rowblock_schema_col_idx, Schema::kColumnNotFound);
 
     // Size the initial buffer based on the percentage of the total row that this column
     // takes up. This isn't fully accurate because of costs like the null bitmap or varlen

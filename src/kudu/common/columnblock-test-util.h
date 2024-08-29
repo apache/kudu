@@ -40,28 +40,27 @@ class ScopedColumnBlock : public ColumnBlock {
                     new cpp_type[n_rows],
                     n_rows,
                     new RowBlockMemory()),
-        non_null_bitmap_(non_null_bitmap()),
-        data_(reinterpret_cast<cpp_type *>(data())),
-        memory_(memory()) {
+        non_null_bitmap_buf_(non_null_bitmap_),
+        data_buf_(reinterpret_cast<cpp_type*>(data_)),
+        memory_buf_(memory_) {
     if (allow_nulls) {
       // All rows begin null.
-      BitmapChangeBits(non_null_bitmap(), /*offset=*/ 0, n_rows, /*value=*/ false);
+      BitmapChangeBits(non_null_bitmap_, /*offset=*/ 0, n_rows, /*value=*/ false);
     }
   }
 
-  const cpp_type &operator[](size_t idx) const {
-    return data_[idx];
+  const cpp_type& operator[](size_t idx) const {
+    return data_buf_[idx];
   }
 
-  cpp_type &operator[](size_t idx) {
-    return data_[idx];
+  cpp_type& operator[](size_t idx) {
+    return data_buf_[idx];
   }
 
  private:
-  std::unique_ptr<uint8_t[]> non_null_bitmap_;
-  std::unique_ptr<cpp_type[]> data_;
-  std::unique_ptr<RowBlockMemory> memory_;
-
+  std::unique_ptr<uint8_t[]> non_null_bitmap_buf_;
+  std::unique_ptr<cpp_type[]> data_buf_;
+  std::unique_ptr<RowBlockMemory> memory_buf_;
 };
 
 } // namespace kudu

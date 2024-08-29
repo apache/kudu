@@ -87,8 +87,8 @@ namespace internal {
 void ZeroNullValues(int sizeof_type,
                     int dst_idx,
                     int n_rows,
-                    uint8_t* dst_values_buf,
-                    uint8_t* non_null_bitmap);
+                    const uint8_t* non_null_bitmap,
+                    uint8_t* dst_values_buf);
 
 void CopyNonNullBitmap(const uint8_t* non_null_bitmap,
                        const uint8_t* sel_bitmap,

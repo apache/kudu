@@ -20,7 +20,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <ostream>
-#include <string>
 #include <utility>
 #include <vector>
 
@@ -94,8 +93,8 @@ TEST_F(ColumnarSerializationTest, TestZeroNullValues) {
   internal::ZeroNullValues(
       kTypeSize, /* dst_idx= */0,
       data.vals.size(),
-      reinterpret_cast<uint8_t*>(data.vals.data()),
-      data.non_nulls.data());
+      data.non_nulls.data(),
+      reinterpret_cast<uint8_t*>(data.vals.data()));
 
   ASSERT_NO_FATAL_FAILURE(data.VerifyNullsAreZeroed());
 }
@@ -110,8 +109,8 @@ TEST_F(ColumnarSerializationTest, TestZeroNullValuesWithOffset) {
     auto n = rng_.Uniform(rem) + 1;
     internal::ZeroNullValues(
         kTypeSize, dst_idx, n,
-        reinterpret_cast<uint8_t*>(data.vals.data()),
-        data.non_nulls.data());
+        data.non_nulls.data(),
+        reinterpret_cast<uint8_t*>(data.vals.data()));
     dst_idx += n;
   }
   ASSERT_NO_FATAL_FAILURE(data.VerifyNullsAreZeroed());
