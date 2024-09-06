@@ -174,7 +174,7 @@ class InboundCall {
   // Return the method associated with this call. This is set just before
   // the call is enqueued onto the service queue, and therefore may be
   // 'nullptr' for much of the lifecycle of a call.
-  RpcMethodInfo* method_info() {
+  const RpcMethodInfo* method_info() const {
     return method_info_.get();
   }
 
@@ -221,7 +221,7 @@ class InboundCall {
 
   // Returns the size of the transfer buffer that backs this call. If the transfer does
   // not exist (e.g. GetTransferSize() is called after DiscardTransfer()), returns 0.
-  size_t GetTransferSize();
+  size_t GetTransferSize() const;
 
  private:
   friend class RpczStore;

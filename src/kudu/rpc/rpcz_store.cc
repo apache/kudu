@@ -127,7 +127,7 @@ class MethodSampler {
 };
 
 MethodSampler* RpczStore::SamplerForCall(InboundCall* call) {
-  auto* method_info = call->method_info();
+  const auto* method_info = call->method_info();
   if (PREDICT_FALSE(!method_info)) {
     return nullptr;
   }
@@ -229,9 +229,9 @@ void RpczStore::AddCall(InboundCall* call) {
   sampler->SampleCall(call);
 }
 
-void RpczStore::DumpPB(const DumpRpczStoreRequestPB& req,
+void RpczStore::DumpPB(const DumpRpczStoreRequestPB& /* req */,
                        DumpRpczStoreResponsePB* resp) {
-  vector<pair<RpcMethodInfo*, MethodSampler*>> samplers;
+  vector<pair<const RpcMethodInfo*, MethodSampler*>> samplers;
   {
     shared_lock<rw_spinlock> l(samplers_lock_.get_lock());
     for (const auto& [mi, ms] : method_samplers_) {

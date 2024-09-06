@@ -65,7 +65,7 @@ class RpczStore final {
   percpu_rwlock samplers_lock_;
 
   // Protected by samplers_lock_.
-  std::unordered_map<RpcMethodInfo*, std::unique_ptr<MethodSampler>> method_samplers_;
+  std::unordered_map<const RpcMethodInfo*, std::unique_ptr<MethodSampler>> method_samplers_;
 
   DISALLOW_COPY_AND_ASSIGN(RpczStore);
 };

@@ -361,8 +361,10 @@ void InboundCall::DiscardTransfer() {
   transfer_.reset();
 }
 
-size_t InboundCall::GetTransferSize() {
-  if (!transfer_) return 0;
+size_t InboundCall::GetTransferSize() const {
+  if (PREDICT_FALSE(!transfer_)) {
+    return 0;
+  }
   return transfer_->data().size();
 }
 

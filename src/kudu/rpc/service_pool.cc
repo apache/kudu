@@ -89,7 +89,7 @@ ServicePool::~ServicePool() {
 Status ServicePool::Init(int num_threads) {
   for (int i = 0; i < num_threads; i++) {
     scoped_refptr<kudu::Thread> new_thread;
-    CHECK_OK(kudu::Thread::Create(
+    RETURN_NOT_OK(kudu::Thread::Create(
         Substitute("service pool $0", service_->service_name()),
         "rpc worker",
         [this]() { this->RunThread(); }, &new_thread));
@@ -101,11 +101,10 @@ Status ServicePool::Init(int num_threads) {
 void ServicePool::Shutdown() {
   service_queue_.Shutdown();
 
-  std::lock_guard lock(shutdown_lock_);
-  if (closing_) {
+  bool is_shut_down = false;
+  if (!closing_.compare_exchange_strong(is_shut_down, true)) {
     return;
   }
-  closing_ = true;
   // TODO(mpercy): Use a proper thread pool implementation.
   for (scoped_refptr<kudu::Thread>& thread : threads_) {
     CHECK_OK(ThreadJoiner(thread.get()).Join());
@@ -122,21 +121,20 @@ void ServicePool::Shutdown() {
 }
 
 void ServicePool::RejectTooBusy(InboundCall* c) {
-  string err_msg =
-      Substitute("$0 request on $1 from $2 dropped due to backpressure. "
-                 "The service queue is full; it has $3 items.",
-                 c->remote_method().method_name(),
-                 service_->service_name(),
-                 c->remote_address().ToString(),
-                 service_queue_.max_size());
   rpcs_queue_overflow_->Increment();
-  auto* minfo = c->method_info();
-  if (minfo) {
+  if (const auto* minfo = c->method_info(); minfo != nullptr) {
     minfo->queue_overflow_rejections->Increment();
   }
-  KLOG_EVERY_N_SECS(WARNING, 1) << err_msg << THROTTLE_MSG;
+  const string err_msg = Substitute(
+      "$0 request on $1 from $2 dropped due to backpressure: "
+      "service queue is full with $3 items",
+      c->remote_method().method_name(),
+      service_->service_name(),
+      c->remote_address().ToString(),
+      service_queue_.max_size());
   c->RespondFailure(ErrorStatusPB::ERROR_SERVER_TOO_BUSY,
                     Status::ServiceUnavailable(err_msg));
+  KLOG_EVERY_N_SECS(WARNING, 1) << err_msg << THROTTLE_MSG;
   DLOG(INFO) << err_msg << " Contents of service queue:\n"
              << service_queue_.ToString();
 
