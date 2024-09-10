@@ -97,7 +97,10 @@ class RowSetMetadata {
 
   const std::string ToString() const;
 
-  int64_t id() const { return id_; }
+  int64_t id() const {
+    std::lock_guard l(lock_);
+    return id_;
+  }
 
   const SchemaPtr tablet_schema() const {
     return tablet_metadata_->schema();
@@ -266,10 +269,13 @@ class RowSetMetadata {
 
   TabletMetadata* const tablet_metadata_;
   bool initted_;
-  int64_t id_;
 
   // Protects the below mutable fields.
   mutable LockType lock_;
+
+  // Rowset identifier. Set in one of the constructors, and may be also set
+  // via LoadFromPB().
+  int64_t id_;
 
   // The min and max keys of the rowset.
   std::optional<std::string> min_encoded_key_;

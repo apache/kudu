@@ -64,7 +64,7 @@ Status RowSetMetadata::Flush() {
 }
 
 Status RowSetMetadata::InitFromPB(const RowSetDataPB& pb) {
-  CHECK(!initted_);
+  DCHECK(!initted_);
 
   LoadFromPB(pb);
 
@@ -125,9 +125,8 @@ void RowSetMetadata::LoadFromPB(const RowSetDataPB& pb) {
 }
 
 void RowSetMetadata::ToProtobuf(RowSetDataPB *pb) {
-  pb->set_id(id_);
-
   std::lock_guard l(lock_);
+  pb->set_id(id_);
 
   // Write Column Files
   for (const ColumnIdToBlockIdMap::value_type& e : blocks_by_col_id_) {
@@ -175,7 +174,12 @@ void RowSetMetadata::ToProtobuf(RowSetDataPB *pb) {
 }
 
 const std::string RowSetMetadata::ToString() const {
-  return Substitute("RowSet($0)", id_);
+  int64_t id = 0;
+  {
+    std::lock_guard l(lock_);
+    id = id_;
+  }
+  return Substitute("RowSet($0)", id);
 }
 
 void RowSetMetadata::SetColumnDataBlocks(const std::map<ColumnId, BlockId>& blocks_by_col_id) {

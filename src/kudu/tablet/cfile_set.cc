@@ -137,18 +137,16 @@ Status CFileSet::DoOpen(const IOContext* io_context) {
 
   // Lazily open the column data cfiles. Each one will be fully opened
   // later, when the first iterator seeks for the first time.
-  RowSetMetadata::ColumnIdToBlockIdMap block_map = rowset_metadata_->GetColumnBlocksById();
-  for (const RowSetMetadata::ColumnIdToBlockIdMap::value_type& e : block_map) {
-    ColumnId col_id = e.first;
-    DCHECK(!ContainsKey(readers_by_col_id_, col_id)) << "already open";
-
+  const RowSetMetadata::ColumnIdToBlockIdMap block_map = rowset_metadata_->GetColumnBlocksById();
+  for (const auto& [col_id, _] : block_map) {
     unique_ptr<CFileReader> reader;
     RETURN_NOT_OK(OpenReader(rowset_metadata_->fs_manager(),
                              cfile_reader_tracker_,
                              rowset_metadata_->column_data_block_for_col_id(col_id),
                              io_context,
                              &reader));
-    readers_by_col_id_[col_id] = std::move(reader);
+    const auto& ins_info = readers_by_col_id_.emplace(col_id, std::move(reader));
+    DCHECK(ins_info.second) << "already open";
     VLOG(1) << "Successfully opened cfile for column id " << col_id
             << " in " << rowset_metadata_->ToString();
   }
