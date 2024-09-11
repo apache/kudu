@@ -208,7 +208,7 @@ Status CFileSet::OpenBloomReader(const IOContext* io_context) {
 
 Status CFileSet::LoadMinMaxKeys(const IOContext* io_context) {
   CFileReader* key_reader = key_index_reader();
-  RETURN_NOT_OK(key_index_reader()->Init(io_context));
+  RETURN_NOT_OK(key_reader->Init(io_context));
   if (!key_reader->GetMetadataEntry(DiskRowSet::kMinKeyMetaEntryName, &min_encoded_key_)) {
     return Status::Corruption("No min key found", ToString());
   }
@@ -245,8 +245,9 @@ unique_ptr<CFileSet::Iterator> CFileSet::NewIterator(
 }
 
 Status CFileSet::CountRows(const IOContext* io_context, rowid_t *count) const {
-  RETURN_NOT_OK(key_index_reader()->Init(io_context));
-  return key_index_reader()->CountRows(count);
+  CFileReader* key_reader = key_index_reader();
+  RETURN_NOT_OK(key_reader->Init(io_context));
+  return key_reader->CountRows(count);
 }
 
 Status CFileSet::GetBounds(string* min_encoded_key,
@@ -341,8 +342,9 @@ Status CFileSet::CheckRowPresent(const RowSetKeyProbe& probe, const IOContext* i
 
 Status CFileSet::NewKeyIterator(const IOContext* io_context,
                                 unique_ptr<CFileIterator>* key_iter) const {
-  RETURN_NOT_OK(key_index_reader()->Init(io_context));
-  return key_index_reader()->NewIterator(key_iter, CFileReader::CACHE_BLOCK, io_context);
+  CFileReader* key_reader = key_index_reader();
+  RETURN_NOT_OK(key_reader->Init(io_context));
+  return key_reader->NewIterator(key_iter, CFileReader::CACHE_BLOCK, io_context);
 }
 
 ////////////////////////////////////////////////////////////
