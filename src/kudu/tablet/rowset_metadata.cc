@@ -297,11 +297,13 @@ int64_t RowSetMetadata::live_row_count() const {
 
 BlockIdContainer RowSetMetadata::GetAllBlocks() const {
   BlockIdContainer blocks;
+
+  std::lock_guard l(lock_);
   blocks.reserve(blocks_by_col_id_.size() +
                  undo_delta_blocks_.size() +
                  redo_delta_blocks_.size() +
                  2);  // '2' is reserved for 'adhoc_index_block_' and 'bloom_block_'
-  std::lock_guard l(lock_);
+
   if (!adhoc_index_block_.IsNull()) {
     blocks.push_back(adhoc_index_block_);
   }
