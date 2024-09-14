@@ -63,7 +63,7 @@
 
 DEFINE_string(test_leave_files, "on_failure",
               "Whether to leave test files around after the test run. "
-              " Valid values are 'always', 'on_failure', or 'never'");
+              "Valid values are 'always', 'on_failure', or 'never'");
 
 DEFINE_int32(test_random_seed, 0, "Random seed to use for randomized tests");
 
@@ -177,9 +177,9 @@ KuduTest::~KuduTest() {
   if (FLAGS_test_leave_files == "always") {
     LOG(INFO) << "-----------------------------------------------";
     LOG(INFO) << "--test_leave_files specified, leaving files in " << test_dir_;
-  } else if (FLAGS_test_leave_files == "on_failure" && HasFatalFailure()) {
+  } else if (FLAGS_test_leave_files == "on_failure" && HasFailure()) {
     LOG(INFO) << "-----------------------------------------------";
-    LOG(INFO) << "Had fatal failures, leaving test files at " << test_dir_;
+    LOG(INFO) << "Had failures, leaving test files at " << test_dir_;
   } else {
     VLOG(1) << "Cleaning up temporary test files...";
     WARN_NOT_OK(env_->DeleteRecursively(test_dir_),
