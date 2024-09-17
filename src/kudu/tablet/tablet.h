@@ -65,16 +65,28 @@ class ConstContiguousRow;
 class EncodedKey;
 class KeyRange;
 class MemTracker;
+class RandomizedTabletHistoryGcITest;
 class RowBlock;
 class ScanSpec;
+class TabletHistoryGcITest;
 class Throttler;
 class Timestamp;
 struct IterWithBounds;
 struct IteratorStats;
 
+class AlterTableTest_TestMajorCompactDeltasAfterAddUpdateRemoveColumn_Test;
+class AlterTableTest_TestMajorCompactDeltasAfterUpdatingRemovedColumn_Test;
+class AlterTableTest_TestMajorCompactDeltasIntoMissingBaseData_Test;
+class RandomizedTabletHistoryGcITest_TestRandomHistoryGCWorkload_Test;
+class TabletHistoryGcITest_TestUndoDeltaBlockGc_Test;
+
 namespace consensus {
 class OpId;
 }  // namespace consensus
+
+namespace client {
+class ClientTest_TestInsertEmptyPK_Test;
+} // namespace client
 
 namespace clock {
 class Clock;
@@ -85,7 +97,13 @@ class LogAnchorRegistry;
 } // namespace log
 
 namespace tserver {
+class TabletServerTest_TestRecoveryWithMutationsWhileFlushingAndCompacting_Test;
 class TabletServerTest_SetEncodedKeysWhenStartingUp_Test;
+class TabletServerTest_TestEIODuringDelete_Test;
+class TabletServerTest_TestKUDU_176_RecoveryAfterMajorDeltaCompaction_Test;
+class TabletServerTest_TestKUDU_177_RecoveryOfDMSEditsAfterMajorDeltaCompaction_Test;
+class TabletServerTest_TestRecoveryWithMutationsWhileFlushing_Test;
+class TabletServerTest_TestRecoveryWithMutationsWhileFlushingAndCompacting_Test;
 } // namespace tserver
 
 namespace tablet {
@@ -189,10 +207,6 @@ class Tablet {
   // it's not the first thing in an op!
   void StartOp(WriteOpState* op_state);
   void StartOp(ParticipantOpState* op_state);
-
-  // Like the above but actually assigns the timestamp. Only used for tests that
-  // don't boot a tablet server.
-  void AssignTimestampAndStartOpForTests(WriteOpState* op_state);
 
   // Signal that the given op is about to Apply.
   void StartApplying(WriteOpState* op_state);
@@ -337,16 +351,6 @@ class Tablet {
   // Flushes the DMS with the highest retention.
   Status FlushBestDMS(const ReplaySizeMap &replay_size_map) const;
 
-  // Flush only the biggest DMS. Only used for tests.
-  Status FlushBiggestDMSForTests();
-
-  // Flush all delta memstores. Only used for tests.
-  Status FlushAllDMSForTests();
-
-  // Run a major compaction on all delta stores. Initializes any un-initialized
-  // redo delta stores. Only used for tests.
-  Status MajorCompactAllDeltaStoresForTests();
-
   // Finds the RowSet which has the most separate delta files and
   // issues a delta compaction.
   Status CompactWorstDeltas(RowSet::DeltaCompactionType type);
@@ -400,10 +404,6 @@ class Tablet {
   // state is change.
   Status DeleteAncientDeletedRowsets();
 
-  // Counts the number of deltas in the tablet. Only used for tests.
-  int64_t CountUndoDeltasForTests() const;
-  int64_t CountRedoDeltasForTests() const;
-
   // Return the current number of rowsets in the tablet.
   size_t num_rowsets() const;
 
@@ -414,11 +414,6 @@ class Tablet {
 
   // Count the number of live rows in this tablet.
   Status CountLiveRows(uint64_t* count) const;
-
-  // Verbosely dump this entire tablet to the logs. This is only
-  // really useful when debugging unit tests failures where the tablet
-  // has a very small number of rows.
-  Status DebugDump(std::vector<std::string> *lines = NULL);
 
   const SchemaPtr schema() const {
     return metadata_->schema();
@@ -441,24 +436,6 @@ class Tablet {
   TabletMetadata *metadata() { return metadata_.get(); }
   scoped_refptr<TabletMetadata> shared_metadata() const { return metadata_; }
 
-  void SetCompactionHooksForTests(const std::shared_ptr<CompactionFaultHooks> &hooks);
-  void SetFlushHooksForTests(const std::shared_ptr<FlushFaultHooks> &hooks);
-  void SetFlushCompactCommonHooksForTests(
-      const std::shared_ptr<FlushCompactCommonHooks> &hooks);
-
-  // Returns the current MemRowSet id, for tests.
-  // This method takes a read lock on component_lock_ and is thread-safe.
-  int32_t CurrentMrsIdForTests() const;
-
-  // Runs a major delta major compaction on columns with specified IDs.
-  // NOTE: RowSet must presently be a DiskRowSet. (Perhaps the API should be
-  // a shared_ptr API for now?)
-  //
-  // Only used in tests.
-  Status DoMajorDeltaCompaction(const std::vector<ColumnId>& col_ids,
-                                const std::shared_ptr<RowSet>& input_rs,
-                                const fs::IOContext* io_context = nullptr);
-
   // Calculates the ancient history mark and returns true iff tablet history GC
   // is enabled, which requires the use of a HybridClock.
   // Otherwise, returns false.
@@ -466,11 +443,6 @@ class Tablet {
 
   // Calculates history GC options based on properties of the Clock implementation.
   HistoryGcOpts GetHistoryGcOpts() const;
-
-  // Method used by tests to retrieve all rowsets of this table. This
-  // will be removed once code for selecting the appropriate RowSet is
-  // finished and delta files is finished is part of Tablet class.
-  void GetRowSetsForTests(std::vector<std::shared_ptr<RowSet> >* out);
 
   // Register the maintenance ops associated with this tablet
   void RegisterMaintenanceOps(MaintenanceManager* maint_mgr);
@@ -557,9 +529,36 @@ class Tablet {
   }
  private:
   friend class kudu::AlterTableTest;
+  friend class kudu::TabletHistoryGcITest;
+  friend class FuzzTest;
   friend class Iterator;
+  friend class LocalTabletWriter;
+  friend class TabletHistoryGcTest;
   friend class TabletReplicaTest;
   friend class TabletReplicaTestBase;
+  friend class TestHighMemCompaction;
+  template<typename T> friend class MultiThreadedTabletTest;
+  template<typename T> friend class TestTablet;
+  FRIEND_TEST(DiffScanTest, TestDiffScan);
+  FRIEND_TEST(OrderedDiffScanWithDeletesTest, TestDiffScanAfterDeltaFlushRacesWithBatchUpdate);
+  FRIEND_TEST(TabletDeletedRowsetGcTest, TestGCDeletedRowsetsAfterMajorCompaction);
+  FRIEND_TEST(TabletDeletedRowsetGcTest, TestGCDeletedRowsetsAfterMinorCompaction);
+  FRIEND_TEST(TabletDeletedRowsetGcTest, TestGCDeletedRowsetsWithRedoFiles);
+  FRIEND_TEST(TabletHistoryGcNoMaintMgrTest, TestUndoDeltaBlockGc);
+  FRIEND_TEST(TabletHistoryGcTest, TestGcWithConcurrentCompaction);
+  FRIEND_TEST(TabletHistoryGcTest, TestNoGenerateUndoOnMajorDeltaCompaction);
+  FRIEND_TEST(TabletHistoryGcTest, TestNoGenerateUndoOnRowSetCompaction);
+  FRIEND_TEST(TabletHistoryGcTest, TestMajorDeltaCompactionOnSubsetOfColumns);
+  FRIEND_TEST(TabletReplicaTest, TDMSAnchorPreventsLogGC);
+  FRIEND_TEST(TabletReplicaTest, TestActiveOpPreventsLogGC);
+  FRIEND_TEST(TabletReplicaTest, TestDMSAnchorPreventsLogGC);
+  FRIEND_TEST(TabletReplicaTest, TestRestartAfterGCDeletedRowsets);
+  FRIEND_TEST(TestMajorDeltaCompaction, TestCarryDeletesOver);
+  FRIEND_TEST(TestMajorDeltaCompaction, TestCompact);
+  FRIEND_TEST(TestMajorDeltaCompaction, TestJustDeletes);
+  FRIEND_TEST(TestMajorDeltaCompaction, TestKudu2656);
+  FRIEND_TEST(TestMajorDeltaCompaction, TestReinserts);
+  FRIEND_TEST(TestMajorDeltaCompaction, TestUndos);
   FRIEND_TEST(TestTablet, TestGetReplaySizeForIndex);
   FRIEND_TEST(TestTabletStringKey, TestSplitKeyRange);
   FRIEND_TEST(TestTabletStringKey, TestSplitKeyRangeWithZeroRowSets);
@@ -567,7 +566,23 @@ class Tablet {
   FRIEND_TEST(TestTabletStringKey, TestSplitKeyRangeWithNonOverlappingRowSets);
   FRIEND_TEST(TestTabletStringKey, TestSplitKeyRangeWithMinimumValueRowSet);
   FRIEND_TEST(TxnParticipantTest, TestFlushMultipleMRSs);
+  FRIEND_TEST(client::ClientTest, TestInsertEmptyPK);
+  FRIEND_TEST(kudu::AlterTableTest, TestMajorCompactDeltasAfterAddUpdateRemoveColumn);
+  FRIEND_TEST(kudu::AlterTableTest, TestMajorCompactDeltasAfterUpdatingRemovedColumn);
+  FRIEND_TEST(kudu::AlterTableTest, TestMajorCompactDeltasIntoMissingBaseData);
+  FRIEND_TEST(kudu::RandomizedTabletHistoryGcITest, TestRandomHistoryGCWorkload);
+  FRIEND_TEST(kudu::TabletHistoryGcITest, TestUndoDeltaBlockGc);
   FRIEND_TEST(tserver::TabletServerTest, SetEncodedKeysWhenStartingUp);
+  FRIEND_TEST(tserver::TabletServerTest, TestEIODuringDelete);
+  FRIEND_TEST(tserver::TabletServerTest, TestKUDU_176_RecoveryAfterMajorDeltaCompaction);
+  FRIEND_TEST(tserver::TabletServerTest, TestKUDU_177_RecoveryOfDMSEditsAfterMajorDeltaCompaction);
+  FRIEND_TEST(tserver::TabletServerTest, TestRecoveryWithMutationsWhileFlushing);
+  FRIEND_TEST(tserver::TabletServerTest, TestRecoveryWithMutationsWhileFlushingAndCompacting);
+  template<typename T> FRIEND_TEST(TestTablet, TestCompaction);
+  template<typename T> FRIEND_TEST(TestTablet, TestCompactionWithConcurrentMutation);
+  template<typename T> FRIEND_TEST(TestTablet, TestFlushWithConcurrentMutation);
+  template<typename T> FRIEND_TEST(TestTablet, TestReinsertDuringFlush);
+  template<typename T> FRIEND_TEST(TestTablet, TestRowIteratorOrdered);
 
   // Lifecycle states that a Tablet can be in. Legal state transitions for a
   // Tablet object:
@@ -631,6 +646,52 @@ class Tablet {
 
   // Validate the given update/delete operation.
   static Status ValidateMutateUnlocked(const RowOp& op);
+
+  // Returns the current MemRowSet id, for tests.
+  // This method takes a read lock on component_lock_ and is thread-safe.
+  int32_t CurrentMrsIdForTests() const;
+
+  // Runs a major delta major compaction on columns with specified IDs.
+  // NOTE: RowSet must presently be a DiskRowSet. (Perhaps the API should be
+  // a shared_ptr API for now?)
+  //
+  // Only used in tests.
+  Status DoMajorDeltaCompaction(const std::vector<ColumnId>& col_ids,
+                                const std::shared_ptr<RowSet>& input_rs,
+                                const fs::IOContext* io_context = nullptr);
+
+  // Like the above but actually assigns the timestamp. Only used for tests that
+  // don't boot a tablet server.
+  void AssignTimestampAndStartOpForTests(WriteOpState* op_state);
+
+  // Flush only the biggest DMS. Only used for tests.
+  Status FlushBiggestDMSForTests();
+
+  // Flush all delta memstores. Only used for tests.
+  Status FlushAllDMSForTests();
+
+  // Run a major compaction on all delta stores. Initializes any un-initialized
+  // redo delta stores. Only used for tests.
+  Status MajorCompactAllDeltaStoresForTests();
+
+  // Counts the number of deltas in the tablet. Only used for tests.
+  int64_t CountUndoDeltasForTests() const;
+  int64_t CountRedoDeltasForTests() const;
+
+  void SetCompactionHooksForTests(const std::shared_ptr<CompactionFaultHooks> &hooks);
+  void SetFlushHooksForTests(const std::shared_ptr<FlushFaultHooks> &hooks);
+  void SetFlushCompactCommonHooksForTests(
+      const std::shared_ptr<FlushCompactCommonHooks> &hooks);
+
+  // Method used by tests to retrieve all rowsets of this table. This
+  // will be removed once code for selecting the appropriate RowSet is
+  // finished and delta files is finished is part of Tablet class.
+  void GetRowSetsForTests(std::vector<std::shared_ptr<RowSet> >* out);
+
+  // Verbosely dump this entire tablet to the logs. This is only
+  // really useful when debugging unit tests failures where the tablet
+  // has a very small number of rows.
+  Status DebugDump(std::vector<std::string> *lines = NULL);
 
   // Perform an INSERT, INSERT_IGNORE, UPSERT, or UPSERT_IGNORE operation, assuming that the op is
   // already in a prepared state. This state ensures that:
