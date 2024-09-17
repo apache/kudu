@@ -226,24 +226,31 @@ void RowSetMetadata::CommitUpdate(const RowSetMetadataUpdate& update,
       redo_delta_blocks_.insert(start_it, rep.to_add.begin(), rep.to_add.end());
     }
 
-    // Add new redo blocks
-    for (const BlockId& b : update.new_redo_blocks_) {
-      redo_delta_blocks_.push_back(b);
-    }
+    // Add new redo blocks.
+    redo_delta_blocks_.reserve(redo_delta_blocks_.size() + update.new_redo_blocks_.size());
+    redo_delta_blocks_.insert(redo_delta_blocks_.end(),
+                              update.new_redo_blocks_.begin(),
+                              update.new_redo_blocks_.end());
 
     // Remove undo blocks.
     BlockIdSet undos_to_remove(update.remove_undo_blocks_.begin(),
                                update.remove_undo_blocks_.end());
-    auto iter = undo_delta_blocks_.begin();
-    while (iter != undo_delta_blocks_.end()) {
-      if (ContainsKey(undos_to_remove, *iter)) {
-        removed->push_back(*iter);
-        undos_to_remove.erase(*iter);
-        iter = undo_delta_blocks_.erase(iter);
+    decltype(undo_delta_blocks_) udb;
+    udb.reserve(undo_delta_blocks_.size() + 1);
+    if (!update.new_undo_block_.IsNull()) {
+      // Front-loading to keep the UNDO files in their natural order.
+      udb.emplace_back(update.new_undo_block_);
+    }
+    for (const auto& b : undo_delta_blocks_) {
+      if (const auto it = undos_to_remove.find(b); it == undos_to_remove.end()) {
+        udb.emplace_back(b);
       } else {
-        ++iter;
+        undos_to_remove.erase(it);
+        removed->emplace_back(b);
       }
     }
+    undo_delta_blocks_.swap(udb);
+
     CHECK(undos_to_remove.empty())
         << "Tablet " << tablet_metadata_->tablet_id() << " RowSet " << id_ << ": "
         << "Attempted to remove an undo delta block from the RowSetMetadata that is not present. "
@@ -251,11 +258,6 @@ void RowSetMetadata::CommitUpdate(const RowSetMetadataUpdate& update,
         << "Failed to remove: { "
         << vector<BlockId>(undos_to_remove.begin(), undos_to_remove.end())
         << " }";
-
-    if (!update.new_undo_block_.IsNull()) {
-      // Front-loading to keep the UNDO files in their natural order.
-      undo_delta_blocks_.insert(undo_delta_blocks_.begin(), update.new_undo_block_);
-    }
 
     for (const ColumnIdToBlockIdMap::value_type& e : update.cols_to_replace_) {
       // If we are major-compacting deltas into a column which previously had no
@@ -268,9 +270,10 @@ void RowSetMetadata::CommitUpdate(const RowSetMetadataUpdate& update,
     }
 
     for (const ColumnId& col_id : update.col_ids_to_remove_) {
-      BlockId old = FindOrDie(blocks_by_col_id_, col_id);
-      CHECK_EQ(1, blocks_by_col_id_.erase(col_id));
-      removed->push_back(old);
+      const auto it = blocks_by_col_id_.find(col_id);
+      CHECK(it != blocks_by_col_id_.end());
+      removed->push_back(it->second);
+      blocks_by_col_id_.erase(it);
     }
   }
 
