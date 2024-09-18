@@ -63,6 +63,7 @@ namespace master {
 class CatalogManager;
 class MasterCertAuthority;
 class MasterPathHandlers;
+class RestCatalogPathHandlers;
 class TSManager;
 
 class Master : public kserver::KuduServer {
@@ -199,6 +200,7 @@ class Master : public kserver::KuduServer {
   std::unique_ptr<CatalogManager> catalog_manager_;
   std::unique_ptr<transactions::TxnManager> txn_manager_;
   std::unique_ptr<MasterPathHandlers> path_handlers_;
+  std::unique_ptr<RestCatalogPathHandlers> rest_catalog_path_handlers_;
 
   // The status of the catalog manager initialization. This is set
   // by the async initialization task.

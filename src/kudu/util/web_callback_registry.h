@@ -27,14 +27,18 @@ namespace kudu {
 
 enum class HttpStatusCode {
   Ok, // 200
+  Created, // 201
+  NoContent, // 204
   TemporaryRedirect, //307
   BadRequest, // 400
   AuthenticationRequired, // 401
   NotFound, // 404
+  MethodNotAllowed, // 405
   LengthRequired, // 411
   RequestEntityTooLarge, // 413
   InternalServerError, // 500
   ServiceUnavailable, // 503
+  GatewayTimeout // 504
 };
 
 // StyleMode is an enumeration used to define the format of the server's response to the client.

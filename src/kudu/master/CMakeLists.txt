@@ -63,6 +63,7 @@ set(MASTER_SRCS
   master_service.cc
   placement_policy.cc
   ranger_authz_provider.cc
+  rest_catalog_path_handlers.cc
   sys_catalog.cc
   table_locations_cache.cc
   table_locations_cache_metrics.cc
@@ -144,6 +145,8 @@ ADD_KUDU_TEST(master-test RESOURCE_LOCK "master-web-port"
                           DATA_FILES ../scripts/first_argument.sh)
 ADD_KUDU_TEST(mini_master-test RESOURCE_LOCK "master-web-port")
 ADD_KUDU_TEST(placement_policy-test)
+ADD_KUDU_TEST(rest_catalog-test)
+ADD_KUDU_TEST(spnego_rest_catalog-test)
 ADD_KUDU_TEST(sys_catalog-test RESOURCE_LOCK "master-web-port")
 ADD_KUDU_TEST(ts_descriptor-test DATA_FILES ../scripts/first_argument.sh)
 ADD_KUDU_TEST(ts_state-test)

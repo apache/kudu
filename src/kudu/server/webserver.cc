@@ -152,6 +152,10 @@ string HttpStatusCodeToString(kudu::HttpStatusCode code) {
   switch (code) {
     case kudu::HttpStatusCode::Ok:
       return "200 OK";
+    case kudu::HttpStatusCode::Created:
+      return "201 Created";
+    case kudu::HttpStatusCode::NoContent:
+      return "204 No Content";
     case kudu::HttpStatusCode::TemporaryRedirect:
       return "307 Temporary Redirect";
     case kudu::HttpStatusCode::BadRequest:
@@ -160,6 +164,8 @@ string HttpStatusCodeToString(kudu::HttpStatusCode code) {
       return "401 Authentication Required";
     case kudu::HttpStatusCode::NotFound:
       return "404 Not Found";
+    case kudu::HttpStatusCode::MethodNotAllowed:
+      return "405 Method Not Allowed";
     case kudu::HttpStatusCode::LengthRequired:
       return "411 Length Required";
     case kudu::HttpStatusCode::RequestEntityTooLarge:
@@ -168,6 +174,8 @@ string HttpStatusCodeToString(kudu::HttpStatusCode code) {
       return "500 Internal Server Error";
     case kudu::HttpStatusCode::ServiceUnavailable:
       return "503 Service Unavailable";
+    case kudu::HttpStatusCode::GatewayTimeout:
+      return "504 Gateway Timeout";
   }
   LOG(FATAL) << "Unexpected HTTP response code";
 }
@@ -685,7 +693,7 @@ sq_callback_result_t Webserver::RunPathHandler(
     req.request_headers[key] = h.value;
   }
   req.request_method = request_info->request_method;
-  if (req.request_method == "POST") {
+  if (req.request_method == "POST" || req.request_method == "PUT") {
     const char* content_len_str = sq_get_header(connection, "Content-Length");
     int32_t content_len = 0;
     if (content_len_str == nullptr ||
