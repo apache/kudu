@@ -264,7 +264,7 @@ class FsManager {
 
   // If the tenant id is not specified, we treat it as the default tenant.
   bool BlockExists(const BlockId& block_id,
-                   const std::string& tenant_id = fs::kDefaultTenantID);
+                   const std::string& tenant_id = fs::kDefaultTenantID) const;
 
   // ==========================================================================
   //  on-disk path

@@ -68,7 +68,7 @@ class RowSetMetadataUpdate;
 //   1) remove old data files from disk
 //   2) remove log anchors corresponding to previously in-memory data
 //
-class RowSetMetadata {
+class RowSetMetadata final {
  public:
   // We use a flat_map to save memory, since there are lots of these metadata
   // objects.
@@ -95,14 +95,14 @@ class RowSetMetadata {
 
   void AddOrphanedBlocks(const BlockIdContainer& blocks);
 
-  const std::string ToString() const;
+  std::string ToString() const;
 
   int64_t id() const {
     std::lock_guard l(lock_);
     return id_;
   }
 
-  const SchemaPtr tablet_schema() const {
+  SchemaPtr tablet_schema() const {
     return tablet_metadata_->schema();
   }
 
@@ -194,7 +194,7 @@ class RowSetMetadata {
     return undo_delta_blocks_;
   }
 
-  TabletMetadata *tablet_metadata() const { return tablet_metadata_; }
+  const TabletMetadata* tablet_metadata() const { return tablet_metadata_; }
 
   int64_t last_durable_redo_dms_id() const {
     std::lock_guard l(lock_);
@@ -209,7 +209,9 @@ class RowSetMetadata {
   bool HasDataForColumnIdForTests(ColumnId col_id) const {
     BlockId b;
     std::lock_guard l(lock_);
-    if (!FindCopy(blocks_by_col_id_, col_id, &b)) return false;
+    if (!FindCopy(blocks_by_col_id_, col_id, &b)) {
+      return false;
+    }
     return fs_manager()->BlockExists(b);
   }
 
@@ -218,7 +220,8 @@ class RowSetMetadata {
     return !bloom_block_.IsNull() && fs_manager()->BlockExists(bloom_block_);
   }
 
-  FsManager *fs_manager() const { return tablet_metadata_->fs_manager(); }
+  const FsManager* fs_manager() const { return tablet_metadata_->fs_manager(); }
+  FsManager* fs_manager() { return tablet_metadata_->fs_manager(); }
 
   // Atomically commit a set of changes to this object.
   //
@@ -227,7 +230,7 @@ class RowSetMetadata {
   void CommitUpdate(const RowSetMetadataUpdate& update,
                     BlockIdContainer* removed);
 
-  void ToProtobuf(RowSetDataPB *pb);
+  void ToProtobuf(RowSetDataPB* pb) const;
 
   BlockIdContainer GetAllBlocks() const;
 
@@ -245,22 +248,19 @@ class RowSetMetadata {
  private:
   friend class TabletMetadata;
 
-  typedef simple_spinlock LockType;
-
-  explicit RowSetMetadata(TabletMetadata *tablet_metadata)
-    : tablet_metadata_(tablet_metadata),
-      initted_(false),
-      last_durable_redo_dms_id_(kNoDurableMemStore),
-      live_row_count_(0) {
+  explicit RowSetMetadata(TabletMetadata* tablet_metadata)
+      : tablet_metadata_(tablet_metadata),
+        initted_(false),
+        last_durable_redo_dms_id_(kNoDurableMemStore),
+        live_row_count_(0) {
   }
 
-  RowSetMetadata(TabletMetadata *tablet_metadata,
-                 int64_t id)
-    : tablet_metadata_(DCHECK_NOTNULL(tablet_metadata)),
-      initted_(true),
-      id_(id),
-      last_durable_redo_dms_id_(kNoDurableMemStore),
-      live_row_count_(0) {
+  RowSetMetadata(TabletMetadata* tablet_metadata, int64_t id)
+      : tablet_metadata_(DCHECK_NOTNULL(tablet_metadata)),
+        initted_(true),
+        id_(id),
+        last_durable_redo_dms_id_(kNoDurableMemStore),
+        live_row_count_(0) {
   }
 
   Status InitFromPB(const RowSetDataPB& pb);
@@ -271,7 +271,7 @@ class RowSetMetadata {
   bool initted_;
 
   // Protects the below mutable fields.
-  mutable LockType lock_;
+  mutable simple_spinlock lock_;
 
   // Rowset identifier. Set in one of the constructors, and may be also set
   // via LoadFromPB().
@@ -300,10 +300,10 @@ class RowSetMetadata {
 // A set up of updates to be made to a RowSetMetadata object.
 // Updates can be collected here, and then atomically applied to a RowSetMetadata
 // using the CommitUpdate() function.
-class RowSetMetadataUpdate {
+class RowSetMetadataUpdate final {
  public:
-  RowSetMetadataUpdate();
-  ~RowSetMetadataUpdate();
+  RowSetMetadataUpdate() = default;
+  ~RowSetMetadataUpdate() = default;
 
   // Replace the subsequence of redo delta blocks with the new (compacted) delta blocks.
   // The replaced blocks must be a contiguous subsequence of the the full list,

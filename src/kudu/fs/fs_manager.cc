@@ -1498,7 +1498,7 @@ Status FsManager::OpenBlock(const BlockId& block_id,
   return bm->OpenBlock(block_id, block);
 }
 
-bool FsManager::BlockExists(const BlockId& block_id, const string& tenant_id) {
+bool FsManager::BlockExists(const BlockId& block_id, const string& tenant_id) const {
   if (!VertifyTenant(tenant_id)) {
     return false;
   }
