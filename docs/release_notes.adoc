@@ -16,7 +16,7 @@
 // under the License.
 
 [[release_notes]]
-= Apache Kudu 1.17.0 Release Notes
+= Apache Kudu 1.17.1 Release Notes
 
 :author: Kudu Team
 :imagesdir: ./images
@@ -27,6 +27,95 @@
 :backend: html5
 :sectlinks:
 :experimental:
+
+[[rn_1.17.1]]
+Apache Kudu 1.17.1 is a maintenance release which fixes several bugs and build issues seen
+in Kudu 1.17.0.
+
+[[rn_1.17.1_upgrade_notes]]
+== Upgrade Notes
+
+[[rn_1.17.1_fixed_issues]]
+== Fixed Issues
+* Fixed issue where unexpected behavior was seen when trying to drop an unbounded range
+in a table using hash and range partitioned schema and created in Kudu 1.16.0 or earlier
+(see https://issues.apache.org/jira/browse/KUDU-3515[KUDU-3515]).
+
+* Upgraded 3rd-party libunwind to fix issues seen with aarch64, in particular Graviton3 instances.
+
+* Fixed issue where flushing of data in batches causes index out of bound exception
+if the table schema has changed (see https://issues.apache.org/jira/browse/KUDU-3483[KUDU-3483]).
+
+* Fixed crash of Kudu servers when system time is being synchronized by PTPd
+(see https://issues.apache.org/jira/browse/KUDU-3521[KUDU-3521]).
+
+* Fixed file descriptor leak issue when issues are encountered during encryption-at-rest
+(see https://issues.apache.org/jira/browse/KUDU-3520[KUDU-3520]).
+
+* Fixed bug in range-aware tablet replica placement causing Kudu master to crash
+(see https://issues.apache.org/jira/browse/KUDU-3532[KUDU-3532]).
+
+* Fixed NPE thrown by Kudu Java client when establishing a connection to a Kudu server
+in busy clusters.
+
+* Fixed issue when changing multi-master configuration through kudu command line tools
+(see https://issues.apache.org/jira/browse/KUDU-3491[KUDU-3491]).
+
+* Do not expose non-arithmetic gauges via Prometheus metrics.
+(see https://issues.apache.org/jira/browse/KUDU-3549[KUDU-3549]).
+
+* Optimizations around tombstoned tablets to reduce resource usage in specific scenarios
+(see https://issues.apache.org/jira/browse/KUDU-3486[KUDU-3486] and https://issues.apache.org/jira/browse/KUDU-3535[KUDU-3535]).
+
+* Fixed the IN-list predicate pruning to get the right hash schema based on specific
+partition's lower bound key (see https://issues.apache.org/jira/browse/KUDU-3564[KUDU-3564]).
+
+* Fixed the issue of unexpectedly setting a newly added column cell to its default value
+when a C++ client application was using stale table schema
+(see https://issues.apache.org/jira/browse/KUDU-3495[KUDU-3495]).
+
+* Fixed scan issues where an unexpected predicate was introduced
+(see https://issues.apache.org/jira/browse/KUDU-3518[KUDU-3518]).
+
+* Upgraded Netty to version 4.1.110.Final, addressing the well-known
+link:https://www.cve.org/CVERecord?id=CVE-2023-44487[CVE].
+
+* Removed the dependency on sse2neon by rewriting SSE2 and AVX code
+with native NEON instructions.
+
+* Upgraded 3rd-party curl to version 8.4.0.
+
+* Fixed integer overflow in available space metrics
+(see https://issues.apache.org/jira/browse/KUDU-3562[KUDU-3562]).
+
+* Fixed an issue where altering the number of columns in tables with per-range hash
+schemas causes the table to become unusable
+(see https://issues.apache.org/jira/browse/KUDU-3577[KUDU-3577]).
+
+* Fixed heap-use-after-free and data races in MajorDeltaCompactionOp when AlterTablet
+is running (see https://issues.apache.org/jira/browse/KUDU-3570[KUDU-3570]).
+
+* Fixed data race in CFileSet::Iterator::OptimizePKPredicates()
+(see https://issues.apache.org/jira/browse/KUDU-3569[KUDU-3569]).
+
+* Fixed memory barriers in concurrent binary tree implementation which causes
+failures in ARM platform as ARM allows stores to memory locations not
+necessarily in program order.
+
+* Fixed an issue where major compactions would fail on empty rowsets due to a
+regression from a previous fix
+(see https://issues.apache.org/jira/browse/KUDU-3619[KUDU-3619]).
+
+* Added support for Python versions 3.9 and 3.10.
+
+* Simplified setting up of Kudu Python client by automatically installing
+the supported version of Cython during the setup process.
+
+[[rn_1.17.1_obsoletions]]
+* Discontinued support for Python verions 3.0 to 3.5.
+
+[[rn_1.17.0]]
+= Apache Kudu 1.17.0 Release Notes
 
 [[rn_1.17.0_upgrade_notes]]
 == Upgrade Notes
