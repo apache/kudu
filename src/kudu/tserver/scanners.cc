@@ -65,9 +65,10 @@ DEFINE_int32(completed_scan_history_count, 10,
 TAG_FLAG(completed_scan_history_count, experimental);
 
 DEFINE_bool(show_slow_scans, false,
-            "Whether to show slow scans on the /scans page of web or record it in the log. "
-            "Please note that once set to true, full table scans may occur, which may affect "
-            "the normal Kudu service unexpectedly.");
+            "Whether to report on 'slow' scans at the /scans WebUI page and "
+            "in the INFO log. If enabled, well performing full table scans "
+            "and scans run by lazily-fetching clients may be reported as "
+            "'slow' depending on the --slow_scanner_threshold_ms setting.");
 TAG_FLAG(show_slow_scans, advanced);
 TAG_FLAG(show_slow_scans, runtime);
 
@@ -356,7 +357,8 @@ vector<SharedScanDescriptor> ScannerManager::ListScans() const {
 vector<SharedScanDescriptor> ScannerManager::ListSlowScans() const {
   vector<SharedScanDescriptor> ret;
   if (!FLAGS_show_slow_scans) {
-    LOG(INFO) << "Slow scans show is disabled. Set --show_slow_scans to enable it.";
+    KLOG_EVERY_N_SECS(INFO, 60) << Substitute(
+        "slow scan reporting is disabled: set --show_slow_scans to enable");
     return ret;
   }
 
