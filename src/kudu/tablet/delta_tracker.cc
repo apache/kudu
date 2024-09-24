@@ -18,6 +18,7 @@
 #include "kudu/tablet/delta_tracker.h"
 
 #include <algorithm>
+#include <limits>
 #include <mutex>
 #include <optional>
 #include <ostream>
@@ -61,15 +62,14 @@
 
 DECLARE_int32(tablet_history_max_age_sec);
 
-DEFINE_uint64(all_delete_op_delta_file_cnt_for_compaction, 1,
+DEFINE_uint64(all_delete_op_delta_file_cnt_for_compaction,
+              std::numeric_limits<uint64_t>::max(),
               "The minimum number of REDO delta files containing only ancient DELETE "
               "operations to schedule a major delta compaction on them. A DELETE "
               "operation is considered ancient if it was applied more than "
-              "--tablet_history_max_age_sec seconds ago. "
-              "If you want to control the number of REDO delta files containing only "
-              "ancient DELETE operations, you can turn up this parameter value. "
-              "Otherwise, it is recommended to keep the default value to release "
-              "storage space efficiently.");
+              "--tablet_history_max_age_sec seconds ago. With the default "
+              "setting, this behavior is effectively disabled; see KUDU-3619 "
+              "for details.");
 
 namespace kudu {
 

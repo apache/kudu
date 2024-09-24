@@ -87,6 +87,7 @@ DECLARE_int32(tablet_history_max_age_sec);
 DECLARE_bool(rowset_metadata_store_keys);
 DECLARE_double(tablet_delta_store_major_compact_min_ratio);
 DECLARE_int32(tablet_delta_store_minor_compact_max);
+DECLARE_uint64(all_delete_op_delta_file_cnt_for_compaction);
 
 using std::is_sorted;
 using std::make_tuple;
@@ -645,11 +646,22 @@ TEST_F(TestRowSet, TestCompactStores) {
 }
 
 TEST_F(TestRowSet, TestGCScheduleRedoFilesWithFullOfDeleteOP) {
+  // Enable the functionality introduced in the context of KUDU-3367 just
+  // for this test case.
+  FLAGS_all_delete_op_delta_file_cnt_for_compaction = 1;
+
   // Make major delta compaction runnable even with tiny amount of data accumulated
   // across rowset's deltas.
   FLAGS_tablet_delta_store_major_compact_min_ratio = 0.0001;
+
   // Write the min/max keys to the rowset metadata. In this way, we can simplify the
   // test scenario by focusing on the REDO delta store files.
+  //
+  // TODO(aserbin): what to do if rowset metadata doesn't store the min/max key?
+  //                In such case, the major compaction like below simply fails,
+  //                but that's just one reason for the functionality behind
+  //                KUDU-3367 being defective; there is more: see KUDU-3619
+  //                for details.
   FLAGS_rowset_metadata_store_keys = true;
 
   WriteTestRowSet();
