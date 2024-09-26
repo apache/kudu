@@ -23,6 +23,7 @@
 #include <ostream>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags.h>
@@ -226,14 +227,19 @@ void OpTracker::Release(OpDriver* driver) {
   DecrementCounters(*driver);
 
   // Remove the op from the map updating memory consumption if needed.
-  std::lock_guard l(lock_);
-  if (mem_tracker_) {
-    const State& st = FindOrDie(pending_ops_, driver);
-    mem_tracker_->Release(st.memory_footprint);
+  int64_t memory_footprint = 0;
+  {
+    std::lock_guard l(lock_);
+    const auto it = pending_ops_.find(driver);
+    if (PREDICT_FALSE(it == pending_ops_.end())) {
+      LOG(FATAL) << Substitute("$0: pending op not found",
+                               driver->ToStringUnlocked());
+    }
+    memory_footprint = it->second.memory_footprint;
+    pending_ops_.erase(it);
   }
-  if (PREDICT_FALSE(pending_ops_.erase(driver) != 1)) {
-    LOG(FATAL) << Substitute("Could not remove pending op from map: $0",
-                             driver->ToStringUnlocked());
+  if (mem_tracker_) {
+    mem_tracker_->Release(memory_footprint);
   }
 }
 
