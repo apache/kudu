@@ -766,9 +766,11 @@ build_curl() {
     --prefix=$PREFIX \
     --disable-alt-svc \
     --disable-dict \
+    --disable-docs \
     --disable-doh \
     --disable-file \
     --disable-ftp \
+    --disable-httpsrr \
     --disable-gopher \
     --disable-imap \
     --disable-ipv6 \
@@ -781,16 +783,20 @@ build_curl() {
     --disable-pop3 \
     --disable-progress-meter \
     --disable-rtsp \
+    --disable-sha512-256 \
     --disable-smb \
     --disable-smtp \
     --disable-telnet \
     --disable-tftp \
+    --without-apple-idn \
     --without-brotli \
     --without-libidn2 \
     --without-libpsl \
     --without-librtmp \
     --without-libssh2 \
+    --without-libuv \
     --without-nghttp2 \
+    --without-openssl-quic \
     --without-zstd \
     --with-gssapi \
     --with-openssl
