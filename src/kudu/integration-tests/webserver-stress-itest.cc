@@ -19,23 +19,17 @@
 #include <string>
 #include <vector>
 
-#include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/mini-cluster/webui_checker.h"
-#include "kudu/util/curl_util.h"
-#include "kudu/util/faststring.h"
-#include "kudu/util/net/net_util.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 using kudu::cluster::ExternalMiniCluster;
 using kudu::cluster::ExternalMiniClusterOptions;
-using std::string;
 using std::unique_ptr;
 using std::vector;
 
@@ -97,16 +91,6 @@ TEST_F(KuduTest, TestWebUIDoesNotCrashCluster) {
     SleepFor(MonoDelta::FromMilliseconds(10));
   }
   SleepFor(MonoDelta::FromSeconds(5));
-
-  {
-    EasyCurl curl;
-    string web_url =
-        strings::Substitute("http://$0//maintenance-manager",
-                            cluster.tablet_server(0)->bound_http_hostport().ToString());
-    faststring buf;
-    curl.FetchURL(web_url, &buf);
-    ASSERT_STR_CONTAINS(buf.ToString(), "data_retained");
-  }
 
   work.StopAndJoin();
 

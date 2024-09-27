@@ -1017,6 +1017,18 @@ TEST_F(TabletServerStartupWebPageTest, TestLogBlockContainerMetrics) {
   }
 }
 
+class TabletServerMaintenanceManagerWebPageTest: public TabletServerStartupWebPageTest {
+};
+
+TEST_F(TabletServerMaintenanceManagerWebPageTest, OpDataRetainedStats) {
+  mini_server_->WaitStarted();
+
+  faststring buf;
+  ASSERT_OK(EasyCurl().FetchURL(Substitute("http://$0/maintenance-manager",
+                                           mini_server_->bound_http_addr().ToString()),
+                                &buf));
+  ASSERT_STR_CONTAINS(buf.ToString(), "data_retained");
+}
 
 class TabletServerDiskErrorTest : public TabletServerTestBase,
                                   public testing::WithParamInterface<ErrorType> {
