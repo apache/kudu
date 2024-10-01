@@ -627,7 +627,7 @@ Status TSTabletManager::WaitForAllBootstrapsToFinish() {
 
   open_tablet_pool_->Wait();
 
-  shared_lock<RWMutex> l(lock_);
+  shared_lock l(lock_);
   for (const TabletMap::value_type& entry : tablet_map_) {
     if (entry.second->state() == tablet::FAILED) {
       return entry.second->error();
@@ -773,7 +773,7 @@ void TSTabletManager::StartTabletCopy(
   optional<string> transition;
   {
     // Lock must be dropped before executing callbacks.
-    shared_lock<RWMutex> lock(lock_);
+    shared_lock lock(lock_);
     auto* t = FindOrNull(transition_in_progress_, tablet_id);
     if (t) {
       transition = *t;
@@ -1590,7 +1590,7 @@ void TSTabletManager::RegisterTablet(const string& tablet_id,
 
 bool TSTabletManager::LookupTablet(const string& tablet_id,
                                    scoped_refptr<TabletReplica>* replica) const {
-  shared_lock<RWMutex> l(lock_);
+  shared_lock l(lock_);
   return LookupTabletUnlocked(tablet_id, replica);
 }
 
@@ -1618,7 +1618,7 @@ const NodeInstancePB& TSTabletManager::NodeInstance() const {
 
 void TSTabletManager::GetTabletReplicasImpl(
     vector<scoped_refptr<TabletReplica>>* replicas) const {
-  shared_lock<RWMutex> l(lock_);
+  shared_lock l(lock_);
   AppendValuesFromMap(tablet_map_, replicas);
 }
 
@@ -1640,7 +1640,7 @@ void TSTabletManager::MarkTabletsDirty(const vector<string>& tablet_ids, const s
 
 int TSTabletManager::GetNumLiveTablets() const {
   int count = 0;
-  shared_lock<RWMutex> l(lock_);
+  shared_lock l(lock_);
   for (const auto& entry : tablet_map_) {
     tablet::TabletStatePB state = entry.second->state();
     if (state == tablet::BOOTSTRAPPING ||
@@ -1653,7 +1653,7 @@ int TSTabletManager::GetNumLiveTablets() const {
 
 TabletNumByDimensionMap TSTabletManager::GetNumLiveTabletsByDimension() const {
   TabletNumByDimensionMap result;
-  shared_lock<RWMutex> l(lock_);
+  shared_lock l(lock_);
   for (const auto& entry : tablet_map_) {
     tablet::TabletStatePB state = entry.second->state();
     if (state == tablet::BOOTSTRAPPING ||
@@ -1669,7 +1669,7 @@ TabletNumByDimensionMap TSTabletManager::GetNumLiveTabletsByDimension() const {
 
 TabletNumByRangePerTableMap TSTabletManager::GetNumLiveTabletsByRangePerTable() const {
   TabletNumByRangePerTableMap result;
-  shared_lock<RWMutex> l(lock_);
+  shared_lock l(lock_);
   for (const auto& entry : tablet_map_) {
     tablet::TabletStatePB state = entry.second->state();
     if (state == tablet::BOOTSTRAPPING ||
@@ -1712,7 +1712,7 @@ void TSTabletManager::TxnStalenessTrackerTask() {
 
     vector<scoped_refptr<TabletReplica>> replicas;
     {
-      shared_lock<RWMutex> l(lock_);
+      shared_lock l(lock_);
       for (const auto& elem : tablet_map_) {
         auto r = elem.second;
         // Find the running txn status tablet replicas.
@@ -1810,7 +1810,7 @@ void TSTabletManager::PopulateIncrementalTabletReport(TabletReportPB* report,
   vector<scoped_refptr<tablet::TabletReplica>> to_report;
   to_report.reserve(tablet_ids.size());
   {
-    shared_lock<RWMutex> shared_lock(lock_);
+    shared_lock shared_lock(lock_);
     for (const auto& id : tablet_ids) {
       const scoped_refptr<tablet::TabletReplica>* replica =
           FindOrNull(tablet_map_, id);
@@ -2035,7 +2035,7 @@ Status TSTabletManager::WaitForNoTransitionsForTests(const MonoDelta& timeout) c
   const MonoTime start = MonoTime::Now();
   while (MonoTime::Now() - start < timeout) {
     {
-      shared_lock<RWMutex> lock(lock_);
+      shared_lock lock(lock_);
       if (transition_in_progress_.empty()) {
         return Status::OK();
       }

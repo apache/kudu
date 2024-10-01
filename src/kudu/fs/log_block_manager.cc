@@ -854,7 +854,7 @@ class LogBlockContainerNativeMeta final : public LogBlockContainer {
     }
 
     // Try lock before reading metadata offset, consider it not full if lock failed.
-    shared_lock<RWMutex> l(metadata_compact_lock_, std::try_to_lock);
+    shared_lock l(metadata_compact_lock_, std::try_to_lock);
     if (!l.owns_lock()) {
       return false;
     }
@@ -893,7 +893,7 @@ class LogBlockContainerNativeMeta final : public LogBlockContainer {
   }
 
   bool ShouldCompact() const {
-    shared_lock<RWMutex> l(metadata_compact_lock_);
+    shared_lock l(metadata_compact_lock_);
     return ShouldCompactUnlocked();
   }
 
@@ -1668,7 +1668,7 @@ Status LogBlockContainerNativeMeta::RemoveBlockIdsFromMetadata(
     deleted_block_ids->resize(deleted_count);
   });
 
-  shared_lock<RWMutex> l(metadata_compact_lock_);
+  shared_lock l(metadata_compact_lock_);
   for (const auto& r : records) {
     RETURN_NOT_OK_HANDLE_ERROR(metadata_file_->Append(r));
     ++deleted_count;
@@ -1692,7 +1692,7 @@ Status LogBlockContainerNativeMeta::AddBlockIdsToMetadata(
     records.emplace_back(record);
   }
 
-  shared_lock<RWMutex> l(metadata_compact_lock_);
+  shared_lock l(metadata_compact_lock_);
   for (const auto& r : records) {
     RETURN_NOT_OK_HANDLE_ERROR(metadata_file_->Append(r));
   }
@@ -1704,8 +1704,10 @@ Status LogBlockContainerNativeMeta::SyncMetadata() {
   VLOG(3) << "Syncing metadata file " << metadata_file_->filename();
   RETURN_NOT_OK_HANDLE_ERROR(read_only_status());
   if (FLAGS_enable_data_block_fsync) {
-    if (metrics_) metrics_->generic_metrics.total_disk_sync->Increment();
-    shared_lock<RWMutex> l(metadata_compact_lock_);
+    if (metrics_) {
+      metrics_->generic_metrics.total_disk_sync->Increment();
+    }
+    shared_lock l(metadata_compact_lock_);
     RETURN_NOT_OK_HANDLE_ERROR(metadata_file_->Sync());
   }
   return Status::OK();

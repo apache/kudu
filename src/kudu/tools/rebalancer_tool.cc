@@ -151,7 +151,7 @@ Status RebalancerTool::PrintStats(ostream& out) {
   sort(locations.begin(), locations.end());
 
   for (const auto& location : locations) {
-    shared_lock<decltype(ksck_lock_)> guard(ksck_lock_);
+    shared_lock guard(ksck_lock_);
     ClusterRawInfo raw_info;
     RETURN_NOT_OK(KsckResultsToClusterRawInfo(location, ksck_->results(), &raw_info));
     ClusterInfo ci;
@@ -176,7 +176,7 @@ Status RebalancerTool::Run(RunStatus* result_status, size_t* moves_count) {
 
   ClusterRawInfo raw_info;
   {
-    shared_lock<decltype(ksck_lock_)> guard(ksck_lock_);
+    shared_lock guard(ksck_lock_);
     RETURN_NOT_OK(KsckResultsToClusterRawInfo(
         nullopt, ksck_->results(), &raw_info));
   }
@@ -817,7 +817,7 @@ Status RebalancerTool::RunWith(Runner* runner, RunStatus* result_status) {
 Status RebalancerTool::GetClusterRawInfo(const optional<string>& location,
                                          ClusterRawInfo* raw_info) {
   RETURN_NOT_OK(RefreshKsckResults());
-  shared_lock<decltype(ksck_lock_)> guard(ksck_lock_);
+  shared_lock guard(ksck_lock_);
   return KsckResultsToClusterRawInfo(location, ksck_->results(), raw_info);
 }
 

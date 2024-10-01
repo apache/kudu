@@ -1388,7 +1388,7 @@ Status CatalogManager::InitTokenSigner() {
 void CatalogManager::PrepareForLeadershipTask() {
   {
     // Hack to block this function until InitSysCatalogAsync() is finished.
-    shared_lock<LockType> l(lock_);
+    shared_lock l(lock_);
   }
   const RaftConsensus* consensus = sys_catalog_->tablet_replica()->consensus();
   const int64_t term_before_wait = consensus->CurrentTerm();
@@ -1740,7 +1740,7 @@ void CatalogManager::Shutdown() {
   // tasks for those entries.
   vector<scoped_refptr<TableInfo>> copy;
   {
-    shared_lock<LockType> l(lock_);
+    shared_lock l(lock_);
     AppendValuesFromMap(table_ids_map_, &copy);
   }
   AbortAndWaitForAllTasks(copy);
@@ -2380,7 +2380,7 @@ Status CatalogManager::FindLockAndAuthorizeTable(
   // Set to true if the client-provided table name and ID refer to different tables.
   scoped_refptr<TableInfo> table_with_mismatched_name;
   {
-    shared_lock<LockType> l(lock_);
+    shared_lock l(lock_);
     if (table_identifier.has_table_id()) {
       table = FindPtrOrNull(table_ids_map_, table_identifier.table_id());
 
@@ -4078,7 +4078,7 @@ Status CatalogManager::ListTables(const ListTablesRequestPB* req,
     if (req->has_show_soft_deleted()) {
       show_soft_deleted = req->show_soft_deleted();
     }
-    shared_lock<LockType> l(lock_);
+    shared_lock l(lock_);
     if (show_soft_deleted) {
       for (const auto& entry : soft_deleted_table_names_map_) {
         tables_info.emplace_back(entry.second);
@@ -4285,7 +4285,7 @@ bool CatalogManager::IsTableWriteDisabled(const scoped_refptr<TableInfo>& table,
 Status CatalogManager::GetTableInfo(const string& table_id, scoped_refptr<TableInfo> *table) {
   leader_lock_.AssertAcquiredForReading();
 
-  shared_lock<LockType> l(lock_);
+  shared_lock l(lock_);
   *table = FindPtrOrNull(table_ids_map_, table_id);
   return Status::OK();
 }
@@ -4294,7 +4294,7 @@ void CatalogManager::GetTableInfoByName(const string& table_name,
                                         scoped_refptr<TableInfo> *table) {
   leader_lock_.AssertAcquiredForReading();
 
-  shared_lock<LockType> l(lock_);
+  shared_lock l(lock_);
   *table = FindPtrOrNull(normalized_table_names_map_, table_name);
 }
 
@@ -4302,7 +4302,7 @@ void CatalogManager::GetAllTables(vector<scoped_refptr<TableInfo>>* tables) {
   leader_lock_.AssertAcquiredForReading();
 
   tables->clear();
-  shared_lock<LockType> l(lock_);
+  shared_lock l(lock_);
   AppendValuesFromMap(table_ids_map_, tables);
 }
 
@@ -4310,7 +4310,7 @@ void CatalogManager::GetNormalizedTables(vector<scoped_refptr<TableInfo>>* table
   leader_lock_.AssertAcquiredForReading();
 
   tables->clear();
-  shared_lock<LockType> l(lock_);
+  shared_lock l(lock_);
   AppendValuesFromMap(normalized_table_names_map_, tables);
 }
 
@@ -4318,14 +4318,14 @@ void CatalogManager::GetAllTabletsForTests(vector<scoped_refptr<TabletInfo>>* ta
   leader_lock_.AssertAcquiredForReading();
 
   tablets->clear();
-  shared_lock<LockType> l(lock_);
+  shared_lock l(lock_);
   AppendValuesFromMap(tablet_map_, tablets);
 }
 
 Status CatalogManager::TableNameExists(const string& table_name, bool* exists) {
   leader_lock_.AssertAcquiredForReading();
 
-  shared_lock<LockType> l(lock_);
+  shared_lock l(lock_);
   scoped_refptr<TableInfo> table = FindTableWithNameUnlocked(table_name);
   *exists = (table != nullptr);
   return Status::OK();
@@ -4364,7 +4364,7 @@ Status CatalogManager::GetTabletReplica(const string& tablet_id,
                                         scoped_refptr<TabletReplica>* replica) const {
   // Note: CatalogManager has only one table, 'sys_catalog', with only
   // one tablet.
-  shared_lock<LockType> l(lock_);
+  shared_lock l(lock_);
   if (!sys_catalog_) {
     return Status::ServiceUnavailable("Systable not yet initialized");
   }
@@ -4380,7 +4380,7 @@ Status CatalogManager::GetTabletReplica(const string& tablet_id,
 void CatalogManager::GetTabletReplicas(vector<scoped_refptr<TabletReplica>>* replicas) const {
   // Note: CatalogManager has only one table, 'sys_catalog', with only
   // one tablet.
-  shared_lock<LockType> l(lock_);
+  shared_lock l(lock_);
   if (!sys_catalog_) {
     return;
   }
@@ -5336,7 +5336,7 @@ Status CatalogManager::ProcessTabletReport(
     // We only need to acquire lock_ for the tablet_map_ access, but since it's
     // acquired exclusively so rarely, it's probably cheaper to acquire and
     // hold it for all tablets here than to acquire/release it for each tablet.
-    shared_lock<LockType> l(lock_);
+    shared_lock l(lock_);
     for (const ReportedTabletPB& report : full_report.updated_tablets()) {
       const string& tablet_id = report.tablet_id();
 
@@ -5769,7 +5769,7 @@ std::shared_ptr<RaftConsensus> CatalogManager::master_consensus() const {
   // CatalogManager::InitSysCatalogAsync takes lock_ in exclusive mode in order
   // to initialize sys_catalog_, so it's sufficient to take lock_ in shared mode
   // here to protect access to sys_catalog_.
-  shared_lock<LockType> l(lock_);
+  shared_lock l(lock_);
   if (!sys_catalog_) {
     return nullptr;
   }
@@ -5826,9 +5826,9 @@ void CatalogManager::SendDeleteTabletRequest(const scoped_refptr<TabletInfo>& ta
 void CatalogManager::ExtractTabletsToProcess(
     vector<scoped_refptr<TabletInfo>>* tablets_to_process) {
 
-  shared_lock<LockType> l(lock_);
+  shared_lock l(lock_);
 
-  // TODO: At the moment we loop through all the tablets
+  // TODO(matteo.bertozzi): At the moment we loop through all the tablets
   //       we can keep a set of tablets waiting for "assignment"
   //       or just a counter to avoid to take the lock and loop through the tablets
   //       if everything is "stable".
@@ -5858,7 +5858,7 @@ void CatalogManager::ExtractTabletsToProcess(
 void CatalogManager::ExtractDeletedTablesAndTablets(
     vector<scoped_refptr<TableInfo>>* deleted_tables,
     vector<scoped_refptr<TabletInfo>>* deleted_tablets) {
-  shared_lock<LockType> l(lock_);
+  shared_lock l(lock_);
   for (const auto& table_entry : table_ids_map_) {
     scoped_refptr<TableInfo> table = table_entry.second;
     TableMetadataLock table_lock(table.get(), LockMode::READ);
@@ -6489,7 +6489,7 @@ Status CatalogManager::GetTabletLocations(const string& tablet_id,
   locs_pb->mutable_interned_replicas()->Clear();
   scoped_refptr<TabletInfo> tablet_info;
   {
-    shared_lock<LockType> l(lock_);
+    shared_lock l(lock_);
     // It's OK to return NOT_FOUND back to the client, even with authorization enabled,
     // because tablet IDs are randomly generated and don't carry user data.
     if (!FindCopy(tablet_map_, tablet_id, &tablet_info)) {
@@ -6516,7 +6516,7 @@ Status CatalogManager::ReplaceTablet(const string& tablet_id, ReplaceTabletRespo
   // Lookup the tablet-to-be-replaced and get its table.
   scoped_refptr<TabletInfo> old_tablet;
   {
-    shared_lock<LockType> l(lock_);
+    shared_lock l(lock_);
     if (!FindCopy(tablet_map_, tablet_id, &old_tablet)) {
       return Status::NotFound(Substitute("Unknown tablet $0", tablet_id));
     }
@@ -6716,7 +6716,7 @@ void CatalogManager::DumpState(std::ostream* out) const {
   // Copy the internal state so that, if the output stream blocks,
   // we don't end up holding the lock for a long time.
   {
-    shared_lock<LockType> l(lock_);
+    shared_lock l(lock_);
     ids_copy = table_ids_map_;
     names_copy = normalized_table_names_map_;
     tablets_copy = tablet_map_;
@@ -7104,7 +7104,7 @@ Status CatalogManager::GetTableStates(const TableIdentifierPB& table_identifier,
   scoped_refptr<TableInfo> table_info;
   *is_soft_deleted_table = false;
   // Confirm the table really exists in the system catalog.
-  shared_lock<LockType> l(lock_);
+  shared_lock l(lock_);
   scoped_refptr<TableInfo> table_by_name;
   scoped_refptr<TableInfo> table_by_id;
   if (table_identifier.has_table_name()) {
@@ -7474,7 +7474,7 @@ Status TableInfo::GetTabletsInRange(
     has_key_end = true;
   }
 
-  shared_lock<rw_spinlock> l(lock_);
+  shared_lock l(lock_);
   RawTabletInfoMap::const_iterator it;
   if (has_key_start) {
     it = tablet_map_.upper_bound(partition_key_start);
@@ -7502,7 +7502,7 @@ Status TableInfo::GetTabletsInRange(
 }
 
 bool TableInfo::IsAlterInProgress(uint32_t version) const {
-  shared_lock<rw_spinlock> l(lock_);
+  shared_lock l(lock_);
   auto it = schema_version_counts_.begin();
   if (it == schema_version_counts_.end()) {
     // The table has no tablets.
@@ -7518,7 +7518,7 @@ bool TableInfo::IsAlterInProgress(uint32_t version) const {
 }
 
 bool TableInfo::IsCreateInProgress() const {
-  shared_lock<rw_spinlock> l(lock_);
+  shared_lock l(lock_);
   for (const auto& e : tablet_map_) {
     TabletMetadataLock tablet_lock(e.second, LockMode::READ);
     if (!tablet_lock.data().is_running()) {
@@ -7545,7 +7545,7 @@ void TableInfo::RemoveTask(const string& tablet_id, MonitoredTask* task) {
 }
 
 void TableInfo::AbortTasks() {
-  shared_lock<rw_spinlock> l(lock_);
+  shared_lock l(lock_);
   for (auto& task : pending_tasks_) {
     task.second->Abort();
   }
@@ -7555,7 +7555,7 @@ void TableInfo::WaitTasksCompletion() {
   int wait_time = 5;
   while (1) {
     {
-      shared_lock<rw_spinlock> l(lock_);
+      shared_lock l(lock_);
       if (pending_tasks_.empty()) {
         break;
       }
@@ -7566,7 +7566,7 @@ void TableInfo::WaitTasksCompletion() {
 }
 
 bool TableInfo::ContainsTask(const string& tablet_id, const string& task_description) {
-  shared_lock<rw_spinlock> l(lock_);
+  shared_lock l(lock_);
   auto range = pending_tasks_.equal_range(tablet_id);
   for (auto it = range.first; it != range.second; ++it) {
     if (it->second->description() == task_description) {
@@ -7579,7 +7579,7 @@ bool TableInfo::ContainsTask(const string& tablet_id, const string& task_descrip
 void TableInfo::GetTaskList(vector<scoped_refptr<MonitoredTask>>* tasks) {
   tasks->clear();
   {
-    shared_lock<rw_spinlock> l(lock_);
+    shared_lock l(lock_);
     for (const auto& task : pending_tasks_) {
       tasks->push_back(task.second);
     }
@@ -7588,7 +7588,7 @@ void TableInfo::GetTaskList(vector<scoped_refptr<MonitoredTask>>* tasks) {
 
 void TableInfo::GetAllTablets(vector<scoped_refptr<TabletInfo>>* ret) const {
   ret->clear();
-  shared_lock<rw_spinlock> l(lock_);
+  shared_lock l(lock_);
   for (const auto& e : tablet_map_) {
     ret->emplace_back(make_scoped_refptr(e.second));
   }

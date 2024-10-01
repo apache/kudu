@@ -19,7 +19,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
-#include <shared_mutex>
+#include <shared_mutex> // IWYU pragma: keep
 #include <string>
 #include <type_traits>  // IWYU pragma: keep
 #include <unordered_map>
@@ -206,7 +206,7 @@ class TSDescriptor : public enable_make_shared<TSDescriptor> {
   // If dimension is none, return the total number of replicas in the tablet server.
   // Otherwise, return the number of replicas in the dimension.
   int num_live_replicas(const std::optional<std::string>& dimension = std::nullopt) const {
-    std::shared_lock<rw_spinlock> l(lock_);
+    std::shared_lock l(lock_);
     if (dimension) {
       int32_t num_live_tablets = 0;
       if (num_live_tablets_by_dimension_) {
@@ -220,7 +220,7 @@ class TSDescriptor : public enable_make_shared<TSDescriptor> {
   // Return the number of live replicas (i.e. running or bootstrapping)
   // in the given range for the given table.
   int num_live_replicas_by_range(const std::string& range_key, const std::string& table_id) const {
-    std::shared_lock<rw_spinlock> l(lock_);
+    std::shared_lock l(lock_);
     int32_t num_live_tablets_by_range = 0;
     if (const auto* ranges = FindOrNull(
           num_live_tablets_by_range_per_table_, table_id); ranges != nullptr) {
@@ -231,7 +231,7 @@ class TSDescriptor : public enable_make_shared<TSDescriptor> {
 
   // Return the number of live replicas (i.e. running or bootstrapping) in the given table.
   int num_live_replicas_by_table(const std::string& table_id) const {
-    std::shared_lock<rw_spinlock> l(lock_);
+    std::shared_lock l(lock_);
     int32_t num_live_tablets_by_table = 0;
     if (ContainsKey(num_live_tablets_by_range_per_table_, table_id)) {
       auto ranges = FindOrDie(num_live_tablets_by_range_per_table_, table_id);
@@ -246,7 +246,7 @@ class TSDescriptor : public enable_make_shared<TSDescriptor> {
   // since the location could change at any time if the tablet server
   // re-registers.
   std::optional<std::string> location() const {
-    std::shared_lock<rw_spinlock> l(lock_);
+    std::shared_lock l(lock_);
     return location_;
   }
 

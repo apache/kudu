@@ -147,17 +147,17 @@ class rw_spinlock {
 //
 //   // Lock shared:
 //   {
-//     std::shared_lock<rw_spinlock> lock(mylock.get_lock());
+//     std::shared_lock lock(mylock.get_lock());
 //     ...
 //   }
 //
 //   // Lock exclusive:
 //
 //   {
-//     std::lock_guard<percpu_rwlock> lock(mylock);
+//     std::lock_guard lock(mylock);
 //     ...
 //   }
-class percpu_rwlock {
+class percpu_rwlock { // NOLINT(readability-identifier-naming)
  public:
   percpu_rwlock() {
 #if defined(__APPLE__) || defined(THREAD_SANITIZER)

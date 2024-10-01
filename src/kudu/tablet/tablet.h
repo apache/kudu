@@ -24,9 +24,8 @@
 #include <memory>
 #include <mutex>
 #include <ostream>
-#include <shared_mutex>
+#include <shared_mutex> // IWYU pragma: keep
 #include <string>
-#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -781,12 +780,12 @@ class Tablet {
                                  const RowSetVector &to_add);
 
   void GetComponents(scoped_refptr<TabletComponents>* comps) const {
-    std::shared_lock<rw_spinlock> l(component_lock_);
+    std::shared_lock l(component_lock_);
     *comps = CHECK_NOTNULL(components_.get());
   }
 
   void GetComponentsOrNull(scoped_refptr<TabletComponents>* comps) const {
-    std::shared_lock<rw_spinlock> l(component_lock_);
+    std::shared_lock l(component_lock_);
     *comps = components_;
   }
 

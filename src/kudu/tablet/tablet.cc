@@ -596,7 +596,7 @@ void Tablet::SplitKeyRange(const EncodedKey* start_key,
                            std::vector<KeyRange>* key_range_info) {
   shared_ptr<RowSetTree> rowsets_copy;
   {
-    shared_lock<rw_spinlock> l(component_lock_);
+    shared_lock l(component_lock_);
     rowsets_copy = components_->rowsets;
   }
 
@@ -1099,7 +1099,7 @@ Status Tablet::MutateRowUnlocked(const IOContext* io_context,
 }
 
 void Tablet::StartApplying(WriteOpState* op_state) {
-  shared_lock<rw_spinlock> l(component_lock_);
+  shared_lock l(component_lock_);
 
   const auto txn_id = op_state->txn_id();
   if (txn_id) {
@@ -1786,7 +1786,7 @@ void Tablet::SetFlushCompactCommonHooksForTests(
 }
 
 int32_t Tablet::CurrentMrsIdForTests() const {
-  shared_lock<rw_spinlock> l(component_lock_);
+  shared_lock l(component_lock_);
   return components_->memrowset->mrs_id();
 }
 
@@ -1805,7 +1805,7 @@ Status Tablet::PickRowSetsToCompact(RowSetsInCompactionOrFlush *picked,
   // in tablet.h for details on why that would be bad.
   shared_ptr<RowSetTree> rowsets_copy;
   {
-    shared_lock<rw_spinlock> l(component_lock_);
+    shared_lock l(component_lock_);
     rowsets_copy = components_->rowsets;
   }
 
@@ -1831,7 +1831,7 @@ Status Tablet::PickRowSetsToCompact(RowSetsInCompactionOrFlush *picked,
     VLOG_WITH_PREFIX(2) << "Compaction quality: " << quality;
   }
 
-  shared_lock<rw_spinlock> l(component_lock_);
+  shared_lock l(component_lock_);
   for (const shared_ptr<RowSet>& rs : components_->rowsets->all_rowsets()) {
     if (picked_set.erase(rs.get()) == 0) {
       // Not picked.
@@ -1898,7 +1898,7 @@ bool Tablet::compaction_enabled() const {
 void Tablet::GetRowSetsForTests(RowSetVector* out) {
   shared_ptr<RowSetTree> rowsets_copy;
   {
-    shared_lock<rw_spinlock> l(component_lock_);
+    shared_lock l(component_lock_);
     rowsets_copy = components_->rowsets;
   }
   for (const shared_ptr<RowSet>& rs : rowsets_copy->all_rowsets()) {
@@ -2375,7 +2375,7 @@ void Tablet::UpdateCompactionStats(MaintenanceOpStats* stats) {
 
   shared_ptr<RowSetTree> rowsets_copy;
   {
-    shared_lock<rw_spinlock> l(component_lock_);
+    shared_lock l(component_lock_);
     rowsets_copy = components_->rowsets;
   }
 
@@ -2450,7 +2450,7 @@ void Tablet::UpdateCompactionStats(MaintenanceOpStats* stats) {
 
 
 Status Tablet::DebugDump(vector<string> *lines) {
-  shared_lock<rw_spinlock> l(component_lock_);
+  shared_lock l(component_lock_);
 
   LOG_STRING(INFO, lines) << "Dumping tablet:";
   LOG_STRING(INFO, lines) << "---------------------------";
@@ -2471,7 +2471,7 @@ Status Tablet::CaptureConsistentIterators(
     const ScanSpec* spec,
     vector<IterWithBounds>* iters) const {
 
-  shared_lock<rw_spinlock> l(component_lock_);
+  shared_lock l(component_lock_);
   RETURN_IF_STOPPED_OR_CHECK_STATE(kOpen);
 
   // Construct all the iterators locally first, so that if we fail
@@ -2646,7 +2646,7 @@ size_t Tablet::OnDiskDataSize() const {
 }
 
 uint64_t Tablet::LastReadElapsedSeconds() const {
-  shared_lock<rw_spinlock> l(last_rw_time_lock_);
+  shared_lock l(last_rw_time_lock_);
   DCHECK(last_read_time_.Initialized());
   return static_cast<uint64_t>((MonoTime::Now() - last_read_time_).ToSeconds());
 }
@@ -2657,7 +2657,7 @@ void Tablet::UpdateLastReadTime() {
 }
 
 uint64_t Tablet::LastWriteElapsedSeconds() const {
-  shared_lock<rw_spinlock> l(last_rw_time_lock_);
+  shared_lock l(last_rw_time_lock_);
   DCHECK(last_write_time_.Initialized());
   return static_cast<uint64_t>((MonoTime::Now() - last_write_time_).ToSeconds());
 }
@@ -3169,7 +3169,7 @@ int64_t Tablet::CountRedoDeltasForTests() const {
 }
 
 size_t Tablet::num_rowsets() const {
-  shared_lock<rw_spinlock> l(component_lock_);
+  shared_lock l(component_lock_);
   return components_ ? components_->rowsets->all_rowsets().size() : 0;
 }
 
@@ -3179,7 +3179,7 @@ void Tablet::PrintRSLayout(ostream* o) {
 
   shared_ptr<RowSetTree> rowsets_copy;
   {
-    shared_lock<rw_spinlock> l(component_lock_);
+    shared_lock l(component_lock_);
     rowsets_copy = components_->rowsets;
   }
   std::lock_guard compact_lock(compact_select_lock_);

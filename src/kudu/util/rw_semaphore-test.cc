@@ -20,7 +20,6 @@
 #include <cstdint>
 #include <shared_mutex>
 #include <thread>
-#include <type_traits>
 #include <vector>
 
 #include <glog/logging.h>
@@ -57,7 +56,7 @@ void Writer(SharedState* state) {
 void Reader(SharedState* state) {
   int prev_val = 0;
   while (true) {
-    shared_lock<rw_semaphore> l(state->sem);
+    shared_lock l(state->sem);
     // The int var should only be seen to increase.
     CHECK_GE(state->int_var, prev_val);
     prev_val = state->int_var;

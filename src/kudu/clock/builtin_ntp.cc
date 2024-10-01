@@ -33,7 +33,6 @@
 #include <ostream>
 #include <shared_mutex>
 #include <string>
-#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -400,7 +399,7 @@ class BuiltInNtp::ServerState {
   }
 
   MonoTime next_poll() const {
-    shared_lock<rw_spinlock> l(lock_);
+    shared_lock l(lock_);
     return next_poll_;
   }
 
@@ -415,7 +414,7 @@ class BuiltInNtp::ServerState {
   }
 
   const Sockaddr& cur_addr() const {
-    shared_lock<rw_spinlock> l(lock_);
+    shared_lock l(lock_);
     return addrs_[addr_idx_ % addrs_.size()];
   }
 
@@ -453,7 +452,7 @@ class BuiltInNtp::ServerState {
   }
 
   Status GetBestResponse(RecordedResponse* response) const {
-    shared_lock<rw_spinlock> l(lock_);
+    shared_lock l(lock_);
     // For now, just return the freshest response.
     // TODO(KUDU-2939): when the dispersion of the samples is being updated
     //                  over time, select the best sample among all available
@@ -496,7 +495,7 @@ class BuiltInNtp::ServerState {
 
   void DumpDiagnostics(string* diag) const {
     DCHECK(diag);
-    shared_lock<rw_spinlock> l(lock_);
+    shared_lock l(lock_);
     StrAppend(diag, "server ", host_.ToString(), ": ");
     auto addrs_list = JoinMapped(
         addrs_, [](const Sockaddr& addr) { return addr.ToString(); }, ",");
@@ -559,7 +558,7 @@ Status BuiltInNtp::Init() {
 Status BuiltInNtp::WalltimeWithError(uint64_t* now_usec, uint64_t* error_usec) {
   WalltimeSnapshot last;
   {
-    shared_lock<rw_spinlock> l(last_computed_lock_);
+    shared_lock l(last_computed_lock_);
     last = last_computed_;
   }
 
@@ -596,7 +595,7 @@ void BuiltInNtp::DumpDiagnostics(vector<string>* log) const {
   }
   WalltimeSnapshot last;
   {
-    shared_lock<rw_spinlock> l(last_computed_lock_);
+    shared_lock l(last_computed_lock_);
     last = last_computed_;
   }
   StrAppend(&diag, "is_synchronized=",
@@ -1156,12 +1155,12 @@ int64_t BuiltInNtp::LocalClockDeltaForMetrics() {
 }
 
 int64_t BuiltInNtp::WalltimeForMetrics() {
-  shared_lock<rw_spinlock> l(last_computed_lock_);
+  shared_lock l(last_computed_lock_);
   return last_computed_.wall;
 }
 
 int64_t BuiltInNtp::MaxErrorForMetrics() {
-  shared_lock<rw_spinlock> l(last_computed_lock_);
+  shared_lock l(last_computed_lock_);
   return last_computed_.error;
 }
 

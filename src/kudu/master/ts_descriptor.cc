@@ -160,7 +160,7 @@ void TSDescriptor::UpdateHeartbeatTime() {
 
 MonoDelta TSDescriptor::TimeSinceHeartbeat() const {
   MonoTime now(MonoTime::Now());
-  shared_lock<rw_spinlock> l(lock_);
+  shared_lock l(lock_);
   return now - last_heartbeat_;
 }
 
@@ -170,7 +170,7 @@ void TSDescriptor::UpdateNeedsFullTabletReport(bool needs_report) {
 }
 
 bool TSDescriptor::needs_full_report() const  {
-  shared_lock<rw_spinlock> l(lock_);
+  shared_lock l(lock_);
   return needs_full_report_;
 }
 
@@ -179,7 +179,7 @@ bool TSDescriptor::PresumedDead() const {
 }
 
 int64_t TSDescriptor::latest_seqno() const {
-  shared_lock<rw_spinlock> l(lock_);
+  shared_lock l(lock_);
   return latest_seqno_;
 }
 
@@ -303,7 +303,7 @@ double TSDescriptor::RecentReplicaCreationsByTable(const string& table_id) {
 
 Status TSDescriptor::GetRegistration(ServerRegistrationPB* reg,
                                      bool use_external_addr) const {
-  shared_lock<rw_spinlock> l(lock_);
+  shared_lock l(lock_);
   CHECK(registration_) << "No registration";
   CHECK_NOTNULL(reg)->CopyFrom(*registration_);
 
@@ -334,7 +334,7 @@ Status TSDescriptor::GetRegistration(ServerRegistrationPB* reg,
 }
 
 void TSDescriptor::GetTSInfoPB(TSInfoPB* tsinfo_pb, bool use_external_addr) const {
-  shared_lock<rw_spinlock> l(lock_);
+  shared_lock l(lock_);
   CHECK(registration_);
   const auto& reg = *registration_;
   tsinfo_pb->mutable_rpc_addresses()->CopyFrom(
@@ -348,7 +348,7 @@ void TSDescriptor::GetTSInfoPB(TSInfoPB* tsinfo_pb, bool use_external_addr) cons
 }
 
 void TSDescriptor::GetNodeInstancePB(NodeInstancePB* instance_pb) const {
-  shared_lock<rw_spinlock> l(lock_);
+  shared_lock l(lock_);
   instance_pb->set_permanent_uuid(permanent_uuid_);
   instance_pb->set_instance_seqno(latest_seqno_);
 }
@@ -356,7 +356,7 @@ void TSDescriptor::GetNodeInstancePB(NodeInstancePB* instance_pb) const {
 Status TSDescriptor::ResolveSockaddr(Sockaddr* addr, string* host) const {
   vector<HostPort> hostports;
   {
-    shared_lock<rw_spinlock> l(lock_);
+    shared_lock l(lock_);
     for (const HostPortPB& addr : registration_->rpc_addresses()) {
       hostports.emplace_back(addr.host(), addr.port());
     }
@@ -391,7 +391,7 @@ Status TSDescriptor::ResolveSockaddr(Sockaddr* addr, string* host) const {
 Status TSDescriptor::GetTSAdminProxy(const shared_ptr<rpc::Messenger>& messenger,
                                      shared_ptr<tserver::TabletServerAdminServiceProxy>* proxy) {
   {
-    shared_lock<rw_spinlock> l(lock_);
+    shared_lock l(lock_);
     if (ts_admin_proxy_) {
       *proxy = ts_admin_proxy_;
       return Status::OK();
@@ -416,7 +416,7 @@ Status TSDescriptor::GetTSAdminProxy(const shared_ptr<rpc::Messenger>& messenger
 Status TSDescriptor::GetConsensusProxy(const shared_ptr<rpc::Messenger>& messenger,
                                        shared_ptr<consensus::ConsensusServiceProxy>* proxy) {
   {
-    shared_lock<rw_spinlock> l(lock_);
+    shared_lock l(lock_);
     if (consensus_proxy_) {
       *proxy = consensus_proxy_;
       return Status::OK();
@@ -439,7 +439,7 @@ Status TSDescriptor::GetConsensusProxy(const shared_ptr<rpc::Messenger>& messeng
 }
 
 string TSDescriptor::ToString() const {
-  shared_lock<rw_spinlock> l(lock_);
+  shared_lock l(lock_);
   CHECK(!registration_->rpc_addresses().empty());
   const auto& addr = registration_->rpc_addresses(0);
   return Substitute("$0 ($1:$2)", permanent_uuid_, addr.host(), addr.port());

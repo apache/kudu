@@ -907,7 +907,7 @@ const Schema& MergeIterator::schema() const {
 }
 
 void MergeIterator::GetIteratorStats(vector<IteratorStats>* stats) const {
-  shared_lock<rw_spinlock> l(states_lock_);
+  shared_lock l(states_lock_);
   CHECK(initted_);
   *stats = finished_iter_stats_by_col_;
 
@@ -1097,7 +1097,7 @@ string UnionIterator::ToString() const {
 
 void UnionIterator::GetIteratorStats(vector<IteratorStats>* stats) const {
   CHECK(initted_);
-  shared_lock<rw_spinlock> l(iters_lock_);
+  shared_lock l(iters_lock_);
   *stats = finished_iter_stats_by_col_;
   if (!iters_.empty()) {
     AddIterStats(*iters_.front().iter, stats);

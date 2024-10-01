@@ -24,7 +24,6 @@
 #include <iostream>
 #include <set>
 #include <shared_mutex>
-#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -740,7 +739,7 @@ Status FsManager::InitAndOpenBlockManager(FsReport* report,
 }
 
 void FsManager::CopyMetadata(unique_ptr<InstanceMetadataPB>* metadata) {
-  shared_lock<rw_spinlock> md_lock(metadata_rwlock_.get_lock());
+  shared_lock md_lock(metadata_rwlock_.get_lock());
   (*metadata)->CopyFrom(*metadata_);
 }
 
@@ -815,7 +814,7 @@ Status FsManager::AddTenantMetadata(const string& tenant_name,
                                     const string& tenant_key_version) {
   unique_ptr<InstanceMetadataPB> metadata(new InstanceMetadataPB);
   {
-    shared_lock<rw_spinlock> md_lock(metadata_rwlock_.get_lock());
+    shared_lock md_lock(metadata_rwlock_.get_lock());
     metadata->CopyFrom(*metadata_);
   }
   InstanceMetadataPB::TenantMetadataPB* tenant_metadata = metadata->add_tenants();
@@ -836,7 +835,7 @@ Status FsManager::RemoveTenantMetadata(const string& tenant_id) {
 
   unique_ptr<InstanceMetadataPB> metadata(new InstanceMetadataPB);
   {
-    shared_lock<rw_spinlock> md_lock(metadata_rwlock_.get_lock());
+    shared_lock md_lock(metadata_rwlock_.get_lock());
     metadata->CopyFrom(*metadata_);
   }
   for (int i = 0; i < metadata->tenants_size(); i++) {
@@ -1096,12 +1095,12 @@ bool FsManager::VertifyTenant(const std::string& tenant_id) const {
 }
 
 int32 FsManager::tenants_count() const {
-  shared_lock<rw_spinlock> md_lock(metadata_rwlock_.get_lock());
+  shared_lock md_lock(metadata_rwlock_.get_lock());
   return metadata_->tenants_size();
 }
 
 bool FsManager::is_tenants_exist() const {
-  shared_lock<rw_spinlock> md_lock(metadata_rwlock_.get_lock());
+  shared_lock md_lock(metadata_rwlock_.get_lock());
   return metadata_->tenants_size() > 0;
 }
 
@@ -1124,7 +1123,7 @@ const InstanceMetadataPB_TenantMetadataPB* FsManager::GetTenantUnlock(
 
 const InstanceMetadataPB_TenantMetadataPB* FsManager::GetTenant(
     const string& tenant_id) const {
-  shared_lock<rw_spinlock> md_lock(metadata_rwlock_.get_lock());
+  shared_lock md_lock(metadata_rwlock_.get_lock());
   return GetTenantUnlock(tenant_id);
 }
 
@@ -1238,7 +1237,7 @@ Status FsManager::RemoveTenant(const string& tenant_id) {
 
 vector<string> FsManager::GetAllTenants() const {
   vector<string> tenant_ids;
-  shared_lock<rw_spinlock> md_lock(metadata_rwlock_.get_lock());
+  shared_lock md_lock(metadata_rwlock_.get_lock());
   for (const auto& tdata : metadata_->tenants()) {
     tenant_ids.push_back(tdata.tenant_id());
   }
@@ -1464,7 +1463,7 @@ Status FsManager::SetEncryptionKeyUnlock(const string& tenant_id) {
 }
 
 Status FsManager::SetEncryptionKey(const string& tenant_id) {
-  shared_lock<rw_spinlock> md_lock(metadata_rwlock_.get_lock());
+  shared_lock md_lock(metadata_rwlock_.get_lock());
   return SetEncryptionKeyUnlock(tenant_id);
 }
 

@@ -27,7 +27,6 @@
 #include <set>
 #include <shared_mutex>
 #include <string>
-#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -410,7 +409,7 @@ Status DataDirManager::CreateDataDirGroup(const string& tablet_id,
 
 Status DataDirManager::GetDirForBlock(const CreateBlockOptions& opts, Dir** dir,
                                       int* new_target_group_size) const {
-  shared_lock<rw_spinlock> lock(dir_group_lock_.get_lock());
+  shared_lock lock(dir_group_lock_.get_lock());
   vector<int> healthy_uuid_indices;
   const DataDirGroup* group = nullptr;
   DataDirGroup group_for_tests;
@@ -497,7 +496,7 @@ void DataDirManager::DeleteDataDirGroup(const std::string& tablet_id) {
 
 Status DataDirManager::GetDataDirGroupPB(const string& tablet_id,
                                          DataDirGroupPB* pb) const {
-  shared_lock<rw_spinlock> lock(dir_group_lock_.get_lock());
+  shared_lock lock(dir_group_lock_.get_lock());
   const DataDirGroup* group = FindOrNull(group_by_tablet_map_, tablet_id);
   if (group == nullptr) {
     return Status::NotFound(Substitute(

@@ -35,7 +35,6 @@
 #include <shared_mutex>
 #include <sstream>
 #include <string>
-#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -602,7 +601,7 @@ sq_callback_result_t Webserver::BeginRequestCallback(
       SendResponse(connection, &resp);
       return SQ_HANDLED_OK;
     }
-    shared_lock<RWMutex> l(lock_);
+    shared_lock l(lock_);
     PathHandlerMap::const_iterator it = path_handlers_.find(request_info->uri);
 
     if (it == path_handlers_.end()) {
@@ -1023,7 +1022,7 @@ void Webserver::RenderMainTemplate(
   std::vector<pair<string, PathHandler*>> paths_and_handlers;
 
   {
-    shared_lock<RWMutex> l(lock_);
+    shared_lock l(lock_);
     ej["footer_html"] = footer_html_;
     paths_and_handlers.reserve(path_handlers_.size());
     for (const auto& [path, handler] : path_handlers_) {

@@ -1259,7 +1259,7 @@ bool MetaCache::LookupEntryByKeyFastPath(const KuduTable* table,
                                          const PartitionKey& partition_key,
                                          MetaCacheEntry* entry) {
   SCOPED_LOG_SLOW_EXECUTION(WARNING, 50, "looking up entry by key");
-  shared_lock<rw_spinlock> l(lock_.get_lock());
+  shared_lock l(lock_.get_lock());
   const TabletMap* tablets = FindOrNull(tablets_by_table_and_key_, table->id());
   if (PREDICT_FALSE(!tablets)) {
     // No cache available for this table.
@@ -1328,7 +1328,7 @@ Status MetaCache::DoFastPathLookup(const KuduTable* table,
 bool MetaCache::LookupEntryByIdFastPath(const string& tablet_id,
                                         MetaCacheEntry* entry) {
   SCOPED_LOG_SLOW_EXECUTION(WARNING, 50, "looking up entry by ID");
-  shared_lock<rw_spinlock> l(lock_.get_lock());
+  shared_lock l(lock_.get_lock());
   const auto* cache_entry = FindOrNull(entry_by_tablet_id_, tablet_id);
   if (PREDICT_FALSE(!cache_entry)) {
     return false;
@@ -1511,7 +1511,7 @@ void MetaCache::MarkTSFailed(RemoteTabletServer* ts,
   SCOPED_LOG_SLOW_EXECUTION(WARNING, 50, "marking tablet server as failed");
   const auto ts_status = status.CloneAndPrepend("TS failed");
 
-  shared_lock<rw_spinlock> l(lock_.get_lock());
+  shared_lock l(lock_.get_lock());
   // TODO(adar): replace with a ts->tablet multimap for faster lookup?
   for (const auto& tablet : tablets_by_id_) {
     // We just loop on all tablets; if a tablet does not have a replica on this

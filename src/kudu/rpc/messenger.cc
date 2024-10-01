@@ -335,7 +335,7 @@ void Messenger::QueueInboundCall(unique_ptr<InboundCall> call) {
   // blocking operation and QueueInboundCall is called by the reactor thread.
   //
   // See KUDU-2946 for more details.
-  shared_lock<rw_spinlock> guard(lock_.get_lock());
+  shared_lock guard(lock_.get_lock());
   scoped_refptr<RpcService>* service = FindOrNull(rpc_services_,
                                                   call->remote_method().service_name());
   if (PREDICT_FALSE(!service)) {
@@ -452,7 +452,7 @@ void Messenger::ScheduleOnReactor(std::function<void(const Status&)> func,
 const scoped_refptr<RpcService> Messenger::rpc_service(const string& service_name) const {
   scoped_refptr<RpcService> service;
   {
-    shared_lock<rw_spinlock> guard(lock_.get_lock());
+    shared_lock guard(lock_.get_lock());
     if (!FindCopy(rpc_services_, service_name, &service)) {
       return scoped_refptr<RpcService>(nullptr);
     }

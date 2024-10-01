@@ -71,7 +71,7 @@ void Txn::AcquireWriteLock(std::unique_lock<rw_semaphore>* txn_lock) {
 }
 
 void Txn::AcquireReadLock(shared_lock<rw_semaphore>* txn_lock) {
-  shared_lock<rw_semaphore> l(state_lock_);
+  shared_lock l(state_lock_);
   *txn_lock = std::move(l);
 }
 

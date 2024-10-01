@@ -427,7 +427,7 @@ void ThreadMgr::ThreadPathHandler(const WebCallbackRegistry::WebRequest& req,
     // imposed on new threads that acquire the lock in write mode.
     vector<ThreadDescriptor> descriptors_to_print;
     if (!requested_all) {
-      shared_lock<decltype(lock_)> l(lock_);
+      shared_lock l(lock_);
       const auto* category = FindOrNull(thread_categories_, *category_name);
       if (!category) {
         return;
@@ -436,7 +436,7 @@ void ThreadMgr::ThreadPathHandler(const WebCallbackRegistry::WebRequest& req,
         descriptors_to_print.emplace_back(elem.second);
       }
     } else {
-      shared_lock<decltype(lock_)> l(lock_);
+      shared_lock l(lock_);
       for (const auto& category : thread_categories_) {
         for (const auto& elem : category.second) {
           descriptors_to_print.emplace_back(elem.second);
@@ -454,7 +454,7 @@ void ThreadMgr::ThreadPathHandler(const WebCallbackRegistry::WebRequest& req,
     vector<pair<string, uint64_t>> thread_categories_info;
     {
       // See comment above regarding short critical sections.
-      shared_lock<decltype(lock_)> l(lock_);
+      shared_lock l(lock_);
       thread_categories_info.reserve(thread_categories_.size());
       for (const auto& category : thread_categories_) {
         thread_categories_info.emplace_back(category.first, category.second.size());

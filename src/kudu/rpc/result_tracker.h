@@ -133,7 +133,7 @@ class RpcContext;
 // in pseudo-ish code):
 //
 // {
-//   lock_guard<simple_spinlock> l(lock_);
+//   lock_guard l(lock_);
 //   if (follower_op) {
 //     result_tracker_->TrackRpcOrChangeDriver(request_id);
 //     continue_with_op();

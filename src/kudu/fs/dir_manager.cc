@@ -919,7 +919,7 @@ bool DirManager::FindUuidByRoot(const string& root, string* uuid) const {
 
 set<string> DirManager::FindTabletsByDirUuidIdx(int uuid_idx) const {
   DCHECK_LT(uuid_idx, dirs_.size());
-  shared_lock<rw_spinlock> lock(dir_group_lock_.get_lock());
+  shared_lock lock(dir_group_lock_.get_lock());
   const set<string>* tablet_set_ptr = FindOrNull(tablets_by_uuid_idx_map_, uuid_idx);
   if (tablet_set_ptr) {
     return *tablet_set_ptr;
@@ -958,7 +958,7 @@ Status DirManager::MarkDirFailed(int uuid_idx, const string& error_message) {
 
 bool DirManager::IsDirFailed(int uuid_idx) const {
   DCHECK_LT(uuid_idx, dirs_.size());
-  shared_lock<rw_spinlock> lock(dir_group_lock_.get_lock());
+  shared_lock lock(dir_group_lock_.get_lock());
   return ContainsKey(failed_dirs_, uuid_idx);
 }
 

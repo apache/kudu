@@ -798,7 +798,7 @@ uint64_t DiskRowSet::OnDiskBaseDataSize() const {
 
 uint64_t DiskRowSet::OnDiskBaseDataColumnSize(const ColumnId& col_id) const {
   DCHECK(open_);
-  shared_lock<rw_spinlock> l(component_lock_);
+  shared_lock l(component_lock_);
   if (base_data_->has_data_for_column_id(col_id)) {
     return base_data_->OnDiskColumnDataSize(col_id);
   }

@@ -228,7 +228,7 @@ Status ScannerManager::LookupScanner(const string& scanner_id,
                                      SharedScanner* scanner) {
   SharedScanner ret;
   ScannerMapStripe& stripe = GetStripeByScannerId(scanner_id);
-  shared_lock<RWMutex> l(stripe.lock_);
+  shared_lock l(stripe.lock_);
   bool found_scanner = FindCopy(stripe.scanners_by_id_, scanner_id, &ret);
   if (!found_scanner) {
     *error_code = TabletServerErrorPB::SCANNER_EXPIRED;
@@ -284,7 +284,7 @@ bool ScannerManager::UnregisterScanner(const string& scanner_id) {
 size_t ScannerManager::CountActiveScanners() const {
   size_t total = 0;
   for (const ScannerMapStripe* e : scanner_maps_) {
-    shared_lock<RWMutex> l(e->lock_);
+    shared_lock l(e->lock_);
     total += e->scanners_by_id_.size();
   }
   return total;
@@ -295,7 +295,7 @@ size_t ScannerManager::CountSlowScans() const {
   const MonoTime now = MonoTime::Now();
   const MonoDelta slow_threshold = MonoDelta::FromMilliseconds(FLAGS_slow_scanner_threshold_ms);
   for (const auto* stripe : scanner_maps_) {
-    shared_lock<RWMutex> l(stripe->lock_);
+    shared_lock l(stripe->lock_);
     for (const auto& it : stripe->scanners_by_id_) {
       const SharedScanner& scanner = it.second;
       const MonoTime start_time = scanner->start_time();
@@ -311,7 +311,7 @@ size_t ScannerManager::CountSlowScans() const {
 
 void ScannerManager::ListScanners(std::vector<SharedScanner>* scanners) const {
   for (const ScannerMapStripe* stripe : scanner_maps_) {
-    shared_lock<RWMutex> l(stripe->lock_);
+    shared_lock l(stripe->lock_);
     for (const auto& se : stripe->scanners_by_id_) {
       scanners->push_back(se.second);
     }
@@ -321,7 +321,7 @@ void ScannerManager::ListScanners(std::vector<SharedScanner>* scanners) const {
 vector<SharedScanDescriptor> ScannerManager::ListScans() const {
   unordered_map<string, SharedScanDescriptor> scans;
   for (const ScannerMapStripe* stripe : scanner_maps_) {
-    shared_lock<RWMutex> l(stripe->lock_);
+    shared_lock l(stripe->lock_);
     for (const auto& se : stripe->scanners_by_id_) {
       if (se.second->is_initted()) {
         SharedScanDescriptor desc = se.second->Descriptor();
@@ -332,7 +332,7 @@ vector<SharedScanDescriptor> ScannerManager::ListScans() const {
   }
 
   {
-    shared_lock<rw_spinlock> l(completed_scans_lock_.get_lock());
+    shared_lock l(completed_scans_lock_.get_lock());
     // A scanner in 'scans' may have completed between the above loop and here.
     // As we'd rather have the finalized descriptor of the completed scan,
     // update over the old descriptor in this case.
@@ -365,7 +365,7 @@ vector<SharedScanDescriptor> ScannerManager::ListSlowScans() const {
   // Get all the scans first.
   unordered_map<string, SharedScanDescriptor> scans;
   {
-    shared_lock<rw_spinlock> l(slow_scans_lock_.get_lock());
+    shared_lock l(slow_scans_lock_.get_lock());
     for (const auto& scan : slow_scans_) {
       InsertOrUpdate(&scans, scan->scanner_id, scan);
     }
@@ -622,7 +622,7 @@ SharedScanDescriptor Scanner::Descriptor() const {
 }
 
 CpuTimes Scanner::cpu_times() const {
-  shared_lock<RWMutex> l(cpu_times_lock_);
+  shared_lock l(cpu_times_lock_);
   return cpu_times_;
 }
 

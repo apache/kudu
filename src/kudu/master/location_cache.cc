@@ -20,7 +20,6 @@
 #include <cstdio>
 #include <shared_mutex>
 #include <string>
-#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -95,7 +94,7 @@ Status LocationCache::GetLocation(const string& key, string* location) {
   }
   {
     // First check whether the location for the key has already been assigned.
-    shared_lock<rw_spinlock> l(location_map_lock_);
+    shared_lock l(location_map_lock_);
     const auto* value_ptr = FindOrNull(location_map_, key);
     if (value_ptr) {
       DCHECK(!value_ptr->empty());

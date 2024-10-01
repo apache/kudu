@@ -24,9 +24,8 @@
 #include <limits>
 #include <map>
 #include <memory>
-#include <shared_mutex>
+#include <shared_mutex> // IWYU pragma: keep
 #include <string>
-#include <type_traits>
 #include <vector>
 
 #include <glog/logging.h>
@@ -57,6 +56,7 @@ class CompressionCodec;
 class FileCache;
 class FsManager;
 class RWFile;
+
 namespace consensus {
 class CommitMsg;
 }  // namespace consensus
@@ -164,7 +164,7 @@ class SegmentAllocator {
   FRIEND_TEST(LogTest, TestAutoStopIdleAppendThread);
   FRIEND_TEST(LogTest, TestWriteAndReadToAndFromInProgressSegment);
   SegmentAllocationState allocation_state() {
-    std::shared_lock<RWMutex> l(allocation_lock_);
+    std::shared_lock l(allocation_lock_);
     return allocation_state_;
   }
 

@@ -429,7 +429,7 @@ Status TlsContext::AddTrustedCertificate(const Cert& cert) {
 
 Status TlsContext::DumpTrustedCerts(vector<string>* cert_ders) const {
   SCOPED_OPENSSL_NO_PENDING_ERRORS;
-  shared_lock<RWMutex> lock(lock_);
+  shared_lock lock(lock_);
 
   vector<string> ret;
   auto* cert_store = SSL_CTX_get_cert_store(ctx_.get());
@@ -541,7 +541,7 @@ Status TlsContext::GenerateSelfSignedCertAndKey() {
 
 optional<CertSignRequest> TlsContext::GetCsrIfNecessary() const {
   SCOPED_OPENSSL_NO_PENDING_ERRORS;
-  shared_lock<RWMutex> lock(lock_);
+  shared_lock lock(lock_);
   if (csr_) {
     return csr_->Clone();
   }
@@ -629,7 +629,7 @@ Status TlsContext::InitiateHandshake(TlsHandshake* handshake) const {
   {
     // This lock is to protect against concurrent change of certificates
     // while calling SSL_new() here.
-    shared_lock<RWMutex> lock(lock_);
+    shared_lock lock(lock_);
     ssl = ssl_make_unique(SSL_new(ctx_.get()));
   }
   if (!ssl) {

@@ -730,7 +730,7 @@ Status DeltaTracker::Update(Timestamp timestamp,
     }
 
     // TODO(todd): can probably lock this more fine-grained.
-    shared_lock<rw_spinlock> lock(component_lock_);
+    shared_lock lock(component_lock_);
 
     // Should check dms_exists_ here again since there is a gap
     // between the two critical sections defined by component_lock_.
@@ -751,7 +751,7 @@ Status DeltaTracker::Update(Timestamp timestamp,
 
 Status DeltaTracker::CheckRowDeleted(rowid_t row_idx, const IOContext* io_context,
                                      bool* deleted, ProbeStats* stats) const {
-  shared_lock<rw_spinlock> lock(component_lock_);
+  shared_lock lock(component_lock_);
 
   *deleted = false;
   // Check if the row has a deletion in DeltaMemStore.
@@ -905,7 +905,7 @@ bool DeltaTracker::GetDeltaMemStoreInfo(size_t* size_bytes, MonoTime* creation_t
   // component_lock_. We need to check again after taking the lock in case we
   // raced with a DMS flush.
   if (dms_exists_) {
-    shared_lock<rw_spinlock> lock(component_lock_);
+    shared_lock lock(component_lock_);
     if (dms_exists_) {
       *size_bytes = dms_->EstimateSize();
       *creation_time = dms_->creation_time();
@@ -916,27 +916,27 @@ bool DeltaTracker::GetDeltaMemStoreInfo(size_t* size_bytes, MonoTime* creation_t
 }
 
 size_t DeltaTracker::DeltaMemStoreSize() const {
-  shared_lock<rw_spinlock> lock(component_lock_);
+  shared_lock lock(component_lock_);
   return dms_exists_ ? dms_->EstimateSize() : 0;
 }
 
 int64_t DeltaTracker::MinUnflushedLogIndex() const {
-  shared_lock<rw_spinlock> lock(component_lock_);
+  shared_lock lock(component_lock_);
   return dms_exists_ ? dms_->MinLogIndex() : 0;
 }
 
 size_t DeltaTracker::CountUndoDeltaStores() const {
-  shared_lock<rw_spinlock> lock(component_lock_);
+  shared_lock lock(component_lock_);
   return undo_delta_stores_.size();
 }
 
 size_t DeltaTracker::CountRedoDeltaStores() const {
-  shared_lock<rw_spinlock> lock(component_lock_);
+  shared_lock lock(component_lock_);
   return redo_delta_stores_.size();
 }
 
 uint64_t DeltaTracker::UndoDeltaOnDiskSize() const {
-  shared_lock<rw_spinlock> lock(component_lock_);
+  shared_lock lock(component_lock_);
   uint64_t size = 0;
   for (const auto& ds : undo_delta_stores_) {
     size += ds->EstimateSize();
@@ -945,7 +945,7 @@ uint64_t DeltaTracker::UndoDeltaOnDiskSize() const {
 }
 
 uint64_t DeltaTracker::RedoDeltaOnDiskSize() const {
-  shared_lock<rw_spinlock> lock(component_lock_);
+  shared_lock lock(component_lock_);
   uint64_t size = 0;
   for (const auto& ds : redo_delta_stores_) {
     size += ds->EstimateSize();
@@ -954,7 +954,7 @@ uint64_t DeltaTracker::RedoDeltaOnDiskSize() const {
 }
 
 void DeltaTracker::GetColumnIdsToCompact(std::vector<ColumnId>* col_ids) const {
-  shared_lock<rw_spinlock> lock(component_lock_);
+  shared_lock lock(component_lock_);
 
   set<ColumnId> column_ids_to_compact;
   uint64_t all_delete_op_delta_store_cnt = 0;
@@ -992,7 +992,7 @@ void DeltaTracker::GetColumnIdsToCompact(std::vector<ColumnId>* col_ids) const {
 bool DeltaTracker::DeltaStoreNeedToBeCompacted() const {
   uint64_t all_delete_op_delta_store_cnt = 0;
   {
-    shared_lock<rw_spinlock> lock(component_lock_);
+    shared_lock lock(component_lock_);
 
     for (const auto& ds: redo_delta_stores_) {
       if (!ds->has_delta_stats()) {
@@ -1017,7 +1017,7 @@ bool DeltaTracker::DeltaStoreNeedToBeCompacted() const {
 }
 
 Status DeltaTracker::InitAllDeltaStoresForTests(WhichStores stores) {
-  shared_lock<rw_spinlock> lock(component_lock_);
+  shared_lock lock(component_lock_);
   if (stores == UNDOS_AND_REDOS || stores == UNDOS_ONLY) {
     for (const shared_ptr<DeltaStore>& ds : undo_delta_stores_) {
       RETURN_NOT_OK(ds->Init(nullptr));
@@ -1032,13 +1032,13 @@ Status DeltaTracker::InitAllDeltaStoresForTests(WhichStores stores) {
 }
 
 int64_t DeltaTracker::CountDeletedRows() const {
-  shared_lock<rw_spinlock> lock(component_lock_);
+  shared_lock lock(component_lock_);
   DCHECK_GE(deleted_row_count_, 0);
   return deleted_row_count_ + (dms_exists_ ? dms_->deleted_row_count() : 0);
 }
 
 int64_t DeltaTracker::CountDeletedRowsInRedos() const {
-  shared_lock<rw_spinlock> lock(component_lock_);
+  shared_lock lock(component_lock_);
 
   int64_t delete_count = 0;
   for (const shared_ptr<DeltaStore>& ds : redo_delta_stores_) {

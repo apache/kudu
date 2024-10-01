@@ -708,7 +708,7 @@ Status SegmentAllocator::SwitchToAllocatedSegment(
 
   // Set the new segment's schema.
   {
-    shared_lock<rw_spinlock> l(schema_lock_);
+    shared_lock l(schema_lock_);
     RETURN_NOT_OK(SchemaToPB(schema_, header.mutable_schema()));
     header.set_schema_version(schema_version_);
   }
@@ -1100,7 +1100,7 @@ int64_t Log::GetGCableDataSize(RetentionIndexes retention_indexes) const {
   CHECK_GE(retention_indexes.for_durability, 0);
   SegmentSequence segments_to_delete;
   {
-    shared_lock<rw_spinlock> l(state_lock_.get_lock());
+    shared_lock l(state_lock_.get_lock());
     CHECK_EQ(kLogWriting, log_state_);
     GetSegmentsToGCUnlocked(retention_indexes, &segments_to_delete);
   }
@@ -1115,7 +1115,7 @@ void Log::GetReplaySizeMap(std::map<int64_t, int64_t>* replay_size) const {
   replay_size->clear();
   SegmentSequence segments;
   {
-    shared_lock<rw_spinlock> l(state_lock_.get_lock());
+    shared_lock l(state_lock_.get_lock());
     CHECK_EQ(kLogWriting, log_state_);
     reader_->GetSegmentsSnapshot(&segments);
   }
@@ -1132,7 +1132,7 @@ void Log::GetReplaySizeMap(std::map<int64_t, int64_t>* replay_size) const {
 int64_t Log::OnDiskSize() {
   SegmentSequence segments;
   {
-    shared_lock<rw_spinlock> l(state_lock_.get_lock());
+    shared_lock l(state_lock_.get_lock());
     // If the log is closed, the tablet is either being deleted or tombstoned,
     // so we don't count the size of its log anymore as it should be deleted.
     if (log_state_ == kLogClosed) {

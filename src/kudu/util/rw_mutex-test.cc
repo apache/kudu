@@ -15,12 +15,13 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/util/rw_mutex.h"
+
 #include <cstdint>
 #include <mutex>
 #include <ostream>
 #include <shared_mutex>
 #include <thread>
-#include <type_traits>
 #include <vector>
 
 #include <glog/logging.h>
@@ -28,7 +29,6 @@
 
 #include "kudu/util/atomic.h"
 #include "kudu/util/monotime.h"
-#include "kudu/util/rw_mutex.h"
 #include "kudu/util/test_util.h"
 
 using std::lock_guard;
@@ -85,13 +85,13 @@ TEST_P(RWMutexTest, TestDeadlocks) {
   for (int i = 0; i < 2; i++) {
     threads.emplace_back([&](){
       while (!done.Load()) {
-        shared_lock<RWMutex> l(lock_);
+        shared_lock l(lock_);
         number_of_reads.Increment();
       }
     });
     threads.emplace_back([&](){
       while (!done.Load()) {
-        shared_lock<RWMutex> l(lock_, try_to_lock);
+        shared_lock l(lock_, try_to_lock);
         if (l.owns_lock()) {
           number_of_reads.Increment();
         }
@@ -105,7 +105,7 @@ TEST_P(RWMutexTest, TestDeadlocks) {
     t.join();
   }
 
-  shared_lock<RWMutex> l(lock_);
+  shared_lock l(lock_);
   LOG(INFO) << "Number of writes: " << number_of_writes;
   LOG(INFO) << "Number of reads: " << number_of_reads.Load();
 }

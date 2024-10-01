@@ -109,7 +109,7 @@ TSManager::~TSManager() {
 
 Status TSManager::LookupTS(const NodeInstancePB& instance,
                            shared_ptr<TSDescriptor>* ts_desc) const {
-  shared_lock<rw_spinlock> l(lock_);
+  shared_lock l(lock_);
   const shared_ptr<TSDescriptor>* found_ptr =
     FindOrNull(servers_by_id_, instance.permanent_uuid());
   if (!found_ptr) {
@@ -129,7 +129,7 @@ Status TSManager::LookupTS(const NodeInstancePB& instance,
 
 bool TSManager::LookupTSByUUID(const string& uuid,
                                std::shared_ptr<TSDescriptor>* ts_desc) const {
-  shared_lock<rw_spinlock> l(lock_);
+  shared_lock l(lock_);
   return FindCopy(servers_by_id_, uuid, ts_desc);
 }
 
@@ -201,17 +201,17 @@ Status TSManager::RegisterTS(const NodeInstancePB& instance,
 
 void TSManager::GetAllDescriptors(TSDescriptorVector* descs) const {
   descs->clear();
-  shared_lock<rw_spinlock> l(lock_);
+  shared_lock l(lock_);
   AppendValuesFromMap(servers_by_id_, descs);
 }
 
 int TSManager::GetCount() const {
-  shared_lock<rw_spinlock> l(lock_);
+  shared_lock l(lock_);
   return servers_by_id_.size();
 }
 
 int TSManager::GetLiveCount() const {
-  shared_lock<rw_spinlock> l(lock_);
+  shared_lock l(lock_);
   int live_count = 0;
   for (const auto& entry : servers_by_id_) {
     const shared_ptr<TSDescriptor>& ts = entry.second;
@@ -224,7 +224,7 @@ int TSManager::GetLiveCount() const {
 
 unordered_set<string> TSManager::GetUuidsToIgnoreForUnderreplication() const {
   unordered_set<string> uuids;
-  shared_lock<RWMutex> tsl(ts_state_lock_);
+  shared_lock tsl(ts_state_lock_);
   uuids.reserve(ts_state_by_uuid_.size());
   for (const auto& ts_and_state_timestamp : ts_state_by_uuid_) {
     if (ts_and_state_timestamp.second.first == TServerStatePB::MAINTENANCE_MODE) {
@@ -235,14 +235,14 @@ unordered_set<string> TSManager::GetUuidsToIgnoreForUnderreplication() const {
 }
 
 TServerStateMap TSManager::GetTServerStates() const {
-  shared_lock<RWMutex> tsl(ts_state_lock_);
+  shared_lock tsl(ts_state_lock_);
   return ts_state_by_uuid_;
 }
 
 void TSManager::GetDescriptorsAvailableForPlacement(TSDescriptorVector* descs) const {
   descs->clear();
-  shared_lock<RWMutex> tsl(ts_state_lock_);
-  shared_lock<rw_spinlock> l(lock_);
+  shared_lock tsl(ts_state_lock_);
+  shared_lock l(lock_);
   descs->reserve(servers_by_id_.size());
   for (const TSDescriptorMap::value_type& entry : servers_by_id_) {
     const shared_ptr<TSDescriptor>& ts = entry.second;
@@ -301,7 +301,7 @@ TServerStatePB TSManager::GetTServerStateUnlocked(const string& ts_uuid) const {
 }
 
 TServerStatePB TSManager::GetTServerState(const string& ts_uuid) const {
-  shared_lock<RWMutex> l(ts_state_lock_);
+  shared_lock l(ts_state_lock_);
   return GetTServerStateUnlocked(ts_uuid);
 }
 
@@ -337,7 +337,7 @@ Status TSManager::UnregisterTServer(const std::string& ts_uuid,
 int TSManager::ClusterSkew() const {
   int min_count = std::numeric_limits<int>::max();
   int max_count = 0;
-  shared_lock<rw_spinlock> l(lock_);
+  shared_lock l(lock_);
   for (const TSDescriptorMap::value_type& entry : servers_by_id_) {
     const shared_ptr<TSDescriptor>& ts = entry.second;
     if (ts->PresumedDead()) {

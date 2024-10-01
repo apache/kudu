@@ -29,7 +29,6 @@
 #include <set>
 #include <shared_mutex>
 #include <string>
-#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -393,7 +392,7 @@ class TableInfo : public RefCountedThreadSafe<TableInfo> {
 
   // Returns a snapshot copy of the table info's tablet map.
   TabletInfoMap tablet_map() const {
-    std::shared_lock<rw_spinlock> l(lock_);
+    std::shared_lock l(lock_);
     TabletInfoMap ret;
     for (const auto& e : tablet_map_) {
       ret.emplace(e.first, make_scoped_refptr(e.second));
@@ -403,7 +402,7 @@ class TableInfo : public RefCountedThreadSafe<TableInfo> {
 
   // Returns the number of tablets.
   int num_tablets() const {
-    std::shared_lock<rw_spinlock> l(lock_);
+    std::shared_lock l(lock_);
     return tablet_map_.size();
   }
 

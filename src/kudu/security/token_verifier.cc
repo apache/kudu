@@ -23,7 +23,6 @@
 #include <ostream>
 #include <shared_mutex>
 #include <string>
-#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -55,7 +54,7 @@ TokenVerifier::~TokenVerifier() {
 }
 
 int64_t TokenVerifier::GetMaxKnownKeySequenceNumber() const {
-  shared_lock<RWMutex> l(lock_);
+  shared_lock l(lock_);
   if (keys_by_seq_.empty()) {
     return -1;
   }
@@ -97,7 +96,7 @@ Status TokenVerifier::ImportKeys(const vector<TokenSigningPublicKeyPB>& keys) {
 std::vector<TokenSigningPublicKeyPB> TokenVerifier::ExportKeys(
     int64_t after_sequence_number) const {
   vector<TokenSigningPublicKeyPB> ret;
-  shared_lock<RWMutex> l(lock_);
+  shared_lock l(lock_);
   ret.reserve(keys_by_seq_.size());
   transform(keys_by_seq_.upper_bound(after_sequence_number),
             keys_by_seq_.end(),
@@ -136,7 +135,7 @@ TokenVerificationResult TokenVerifier::VerifyTokenSignature(
   }
 
   {
-    shared_lock<RWMutex> l(lock_);
+    shared_lock l(lock_);
     auto* tsk = FindPointeeOrNull(keys_by_seq_, signed_token.signing_key_seq_num());
     if (!tsk) {
       return TokenVerificationResult::UNKNOWN_SIGNING_KEY;

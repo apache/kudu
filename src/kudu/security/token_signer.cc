@@ -186,7 +186,7 @@ Status TokenSigner::GenerateAuthnToken(string username,
 
 Status TokenSigner::SignToken(SignedTokenPB* token) const {
   CHECK(token);
-  shared_lock<RWMutex> l(lock_);
+  shared_lock l(lock_);
   if (tsk_deque_.empty()) {
     return Status::IllegalState("no token signing key");
   }
@@ -196,7 +196,7 @@ Status TokenSigner::SignToken(SignedTokenPB* token) const {
 }
 
 bool TokenSigner::IsCurrentKeyValid() const {
-  shared_lock<RWMutex> l(lock_);
+  shared_lock l(lock_);
   if (tsk_deque_.empty()) {
     return false;
   }
