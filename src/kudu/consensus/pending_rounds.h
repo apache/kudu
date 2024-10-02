@@ -40,7 +40,7 @@ class TimeManager;
 // NOTE: each round is associated with a single round, though "round" refers to
 // the logical Raft replication and "op" refers to the replicated batch of
 // operations.
-class PendingRounds {
+class PendingRounds final {
  public:
   PendingRounds(const std::string& log_prefix, TimeManager* time_manager);
   ~PendingRounds() = default;
@@ -106,7 +106,7 @@ class PendingRounds {
   // Index=>Round map that manages pending ops, i.e. operations for which we've
   // received a replicate message from the leader but have yet to be committed.
   // The key is the index of the replicate operation.
-  typedef std::map<int64_t, scoped_refptr<ConsensusRound> > IndexToRoundMap;
+  typedef std::map<int64_t, scoped_refptr<ConsensusRound>> IndexToRoundMap;
   IndexToRoundMap pending_ops_;
 
   // The OpId of the round that was last committed. Initialized to MinimumOpId().
