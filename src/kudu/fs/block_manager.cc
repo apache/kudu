@@ -17,6 +17,9 @@
 
 #include "kudu/fs/block_manager.h"
 
+#include <set>
+#include <string>
+
 #include <gflags/gflags.h>
 
 #include "kudu/gutil/macros.h"
@@ -46,8 +49,18 @@ TAG_FLAG(block_manager_preflush_control, experimental);
 namespace kudu {
 namespace fs {
 
-BlockManagerOptions::BlockManagerOptions()
-  : read_only(false) {}
+const std::set<std::string>& BlockManager::block_manager_types() {
+  static const std::set<std::string> kAvailableTypes = {
+    "file",
+#if defined(__linux__)
+    "log",
+#if !defined(NO_ROCKSDB)
+    "logr",
+#endif
+#endif
+  };
+  return kAvailableTypes;
+}
 
 } // namespace fs
 } // namespace kudu

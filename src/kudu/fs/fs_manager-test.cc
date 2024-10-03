@@ -231,16 +231,20 @@ INSTANTIATE_TEST_SUITE_P(BlockManagerTypes, FsManagerTestBase,
 //    ::testing::ValuesIn(BlockManager::block_manager_types()),
 //    ::testing::ValuesIn(kEncryptionType))
     ::testing::Values(
-      make_tuple("file", kEncryptionType[0]),
-      make_tuple("file", kEncryptionType[1]),
-      make_tuple("file", kEncryptionType[2]),
+#if defined(__linux__)
+        make_tuple("log", kEncryptionType[0]),
+        make_tuple("log", kEncryptionType[1]),
+        make_tuple("log", kEncryptionType[2]),
 #if !defined(NO_ROCKSDB)
-      make_tuple("logr", kEncryptionType[0]),
-      make_tuple("logr", kEncryptionType[1]),
+        make_tuple("logr", kEncryptionType[0]),
+        make_tuple("logr", kEncryptionType[1]),
 #endif
-      make_tuple("log", kEncryptionType[0]),
-      make_tuple("log", kEncryptionType[1]),
-      make_tuple("log", kEncryptionType[2])));
+#endif
+        make_tuple("file", kEncryptionType[0]),
+        make_tuple("file", kEncryptionType[1]),
+        make_tuple("file", kEncryptionType[2])
+    )
+);
 
 TEST_P(FsManagerTestBase, TestBaseOperations) {
   fs_manager()->DumpFileSystemTree(std::cout, tenant_id());
