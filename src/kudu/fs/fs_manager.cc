@@ -804,9 +804,8 @@ void FsManager::UpdateMetadataFormatAndStampUnlock(InstanceMetadataPB* metadata)
   metadata->set_format_stamp(Substitute("Formatted at $0 on $1", time_str, hostname));
 }
 
-bool FsManager::IsLogType(const std::string& block_manager_type) {
-  return block_manager_type != "file"
-      && ContainsKey(BlockManager::block_manager_types(), block_manager_type);
+bool FsManager::IsLogType(const string& block_manager_type) {
+  return block_manager_type == "log" || block_manager_type == "logr";
 }
 
 Status FsManager::AddTenantMetadata(const string& tenant_name,

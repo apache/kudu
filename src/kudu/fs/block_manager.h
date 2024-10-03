@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -178,8 +179,6 @@ struct CreateBlockOptions {
 
 // Block manager creation options.
 struct BlockManagerOptions {
-  BlockManagerOptions();
-
   // The entity under which all metrics should be grouped. If NULL, metrics
   // will not be produced.
   //
@@ -191,7 +190,7 @@ struct BlockManagerOptions {
   std::shared_ptr<MemTracker> parent_mem_tracker;
 
   // Whether the block manager should only allow reading. Defaults to false.
-  bool read_only;
+  bool read_only = false;
 };
 
 // Utilities for Kudu block lifecycle management. All methods are
@@ -199,17 +198,7 @@ struct BlockManagerOptions {
 class BlockManager : public RefCountedThreadSafe<BlockManager> {
  public:
   // Lists the available block manager types.
-  static std::set<std::string> block_manager_types() {
-#if defined(__linux__)
-#if defined(NO_ROCKSDB)
-    return { "file", "log" };
-#else
-    return { "file", "log", "logr" };
-#endif
-#else
-    return { "file" };
-#endif
-  }
+  static const std::set<std::string>& block_manager_types();
 
   virtual ~BlockManager() = default;
 
