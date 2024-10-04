@@ -74,7 +74,7 @@ def create_tarball():
   artifact_name = "apache-kudu-%s" % get_version_number()
   build_dir = os.path.join(ROOT, "build")
   if not os.path.exists(build_dir):
-    os.path.makedirs(build_dir)
+    os.makedirs(build_dir)
   tarball_path = os.path.join(build_dir, artifact_name + ".tar.gz")
   print("Exporting source tarball...")
   subprocess.check_output(["git", "archive",
