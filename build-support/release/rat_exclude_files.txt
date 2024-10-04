@@ -45,6 +45,7 @@ python/MANIFEST.in
 python/README.md
 python/pytest.ini
 python/requirements.txt
+python/requirements_dev.txt
 python/setup.cfg
 python/version.txt
 src/kudu/client/symbols.map
