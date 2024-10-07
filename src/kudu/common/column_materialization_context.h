@@ -31,24 +31,24 @@ namespace kudu {
 class ColumnMaterializationContext {
  public:
   ColumnMaterializationContext(size_t col_idx,
-                    const ColumnPredicate* pred,
-                    ColumnBlock* block,
-                    SelectionVector* sel)
+                               const ColumnPredicate* pred,
+                               ColumnBlock* block,
+                               SelectionVector* sel)
     : col_idx_(col_idx),
       pred_(pred),
       block_(block),
       sel_(sel),
       decoder_eval_status_(kNotSet) {
-      if (!pred_ || !sel || !block) {
-        decoder_eval_status_ = kDecoderEvalNotSupported;
-      }
+    if (!pred_ || !sel || !block) {
+      decoder_eval_status_ = kDecoderEvalNotSupported;
+    }
   }
 
   // Column index in within the projection schema, not the underlying schema.
-  const size_t col_idx() { return col_idx_; }
+  size_t col_idx() const { return col_idx_; }
 
   // Predicate being evaluated.
-  const ColumnPredicate* pred() { return pred_; }
+  const ColumnPredicate* pred() const { return pred_; }
 
   // Destination for copied data.
   ColumnBlock* block() { return block_; }

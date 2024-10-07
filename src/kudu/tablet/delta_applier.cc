@@ -20,6 +20,7 @@
 #include <optional>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -57,8 +58,7 @@ DeltaApplier::~DeltaApplier() {
 
 Status DeltaApplier::Init(ScanSpec* spec) {
   RETURN_NOT_OK(base_iter_->Init(spec));
-  RETURN_NOT_OK(delta_iter_->Init(spec));
-  return Status::OK();
+  return delta_iter_->Init(spec);
 }
 
 
@@ -98,8 +98,7 @@ Status DeltaApplier::PrepareBatch(size_t* nrows) {
     // See InitializeSelectionVector() below.
     prepare_flags |= DeltaIterator::PREPARE_FOR_SELECT;
   }
-  RETURN_NOT_OK(delta_iter_->PrepareBatch(*nrows, prepare_flags));
-  return Status::OK();
+  return delta_iter_->PrepareBatch(*nrows, prepare_flags);
 }
 
 Status DeltaApplier::FinishBatch() {
@@ -135,12 +134,9 @@ Status DeltaApplier::MaterializeColumn(ColumnMaterializationContext* ctx) {
   if (delta_iter_->MayHaveDeltas()) {
     ctx->SetDecoderEvalNotSupported();
     RETURN_NOT_OK(base_iter_->MaterializeColumn(ctx));
-    RETURN_NOT_OK(delta_iter_->ApplyUpdates(ctx->col_idx(), ctx->block(), *ctx->sel()));
-  } else {
-    RETURN_NOT_OK(base_iter_->MaterializeColumn(ctx));
+    return delta_iter_->ApplyUpdates(ctx->col_idx(), ctx->block(), *ctx->sel());
   }
-
-  return Status::OK();
+  return base_iter_->MaterializeColumn(ctx);
 }
 
 } // namespace tablet

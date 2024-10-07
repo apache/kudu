@@ -593,9 +593,7 @@ Status CFileSet::Iterator::MaterializeColumn(ColumnMaterializationContext *ctx) 
   RETURN_NOT_OK(PrepareColumn(ctx));
   ColumnIterator* iter = col_iters_[ctx->col_idx()].get();
 
-  RETURN_NOT_OK(iter->Scan(ctx));
-
-  return Status::OK();
+  return iter->Scan(ctx);
 }
 
 Status CFileSet::Iterator::FinishBatch() {

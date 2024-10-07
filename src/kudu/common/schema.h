@@ -96,7 +96,6 @@ struct ColumnId {
 // for decimal types. Column attributes describe logical features of
 // the column; these features are usually relative to the column's type.
 struct ColumnTypeAttributes {
- public:
   ColumnTypeAttributes()
       : precision(0),
         scale(0),
@@ -143,7 +142,6 @@ struct ColumnTypeAttributes {
 // Column attributes are presently specified in the ColumnSchema
 // protobuf message, but this should ideally be separate.
 struct ColumnStorageAttributes {
- public:
   ColumnStorageAttributes()
       : encoding(AUTO_ENCODING),
         compression(DEFAULT_COMPRESSION),
@@ -173,7 +171,6 @@ struct ColumnStorageAttributes {
 // In the future, as more complex alter operations need to be supported,
 // this may evolve into a class, but for now it's just POD.
 struct ColumnSchemaDelta {
-public:
   explicit ColumnSchemaDelta(std::string name)
       : name(std::move(name)),
         remove_default(false) {
@@ -241,8 +238,8 @@ class ColumnSchema {
                bool is_auto_incrementing = false,
                const void* read_default = nullptr,
                const void* write_default = nullptr,
-               ColumnStorageAttributes attributes = ColumnStorageAttributes(),
-               ColumnTypeAttributes type_attributes = ColumnTypeAttributes(),
+               ColumnStorageAttributes attributes = {},
+               ColumnTypeAttributes type_attributes = {},
                std::string comment = "")
       : name_(std::move(name)),
         type_info_(GetTypeInfo(type)),
