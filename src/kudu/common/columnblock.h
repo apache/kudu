@@ -211,7 +211,7 @@ inline bool operator!=(const ColumnBlock& a, const ColumnBlock& b) {
 // One of the cells in a ColumnBlock.
 class ColumnBlockCell {
  public:
-  ColumnBlockCell(ColumnBlock block, size_t row_idx)
+  ColumnBlockCell(const ColumnBlock& block, size_t row_idx)
       : block_(block), row_idx_(row_idx) {}
 
   const TypeInfo* typeinfo() const { return block_.type_info(); }
@@ -226,7 +226,7 @@ class ColumnBlockCell {
   void set_null(bool is_null) { block_.SetCellIsNull(row_idx_, is_null); }
  protected:
   ColumnBlock block_;
-  size_t row_idx_;
+  const size_t row_idx_;
 };
 
 inline ColumnBlockCell ColumnBlock::cell(size_t idx) const {

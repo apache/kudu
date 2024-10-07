@@ -14,8 +14,8 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_TABLET_DELTA_APPLIER_H
-#define KUDU_TABLET_DELTA_APPLIER_H
+
+#pragma once
 
 #include <cstddef>
 #include <memory>
@@ -94,4 +94,3 @@ class DeltaApplier final : public ColumnwiseIterator {
 
 } // namespace tablet
 } // namespace kudu
-#endif /* KUDU_TABLET_DELTA_APPLIER_H */
