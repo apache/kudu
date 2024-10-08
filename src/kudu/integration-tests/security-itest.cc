@@ -827,9 +827,16 @@ TEST_F(SecurityITest, TestWorldReadableKeytab) {
   NO_FATALS(CreateWorldReadableFile(credentials_name));
   string binary = "kudu";
   NO_FATALS(GetFullBinaryPath(&binary));
+
+  // By default, KuduTest-based scenarios have their FLAGS_log_dir pointing to
+  // the TEST_TMPDIR directory, and the generated log files aren't cleaned up.
+  // So, customize the --log_dir flag to keep all the logs under the test's
+  // directory which is automatically removed once the scenario successfully
+  // completes.
   const vector<string> argv = { binary,
                                 "master",
                                 "run",
+                                Substitute("--log_dir=$0", GetTestDataDirectory()),
                                 Substitute("--keytab_file=$0", credentials_name) };
   string stderr;
   Status s = Subprocess::Call(argv, "", nullptr, &stderr);
@@ -843,9 +850,16 @@ TEST_F(SecurityITest, TestWorldReadablePrivateKey) {
   NO_FATALS(CreateWorldReadableFile(credentials_name));
   string binary = "kudu";
   NO_FATALS(GetFullBinaryPath(&binary));
+
+  // By default, KuduTest-based scenarios have their FLAGS_log_dir pointing to
+  // the TEST_TMPDIR directory, and the generated log files aren't cleaned up.
+  // So, customize the --log_dir flag to keep all the logs under the test's
+  // directory which is automatically removed once the scenario successfully
+  // completes.
   const vector<string> argv = { binary,
                                 "master",
                                 "run",
+                                Substitute("--log_dir=$0", GetTestDataDirectory()),
                                 "--unlock_experimental_flags",
                                 Substitute("--rpc_private_key_file=$0", credentials_name),
                                 "--rpc_certificate_file=fake_file",
