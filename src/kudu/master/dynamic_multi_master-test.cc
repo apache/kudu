@@ -1797,6 +1797,12 @@ class ParameterizedAutoAddMasterTest : public AutoAddMasterTest,
 TEST_P(ParameterizedAutoAddMasterTest, TestBasicAddition) {
   TestWorkload w(cluster_.get());
   w.set_num_replicas(1);
+  // Using one thread and injecting delays between write batches to reduce
+  // the amount of data accumulated under the tablet server's WAL and data
+  // directories since this scenario might run for quite a long time,
+  // especially on slow machines.
+  w.set_num_write_threads(1);
+  w.set_write_interval_millis(5);
   w.Setup();
   w.Start();
   int num_masters = args_.orig_num_masters;
