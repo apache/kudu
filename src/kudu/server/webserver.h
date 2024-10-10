@@ -21,6 +21,7 @@
 #include <iosfwd>
 #include <map>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -177,7 +178,16 @@ class Webserver : public WebCallbackRegistry {
       const PathHandler& handler,
       struct sq_connection* connection,
       struct sq_request_info* request_info,
-      PrerenderedWebResponse* resp);
+      PrerenderedWebResponse* resp,
+      const std::unordered_map<std::string, std::string>& params);
+
+  // Splits a path into its components, e.g. "/foo/bar" -> ["foo", "bar"]
+  // Only ASCII characters are supported.
+  // If a non-ASCII character is provided, an empty vector is returned.
+  static std::vector<std::string> SplitPath(const std::string& path);
+
+  // Checks whether the given path has non-ASCII characters.
+  static bool ContainsNonAscii(const std::string& path);
 
   // Callback to funnel mongoose logs through glog.
   static int LogMessageCallbackStatic(const struct sq_connection* connection,

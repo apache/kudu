@@ -592,40 +592,85 @@ sq_callback_result_t Webserver::BeginRequestCallback(
     request_info->remote_user = strdup(authn_princ.c_str());
   }
 
-  PathHandler* handler;
+  PathHandler* handler = nullptr;
+  std::unordered_map<std::string, std::string> path_params;
   {
-    shared_lock<RWMutex> l(lock_);
-    PathHandlerMap::const_iterator it = path_handlers_.find(request_info->uri);
-    if (it == path_handlers_.end()) {
-      // Let Mongoose deal with this request; returning NULL will fall through
-      // to the default handler which will serve files.
-      if (!opts_.doc_root.empty() && opts_.enable_doc_root) {
-        VLOG(2) << "HTTP File access: " << request_info->uri;
-        // TODO(adar): if using SPNEGO, do we need to somehow send the
-        // authentication response header here?
-        return SQ_CONTINUE_HANDLING;
-      }
-      resp.output << Substitute("No handler for URI $0\r\n\r\n", request_info->uri);
-      resp.status_code = HttpStatusCode::NotFound;
+    bool has_non_ascii = ContainsNonAscii(request_info->uri);
+    if (has_non_ascii) {
+      resp.output << "Path contains non-ASCII characters";
+      resp.status_code = HttpStatusCode::BadRequest;
       SendResponse(connection, &resp);
       return SQ_HANDLED_OK;
     }
-    handler = it->second;
+    shared_lock<RWMutex> l(lock_);
+    PathHandlerMap::const_iterator it = path_handlers_.find(request_info->uri);
+
+    if (it == path_handlers_.end()) {
+      std::vector<std::string> uri_segments = SplitPath(request_info->uri);
+      if (uri_segments.empty()) {
+        resp.output << "Invalid path";
+        resp.status_code = HttpStatusCode::BadRequest;
+        SendResponse(connection, &resp);
+        return SQ_HANDLED_OK;
+      }
+      for (const auto& path_handler : path_handlers_) {
+        std::vector<std::string> handler_segments = SplitPath(path_handler.first);
+
+        if (handler_segments.size() != uri_segments.size()) {
+          continue;
+        }
+        bool match = false;
+        for (size_t i = 0; i < handler_segments.size(); ++i) {
+          if (handler_segments[i][0] == '<' &&
+              handler_segments[i][handler_segments[i].size() - 1] == '>' &&
+              handler_segments[i].size() >= 3) {
+            std::string param_name = handler_segments[i].substr(1, handler_segments[i].size() - 2);
+            path_params[param_name] = uri_segments[i];
+            match = true;
+          } else if (handler_segments[i] != uri_segments[i]) {
+            match = false;
+            break;
+          }
+        }
+        if (match) {
+          handler = path_handler.second;
+          break;
+        }
+      }
+      if (!handler) {
+        // Let Mongoose deal with this request; returning NULL will fall through
+        // to the default handler which will serve files.
+        if (!opts_.doc_root.empty() && opts_.enable_doc_root) {
+          VLOG(2) << "HTTP File access: " << request_info->uri;
+          // TODO(adar): if using SPNEGO, do we need to somehow send the
+          // authentication response header here?
+          return SQ_CONTINUE_HANDLING;
+        }
+        resp.output << Substitute("No handler for URI $0\r\n\r\n", request_info->uri);
+        resp.status_code = HttpStatusCode::NotFound;
+        SendResponse(connection, &resp);
+        return SQ_HANDLED_OK;
+      }
+    } else {
+      handler = it->second;
+    }
   }
 
-  return RunPathHandler(*handler, connection, request_info, &resp);
+  return RunPathHandler(*handler, connection, request_info, &resp, path_params);
 }
 
 sq_callback_result_t Webserver::RunPathHandler(
     const PathHandler& handler,
     struct sq_connection* connection,
     struct sq_request_info* request_info,
-    PrerenderedWebResponse* resp) {
+    PrerenderedWebResponse* resp,
+    const std::unordered_map<std::string, std::string>& path_params) {
   WebRequest req;
   if (request_info->query_string != nullptr) {
     req.query_string = request_info->query_string;
     BuildArgumentMap(request_info->query_string, &req.parsed_args);
   }
+  req.path_params = path_params;
   for (int i = 0; i < request_info->num_headers; i++) {
     const auto& h = request_info->http_headers[i];
     string key = h.name;
@@ -686,6 +731,33 @@ sq_callback_result_t Webserver::RunPathHandler(
                         StyleMode::UNSTYLED : handler.style_mode();
   SendResponse(connection, resp, &req, use_style);
   return SQ_HANDLED_OK;
+}
+
+std::vector<std::string> Webserver::SplitPath(const std::string& path) {
+  std::vector<std::string> segments;
+  // Reserve space based on '/' count
+  segments.reserve(std::count(path.begin(), path.end(), '/') + 1);
+
+  size_t start = 0;
+  size_t end;
+  while ((end = path.find('/', start)) != std::string::npos) {
+    if (end != start) {  // Avoid empty segments
+      segments.emplace_back(path.substr(start, end - start));
+    }
+    start = end + 1;
+  }
+  // Add the last segment if it exists
+  if (start < path.size()) {
+    segments.emplace_back(path.substr(start));
+  }
+
+  return segments;
+}
+
+bool Webserver::ContainsNonAscii(const std::string& path) {
+  return std::any_of(path.begin(), path.end(), [](char c) {
+    return c < 0 || c > 127;
+  });
 }
 
 void Webserver::SendResponse(struct sq_connection* connection,

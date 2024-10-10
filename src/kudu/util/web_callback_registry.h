@@ -78,6 +78,9 @@ class WebCallbackRegistry {
 
     // In the case of a POST, the posted data.
     std::string post_data;
+
+    // Parameters extracted from the URL path.
+    ArgumentMap path_params;
   };
 
   // A response to an HTTP request whose body is rendered by template.

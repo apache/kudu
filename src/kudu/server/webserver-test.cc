@@ -28,6 +28,8 @@
 #include <iosfwd>
 #include <memory>
 #include <string>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags.h>
@@ -46,6 +48,7 @@
 #include "kudu/server/default_path_handlers.h"
 #include "kudu/server/webserver_options.h"
 #include "kudu/util/curl_util.h"
+#include "kudu/util/easy_json.h"
 #include "kudu/util/env.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/flag_tags.h"
@@ -55,6 +58,7 @@
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
+#include "kudu/util/web_callback_registry.h"
 #include "kudu/util/zlib.h"
 
 using std::string;
@@ -656,6 +660,98 @@ TEST_F(WebserverTest, TestStaticFiles) {
   ASSERT_OK(env_->CreateDir(Substitute("$0/dir", static_dir_)));
   s = curl_.FetchURL(Substitute("$0/dir/", url_), &buf_);
   ASSERT_EQ("Remote error: HTTP 403", s.ToString());
+}
+
+namespace {
+
+// Handler that echoes back the path parameters and query parameters in key-value pairs.
+void PathParamHandler(const Webserver::WebRequest& req, Webserver::WebResponse* resp) {
+  EasyJson* output = &resp->output;
+
+  for (const auto& param : req.path_params) {
+    (*output)["path_params"][param.first] = param.second;
+  }
+
+  for (const auto& param : req.parsed_args) {
+    (*output)["query_params"][param.first] = param.second;
+  }
+}
+
+class PathParamWebserverTest : public WebserverTest {
+ protected:
+  void SetUp() override {
+    WebserverTest::SetUp();
+    server_->RegisterPathHandler("/api/tables/<table_id>/tablets/<tablet_id>",
+                                 "PathParamWebserverTest",
+                                 PathParamHandler,
+                                 StyleMode::UNSTYLED,
+                                 false);
+    server_->RegisterPathHandler("/api/tables/<table_id>",
+                                 "PathParamWebserverTest",
+                                 PathParamHandler,
+                                 StyleMode::UNSTYLED,
+                                 false);
+    server_->RegisterPathHandler("/columns/ <column_id>",
+                                 "PathParamWebserverTest",
+                                 PathParamHandler,
+                                 StyleMode::UNSTYLED,
+                                 false);
+  }
+};
+}  // anonymous namespace
+
+TEST_F(PathParamWebserverTest, TestPathParameterAtEnd) {
+  ASSERT_OK(
+      curl_.FetchURL(Substitute("$0/api/tables/45dc8d192549427b8dca871dbbb20bb3", url_), &buf_));
+  ASSERT_STR_CONTAINS(buf_.ToString(), "\"table_id\":\"45dc8d192549427b8dca871dbbb20bb3\"");
+}
+
+TEST_F(PathParamWebserverTest, TestPathParameterInMiddleAndEnd) {
+  ASSERT_OK(curl_.FetchURL(
+      Substitute("$0/api/tables/45dc8d192549427b8dca871dbbb20bb3/tablets/1", url_), &buf_));
+  ASSERT_STR_CONTAINS(buf_.ToString(), "\"table_id\":\"45dc8d192549427b8dca871dbbb20bb3\"");
+  ASSERT_STR_CONTAINS(buf_.ToString(), "\"tablet_id\":\"1\"");
+}
+
+TEST_F(PathParamWebserverTest, TestInvalidPathParameter) {
+  Status s = curl_.FetchURL(Substitute("$0/api/tables//tablets/1", url_), &buf_);
+  ASSERT_EQ("Remote error: HTTP 404", s.ToString());
+}
+
+// Test that the query string is correctly parsed and returned in the response,
+// even when the path contains a path parameter.
+TEST_F(PathParamWebserverTest, TestPathWithQueryString) {
+  ASSERT_OK(curl_.FetchURL(
+      Substitute("$0/api/tables/45dc8d192549427b8dca871dbbb20bb3?foo=bar", url_), &buf_));
+  ASSERT_STR_CONTAINS(buf_.ToString(),
+                      "\"path_params\":{\"table_id\":\"45dc8d192549427b8dca871dbbb20bb3\"}");
+  ASSERT_STR_CONTAINS(buf_.ToString(), "\"query_params\":{\"foo\":\"bar\"}");
+}
+
+TEST_F(PathParamWebserverTest, TestInvalidPathWithSpace) {
+  Status s = curl_.FetchURL(
+      Substitute("$0/api/tables/45dc8d192549427b8dca871dbbb20bb3 /tablets/1", url_), &buf_);
+  ASSERT_EQ(
+      "Network error: curl error: URL using bad/illegal format or missing URL: URL rejected: "
+      "Malformed input to a URL function",
+      s.ToString());
+}
+
+TEST_F(PathParamWebserverTest, TestRegisteredPathWithSpace) {
+  Status s = curl_.FetchURL(Substitute("$0/columns/45dc8d192549427b8dca871dbbb20bb3", url_), &buf_);
+  ASSERT_EQ("Remote error: HTTP 404", s.ToString());
+  Status s2 =
+      curl_.FetchURL(Substitute("$0/columns/ 45dc8d192549427b8dca871dbbb20bb3", url_), &buf_);
+  ASSERT_EQ(
+      "Network error: curl error: URL using bad/illegal format or missing URL: URL rejected: "
+      "Malformed input to a URL function",
+      s2.ToString());
+}
+
+TEST_F(PathParamWebserverTest, TestPathParamWithNonAsciiCharacter) {
+  Status s = curl_.FetchURL(
+      Substitute("$0/api/tables/45dc8d192549427b8dca871dbbb20bb3ü20/tablets/1", url_), &buf_);
+  ASSERT_EQ("Remote error: HTTP 400", s.ToString());
 }
 
 class DisabledDocRootWebserverTest : public WebserverTest {
