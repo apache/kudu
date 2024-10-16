@@ -916,6 +916,8 @@ INSTANTIATE_TEST_SUITE_P(, ParameterizedRemoveMasterTest,
 
 // Tests removing a non-leader master from the cluster.
 TEST_P(ParameterizedRemoveMasterTest, TestRemoveMaster) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
   NO_FATALS(StartCluster({// Keeping RPC timeouts short to quickly detect downed servers.
                           // This will put the health status into an UNKNOWN state until the point
                           // where they are considered FAILED.
@@ -1186,6 +1188,8 @@ TEST_F(DynamicMultiMasterTest, TestRemoveMasterFeatureFlagNotSpecified) {
 
 // Test that attempts to request a non-leader master to add a new master.
 TEST_F(DynamicMultiMasterTest, TestAddMasterToNonLeader) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
   NO_FATALS(SetUpWithNumMasters(2));
   NO_FATALS(StartCluster());
 
@@ -1225,6 +1229,8 @@ TEST_F(DynamicMultiMasterTest, TestAddMasterToNonLeader) {
 
 // Test that attempts to request a non-leader master to remove a master.
 TEST_F(DynamicMultiMasterTest, TestRemoveMasterToNonLeader) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
   NO_FATALS(SetUpWithNumMasters(2));
   NO_FATALS(StartCluster());
 
@@ -1295,6 +1301,8 @@ TEST_F(DynamicMultiMasterTest, TestAddMasterMissingAndIncorrectAddress) {
 // Test that attempts to remove a master with missing master address and a non-existent
 // hostname.
 TEST_F(DynamicMultiMasterTest, TestRemoveMasterMissingAndIncorrectHostname) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
   NO_FATALS(SetUpWithNumMasters(2));
   NO_FATALS(StartCluster());
 
@@ -1533,6 +1541,8 @@ TEST_F(AutoAddMasterTest, TestSomeMastersUnreachable) {
 
 // Test if we fail to replicate the AddMaster request.
 TEST_F(AutoAddMasterTest, TestFailWithoutReplicatingAddMaster) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
   // Make master followers unable to accept updates, including config changes.
   // We'll set this for all masters including leaders for simplicity.
   for (int i = 0; i < cluster_->num_masters(); i++) {
@@ -1795,6 +1805,8 @@ class ParameterizedAutoAddMasterTest : public AutoAddMasterTest,
 };
 
 TEST_P(ParameterizedAutoAddMasterTest, TestBasicAddition) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
   TestWorkload w(cluster_.get());
   w.set_num_replicas(1);
   // Using one thread and injecting delays between write batches to reduce
