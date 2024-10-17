@@ -28,6 +28,7 @@
 #include "kudu/gutil/walltime.h"
 #include "kudu/tablet/ops/op.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/make_shared.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 #include "kudu/util/trace.h"
@@ -219,18 +220,10 @@ class OpTracker;
 // still be ok, as it would get aborted because the replica wasn't a leader yet (constraints 1/2).
 //
 // This class is thread safe.
-class OpDriver : public RefCountedThreadSafe<OpDriver> {
-
+class OpDriver : public std::enable_shared_from_this<OpDriver>,
+                 public enable_make_shared<OpDriver> {
  public:
-  // Construct OpDriver. OpDriver does not take ownership
-  // of any of the objects pointed to in the constructor's arguments.
-  OpDriver(OpTracker* op_tracker,
-           consensus::RaftConsensus* consensus,
-           log::Log* log,
-           ThreadPoolToken* prepare_pool_token,
-           ThreadPool* apply_pool,
-           OpOrderVerifier* order_verifier,
-           MonoTime deadline = MonoTime::Max());
+  ~OpDriver() = default;
 
   // Perform any non-constructor initialization. Sets the op that will be
   // executed.
@@ -276,6 +269,17 @@ class OpDriver : public RefCountedThreadSafe<OpDriver> {
 
   Trace* trace() { return trace_.get(); }
 
+ protected:
+  // Construct OpDriver. OpDriver does not take ownership
+  // of any of the objects pointed to in the constructor's arguments.
+  OpDriver(OpTracker* op_tracker,
+           consensus::RaftConsensus* consensus,
+           log::Log* log,
+           ThreadPoolToken* prepare_pool_token,
+           ThreadPool* apply_pool,
+           OpOrderVerifier* order_verifier,
+           MonoTime deadline = MonoTime::Max());
+
  private:
   FRIEND_TEST(TabletReplicaTest, TestShuttingDownMVCC);
   friend class RefCountedThreadSafe<OpDriver>;
@@ -300,8 +304,6 @@ class OpDriver : public RefCountedThreadSafe<OpDriver> {
     NOT_PREPARED,
     PREPARED
   };
-
-  ~OpDriver() {}
 
   // The task submitted to the prepare threadpool to prepare the op. If Prepare() fails,
   // calls HandleFailure.

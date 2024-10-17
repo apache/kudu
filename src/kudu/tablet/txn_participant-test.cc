@@ -26,6 +26,7 @@
 #include <ostream>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -54,7 +55,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/ops/op.h"
-#include "kudu/tablet/ops/op_driver.h"
+#include "kudu/tablet/ops/op_driver.h"  // IWYU pragma: keep
 #include "kudu/tablet/ops/op_tracker.h"
 #include "kudu/tablet/ops/participant_op.h"
 #include "kudu/tablet/tablet-test-util.h"
@@ -86,6 +87,7 @@ using kudu::tserver::WriteRequestPB;
 using std::map;
 using std::nullopt;
 using std::optional;
+using std::shared_ptr;
 using std::string;
 using std::thread;
 using std::unique_ptr;
@@ -997,9 +999,9 @@ TEST_F(TxnParticipantTest, TestActiveParticipantOpsAnchorWALs) {
   op_state->set_completion_callback(std::unique_ptr<OpCompletionCallback>(
       new LatchOpCompletionCallback<tserver::ParticipantResponsePB>(&latch, &resp)));
 
-  scoped_refptr<OpDriver> driver;
   unique_ptr<DelayedParticipantOp> op(
       new DelayedParticipantOp(&apply_start, &apply_continue, std::move(op_state)));
+  shared_ptr<OpDriver> driver;
   ASSERT_OK(tablet_replica_->NewLeaderOpDriver(std::move(op), &driver, MonoTime::Max()));
   driver->ExecuteAsync();
   // Wait for the apply to start, indicating that we have persisted and
