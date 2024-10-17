@@ -125,7 +125,7 @@ to rule out any build issues.
 
 [source,bash]
 ----
-$ ./gradlew install
+$ ./gradlew publishToMavenLocal
 ----
 
 === Checking for Dependency Updates
