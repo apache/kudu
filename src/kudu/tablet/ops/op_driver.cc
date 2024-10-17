@@ -62,6 +62,8 @@ using kudu::pb_util::SecureShortDebugString;
 using kudu::rpc::RequestIdPB;
 using kudu::rpc::ResultTracker;
 using std::string;
+using std::shared_ptr;
+using std::weak_ptr;
 using std::unique_ptr;
 using strings::Substitute;
 
@@ -141,6 +143,7 @@ Status OpDriver::Init(unique_ptr<Op> op,
   }
   op_ = std::move(op);
 
+  auto self = shared_from_this();
   if (type == consensus::FOLLOWER) {
     std::lock_guard<simple_spinlock> lock(opid_lock_);
     op_id_copy_ = op_->state()->op_id();
@@ -171,14 +174,26 @@ Status OpDriver::Init(unique_ptr<Op> op,
     unique_ptr<ReplicateMsg> replicate_msg;
     op_->NewReplicateMsg(&replicate_msg);
     if (consensus_) { // sometimes NULL in tests
-      // A raw pointer is required to avoid a refcount cycle.
+      // A weak pointer is required to avoid a refcount cycle.
+      // TODO(aserbin): is the comment above still relevant?
+      weak_ptr<OpDriver> wp(self);
       mutable_state()->set_consensus_round(
-        consensus_->NewRound(std::move(replicate_msg),
-                             [this](const Status& s) { this->ReplicationFinished(s); }));
+        consensus_->NewRound(
+            std::move(replicate_msg),
+            [wp = std::move(wp)](const Status& s) {
+              shared_ptr<OpDriver> sp(wp.lock());
+              if (PREDICT_TRUE(sp)) {
+                sp->ReplicationFinished(s);
+              } else {
+                // TODO(aserbin): is this even possible?
+                LOG(DFATAL) << "OpDriver isn't around: has ReplicationFinished() "
+                               "been called already?";
+              }
+            }));
     }
   }
 
-  return op_tracker_->Add(this);
+  return op_tracker_->Add(std::move(self));
 }
 
 consensus::OpId OpDriver::GetOpId() {
@@ -226,10 +241,12 @@ void OpDriver::ExecuteAsync() {
     s = consensus_->CheckLeadershipAndBindTerm(mutable_state()->consensus_round());
   }
 
-  if (s.ok()) {
-    s = prepare_pool_token_->Submit([this]() { this->PrepareTask(); });
+  if (PREDICT_TRUE(s.ok())) {
+    // Provide a reference to the object to be able to call its methods
+    // regardless of what happens with other references around.
+    auto self = shared_from_this();
+    s = prepare_pool_token_->Submit([self = std::move(self)]() { self->PrepareTask(); });
   }
-
   if (PREDICT_FALSE(!s.ok())) {
     HandleFailure(s);
   }
@@ -498,7 +515,10 @@ Status OpDriver::ApplyAsync() {
   }
 
   TRACE_EVENT_FLOW_BEGIN0("op", "ApplyTask", this);
-  return apply_pool_->Submit([this]() { this->ApplyTask(); });
+  // Provide a reference to the object to make sure it's safe to call its
+  // methods regardless of what happens with other references around.
+  auto self = shared_from_this();
+  return apply_pool_->Submit([self = std::move(self)]() { self->ApplyTask(); });
 }
 
 void OpDriver::ApplyTask() {
@@ -517,10 +537,6 @@ void OpDriver::ApplyTask() {
     DCHECK_EQ(prepare_state_, PREPARED);
   }
 #endif // #if DCHECK_IS_ON() ...
-
-  // We need to ref-count ourself, since FinishApplying() may run very quickly
-  // and end up calling Finalize() while we're still in this code.
-  scoped_refptr<OpDriver> ref(this);
 
   {
     CommitMsg* commit_msg;
@@ -581,15 +597,11 @@ Status OpDriver::CommitWait() {
 
 void OpDriver::Finalize() {
   ADOPT_TRACE(trace());
-  // TODO: this is an ugly hack so that the Release() call doesn't delete the
-  // object while we still hold the lock.
-  scoped_refptr<OpDriver> ref(this);
   std::lock_guard<simple_spinlock> lock(lock_);
   op_->Finish(Op::APPLIED);
   mutable_state()->completion_callback()->OpCompleted();
   op_tracker_->Release(this);
 }
-
 
 std::string OpDriver::StateString(ReplicationState repl_state,
                                   PrepareState prep_state) {

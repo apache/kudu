@@ -149,6 +149,7 @@ using kudu::tserver::ParticipantRequestPB;
 using kudu::tserver::TabletServerErrorPB;
 using std::deque;
 using std::map;
+using std::make_shared;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
@@ -597,7 +598,7 @@ Status TabletReplica::SubmitWrite(unique_ptr<WriteOpState> op_state,
 
   op_state->SetResultTracker(result_tracker_);
   unique_ptr<WriteOp> op(new WriteOp(std::move(op_state), consensus::LEADER));
-  scoped_refptr<OpDriver> driver;
+  shared_ptr<OpDriver> driver;
   RETURN_NOT_OK(NewLeaderOpDriver(std::move(op), &driver, deadline));
   driver->ExecuteAsync();
   return Status::OK();
@@ -608,7 +609,7 @@ Status TabletReplica::SubmitTxnParticipantOp(std::unique_ptr<ParticipantOpState>
 
   op_state->SetResultTracker(result_tracker_);
   unique_ptr<ParticipantOp> op(new ParticipantOp(std::move(op_state), consensus::LEADER));
-  scoped_refptr<OpDriver> driver;
+  shared_ptr<OpDriver> driver;
   RETURN_NOT_OK(NewLeaderOpDriver(std::move(op), &driver, MonoTime::Max()));
   driver->ExecuteAsync();
   return Status::OK();
@@ -620,7 +621,7 @@ Status TabletReplica::SubmitAlterSchema(unique_ptr<AlterSchemaOpState> state,
 
   unique_ptr<AlterSchemaOp> op(
       new AlterSchemaOp(std::move(state), consensus::LEADER));
-  scoped_refptr<OpDriver> driver;
+  shared_ptr<OpDriver> driver;
   RETURN_NOT_OK(NewLeaderOpDriver(std::move(op), &driver, deadline));
   driver->ExecuteAsync();
   return Status::OK();
@@ -708,9 +709,8 @@ string TabletReplica::HumanReadableState() const {
 
 void TabletReplica::GetInFlightOps(Op::TraceType trace_type,
                                    vector<consensus::OpStatusPB>* out) const {
-  vector<scoped_refptr<OpDriver> > pending_ops;
-  op_tracker_.GetPendingOps(&pending_ops);
-  for (const scoped_refptr<OpDriver>& driver : pending_ops) {
+  const auto pending_ops = op_tracker_.GetPendingOps();
+  for (const auto& driver : pending_ops) {
     if (driver->state() != nullptr) {
       consensus::OpStatusPB status_pb;
       status_pb.mutable_op_id()->CopyFrom(driver->GetOpId());
@@ -763,9 +763,8 @@ log::RetentionIndexes TabletReplica::GetRetentionIndexes() const {
                       << Substitute("{dur: $0, peers: $1}", ret.for_durability, ret.for_peers);
 
   // Next, interrogate the OpTracker.
-  vector<scoped_refptr<OpDriver> > pending_ops;
-  op_tracker_.GetPendingOps(&pending_ops);
-  for (const scoped_refptr<OpDriver>& driver : pending_ops) {
+  const auto pending_ops = op_tracker_.GetPendingOps();
+  for (const auto& driver : pending_ops) {
     OpId op_id = driver->GetOpId();
     // A op which doesn't have an opid hasn't been submitted for replication yet and
     // thus has no need to anchor the log.
@@ -848,13 +847,23 @@ Status TabletReplica::StartFollowerOp(const scoped_refptr<ConsensusRound>& round
   OpState* state = op->state();
   state->set_consensus_round(round);
 
-  scoped_refptr<OpDriver> driver;
+  shared_ptr<OpDriver> driver;
   RETURN_NOT_OK(NewReplicaOpDriver(std::move(op), &driver));
 
-  // A raw pointer is required to avoid a refcount cycle.
-  auto* driver_raw = driver.get();
+  // A weak pointer is required to avoid a refcount cycle.
+  // TODO(aserbin): is the comment above still relevant?
+  std::weak_ptr<OpDriver> wp(driver);
   state->consensus_round()->SetConsensusReplicatedCallback(
-      [driver_raw](const Status& s) { driver_raw->ReplicationFinished(s); });
+      [wp = std::move(wp)](const Status& s) {
+        shared_ptr<OpDriver> sp(wp.lock());
+        if (PREDICT_TRUE(sp)) {
+          sp->ReplicationFinished(s);
+        } else {
+          // TODO(aserbin): is this even possible?
+          LOG(DFATAL) << "OpDriver isn't around: has ReplicationFinished() "
+                         "been called already?";
+        }
+      });
 
   driver->ExecuteAsync();
   return Status::OK();
@@ -899,16 +908,16 @@ void TabletReplica::FinishConsensusOnlyRound(ConsensusRound* round) {
 }
 
 Status TabletReplica::NewLeaderOpDriver(unique_ptr<Op> op,
-                                        scoped_refptr<OpDriver>* driver,
+                                        shared_ptr<OpDriver>* driver,
                                         MonoTime deadline) {
-  scoped_refptr<OpDriver> op_driver = new OpDriver(
-    &op_tracker_,
-    consensus_.get(),
-    log_.get(),
-    prepare_pool_token_.get(),
-    apply_pool_,
-    &op_order_verifier_,
-    deadline);
+  auto op_driver = OpDriver::make_shared(
+      &op_tracker_,
+      consensus_.get(),
+      log_.get(),
+      prepare_pool_token_.get(),
+      apply_pool_,
+      &op_order_verifier_,
+      deadline);
   RETURN_NOT_OK(op_driver->Init(std::move(op), consensus::LEADER));
   *driver = std::move(op_driver);
 
@@ -916,14 +925,14 @@ Status TabletReplica::NewLeaderOpDriver(unique_ptr<Op> op,
 }
 
 Status TabletReplica::NewReplicaOpDriver(unique_ptr<Op> op,
-                                                  scoped_refptr<OpDriver>* driver) {
-  scoped_refptr<OpDriver> op_driver = new OpDriver(
-    &op_tracker_,
-    consensus_.get(),
-    log_.get(),
-    prepare_pool_token_.get(),
-    apply_pool_,
-    &op_order_verifier_);
+                                         shared_ptr<OpDriver>* driver) {
+  auto op_driver = OpDriver::make_shared(
+      &op_tracker_,
+      consensus_.get(),
+      log_.get(),
+      prepare_pool_token_.get(),
+      apply_pool_,
+      &op_order_verifier_);
   RETURN_NOT_OK(op_driver->Init(std::move(op), consensus::FOLLOWER));
   *driver = std::move(op_driver);
 

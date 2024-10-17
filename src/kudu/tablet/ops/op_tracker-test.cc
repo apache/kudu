@@ -18,6 +18,7 @@
 #include "kudu/tablet/ops/op_tracker.h"
 
 #include <cstdint>
+#include <iterator>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -107,24 +108,23 @@ class OpTrackerTest : public KuduTest,
   void RunOpsThread(CountDownLatch* finish_latch);
 
   Status AddDrivers(int num_drivers,
-                    vector<scoped_refptr<OpDriver> >* drivers) {
-    vector<scoped_refptr<OpDriver> > local_drivers;
+                    vector<shared_ptr<OpDriver>>* drivers) {
+    vector<shared_ptr<OpDriver>> local_drivers;
+    local_drivers.reserve(num_drivers);
     for (int i = 0; i < num_drivers; i++) {
-      scoped_refptr<OpDriver> driver(
-          new OpDriver(&tracker_,
-                       nullptr,
-                       nullptr,
-                       nullptr,
-                       nullptr,
-                       nullptr));
+      auto driver(OpDriver::make_shared(
+          &tracker_,
+          nullptr,
+          nullptr,
+          nullptr,
+          nullptr,
+          nullptr));
       unique_ptr<NoOpOp> op(new NoOpOp(new NoOpOpState));
       RETURN_NOT_OK(driver->Init(std::move(op), consensus::LEADER));
-      local_drivers.push_back(driver);
+      local_drivers.emplace_back(std::move(driver));
     }
 
-    for (const scoped_refptr<OpDriver>& d : local_drivers) {
-      drivers->push_back(d);
-    }
+    std::move(local_drivers.begin(), local_drivers.end(), std::back_inserter(*drivers));
     return Status::OK();
   }
 
@@ -135,13 +135,12 @@ class OpTrackerTest : public KuduTest,
 
 TEST_F(OpTrackerTest, TestGetPending) {
   ASSERT_EQ(0, tracker_.GetNumPendingForTests());
-  vector<scoped_refptr<OpDriver> > drivers;
+  vector<shared_ptr<OpDriver> > drivers;
   ASSERT_OK(AddDrivers(1, &drivers));
-  scoped_refptr<OpDriver> driver = drivers[0];
+  shared_ptr<OpDriver>& driver(drivers[0]);
   ASSERT_EQ(1, tracker_.GetNumPendingForTests());
 
-  vector<scoped_refptr<OpDriver> > pending_ops;
-  tracker_.GetPendingOps(&pending_ops);
+  const auto pending_ops = tracker_.GetPendingOps();
   ASSERT_EQ(1, pending_ops.size());
   ASSERT_EQ(driver.get(), pending_ops.front().get());
 
@@ -155,7 +154,7 @@ TEST_F(OpTrackerTest, TestGetPending) {
 void OpTrackerTest::RunOpsThread(CountDownLatch* finish_latch) {
   const int kNumOps = 100;
   // Start a bunch of ops.
-  vector<scoped_refptr<OpDriver> > drivers;
+  vector<shared_ptr<OpDriver>> drivers;
   ASSERT_OK(AddDrivers(kNumOps, &drivers));
 
   // Wait for the main thread to tell us to proceed.
@@ -166,7 +165,7 @@ void OpTrackerTest::RunOpsThread(CountDownLatch* finish_latch) {
   SleepFor(MonoDelta::FromMilliseconds(1));
 
   // Finish all the ops
-  for (const scoped_refptr<OpDriver>& driver : drivers) {
+  for (const auto& driver : drivers) {
     // And mark the op as failed, which will cause it to unregister itself.
     driver->Abort(Status::Aborted(""));
   }
@@ -212,7 +211,7 @@ static void CheckMetrics(const scoped_refptr<MetricEntity>& entity,
 TEST_F(OpTrackerTest, TestMetrics) {
   NO_FATALS(CheckMetrics(entity_, 0, 0, 0, 0));
 
-  vector<scoped_refptr<OpDriver> > drivers;
+  vector<shared_ptr<OpDriver> > drivers;
   ASSERT_OK(AddDrivers(3, &drivers));
   NO_FATALS(CheckMetrics(entity_, 3, 0, 0, 0));
 
@@ -250,7 +249,7 @@ TEST_P(OpTrackerTest, TestTooManyOps) {
   // carries an empty ReplicateMsg), so we'll just add as many as possible
   // and check that when we fail, it's because we've hit the limit.
   Status s;
-  vector<scoped_refptr<OpDriver>> drivers;
+  vector<shared_ptr<OpDriver>> drivers;
   SCOPED_CLEANUP({
                    for (const auto &d : drivers) {
                      d->Abort(Status::Aborted(""));

@@ -130,10 +130,6 @@ OpTracker::Metrics::Metrics(const scoped_refptr<MetricEntity>& entity)
 #undef GINIT
 #undef MINIT
 
-OpTracker::State::State()
-    : memory_footprint(0) {
-}
-
 OpTracker::OpTracker() {
 }
 
@@ -144,7 +140,7 @@ OpTracker::~OpTracker() {
 #endif
 }
 
-Status OpTracker::Add(OpDriver* driver) {
+Status OpTracker::Add(shared_ptr<OpDriver> driver) {
   size_t driver_mem_footprint = driver->state()->request()->SpaceUsedLong();
   if (mem_tracker_ && !mem_tracker_->TryConsume(driver_mem_footprint)) {
     if (metrics_) {
@@ -174,10 +170,11 @@ Status OpTracker::Add(OpDriver* driver) {
 
   // Cache the op memory footprint so we needn't refer to the request
   // again, as it may disappear between now and then.
-  State st;
-  st.memory_footprint = driver_mem_footprint;
   std::lock_guard<simple_spinlock> l(lock_);
-  InsertOrDie(&pending_ops_, driver, st);
+  const auto* driver_ptr = driver.get();
+  EmplaceOrDie(&pending_ops_,
+               driver_ptr,
+               State(std::move(driver), driver_mem_footprint));
   return Status::OK();
 }
 
@@ -237,14 +234,14 @@ void OpTracker::Release(OpDriver* driver) {
   }
 }
 
-void OpTracker::GetPendingOps(
-    vector<scoped_refptr<OpDriver> >* pending_out) const {
-  DCHECK(pending_out->empty());
+vector<shared_ptr<OpDriver>> OpTracker::GetPendingOps() const {
+  vector<shared_ptr<OpDriver>> ret;
   std::lock_guard<simple_spinlock> l(lock_);
-  for (const TxnMap::value_type& e : pending_ops_) {
-    // Increments refcount of each op.
-    pending_out->push_back(e.first);
+  ret.reserve(pending_ops_.size());
+  for (const auto& [_, s]: pending_ops_) {
+    ret.emplace_back(s.driver);
   }
+  return ret;
 }
 
 int OpTracker::GetNumPendingForTests() const {
@@ -265,9 +262,7 @@ Status OpTracker::WaitForAllToFinish(const MonoDelta& timeout) const {
   MonoTime next_log_time = start_time + MonoDelta::FromSeconds(1);
 
   while (1) {
-    vector<scoped_refptr<OpDriver> > ops;
-    GetPendingOps(&ops);
-
+    const auto ops = GetPendingOps();
     if (ops.empty()) {
       break;
     }

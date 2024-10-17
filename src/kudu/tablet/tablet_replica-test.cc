@@ -51,7 +51,7 @@
 #include "kudu/tablet/lock_manager.h"
 #include "kudu/tablet/ops/alter_schema_op.h"
 #include "kudu/tablet/ops/op.h"
-#include "kudu/tablet/ops/op_driver.h"
+#include "kudu/tablet/ops/op_driver.h"  // IWYU pragma: keep
 #include "kudu/tablet/ops/op_tracker.h"
 #include "kudu/tablet/ops/write_op.h"
 #include "kudu/tablet/tablet.h"
@@ -429,7 +429,7 @@ TEST_F(TabletReplicaTest, TestActiveOpPreventsLogGC) {
                            &apply_continue,
                            std::move(op_state)));
 
-    scoped_refptr<OpDriver> driver;
+    shared_ptr<OpDriver> driver;
     ASSERT_OK(tablet_replica_->NewLeaderOpDriver(std::move(op),
                                                  &driver,
                                                  MonoTime::Max()));

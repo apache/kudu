@@ -316,11 +316,11 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   // that have timed out while in the prepare queue. For most call sites,
   // the deadline is naturally defined by the corresponding RPC.
   Status NewLeaderOpDriver(std::unique_ptr<Op> op,
-                           scoped_refptr<OpDriver>* driver,
+                           std::shared_ptr<OpDriver>* driver,
                            MonoTime deadline);
 
   Status NewReplicaOpDriver(std::unique_ptr<Op> op,
-                            scoped_refptr<OpDriver>* driver);
+                            std::shared_ptr<OpDriver>* driver);
 
   // Tells the tablet's log to garbage collect.
   Status RunLogGC();
