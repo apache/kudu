@@ -19,11 +19,11 @@
 #include <cstdint>
 #include <memory>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/tablet/ops/op_driver.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
@@ -34,6 +34,8 @@ class MemTracker;
 class MonoDelta;
 
 namespace tablet {
+
+class OpDriver;
 
 // Each TabletReplica has a OpTracker which keeps track of pending ops.
 // Each "LeaderOp" will register itself by calling Add().
@@ -47,14 +49,14 @@ class OpTracker {
   //
   // In the event that the tracker's memory limit is exceeded, returns a
   // ServiceUnavailable status.
-  Status Add(OpDriver* driver);
+  Status Add(std::shared_ptr<OpDriver> driver);
 
   // Removes the op from the pending list.
   // Also triggers the deletion of the Op object, if its refcount == 0.
   void Release(OpDriver* driver);
 
-  // Populates list of currently-running ops into 'pending_out' vector.
-  void GetPendingOps(std::vector<scoped_refptr<OpDriver> >* pending_out) const;
+  // Returns currently-running ops.
+  std::vector<std::shared_ptr<OpDriver>> GetPendingOps() const;
 
   // Returns number of pending ops.
   int GetNumPendingForTests() const;
@@ -87,18 +89,20 @@ class OpTracker {
 
   // Per-op state that is tracked along with the op itself.
   struct State {
-    State();
+    State(std::shared_ptr<OpDriver> driver, int64_t memory_footprint)
+        : driver(std::move(driver)),
+          memory_footprint(memory_footprint) {
+    }
+
+    // The reference to the driver.
+    std::shared_ptr<OpDriver> driver;
 
     // Approximate memory footprint of the op.
-    int64_t memory_footprint;
+    const int64_t memory_footprint;
   };
 
   // Protected by 'lock_'.
-  typedef std::unordered_map<scoped_refptr<OpDriver>,
-      State,
-      ScopedRefPtrHashFunctor<OpDriver>,
-      ScopedRefPtrEqualToFunctor<OpDriver> > TxnMap;
-  TxnMap pending_ops_;
+  std::unordered_map<const OpDriver*, State> pending_ops_;
 
   std::unique_ptr<Metrics> metrics_;
 
