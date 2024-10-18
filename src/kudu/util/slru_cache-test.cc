@@ -296,8 +296,11 @@ TEST_P(SLRUCacheTest, Erase) {
   ASSERT_EQ(201, evicted_values_[1]);
 }
 
-// Underlying entry isn't actually deleted until handle around it from lookup is reset.
+// Underlying entry isn't actually freed until handle around it from lookup is reset.
 TEST_P(SLRUCacheTest, EntriesArePinned) {
+  auto* metrics(dynamic_cast<SLRUCacheMetrics*>(slru_cache_->metrics_.get()));
+  ASSERT_TRUE(metrics);
+
   Insert(100, 101);
   auto h1 = slru_cache_->Lookup(EncodeInt(100), Cache::EXPECT_IN_CACHE);
   ASSERT_EQ(101, DecodeInt(slru_cache_->Value(h1)));
@@ -306,20 +309,67 @@ TEST_P(SLRUCacheTest, EntriesArePinned) {
   auto h2 = slru_cache_->Lookup(EncodeInt(100), Cache::EXPECT_IN_CACHE);
   ASSERT_EQ(102, DecodeInt(slru_cache_->Value(h2)));
   ASSERT_EQ(0, evicted_keys_.size());
+  ASSERT_EQ(0, metrics->probationary_segment_evictions.get()->value());
 
+  // Reset lookup handle of upserted entry, entry is now freed.
   h1.reset();
   ASSERT_EQ(1, evicted_keys_.size());
   ASSERT_EQ(100, evicted_keys_[0]);
   ASSERT_EQ(101, evicted_values_[0]);
+  ASSERT_EQ(1, metrics->probationary_segment_evictions.get()->value());
 
+  // Upserted entry is erased, but lookup handle still exists so entry is not freed.
   Erase(100);
   ASSERT_EQ(-1, Lookup(100));
   ASSERT_EQ(1, evicted_keys_.size());
+  ASSERT_EQ(1, metrics->probationary_segment_evictions.get()->value());
 
+  // Reset lookup handle, entry is now freed.
   h2.reset();
   ASSERT_EQ(2, evicted_keys_.size());
   ASSERT_EQ(100, evicted_keys_[1]);
   ASSERT_EQ(102, evicted_values_[1]);
+  ASSERT_EQ(2, metrics->probationary_segment_evictions.get()->value());
+
+  Insert(200, 201);
+  auto h3 = slru_cache_->Lookup(EncodeInt(200), Cache::EXPECT_IN_CACHE);
+  ASSERT_EQ(201, DecodeInt(slru_cache_->Value(h3)));
+  // Upgrade entry to protected segment.
+  for (auto i = 0; i < lookups_threshold_; ++i) {
+    ASSERT_EQ(201, Lookup(200));
+  }
+
+  // Verify entry is upgraded.
+  ASSERT_FALSE(ProbationaryContains(EncodeInt(200)));
+  ASSERT_TRUE(ProtectedContains(EncodeInt(200)));
+  ASSERT_EQ(3, metrics->probationary_segment_evictions.get()->value());
+
+  // Upsert entry in protected segment.
+  Insert(200, 202);
+  auto h4 = slru_cache_->Lookup(EncodeInt(200), Cache::EXPECT_IN_CACHE);
+  ASSERT_EQ(202, DecodeInt(slru_cache_->Value(h4)));
+  ASSERT_EQ(2, evicted_keys_.size());
+  ASSERT_EQ(0, metrics->protected_segment_evictions.get()->value());
+
+  // Reset lookup handle of entry that was upserted, it should be freed now.
+  h3.reset();
+  ASSERT_EQ(3, evicted_keys_.size());
+  ASSERT_EQ(200, evicted_keys_[2]);
+  ASSERT_EQ(201, evicted_values_[2]);
+  ASSERT_EQ(1, metrics->protected_segment_evictions.get()->value());
+
+  // Erase value, lookup handle is still held so entry will not be freed yet.
+  Erase(200);
+  ASSERT_EQ(-1, Lookup(200));
+  ASSERT_EQ(3, evicted_keys_.size());
+  ASSERT_EQ(1, metrics->protected_segment_evictions.get()->value());
+
+  // Reset lookup handle, entry is now freed.
+  h4.reset();
+  ASSERT_EQ(4, evicted_keys_.size());
+  ASSERT_EQ(200, evicted_keys_[3]);
+  ASSERT_EQ(202, evicted_values_[3]);
+  ASSERT_EQ(2, metrics->protected_segment_evictions.get()->value());
 }
 
 // Tests that a frequently accessed entry is not evicted.
