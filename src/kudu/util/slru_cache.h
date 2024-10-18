@@ -24,6 +24,8 @@
 #include <string>
 #include <vector>
 
+#include <gtest/gtest_prod.h>
+
 #include "kudu/gutil/macros.h"
 #include "kudu/util/alignment.h"
 #include "kudu/util/cache.h"
@@ -267,6 +269,7 @@ class ShardedSLRUCache : public Cache {
 
  private:
   friend class SLRUCacheBaseTest;
+  FRIEND_TEST(SLRUCacheTest, EntriesArePinned);
   static int DetermineShardBits();
 
   static uint32_t HashSlice(const Slice& s);

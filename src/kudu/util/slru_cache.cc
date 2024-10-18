@@ -319,6 +319,7 @@ Handle* SLRUCacheShard<Segment::kProtected>::ProtectedInsert(SLRUHandle* handle,
                                                              vector<SLRUHandle*>* evictions) {
   handle->eviction_callback = eviction_callback;
   handle->refs.store(2, std::memory_order_relaxed);
+  handle->in_protected_segment.store(true, std::memory_order_relaxed);
   UpdateMemTracker(handle->charge);
   if (PREDICT_TRUE(metrics_)) {
     metrics_->cache_usage->IncrementBy(handle->charge);
