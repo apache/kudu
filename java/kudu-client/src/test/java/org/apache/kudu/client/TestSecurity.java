@@ -430,7 +430,7 @@ public class TestSecurity {
    */
   @Test(timeout = 300000)
   public void testExternallyProvidedSubjectRefreshedExternally() throws Exception {
-    startCluster(ImmutableSet.of(Option.SHORT_TOKENS_AND_TICKETS));
+    startCluster(ImmutableSet.of(Option.SHORT_TOKENS_AND_TICKETS, Option.START_TSERVERS));
 
     Subject subject = SecurityUtil.getSubjectFromTicketCacheOrNull();
     Assert.assertNotNull(subject);
