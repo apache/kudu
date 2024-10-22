@@ -115,6 +115,7 @@ regression from a previous fix
 the supported version of Cython during the setup process.
 
 [[rn_1.17.1_obsoletions]]
+== Obsoletions
 * Discontinued support for Python verions 3.0 to 3.5.
 
 [[rn_1.17.0]]
