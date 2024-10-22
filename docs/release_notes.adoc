@@ -106,6 +106,9 @@ necessarily in program order.
 regression from a previous fix
 (see https://issues.apache.org/jira/browse/KUDU-3619[KUDU-3619]).
 
+* Fixed heap-use-after-free and undefined behavior in OpDriver
+(see https://issues.apache.org/jira/browse/KUDU-3620[KUDU-3620]).
+
 * Added support for Python versions 3.9 and 3.10.
 
 * Simplified setting up of Kudu Python client by automatically installing
