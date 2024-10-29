@@ -102,9 +102,9 @@ class Mutation;
 class MvccSnapshot;
 class OperationResultPB;
 
-class DiskRowSetWriter {
+class DiskRowSetWriter final {
  public:
-  // TODO: document ownership of rowset_metadata
+  // TODO(todd): document ownership of rowset_metadata
   DiskRowSetWriter(RowSetMetadata* rowset_metadata, const Schema* schema,
                    BloomFilterSizing bloom_sizing);
 
@@ -116,7 +116,7 @@ class DiskRowSetWriter {
   // if configured.
   // Rows must be appended in ascending order.
   // 'live_row_count' means the number of live rows in this input block.
-  Status AppendBlock(const RowBlock &block, int live_row_count = 0);
+  Status AppendBlock(const RowBlock& block, int live_row_count = 0);
 
   // Closes the CFiles and their underlying writable blocks.
   // If no rows were written, returns Status::Aborted().
@@ -128,10 +128,10 @@ class DiskRowSetWriter {
 
   // The base DiskRowSetWriter never rolls. This method is necessary for tests
   // which are templatized on the writer type.
-  Status RollIfNecessary() { return Status::OK(); }
+  static Status RollIfNecessary() { return Status::OK(); }
 
   rowid_t written_count() const {
-    CHECK(finished_);
+    DCHECK(finished_);
     return written_count_;
   }
 
@@ -153,7 +153,7 @@ class DiskRowSetWriter {
 
   // Return the cfile::Writer responsible for writing the key index.
   // (the ad-hoc writer for composite keys, otherwise the key column writer)
-  cfile::CFileWriter *key_index_writer();
+  cfile::CFileWriter* key_index_writer();
 
   RowSetMetadata* rowset_metadata_;
   const Schema* const schema_;
@@ -176,12 +176,13 @@ class DiskRowSetWriter {
 // with ".N" where N starts at 0 and increases as new rowsets are generated.
 //
 // See AppendBlock(...) for important usage information.
-class RollingDiskRowSetWriter {
+class RollingDiskRowSetWriter final {
  public:
   // Create a new rolling writer. The given 'tablet_metadata' must stay valid
   // for the lifetime of this writer, and is used to construct the new rowsets
   // that this RollingDiskRowSetWriter creates.
-  RollingDiskRowSetWriter(TabletMetadata* tablet_metadata, const Schema& schema,
+  RollingDiskRowSetWriter(TabletMetadata* tablet_metadata,
+                          const Schema& schema,
                           BloomFilterSizing bloom_sizing,
                           size_t target_rowset_size);
   ~RollingDiskRowSetWriter();
@@ -197,7 +198,7 @@ class RollingDiskRowSetWriter {
   // of rows that they correspond to. This ensures that the output delta files
   // and data files are aligned.
   // 'live_row_count' means the number of live rows in this input block.
-  Status AppendBlock(const RowBlock &block, int live_row_count = 0);
+  Status AppendBlock(const RowBlock& block, int live_row_count = 0);
 
   // Appends a sequence of REDO deltas for the same row to the current redo
   // delta file. 'row_idx_in_block' is the positional index after the last
@@ -226,11 +227,12 @@ class RollingDiskRowSetWriter {
 
   int64_t rows_written_count() const { return written_count_; }
 
-  const Schema &schema() const { return schema_; }
+  const Schema& schema() const { return schema_; }
 
-  // Return the set of rowset paths that were written by this writer.
-  // This must only be called after Finish() returns an OK result.
-  void GetWrittenRowSetMetadata(RowSetMetadataVector* metas) const;
+  // Return the set of rowset paths that were written by this writer via
+  // the 'metas' out parameter. This must only be called after Finish() returns
+  // an OK result.
+  const RowSetMetadataVector& GetWrittenRowSetMetadata() const;
 
   uint64_t written_size() const { return written_size_; }
 
@@ -326,8 +328,8 @@ class DiskRowSet :
     public RowSet,
     public enable_make_shared<DiskRowSet> {
  public:
-  static const char *kMinKeyMetaEntryName;
-  static const char *kMaxKeyMetaEntryName;
+  static constexpr const char* const kMinKeyMetaEntryName = "min_key";
+  static constexpr const char* const kMaxKeyMetaEntryName = "max_key";
 
   // Open a rowset from disk.
   // If successful, sets *rowset to the newly open rowset
@@ -335,7 +337,7 @@ class DiskRowSet :
                      log::LogAnchorRegistry* log_anchor_registry,
                      const TabletMemTrackers& mem_trackers,
                      const fs::IOContext* io_context,
-                     std::shared_ptr<DiskRowSet> *rowset);
+                     std::shared_ptr<DiskRowSet>* rowset);
 
   ////////////////////////////////////////////////////////////
   // "Management" functions
@@ -361,16 +363,16 @@ class DiskRowSet :
   // 'key' should be the key portion of the row -- i.e a contiguous
   // encoding of the key columns.
   Status MutateRow(Timestamp timestamp,
-                   const RowSetKeyProbe &probe,
-                   const RowChangeList &update,
+                   const RowSetKeyProbe& probe,
+                   const RowChangeList& update,
                    const consensus::OpId& op_id,
                    const fs::IOContext* io_context,
                    ProbeStats* stats,
                    OperationResultPB* result) override;
 
-  Status CheckRowPresent(const RowSetKeyProbe &probe,
+  Status CheckRowPresent(const RowSetKeyProbe& probe,
                          const fs::IOContext* io_context,
-                         bool *present, ProbeStats* stats) const override;
+                         bool* present, ProbeStats* stats) const override;
 
   ////////////////////
   // Read functions.
@@ -379,13 +381,13 @@ class DiskRowSet :
                         std::unique_ptr<RowwiseIterator>* out) const override;
 
   Status NewCompactionInput(const Schema* projection,
-                            const MvccSnapshot &snap,
+                            const MvccSnapshot& snap,
                             const fs::IOContext* io_context,
                             std::unique_ptr<CompactionOrFlushInput>* out) const override;
 
   // Gets the number of rows in this rowset, checking 'num_rows_' first. If not
   // yet set, consults the base data and stores the result in 'num_rows_'.
-  Status CountRows(const fs::IOContext* io_context, rowid_t *count) const final;
+  Status CountRows(const fs::IOContext* io_context, rowid_t* count) const final;
 
   // Count the number of live rows in this DRS.
   Status CountLiveRows(uint64_t* count) const override;
@@ -440,7 +442,7 @@ class DiskRowSet :
   // Major compacts all the delta files for all the columns.
   Status MajorCompactDeltaStores(const fs::IOContext* io_context, HistoryGcOpts history_gc_opts);
 
-  std::mutex *compact_flush_lock() override {
+  std::mutex* compact_flush_lock() override {
     return &compact_flush_lock_;
   }
 

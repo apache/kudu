@@ -330,8 +330,7 @@ class TestCompaction : public KuduRowSetTest {
         &rsw));
     RETURN_NOT_OK(rsw.Finish());
 
-    vector<shared_ptr<RowSetMetadata>> metas;
-    rsw.GetWrittenRowSetMetadata(&metas);
+    const auto& metas = rsw.GetWrittenRowSetMetadata();
     for (const auto& meta : metas) {
       if (!meta->HasBloomDataBlockForTests()) {
         return Status::IllegalState("no bloom filter data blocks found");

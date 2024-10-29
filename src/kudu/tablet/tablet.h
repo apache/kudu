@@ -61,24 +61,22 @@
 namespace kudu {
 
 class AlterTableTest;
+class AlterTableTest_TestMajorCompactDeltasAfterAddUpdateRemoveColumn_Test;
+class AlterTableTest_TestMajorCompactDeltasAfterUpdatingRemovedColumn_Test;
+class AlterTableTest_TestMajorCompactDeltasIntoMissingBaseData_Test;
 class ConstContiguousRow;
 class EncodedKey;
 class KeyRange;
 class MemTracker;
-class RandomizedTabletHistoryGcITest;
+class RandomizedTabletHistoryGcITest_TestRandomHistoryGCWorkload_Test;
 class RowBlock;
 class ScanSpec;
 class TabletHistoryGcITest;
+class TabletHistoryGcITest_TestUndoDeltaBlockGc_Test;
 class Throttler;
 class Timestamp;
 struct IterWithBounds;
 struct IteratorStats;
-
-class AlterTableTest_TestMajorCompactDeltasAfterAddUpdateRemoveColumn_Test;
-class AlterTableTest_TestMajorCompactDeltasAfterUpdatingRemovedColumn_Test;
-class AlterTableTest_TestMajorCompactDeltasIntoMissingBaseData_Test;
-class RandomizedTabletHistoryGcITest_TestRandomHistoryGCWorkload_Test;
-class TabletHistoryGcITest_TestUndoDeltaBlockGc_Test;
 
 namespace consensus {
 class OpId;
@@ -97,13 +95,12 @@ class LogAnchorRegistry;
 } // namespace log
 
 namespace tserver {
-class TabletServerTest_TestRecoveryWithMutationsWhileFlushingAndCompacting_Test;
 class TabletServerTest_SetEncodedKeysWhenStartingUp_Test;
 class TabletServerTest_TestEIODuringDelete_Test;
 class TabletServerTest_TestKUDU_176_RecoveryAfterMajorDeltaCompaction_Test;
 class TabletServerTest_TestKUDU_177_RecoveryOfDMSEditsAfterMajorDeltaCompaction_Test;
-class TabletServerTest_TestRecoveryWithMutationsWhileFlushing_Test;
 class TabletServerTest_TestRecoveryWithMutationsWhileFlushingAndCompacting_Test;
+class TabletServerTest_TestRecoveryWithMutationsWhileFlushing_Test;
 } // namespace tserver
 
 namespace tablet {

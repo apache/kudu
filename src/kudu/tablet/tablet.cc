@@ -2080,9 +2080,8 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompactionOrFlush &input,
 
   // The RollingDiskRowSet writer wrote out one or more RowSets as the
   // output. Open these into 'new_rowsets'.
-  RowSetMetadataVector new_drs_metas;
-  drsw.GetWrittenRowSetMetadata(&new_drs_metas);
-  CHECK(!new_drs_metas.empty());
+  const auto& new_drs_metas(drsw.GetWrittenRowSetMetadata());
+  DCHECK(!new_drs_metas.empty());
 
   if (metrics_) {
     metrics_->bytes_flushed->IncrementBy(drsw.written_size());
@@ -2094,7 +2093,7 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompactionOrFlush &input,
   new_disk_rowsets.reserve(new_drs_metas.size());
   {
     TRACE_EVENT0("tablet", "Opening compaction results");
-    for (const shared_ptr<RowSetMetadata>& meta : new_drs_metas) {
+    for (const auto& meta : new_drs_metas) {
       // TODO(awong): it'd be nice to plumb delta stats from the rowset writer
       // into the new deltafile readers opened here.
       shared_ptr<DiskRowSet> new_rowset;
@@ -2103,7 +2102,7 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompactionOrFlush &input,
                                   mem_trackers_,
                                   &io_context,
                                   &new_rowset);
-      if (!s.ok()) {
+      if (PREDICT_FALSE(!s.ok())) {
         LOG_WITH_PREFIX(WARNING) << "Unable to open snapshot " << op_name << " results "
                                  << meta->ToString() << ": " << s.ToString();
         return s;

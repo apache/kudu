@@ -528,8 +528,7 @@ TEST_F(TestRowSet, TestRollingDiskRowSetWriter) {
   DoWriteTestRowSet(FLAGS_roundtrip_num_rows, &writer);
 
   // Should have rolled 4 times.
-  vector<shared_ptr<RowSetMetadata> > metas;
-  writer.GetWrittenRowSetMetadata(&metas);
+  const auto& metas = writer.GetWrittenRowSetMetadata();
   EXPECT_EQ(4, metas.size());
   int64_t count = 0;
   for (const shared_ptr<RowSetMetadata>& meta : metas) {
