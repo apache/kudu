@@ -5613,6 +5613,115 @@ TEST_F(ToolTest, TestScanTableMultiPredicates) {
   ASSERT_LE(lines.size(), mid);
 }
 
+TEST_F(ToolTest, InvalidPredicates) {
+  constexpr const char* const kTableName = "mistyped.predicates";
+
+  // The container of pairs below represents test sub-scenarios, where the first
+  // element of the pair is the predicate as serialized JSON array, and the
+  // second element is the substring to match the error message.
+  const vector<pair<string, string>> scenarios_info = {
+    {
+      R"*([">","key","a"])*",
+      R"*(Invalid argument: >: only 'AND' is supported as predicate operator)*"
+    },
+    {
+      R"*([[">","key","a"]])*",
+      R"*(Invalid argument: [">","key","a"]: predicate name must be a string)*"
+    },
+    {
+      R"*(["AND",">","key","a"])*",
+      R"*(Invalid argument: ">": expected JSON array for predicates)*"
+    },
+    {
+      R"*(["AND",["="]])*",
+      R"*(Invalid argument: ["="]: malformed predicate)*"
+    },
+    {
+      R"*(["AND",["=","key",100,200]])*",
+      R"*(Invalid argument: ["=","key",100,200]: malformed predicate)*"
+    },
+    {
+      R"*(["AND",["=","key",{}]])*",
+      R"*(Invalid argument: {}: expected value of type 'int')*"
+    },
+    {
+      R"*(["AND",[100,"key",">"]])*",
+      R"*(Invalid argument: 100: predicate name must be a string)*"
+    },
+    {
+      R"*(["AND",["key",100,">"]])*",
+      R"*(Invalid argument: 100: column name must be a string)*"
+    },
+    {
+      R"*(["AND",[">","key","a"]])*",
+      R"*(Invalid argument: "a": expected value of type 'int')*"
+    },
+    {
+      R"*(["AND",[">","key",null]])*",
+      R"*(Invalid argument: null: expected value of type 'int')*"
+    },
+    {
+      R"*(["AND",["=","key","100"]])*",
+      R"*(Invalid argument: "100": expected value of type 'int')*"
+    },
+    {
+      R"*(["AND",[">","string_val",100500]])*",
+      R"*(Invalid argument: 100500: expected value of type 'string')*"
+    },
+    {
+      R"*(["AND",["=","key"]])*",
+      R"*(Invalid argument: missing value for range/equality predicate)*"
+    },
+    {
+      R"*(["AND",["IN","key"]])*",
+      R"*(Invalid argument: missing value for IN (in-list) predicate)*"
+    },
+    {
+      R"*(["AND",["IN","key",100]])*",
+      R"*(100: expecting an array for IN (in-list) predicate values)*"
+    },
+    {
+      R"*(["AND",["IN","key",{}]])*",
+      R"*({}: expecting an array for IN (in-list) predicate values)*"
+    },
+    {
+      R"*(["AND",["<","string_val"]])*",
+      R"*(Invalid argument: missing value for range/equality predicate)*"
+    },
+    {
+      R"*(["AND",["NULL","string_val",0]])*",
+      R"*(Invalid argument: '0': unexpected value for NULL/NOT NULL predicate)*"
+    },
+    {
+      R"*(["AND",["==","key","100"]])*",
+      R"*(Invalid argument: '==': unsupported predicate)*"
+    },
+  };
+
+  NO_FATALS(StartExternalMiniCluster());
+
+  // Create the test table.
+  TestWorkload ww(cluster_.get());
+  ww.set_table_name(kTableName);
+  // Just a single tablet server is running in this scenario.
+  ww.set_num_replicas(1);
+  ww.Setup();
+
+  const auto& master_rpc_addr = cluster_->master()->bound_rpc_addr().ToString();
+  for (const auto& [predicate_str, expected_err_substring] : scenarios_info) {
+    SCOPED_TRACE(predicate_str);
+    string stderr;
+    const auto s = RunActionStderrString(
+        Substitute("table scan $0 $1 --columns=key,string_val -predicates=$2",
+                   master_rpc_addr,
+                   kTableName,
+                   predicate_str),
+        &stderr);
+    ASSERT_TRUE(s.IsRuntimeError());
+    ASSERT_STR_CONTAINS(stderr, expected_err_substring);
+  }
+}
+
 TEST_F(ToolTest, TableScanRowCountOnly) {
   constexpr const char* const kTableName = "kudu.table.scan.row_count_only";
   // Be specific about the number of threads even if it matches the default

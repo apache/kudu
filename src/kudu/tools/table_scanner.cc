@@ -54,6 +54,7 @@
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/bitmap.h"
+#include "kudu/util/easy_json.h"
 #include "kudu/util/jsonreader.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/memory/arena.h"
@@ -223,93 +224,149 @@ PredicateType ParsePredicateType(const string& predicate_type) {
     return PredicateType::IsNotNull;
   } else if (predicate_type_uc == "IN") {
     return PredicateType::InList;
-  } else {
-    LOG(FATAL) << Substitute("unhandled predicate type $0", predicate_type);
-    return PredicateType::None;
   }
+  return PredicateType::None;
 }
 
-KuduValue* ParseValue(KuduColumnSchema::DataType type,
-                      const rapidjson::Value* value) {
-  CHECK(value != nullptr);
+Status ParseValue(const rapidjson::Value& value,
+                  KuduColumnSchema::DataType type,
+                  unique_ptr<KuduValue>* out) {
+  DCHECK(out);
+
   switch (type) {
     case KuduColumnSchema::DataType::INT8:
     case KuduColumnSchema::DataType::INT16:
     case KuduColumnSchema::DataType::INT32:
-      CHECK(value->IsInt());
-      return KuduValue::FromInt(value->GetInt());
+      if (!value.IsInt()) {
+        return Status::InvalidArgument(Substitute(
+            "$0: expected value of type 'int'", EasyJson::ToString(value)));
+      }
+      out->reset(KuduValue::FromInt(value.GetInt()));
+      break;
     case KuduColumnSchema::DataType::INT64:
-      CHECK(value->IsInt64());
-      return KuduValue::FromInt(value->GetInt64());
+      if (!value.IsInt64()) {
+        return Status::InvalidArgument(Substitute(
+            "$0: expected value of type 'int64'", EasyJson::ToString(value)));
+      }
+      out->reset(KuduValue::FromInt(value.GetInt64()));
+      break;
     case KuduColumnSchema::DataType::STRING:
-      CHECK(value->IsString());
-      return KuduValue::CopyString(value->GetString());
+      if (!value.IsString()) {
+        return Status::InvalidArgument(Substitute(
+            "$0: expected value of type 'string'", EasyJson::ToString(value)));
+      }
+      out->reset(KuduValue::CopyString(value.GetString()));
+      break;
     case KuduColumnSchema::DataType::BOOL:
-      CHECK(value->IsBool());
-      return KuduValue::FromBool(value->GetBool());
+      if (!value.IsBool()) {
+        return Status::InvalidArgument(Substitute(
+            "$0: expected value of type 'bool'", EasyJson::ToString(value)));
+      }
+      out->reset(KuduValue::FromBool(value.GetBool()));
+      break;
     case KuduColumnSchema::DataType::FLOAT:
-      CHECK(value->IsDouble());
-      return KuduValue::FromFloat(static_cast<float>(value->GetDouble()));
+      if (!value.IsFloat()) {
+        return Status::InvalidArgument(Substitute(
+            "$0: expected value of type 'float'", EasyJson::ToString(value)));
+      }
+      out->reset(KuduValue::FromFloat(value.GetFloat()));
+      break;
     case KuduColumnSchema::DataType::DOUBLE:
-      CHECK(value->IsDouble());
-      return KuduValue::FromDouble(value->GetDouble());
-    default:
-      LOG(FATAL) << Substitute("unhandled data type $0", type);
+      if (!value.IsDouble()) {
+        return Status::InvalidArgument(Substitute(
+            "$0: expected value of type 'double'", EasyJson::ToString(value)));
+      }
+      out->reset(KuduValue::FromDouble(value.GetDouble()));
+      break;
+    default: {
+      auto s = Status::NotSupported(Substitute("unsupported column type $0", type));
+      LOG(DFATAL) << s.ToString();
+      return s;
+    }
   }
 
-  return nullptr;
+  return Status::OK();
 }
 
-KuduPredicate* NewComparisonPredicate(const client::sp::shared_ptr<KuduTable>& table,
-                                      KuduColumnSchema::DataType type,
-                                      const string& predicate_type,
-                                      const string& column_name,
-                                      const rapidjson::Value* value) {
-  KuduValue* kudu_value = ParseValue(type, value);
-  CHECK(kudu_value != nullptr);
+Status NewComparisonPredicate(const client::sp::shared_ptr<KuduTable>& table,
+                              const string& column_name,
+                              KuduColumnSchema::DataType column_type,
+                              const string& comparison_op_str,
+                              const rapidjson::Value& value,
+                              unique_ptr<KuduPredicate>* out) {
+  DCHECK(out);
+  unique_ptr<KuduValue> kudu_value;
+  RETURN_NOT_OK(ParseValue(value, column_type, &kudu_value));
   KuduPredicate::ComparisonOp cop;
-  if (predicate_type == "<") {
+  if (comparison_op_str == "<") {
     cop = KuduPredicate::ComparisonOp::LESS;
-  } else if (predicate_type == "<=") {
+  } else if (comparison_op_str == "<=") {
     cop = KuduPredicate::ComparisonOp::LESS_EQUAL;
-  } else if (predicate_type == "=") {
+  } else if (comparison_op_str == "=") {
     cop = KuduPredicate::ComparisonOp::EQUAL;
-  } else if (predicate_type == ">") {
+  } else if (comparison_op_str == ">") {
     cop = KuduPredicate::ComparisonOp::GREATER;
-  } else if (predicate_type == ">=") {
+  } else if (comparison_op_str == ">=") {
     cop = KuduPredicate::ComparisonOp::GREATER_EQUAL;
   } else {
-    return nullptr;
+    return Status::NotSupported(Substitute("'$0': unsupported comparison operator",
+                                           comparison_op_str));
   }
-  return table->NewComparisonPredicate(column_name, cop, kudu_value);
+
+  out->reset(table->NewComparisonPredicate(column_name, cop, kudu_value.release()));
+  return Status::OK();
 }
 
-KuduPredicate* NewIsNullPredicate(const client::sp::shared_ptr<KuduTable>& table,
-                                  const string& column_name,
-                                  PredicateType pt) {
+Status NewIsNullPredicate(const client::sp::shared_ptr<KuduTable>& table,
+                          const string& column_name,
+                          PredicateType pt,
+                          unique_ptr<KuduPredicate>* out) {
+  DCHECK(out);
   switch (pt) {
     case PredicateType::IsNotNull:
-      return table->NewIsNotNullPredicate(column_name);
+      out->reset(table->NewIsNotNullPredicate(column_name));
+      break;
     case PredicateType::IsNull:
-      return table->NewIsNullPredicate(column_name);
+      out->reset(table->NewIsNullPredicate(column_name));
+      break;
     default:
-      return nullptr;
+      DCHECK(false);
+      return Status::NotSupported(
+          Substitute("$0: unsupported nullability predicate", static_cast<uint16_t>(pt)));
   }
+  return Status::OK();
 }
 
-KuduPredicate* NewInListPredicate(const client::sp::shared_ptr<KuduTable>& table,
-                                  KuduColumnSchema::DataType type,
-                                  const string& name,
-                                  const JsonReader& reader,
-                                  const rapidjson::Value *object) {
-  CHECK(object->IsArray());
-  vector<const rapidjson::Value*> values;
-  reader.ExtractObjectArray(object, nullptr, &values);
-  vector<KuduValue *> kudu_values;
-  for (const auto& value : values) {
-    kudu_values.emplace_back(ParseValue(type, value));
+Status NewInListPredicate(const client::sp::shared_ptr<KuduTable>& table,
+                          const string& column_name,
+                          KuduColumnSchema::DataType column_type,
+                          const rapidjson::Value& object,
+                          const JsonReader& reader,
+                          unique_ptr<KuduPredicate>* out) {
+  if (!object.IsArray()) {
+    return Status::InvalidArgument(Substitute(
+        "$0: expecting an array for IN (in-list) predicate values",
+        EasyJson::ToString(object)));
   }
-  return table->NewInListPredicate(name, &kudu_values);
+  vector<const rapidjson::Value*> values;
+  reader.ExtractObjectArray(&object, nullptr, &values);
+  // Using vector of auto-pointers to avoid memory leakage if ParseValue()
+  // returns non-OK status.
+  vector<unique_ptr<KuduValue>> kudu_values;
+  for (const auto* v : values) {
+    unique_ptr<KuduValue> kudu_value;
+    RETURN_NOT_OK(ParseValue(*v, column_type, &kudu_value));
+    kudu_values.emplace_back(std::move(kudu_value));
+  }
+
+  vector<KuduValue*> kudu_values_raw;
+  kudu_values_raw.reserve(kudu_values.size());
+  for (auto& v : kudu_values) {
+    kudu_values_raw.emplace_back(v.release());
+  }
+  out->reset(table->NewInListPredicate(column_name, &kudu_values_raw));
+
+  return Status::OK();
 }
 
 Status AddPredicate(const client::sp::shared_ptr<KuduTable>& table,
@@ -322,35 +379,46 @@ Status AddPredicate(const client::sp::shared_ptr<KuduTable>& table,
     return Status::OK();
   }
 
-  Schema schema_internal = KuduSchema::ToSchema(table->schema());
-  int idx = schema_internal.find_column(column_name);
-  if (PREDICT_FALSE(idx == Schema::kColumnNotFound)) {
+  const Schema schema_internal = KuduSchema::ToSchema(table->schema());
+  const int idx = schema_internal.find_column(column_name);
+  if (idx == Schema::kColumnNotFound) {
     return Status::NotFound("no such column", column_name);
   }
-  auto type = table->schema().Column(static_cast<size_t>(idx)).type();
-  KuduPredicate* predicate = nullptr;
-  PredicateType pt = ParsePredicateType(predicate_type);
+  const auto column_type = table->schema().Column(static_cast<size_t>(idx)).type();
+  const PredicateType pt = ParsePredicateType(predicate_type);
+  unique_ptr<KuduPredicate> predicate;
   switch (pt) {
     case PredicateType::Equality:
     case PredicateType::Range:
-      CHECK(value);
-      predicate = NewComparisonPredicate(table, type, predicate_type, column_name, *value);
+      if (!value.has_value()) {
+        return Status::InvalidArgument("missing value for range/equality predicate");
+      }
+      RETURN_NOT_OK(NewComparisonPredicate(
+          table, column_name, column_type, predicate_type, *value.value(), &predicate));
       break;
     case PredicateType::IsNotNull:
     case PredicateType::IsNull:
-      CHECK(!value);
-      predicate = NewIsNullPredicate(table, column_name, pt);
+      if (value.has_value()) {
+        return Status::InvalidArgument(Substitute(
+            "'$0': unexpected value for NULL/NOT NULL predicate",
+            EasyJson::ToString(*value.value())));
+      }
+      RETURN_NOT_OK(NewIsNullPredicate(table, column_name, pt, &predicate));
       break;
     case PredicateType::InList: {
-      CHECK(value);
-      predicate = NewInListPredicate(table, type, column_name, reader, *value);
+      if (!value.has_value()) {
+        return Status::InvalidArgument("missing value for IN (in-list) predicate");
+      }
+      RETURN_NOT_OK(NewInListPredicate(
+          table, column_name, column_type, *value.value(), reader, &predicate));
       break;
     }
     default:
-      return Status::NotSupported(Substitute("not support predicate_type $0", predicate_type));
+      return Status::InvalidArgument(
+          Substitute("'$0': unsupported predicate", predicate_type));
   }
-  CHECK(predicate);
-  RETURN_NOT_OK(builder->AddConjunctPredicate(predicate));
+  DCHECK(predicate);
+  RETURN_NOT_OK(builder->AddConjunctPredicate(predicate.release()));
 
   return Status::OK();
 }
@@ -366,35 +434,51 @@ Status AddPredicates(const client::sp::shared_ptr<KuduTable>& table,
   RETURN_NOT_OK(reader.ExtractObjectArray(reader.root(),
                                           nullptr,
                                           &predicate_objects));
+  static constexpr const char* const kFmtErrPredicateName =
+      "$0: predicate name must be a string";
   vector<unique_ptr<KuduPredicate>> predicates;
-  for (int i = 0; i < predicate_objects.size(); ++i) {
+  for (size_t i = 0; i < predicate_objects.size(); ++i) {
+    const auto* obj = predicate_objects[i];
     if (i == 0) {
-      CHECK(predicate_objects[i]->IsString());
+      if (!obj->IsString()) {
+        return Status::InvalidArgument(Substitute(
+            kFmtErrPredicateName, EasyJson::ToString(*obj)));
+      }
       string op;
-      ToUpperCase(predicate_objects[i]->GetString(), &op);
+      ToUpperCase(obj->GetString(), &op);
       if (op != "AND") {
-        return Status::InvalidArgument(Substitute("only 'AND' operator is supported now"));
+        return Status::InvalidArgument(Substitute(
+            "$0: only 'AND' is supported as predicate operator", op));
       }
       continue;
     }
 
-    CHECK(predicate_objects[i]->IsArray());
-    vector<const rapidjson::Value*> elements;
-    reader.ExtractObjectArray(predicate_objects[i], nullptr, &elements);
-    if (elements.size() == 2 || elements.size() == 3) {
-      CHECK(elements[0]->IsString());
-      CHECK(elements[1]->IsString());
-      RETURN_NOT_OK(AddPredicate(table,
-          elements[0]->GetString(),
-          elements[1]->GetString(),
-          elements.size() == 2 ? nullopt
-                               : optional<const rapidjson::Value*>(elements[2]),
-          reader,
-          builder));
-    } else {
-      return Status::InvalidArgument(
-          Substitute("invalid predicate elements count $0", elements.size()));
+    if (!obj->IsArray()) {
+      return Status::InvalidArgument(Substitute(
+          "$0: expected JSON array for predicates", EasyJson::ToString(*obj)));
     }
+    vector<const rapidjson::Value*> elements;
+    reader.ExtractObjectArray(obj, nullptr, &elements);
+    if (elements.size() != 2 && elements.size() != 3) {
+      return Status::InvalidArgument(
+          Substitute("$0: malformed predicate", EasyJson::ToString(*obj)));
+    }
+    if (const auto* elem = elements[0]; !elem->IsString()) {
+      return Status::InvalidArgument(Substitute(
+          kFmtErrPredicateName, EasyJson::ToString(*elem)));
+    }
+    if (const auto* elem = elements[1]; !elem->IsString()) {
+      return Status::InvalidArgument(Substitute(
+          "$0: column name must be a string", EasyJson::ToString(*elem)));
+    }
+    RETURN_NOT_OK(AddPredicate(
+        table,
+        elements[0]->GetString(),
+        elements[1]->GetString(),
+        elements.size() == 2 ? nullopt
+                             : optional<const rapidjson::Value*>(elements[2]),
+        reader,
+        builder));
   }
 
   return Status::OK();
