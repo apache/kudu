@@ -108,8 +108,6 @@ else
       "postgres")     F_POSTGRES=1 ;;
       "psql-jdbc")    F_POSTGRES_JDBC=1 ;;
       "ranger")       F_RANGER=1 ;;
-      "oatpp")        F_OATPP=1 ;;
-      "oatpp-swagger") F_OATPP_SWAGGER=1 ;;
       "jwt-cpp")      F_JWT_CPP=1 ;;
       "ranger-kms")   F_RANGER_KMS=1 ;;
       "rocksdb")      F_ROCKSDB=1 ;;
@@ -441,14 +439,6 @@ if [ -n "$F_UNINSTRUMENTED" -o -n "$F_GUMBO_QUERY" ]; then
   build_gumbo_query
 fi
 
-if [ -n "$F_UNINSTRUMENTED" -o -n "$F_OATPP" ]; then
-  build_oatpp
-fi
-
-if [ -n "$F_UNINSTRUMENTED" -o -n "$F_OATPP_SWAGGER" ]; then
-  build_oatpp_swagger
-fi
-
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_JWT_CPP" ]; then
   build_jwt_cpp
 fi
@@ -637,14 +627,6 @@ fi
 
 if [ -n "$F_TSAN" -o -n "$F_GUMBO_QUERY" ]; then
   build_gumbo_query
-fi
-
-if [ -n "$F_TSAN" -o -n "$F_OATPP" ]; then
-  build_oatpp
-fi
-
-if [ -n "$F_TSAN" -o -n "$F_OATPP_SWAGGER" ]; then
-  build_oatpp_swagger
 fi
 
 if [ -n "$F_TSAN" -o -n "$F_JWT_CPP" ]; then

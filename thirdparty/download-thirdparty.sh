@@ -466,20 +466,6 @@ fetch_and_patch \
  $RANGER_PATCHLEVEL \
  "patch -p0 < $TP_DIR/patches/ranger-fixscripts.patch"
 
-OATPP_PATCHLEVEL=1
-fetch_and_patch \
- $OATPP_NAME.tar.gz \
- $OATPP_SOURCE \
- $OATPP_PATCHLEVEL \
- "patch -p1 < $TP_DIR/patches/oatpp-remove-version-from-path.patch"
-
-OATPP_SWAGGER_PATCHLEVEL=1
-fetch_and_patch \
- $OATPP_SWAGGER_NAME.tar.gz \
- $OATPP_SWAGGER_SOURCE \
- $OATPP_SWAGGER_PATCHLEVEL \
-"patch -p1 < $TP_DIR/patches/oatpp-swagger-remove-version-from-path.patch"
-
 JWT_CPP_PATCHLEVEL=0
 fetch_and_patch \
   $JWT_CPP_NAME.tar.gz \
