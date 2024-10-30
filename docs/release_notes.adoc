@@ -85,6 +85,8 @@ with native NEON instructions.
 
 * Upgraded 3rd-party curl to version 8.4.0.
 
+* Upgraded 3rd-party gperftools to version 2.13.
+
 * Fixed integer overflow in available space metrics
 (see https://issues.apache.org/jira/browse/KUDU-3562[KUDU-3562]).
 
@@ -113,6 +115,12 @@ regression from a previous fix
 
 * Simplified setting up of Kudu Python client by automatically installing
 the supported version of Cython during the setup process.
+
+* Implemented code changes to address the compiler bugs introduced in g++10
+and g++11 (see https://github.com/apache/kudu/commit/bb469cbfc00d10ddac7201199c57506e1abf8675[commit]).
+
+* Fixed docker scripts for Ubuntu 22.04 and later to use Python3 to deal with
+the Python package name changes.
 
 [[rn_1.17.1_obsoletions]]
 == Obsoletions
