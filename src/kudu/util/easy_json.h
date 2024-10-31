@@ -59,6 +59,9 @@ class EasyJson {
     kArray
   };
 
+  // Returns a string representation of the specified RapidJson value object.
+  static std::string ToString(const rapidjson::Value& value);
+
   EasyJson();
   // Initializes the EasyJson object with the given type.
   explicit EasyJson(ComplexTypeInitializer type);

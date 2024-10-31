@@ -103,4 +103,30 @@ TEST_F(EasyJsonTest, TestAllocatorLifetime) {
   ASSERT_EQ(child.value()["child_attr"].GetInt(), 1);
 }
 
+TEST_F(EasyJsonTest, ToString) {
+  {
+    EasyJson ej;
+    ASSERT_EQ("null", EasyJson::ToString(ej.value()));
+    ASSERT_EQ(EasyJson::ToString(ej.value()), ej.ToString());
+  }
+  {
+    EasyJson ej;
+    ej.SetObject();
+    ASSERT_EQ("{}", EasyJson::ToString(ej.value()));
+    ASSERT_EQ(EasyJson::ToString(ej.value()), ej.ToString());
+  }
+  {
+    EasyJson root;
+    EasyJson child = root["child"];
+
+    child["f0"] = 1;
+    child["f1"] = 0.5;
+    child["f2"] = "a";
+    EasyJson arr = child.Set("arr", EasyJson::kArray);
+    ASSERT_EQ("{\"child\":{\"f0\":1,\"f1\":0.5,\"f2\":\"a\",\"arr\":[]}}",
+              EasyJson::ToString(root.value()));
+    ASSERT_EQ(EasyJson::ToString(root.value()), root.ToString());
+  }
+}
+
 } // namespace kudu
