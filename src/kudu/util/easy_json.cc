@@ -34,6 +34,13 @@ using std::string;
 
 namespace kudu {
 
+string EasyJson::ToString(const Value& value) {
+  rapidjson::StringBuffer buffer;
+  rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+  value.Accept(writer);
+  return buffer.GetString();
+}
+
 EasyJson::EasyJson() : alloc_(new EasyJsonAllocator), value_(&alloc_->value()) {}
 
 EasyJson::EasyJson(EasyJson::ComplexTypeInitializer type)
@@ -197,10 +204,7 @@ template<> EasyJson EasyJson::PushBack(EasyJson::ComplexTypeInitializer val) {
 }
 
 string EasyJson::ToString() const {
-  rapidjson::StringBuffer buffer;
-  rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
-  value_->Accept(writer);
-  return buffer.GetString();
+  return ToString(*value_);
 }
 
 EasyJson::EasyJson(Value* value, scoped_refptr<EasyJsonAllocator> alloc)
