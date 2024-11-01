@@ -17,15 +17,15 @@
 
 #include <functional>
 #include <memory>
-#include <ostream>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
-#include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/gutil/map-util.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
@@ -43,21 +43,21 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+using kudu::master::MasterServiceProxy;
+using kudu::master::ReplaceTabletRequestPB;
+using kudu::master::ReplaceTabletResponsePB;
+using kudu::tools::LeaderMasterProxy;
+using kudu::tserver::ListTabletsResponsePB_StatusAndSchemaPB;
 using std::string;
+using std::unordered_set;
 using std::vector;
 
 namespace kudu {
 
-using master::MasterServiceProxy;
-using master::ReplaceTabletRequestPB;
-using master::ReplaceTabletResponsePB;
-using tools::LeaderMasterProxy;
-using tserver::ListTabletsResponsePB_StatusAndSchemaPB;
-
 class ReplaceTabletITest : public ExternalMiniClusterITestBase {
  public:
-  ReplaceTabletITest() :
-    rand_(SeedRandom()) {
+  ReplaceTabletITest()
+       : rand_(SeedRandom()) {
   }
 
   Status RandomTabletId(string* tablet_id) {
@@ -72,13 +72,20 @@ class ReplaceTabletITest : public ExternalMiniClusterITestBase {
     return Status::OK();
   }
 
-  Status ReplaceRandomTablet(LeaderMasterProxy* proxy) {
+  Status ReplaceRandomTablet(LeaderMasterProxy* proxy,
+                             unordered_set<string>* replaced_tablet_ids) {
     string tablet_id;
-    RETURN_NOT_OK(RandomTabletId(&tablet_id));
-    LOG(INFO) << "Replacing tablet " << tablet_id;
+    while (true) {
+      RETURN_NOT_OK(RandomTabletId(&tablet_id));
+      if (!ContainsKey(*replaced_tablet_ids, tablet_id)) {
+        EmplaceIfNotPresent(replaced_tablet_ids, tablet_id);
+        break;
+      }
+      // Same tablet is chosen again: need to retry.
+    }
     ReplaceTabletRequestPB req;
-    ReplaceTabletResponsePB resp;
     req.set_tablet_id(tablet_id);
+    ReplaceTabletResponsePB resp;
     return proxy->SyncRpc<ReplaceTabletRequestPB, ReplaceTabletResponsePB>(
         req, &resp, "ReplaceTablet", &MasterServiceProxy::ReplaceTabletAsync);
   }
@@ -118,7 +125,12 @@ TEST_F(ReplaceTabletITest, ReplaceTabletsWhileWriting) {
 
   // Replace tablets while inserts continue.
   for (int i = 0; i < kNumReplaceTablets; i++) {
-    ASSERT_OK(ReplaceRandomTablet(&proxy));
+    // Since ReplaceRandomTablet() is prone to a TOCTOU race, it's necessary
+    // to keep track of tablet IDs where requests to replace tablets have
+    // already been sent. Otherwise, if the same tablet was chosen on next
+    // cycle, Status::NotPresent() status would be returned.
+    unordered_set<string> replaced_tablet_ids;
+    ASSERT_OK(ReplaceRandomTablet(&proxy, &replaced_tablet_ids));
     SleepFor(MonoDelta::FromMilliseconds(100));
   }
 
