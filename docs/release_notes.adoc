@@ -31,27 +31,204 @@
 [[rn_1.18.0_upgrade_notes]]
 == Upgrade Notes
 
-
 [[rn_1.18.0_obsoletions]]
 == Obsoletions
-
 
 [[rn_1.18.0_deprecations]]
 == Deprecations
 
-Support for Python 2.x and Python 3.4 and earlier is deprecated and may be removed in the next minor release.
+Support for Python versions 3.0 to 3.5 (inclusive) has been discontinued.
 
 [[rn_1.18.0_new_features]]
 == New features
 
+* Kudu now supports a new experimental cache eviction policy named Segmented LRU (SLRU). This
+  eviction policy helps the block cache better resist large scans that would otherwise evict
+  frequently accessed data.
+  (see https://issues.apache.org/jira/browse/KUDU-613[KUDU-613]).
+* A new experimental feature has been introduced to store LBM metadata in embedded RocksDB (see
+  https://issues.apache.org/jira/browse/KUDU-3371[KUDU-3371]).
 
 [[rn_1.18.0_improvements]]
 == Optimizations and improvements
 
+* Several minor improvements to the performance of Kudu masters and tablet servers.
+* The internal server-side counter for the `Auto-Incrementing` column is now updated during the
+  server's bootstrap process (see https://issues.apache.org/jira/browse/KUDU-1945[KUDU-1945]).
+* Tables with `Auto-Incrementing` column can now be backed up and restored
+  (see https://issues.apache.org/jira/browse/KUDU-1945[KUDU-1945]).
+* Added /ipki-ca-cert, /ipki-ca-cert-pem, and /ipki-ca-cert-der endpoints for the embedded
+  webserver of Kudu master to fetch the IPKI CA certificate used by a Kudu cluster.
+* Added client API to import JWT for client authentication (see
+  https://issues.apache.org/jira/browse/KUDU-3472[KUDU-3472]).
+* Added logic to detect unexpected jumps in the local/wall clock. This is enabled by default when
+  running at Azure VM instances which are known to be prone to such events. Otherwise, this
+  logic is disabled. For details, refer to the online documentation for --wall_clock_jump_detection
+  and --wall_clock_jump_threshold_sec flags.
+* Kudu can now be built with the default system gcc/g++-7 compiler on SLES15.
+* Kudu can now be built on macOS 14.x (Sonoma) with XCode 15 and newer.
+* Added validator for the --trusted_certificate_file flag to catch misconfigurations
+  (such as pointing to a non-existing file) early (see
+  https://issues.apache.org/jira/browse/KUDU-3392[KUDU-3392]).
+* Added a new metric to track per-RPC timeouts. This helps in identifying if requests to a
+  particular RPC method timed out while being processed (see
+  https://issues.apache.org/jira/browse/KUDU-3514[KUDU-3514]).
+* Added a new metric for AcceptorPool's dispatch timing. See the online documentation for the
+  acceptor_dispatch_times metric.
+* Unified logging on write requests rejected by tablet servers. This helps in troubleshooting
+  and post-mortem analysis.
+* Increased the backlog of listened RPC sockets up to 512. This helps in a very busy Kudu cluster
+  when many clients attempt to connect to the cluster concurrently.
+* Added Cache-Control, X-Content-Type-Options, and HSTS HTTP headers into Kudu embedded webserver's
+  responses. For details, see the online documentation for --webserver_hsts_max_age_seconds and
+  --webserver_hsts_include_sub_domains flags.
+* Introduced rpc_listened_socket_rx_queue_size and rpc_pending_connections metrics for Kudu master
+  and tablet servers. For details, see the online documentation for the newly introduced metrics.
+* Updated the severity level of a few tablet-level metrics to bring them on-par with the rest of
+  metrics having similar semantics. See
+  https://github.com/apache/kudu/commit/35716499d[changelist 35716499d] for details.
+* Removed unnecessary memory allocation for ancient UNDO mutations. See
+  https://github.com/apache/kudu/commit/3bdaf50b5[changelist 3bdaf50b5] for details.
+* Apache Ranger client now accepts JVM arguments via --ranger_java_extra_args and a colon-separated
+  list of classpaths via --ranger_jar_path
+  (see https://issues.apache.org/jira/browse/KUDU-3503[KUDU-3503]
+  and https://issues.apache.org/jira/browse/KUDU-3359[KUDU-3359]).
+* Key materials for over-the-wire encryption can now be encrypted on disk without data-at-rest
+  encryption or file-system level encryption using --tsk_private_key_password_cmd and
+  --ipki_private_key_password_cmd (see https://issues.apache.org/jira/browse/KUDU-3448[KUDU-3448]).
+* Maintenance operations other than DRS or MRS flush could be scheduled now even if the server is
+  under memory pressure. Set run_non_memory_ops_prob to a value greater than 0 to enable it
+  (see https://issues.apache.org/jira/browse/KUDU-3407[KUDU-3407]).
+* Introduced new metrics for slow scans in tablet servers.
+* Buffer space limit in the Kudu Java client (KuduSession) is now configurable.
+* Compaction for soft-deleted tables is now disabled by default.
+* Several metrics have been introduced to track operations such as table creation, table deletion,
+  alter table schema, tablet scans, tablet copy, tablet replica election, and tablet replication.
+* Enhanced the robustness of key retrieval from Ranger.
+* Kudu now runs on AArch64 Ubuntu and RedHat.
+* Installation of the Kudu Python package has been simplified, removing the need for a manual Cython
+  installation; compatible versions are now automatically handled. Dependencies have been updated to
+  support Python 2.7 and 3.6-3.10, and test files are now excluded from the final package.
+* Per-session write operation metrics have been added to the Kudu Python client.
+* Support for UPSERT IGNORE has been added to the Kudu Python client
+  (see https://issues.apache.org/jira/browse/KUDU-3353[KUDU-3353]).
+* The Kudu C++ and Python client examples have been added to demonstrate the utilization of the
+  non-unique primary key feature.
+* Support for soft table deletion has been added to the Kudu Python client
+  (see https://issues.apache.org/jira/browse/KUDU-3326[KUDU-3326]).
+* Support for adding comments in ColumnSchema has been added to the Kudu Python client.
+* Support for immutable columns has been added to the Kudu Python client.
+* Kudu now supports dedicated SPNEGO keytab
+  (see https://issues.apache.org/jira/browse/KUDU-3496[KUDU-3496]).
+* Kudu now supports creating under-replicated tables (when the number of requested replicas is
+  greater than the number of tablet servers) as long as consensus can be achieved
+  (see https://issues.apache.org/jira/browse/KUDU-3452[KUDU-3452]).
+* Tablet copying speed can now be limited
+  (see https://issues.apache.org/jira/browse/KUDU-3447[KUDU-3447]).
+* The maximum size of RPC messages is now configurable via the Kudu C++ client
+  (see https://issues.apache.org/jira/browse/KUDU-3595[KUDU-3595]).
+* Tablet-level metrics are now available in Prometheus format as well. Previously, only
+  server-level Kudu metrics were available in Prometheus format
+  (see https://issues.apache.org/jira/browse/KUDU-3563[KUDU-3563]).
+* Range aware cluster rebalancer can now be run for multiple tables and against the whole Kudu
+  cluster.
+* The example Kudu C++ client application now works with HMS-enabled Kudu clusters.
+* Addressed several CVE's from thirdparty dependencies by upgrading them
+  (see https://issues.apache.org/jira/browse/KUDU-3626[KUDU-3626],
+  https://issues.apache.org/jira/browse/KUDU-3629[KUDU-3629])
+* Upgraded Gradle to version 7.6.4
+  (see https://issues.apache.org/jira/browse/KUDU-3551[KUDU-3551]).
 
 [[rn_1.18.0_fixed_issues]]
-== Fixed Issues
-
+== Fixed issues
+* Fixed issue where UPDATE privilege granted by Ranger is not honored by Kudu.
+  (see https://issues.apache.org/jira/browse/KUDU-3661[KUDU-3661]).
+* Fixed scan issues where an unexpected predicate was introduced
+  (see https://issues.apache.org/jira/browse/KUDU-3518[KUDU-3518]).
+* Fixed a bug in the range-aware replica placement code where the master would crash
+  (see https://issues.apache.org/jira/browse/KUDU-3532[KUDU-3532]).
+* The ‘kudu table copy’ CLI tool now exits gracefully and prints information on errors instead
+  of crashing when encountering errors while writing data to the destination table.
+* Fixed handling of oversized messages exchanged between kudu-master process and Ranger client.
+  This fixes fine-grained authorization issues when working with a cluster having thousands of
+  tables (see https://issues.apache.org/jira/browse/KUDU-3450[KUDU-3450] and
+  https://issues.apache.org/jira/browse/KUDU-3489[KUDU-3489]).
+* Fixed at-rest encryption/decryption when using OpenSSL 3.
+* Fixed incompatibility introduced with https://issues.apache.org/jira/browse/KUDU-2671[KUDU-2671]
+  (see https://issues.apache.org/jira/browse/KUDU-3515[KUDU-3515]).
+* Fixed master and tablet server crash when the system clock is synchronized by PTPd
+  (see https://issues.apache.org/jira/browse/KUDU-3521[KUDU-3521]).
+* Fixed NPE that might be thrown during RPC connection negotiation by Kudu Java client. The
+  thrown exception would make the connection to the corresponding tablet server unusable, where
+  the only remedy for the issue was a restart of the Kudu Java client application
+  (see https://issues.apache.org/jira/browse/KUDU-3576[KUDU-3576]).
+* Do not expose string gauges as Prometheus metrics
+  (see https://issues.apache.org/jira/browse/KUDU-3549[KUDU-3549]).
+* Fixed integer overflow in available space metrics
+  (see https://issues.apache.org/jira/browse/KUDU-3562[KUDU-3562]).
+* Don’t spam servers’ logs with “Entity is not relevant to Prometheus”
+  (see https://issues.apache.org/jira/browse/KUDU-3561[KUDU-3561]).
+* Fixed summary metrics in Prometheus format
+  (see https://issues.apache.org/jira/browse/KUDU-3566[KUDU-3566]).
+* Fixed a race condition that might lead to unexpected behavior when processing AlterTable or a scan
+  request containing IN-list predicates with concurrently running major delta compaction
+  (see https://issues.apache.org/jira/browse/KUDU-3569[KUDU-3569]).
+* Fixed a heap-use-after-free bug in MajorDeltaCompactionOp. The bug might lead to unexpected
+  behavior when processing an AlterTable request along with concurrently running major delta
+  compaction (see https://issues.apache.org/jira/browse/KUDU-3570[KUDU-3570]).
+* Fixed altering tables with custom per-range hash schemas
+  (see https://issues.apache.org/jira/browse/KUDU-3577[KUDU-3577]).
+* Disable https://issues.apache.org/jira/browse/KUDU-3367[KUDU-3367] behavior by default. This fixes
+  major delta compaction failure that manifests itself in certain workloads with copious number of
+  DELETE operations (see https://issues.apache.org/jira/browse/KUDU-3619[KUDU-3619]).
+* Fixed Impala daemon crash caused due to improper handling of a no-longer-existing tablet
+  (see https://issues.apache.org/jira/browse/KUDU-3461[KUDU-3461]).
+* The Kudu CLI’s can now accommodate response payloads up to 2GByte in size with the increased
+  maximum RPC message size limit.
+* Fixed incorrect memory budgeting condition in compaction that could cause budgeting logic
+  to not kick in when required.
+* Fixed Ranger client issue to avoid spawning of Ranger subprocess if keytab file is not available
+  (see https://issues.apache.org/jira/browse/KUDU-3558[KUDU-3558]).
+* Fixed a bug where the Ranger client could silently crash leaving the Kudu masters running, but not
+  being able to serve requests (see https://issues.apache.org/jira/browse/KUDU-3504[KUDU-3504]).
+* Fixed a bug that the table could stay in ALTERING state forever if its replication factor changes
+  when it does not have any tablets.
+* Fixed a bug in Kudu Java client that might lead to a Scanner not found exception
+  (see https://issues.apache.org/jira/browse/KUDU-3526[KUDU-3526]).
+* Fixed a bug where the result of UPSERT might not be correct when the client schema and server schema
+  do not match (see https://issues.apache.org/jira/browse/KUDU-3495[KUDU-3495]).
+* Fixed a bug where the log cache of the tombstoned tablet might not be cleared
+  (see https://issues.apache.org/jira/browse/KUDU-3535[KUDU-3535]).
+* Fixed a bug where the maintenance manager might schedule fewer operations even if there are idle
+  threads and pending operations.
+  (see https://issues.apache.org/jira/browse/KUDU-3516[KUDU-3516]).
+* Fixed a bug when a new master with empty local directories tries to connect to an existing cluster
+  (see https://issues.apache.org/jira/browse/KUDU-3437[KUDU-3437]).
+* Fixed a bug in multi-master cluster with non-default Kerberos principal name.
+* Fixed a bug in multi-master cluster when MiniDumps enabled
+  (see https://issues.apache.org/jira/browse/KUDU-3491[KUDU-3491]).
+* Content-Type headers have been corrected for various HTTP/HTTPS endpoints, ensuring accurate
+  response formats, including support for JSON and binary data where applicable
+  (see https://issues.apache.org/jira/browse/KUDU-3543[KUDU-3543]).
+* SSE2 and AVX code now uses native NEON instructions on ARM64/AArch64
+  (see https://issues.apache.org/jira/browse/KUDU-3475[KUDU-3475]).
+* Fixed IN list predicate pruning for tables with range specific hash schema
+  (see https://issues.apache.org/jira/browse/KUDU-3564[KUDU-3564]).
+* Kudu Java client now properly handles concurrent table schema updates between consecutive write
+  operations within the same KuduSession
+  (see https://issues.apache.org/jira/browse/KUDU-3483[KUDU-3483]).
+* Fixed heap-use-after-free issue in OpDriver
+  (see https://issues.apache.org/jira/browse/KUDU-3620[KUDU-3620]).
+* Fixed handling of unexpected input for --predicates flag in `kudu table scan` and other CLI tools,
+  so the tools wouldn't crash on incorrect user input, but report on problems with actionable error
+  messages. For details, see https://issues.apache.org/jira/browse/KUDU-3623[KUDU-3623].
+* Fixed zlib-related errors when processing HMS notification events
+  (see https://issues.apache.org/jira/browse/KUDU-3648[KUDU-3648].
+* Fixed the issue where DnsResolver threads were not shutdown causing retrying of RPCs that failed
+  due to server shutdown process
+  (see https://issues.apache.org/jira/browse/KUDU-3633[KUDU-3633]).
+* Fixed crash of Kudu CLI tool namely kudu table copy in cases of invalid inputs
+  (see https://issues.apache.org/jira/browse/KUDU-3623[KUDU-3623]).
 
 [[rn_1.18.0_wire_compatibility]]
 == Wire Protocol compatibility
@@ -77,32 +254,45 @@ on wire compatibility between Kudu 1.18 and versions earlier than 1.3:
 [[rn_1.18.0_incompatible_changes]]
 == Incompatible Changes in Kudu 1.18.0
 
-
 [[rn_1.18.0_client_compatibility]]
 === Client Library Compatibility
 
 * The Kudu 1.18 Java client library is API- and ABI-compatible with Kudu 1.17. Applications
   written against Kudu 1.17 will compile and run against the Kudu 1.18 client library and
   vice-versa.
-
+  NOTE: As part of the Gradle upgrade to version 7.6.4, additional runtime dependencies have
+  been introduced in the published artifacts. These dependencies were optional in earlier versions
+  and, therefore, were not included in the corresponding POM files of those artifacts.
 * The Kudu 1.18 {cpp} client is API- and ABI-forward-compatible with Kudu 1.17.
   Applications written and compiled against the Kudu 1.17 client library will run without
   modification against the Kudu 1.18 client library. Applications written and compiled
   against the Kudu 1.18 client library will run without modification against the Kudu 1.17
   client library.
 
-* The Kudu 1.18 Python client is API-compatible with Kudu 1.17. Applications
-  written against Kudu 1.17 will continue to run against the Kudu 1.18 client
-  and vice-versa.
+* The Kudu 1.18 Python client is API-compatible with Kudu 1.17, as no breaking changes have
+  been introduced. However, support for Python versions 3.0 through 3.5 (inclusive) has been
+  dropped. Users on these versions should upgrade to a supported Python version. Applications
+  written against Kudu 1.17 will continue to work with the Kudu 1.18 client, and vice versa, as
+  long as a supported Python version is used.
 
 [[rn_1.18.0_known_issues]]
 == Known Issues and Limitations
+* The Kudu CLI tool sometimes crashes on exit with SIGSEGV in OPENSSL_cleanup
+  (see https://issues.apache.org/jira/browse/KUDU-3635[KUDU-3635]).
 
 Please refer to the link:known_issues.html[Known Issues and Limitations] section of the
 documentation.
 
 [[rn_1.18.0_contributors]]
 == Contributors
+
+Kudu 1.18.0 includes contributions from 26 people, including 3 first-time contributors:
+
+* halim.kim
+* qhsong
+* Sebastian Pop
+* Vladyslav Lyutenko
+* 0xderek
 
 [[resources_and_next_steps]]
 == Resources
