@@ -42,8 +42,6 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/concurrent_btree.h"
 #include "kudu/tablet/rowset.h"
-#include "kudu/tablet/rowset_metadata.h"
-#include "kudu/util/atomic.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/make_shared.h"
 #include "kudu/util/memory/arena.h"
@@ -92,6 +90,7 @@ class CompactionOrFlushInput;
 class MemRowSet;
 class Mutation;
 class OperationResultPB;
+class RowSetMetadata;
 class TxnMetadata;
 
 // The value stored in the CBTree for a single row.
@@ -189,19 +188,6 @@ struct MSBTreeTraits : public btree::BTreeTraits {
   typedef ThreadSafeMemoryTrackingArena ArenaType;
 };
 
-// Define an MRSRow instance using on-stack storage.
-// This defines an array on the stack which is sized correctly for an MRSRow::Header
-// plus a single row of the given schema, then constructs an MRSRow object which
-// points into that stack storage.
-#define DEFINE_MRSROW_ON_STACK(memrowset, varname, slice_name) \
-  size_t varname##_size = sizeof(MRSRow::Header) + \
-                           ContiguousRowHelper::row_size((memrowset)->schema_nonvirtual()); \
-  uint8_t varname##_storage[varname##_size]; \
-  Slice slice_name(varname##_storage, varname##_size); \
-  ContiguousRowHelper::InitNullsBitmap((memrowset)->schema_nonvirtual(), slice_name); \
-  MRSRow varname(memrowset, slice_name);
-
-
 // In-memory storage for data currently being written to the tablet.
 // This is a holding area for inserts, currently held in row form
 // (i.e not columnar)
@@ -269,7 +255,7 @@ class MemRowSet : public RowSet,
   }
 
   Status CountLiveRows(uint64_t* count) const override {
-    *count = live_row_count_.Load();
+    *count = live_row_count_.load(std::memory_order_relaxed);
     return Status::OK();
   }
 
@@ -375,8 +361,7 @@ class MemRowSet : public RowSet,
   }
 
   std::shared_ptr<RowSetMetadata> metadata() override {
-    return std::shared_ptr<RowSetMetadata>(
-        reinterpret_cast<RowSetMetadata *>(NULL));
+    return {};
   }
 
   std::string ToString() const override {
@@ -473,11 +458,11 @@ class MemRowSet : public RowSet,
 
   typedef btree::CBTree<MSBTreeTraits> MSBTree;
 
-  int64_t id_;
+  const int64_t id_;
   const Schema schema_;
 
   // The transaction ID that inserted into this MemRowSet, and its corresponding metadata.
-  std::optional<int64_t> txn_id_;
+  const std::optional<int64_t> txn_id_;
   scoped_refptr<TxnMetadata> txn_metadata_;
 
   std::shared_ptr<MemoryTrackingBufferAllocator> allocator_;
@@ -503,8 +488,13 @@ class MemRowSet : public RowSet,
   // and thus should not be scheduled for further compactions.
   std::atomic<bool> has_been_compacted_;
 
-  // Number of live rows in this MRS.
-  AtomicInt<uint64_t> live_row_count_;
+  // Number of live rows in this MRS. For updates, it's enough to have
+  // std::memory_order_relaxed ordering to guarantee atomicity, and the way how
+  // the current value is read in CountLiveRows() and the usage pattern doesn't
+  // assume any protection against TOCTOU, so this provides exact count only
+  // for a non-active rowset which is being flushed or during a later phase.
+  // For details, check out changelist c1c8e25bb.
+  std::atomic<uint64_t> live_row_count_;
 
   DISALLOW_COPY_AND_ASSIGN(MemRowSet);
 };

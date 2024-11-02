@@ -172,6 +172,17 @@ Status MemRowSet::DebugDumpImpl(int64_t* rows_left, vector<string>* lines) {
   return Status::OK();
 }
 
+// Define an MRSRow instance using on-stack storage.
+// This defines an array on the stack which is sized correctly for an MRSRow::Header
+// plus a single row of the given schema, then constructs an MRSRow object which
+// points into that stack storage.
+#define DEFINE_MRSROW_ON_STACK(memrowset, varname, slice_name) \
+  size_t varname##_size = sizeof(MRSRow::Header) + \
+                           ContiguousRowHelper::row_size((memrowset)->schema_nonvirtual()); \
+  uint8_t varname##_storage[varname##_size]; \
+  Slice slice_name(varname##_storage, varname##_size); \
+  ContiguousRowHelper::InitNullsBitmap((memrowset)->schema_nonvirtual(), slice_name); \
+  MRSRow varname(memrowset, slice_name);
 
 Status MemRowSet::Insert(Timestamp timestamp,
                          const ConstContiguousRow& row,
@@ -220,7 +231,7 @@ Status MemRowSet::Insert(Timestamp timestamp,
   anchorer_.AnchorIfMinimum(op_id.index());
 
   debug_insert_count_++;
-  live_row_count_.Increment();
+  live_row_count_.fetch_add(1, std::memory_order_relaxed);
   return Status::OK();
 }
 
@@ -241,7 +252,7 @@ Status MemRowSet::Reinsert(Timestamp timestamp, const ConstContiguousRow& row, M
   // the appended mutation.
   mut->AppendToListAtomic(&ms_row->header_->redo_head, &ms_row->header_->redo_tail);
 
-  live_row_count_.Increment();
+  live_row_count_.fetch_add(1, std::memory_order_relaxed);
   return Status::OK();
 }
 
@@ -289,7 +300,7 @@ Status MemRowSet::MutateRow(Timestamp timestamp,
   anchorer_.AnchorIfMinimum(op_id.index());
   debug_update_count_++;
   if (delta.is_delete()) {
-    live_row_count_.IncrementBy(-1);
+    live_row_count_.fetch_sub(1, std::memory_order_relaxed);
   }
   return Status::OK();
 }
