@@ -16,6 +16,7 @@
 // under the License.
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -34,7 +35,6 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/user_credentials.h"
-#include "kudu/util/atomic.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
@@ -362,7 +362,7 @@ class KuduClient::Data {
   // in-depth explanation of why this is needed and how it works.
   mutable simple_spinlock leader_master_lock_;
 
-  AtomicInt<uint64_t> latest_observed_timestamp_;
+  std::atomic<uint64_t> latest_observed_timestamp_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(Data);

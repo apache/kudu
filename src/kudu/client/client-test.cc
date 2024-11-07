@@ -78,7 +78,6 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/metadata.pb.h"
-#include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/map-util.h"
@@ -206,10 +205,6 @@ METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetTableSchem
 METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetTabletLocations);
 METRIC_DECLARE_histogram(handler_latency_kudu_tserver_TabletServerService_Scan);
 
-using base::subtle::Atomic32;
-using base::subtle::NoBarrier_AtomicIncrement;
-using base::subtle::NoBarrier_Load;
-using base::subtle::NoBarrier_Store;
 using google::protobuf::util::MessageDifferencer;
 using kudu::cluster::InternalMiniCluster;
 using kudu::cluster::InternalMiniClusterOptions;
@@ -6100,16 +6095,16 @@ TEST_F(ClientTest, TestMasterLookupPermits) {
 namespace {
 class DLSCallback : public KuduStatusCallback {
  public:
-  explicit DLSCallback(Atomic32* i) : i_(i) {
+  explicit DLSCallback(atomic<uint32_t>* i) : i_(i) {
   }
 
   void Run(const Status& s) override {
     CHECK_OK(s);
-    NoBarrier_AtomicIncrement(i_, 1);
+    i_->fetch_add(1, std::memory_order_relaxed);
     delete this;
   }
  private:
-  Atomic32* const i_;
+  atomic<uint32_t>* const i_;
 };
 
 // Returns col1 value of first row.
@@ -6214,9 +6209,8 @@ TEST_F(ClientTest, TestDeadlockSimulation) {
   }
 
   // Run async calls - one thread updates sequentially, another in reverse.
-  Atomic32 ctr1, ctr2;
-  NoBarrier_Store(&ctr1, 0);
-  NoBarrier_Store(&ctr2, 0);
+  atomic<uint32_t> ctr1(0);
+  atomic<uint32_t> ctr2(0);
   for (int i = 0; i < kNumSessions; ++i) {
     // The callbacks are freed after they are invoked.
     fwd_sessions[i]->FlushAsync(new DLSCallback(&ctr1));
@@ -6226,8 +6220,8 @@ TEST_F(ClientTest, TestDeadlockSimulation) {
   // Spin while waiting for ops to complete.
   int lctr1, lctr2, prev1 = 0, prev2 = 0;
   do {
-    lctr1 = NoBarrier_Load(&ctr1);
-    lctr2 = NoBarrier_Load(&ctr2);
+    lctr1 = ctr1.load(std::memory_order_relaxed);
+    lctr2 = ctr2.load(std::memory_order_relaxed);
     // Display progress in 10% increments.
     if (prev1 == 0 || lctr1 + lctr2 - prev1 - prev2 > kNumSessions / 10) {
       LOG(INFO) << "# updates: " << lctr1 << " fwd, " << lctr2 << " rev";

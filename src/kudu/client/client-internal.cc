@@ -63,6 +63,7 @@
 #include "kudu/security/cert.h"
 #include "kudu/security/tls_context.h"
 #include "kudu/util/async_util.h"
+#include "kudu/util/atomic-utils.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/net/dns_resolver.h"
 #include "kudu/util/net/net_util.h"
@@ -968,11 +969,11 @@ KuduClient::Data::txn_manager_proxy() const {
 }
 
 uint64_t KuduClient::Data::GetLatestObservedTimestamp() const {
-  return latest_observed_timestamp_.Load();
+  return latest_observed_timestamp_.load(std::memory_order_relaxed);
 }
 
 void KuduClient::Data::UpdateLatestObservedTimestamp(uint64_t timestamp) {
-  latest_observed_timestamp_.StoreMax(timestamp);
+  AtomicStoreMax(latest_observed_timestamp_, timestamp);
 }
 
 } // namespace client
