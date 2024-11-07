@@ -17,6 +17,7 @@
 
 #include "kudu/consensus/log.h"
 
+#include <atomic>
 #include <cerrno>
 #include <cstdint>
 #include <functional>
@@ -38,8 +39,6 @@
 #include "kudu/consensus/log_reader.h"
 #include "kudu/consensus/log_util.h"
 #include "kudu/fs/fs_manager.h"
-#include "kudu/gutil/atomicops.h"
-#include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -179,6 +178,7 @@ DEFINE_validator(log_min_segments_to_retain, &ValidateLogsToRetain);
 using kudu::consensus::CommitMsg;
 using kudu::consensus::OpId;
 using kudu::consensus::ReplicateRefPtr;
+using std::atomic;
 using std::shared_lock;
 using std::string;
 using std::unique_ptr;
@@ -235,7 +235,7 @@ class Log::AppendThread {
   void Wake();
 
   bool active() const {
-    return base::subtle::NoBarrier_Load(&thread_state_) == ACTIVE;
+    return thread_state_.load(std::memory_order_relaxed) == ACTIVE;
   }
 
  private:
@@ -264,7 +264,7 @@ class Log::AppendThread {
     // A task is queued or running.
     ACTIVE
   };
-  Atomic32 thread_state_ = IDLE;
+  atomic<uint32_t> thread_state_ = IDLE;
 
   // Pool with a single thread, which handles shutting down the thread
   // when idle.
@@ -293,9 +293,11 @@ Status Log::AppendThread::Init() {
 
 void Log::AppendThread::Wake() {
   DCHECK(append_pool_);
-  auto old_status = base::subtle::NoBarrier_CompareAndSwap(
-      &thread_state_, IDLE, ACTIVE);
-  if (old_status == IDLE) {
+  uint32_t old_state = IDLE;
+  if (thread_state_.compare_exchange_strong(old_state,
+                                            ACTIVE,
+                                            std::memory_order_release,
+                                            std::memory_order_relaxed)) {
     CHECK_OK(append_pool_->Submit([this]() { this->ProcessQueue(); }));
   }
 }
@@ -321,8 +323,8 @@ bool Log::AppendThread::GoIdle() {
 
   // So, we first transition back to STOPPED state, and then re-check to see
   // if there has been something enqueued in the meantime.
-  auto old_state = base::subtle::NoBarrier_AtomicExchange(&thread_state_, IDLE);
-  DCHECK_EQ(old_state, ACTIVE);
+  const auto old_state = thread_state_.exchange(IDLE, std::memory_order_relaxed);
+  DCHECK_EQ(ACTIVE, old_state);
   if (log_->entry_queue()->empty()) {
     // Nothing got enqueued, which means there must not have been any missed wakeup.
     // We are now in IDLE state.
@@ -332,8 +334,9 @@ bool Log::AppendThread::GoIdle() {
   MAYBE_INJECT_RANDOM_LATENCY(FLAGS_log_inject_thread_lifecycle_latency_ms);
   // Someone enqueued something. We don't know whether their wakeup was successful
   // or not, but we can just try to transition back to ACTIVE mode here.
-  if (base::subtle::NoBarrier_CompareAndSwap(&thread_state_, IDLE, ACTIVE)
-      == IDLE) {
+  uint32_t old = IDLE;
+  if (thread_state_.compare_exchange_strong(
+          old, ACTIVE, std::memory_order_release, std::memory_order_relaxed)) {
     // Their wake-up was lost, but we've now marked ourselves as running.
     MAYBE_INJECT_RANDOM_LATENCY(FLAGS_log_inject_thread_lifecycle_latency_ms);
     return false;
@@ -346,7 +349,7 @@ bool Log::AppendThread::GoIdle() {
 }
 
 void Log::AppendThread::ProcessQueue() {
-  DCHECK_EQ(ANNOTATE_UNPROTECTED_READ(thread_state_), ACTIVE);
+  DCHECK_EQ(ACTIVE, thread_state_.load(std::memory_order_relaxed));
   VLOG_WITH_PREFIX(2) << "WAL Appender going active";
   while (true) {
     MonoTime deadline = MonoTime::Now() +

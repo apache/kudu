@@ -33,6 +33,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/util/array_view.h" // IWYU pragma: keep
+#include "kudu/util/atomic-utils.h"
 #include "kudu/util/coding.h"
 #include "kudu/util/coding-inl.h"
 #include "kudu/util/compression/compression.pb.h"
@@ -116,7 +117,8 @@ LogEntryReader::LogEntryReader(const ReadableLogSegment* seg)
       num_entries_read_(0),
       offset_(seg_->first_entry_offset()) {
 
-  int64_t readable_to_offset = seg_->readable_to_offset_.Load();
+  const int64_t readable_to_offset =
+      seg_->readable_to_offset_.load(std::memory_order_relaxed);
 
   // If we have a footer we only read up to it. If we don't we likely crashed
   // and always read to the end.
@@ -307,7 +309,7 @@ Status ReadableLogSegment::Init(const LogSegmentHeaderPB& header,
   footer_.CopyFrom(footer);
   first_entry_offset_ = first_entry_offset;
   is_initialized_ = true;
-  readable_to_offset_.Store(file_size());
+  readable_to_offset_.store(file_size(), std::memory_order_relaxed);
 
   return Status::OK();
 }
@@ -325,7 +327,7 @@ Status ReadableLogSegment::Init(const LogSegmentHeaderPB& header,
   is_initialized_ = true;
 
   // On a new segment, we don't expect any readable entries yet.
-  readable_to_offset_.Store(first_entry_offset);
+  readable_to_offset_.store(first_entry_offset, std::memory_order_relaxed);
 
   return Status::OK();
 }
@@ -352,7 +354,7 @@ Status ReadableLogSegment::Init() {
 
   is_initialized_ = true;
 
-  readable_to_offset_.Store(file_size());
+  readable_to_offset_.store(file_size(), std::memory_order_relaxed);
 
   return Status::OK();
 }
@@ -367,12 +369,12 @@ Status ReadableLogSegment::InitCompressionCodec() {
 }
 
 int64_t ReadableLogSegment::readable_up_to() const {
-  return readable_to_offset_.Load();
+  return readable_to_offset_.load(std::memory_order_relaxed);
 }
 
 void ReadableLogSegment::UpdateReadableToOffset(int64_t readable_to_offset) {
-  readable_to_offset_.Store(readable_to_offset);
-  file_size_.StoreMax(readable_to_offset);
+  readable_to_offset_.store(readable_to_offset, std::memory_order_relaxed);
+  AtomicStoreMax(file_size_, readable_to_offset);
 }
 
 Status ReadableLogSegment::RebuildFooterByScanning() {
@@ -402,7 +404,7 @@ Status ReadableLogSegment::RebuildFooterByScanning() {
   footer_ = new_footer;
   DCHECK(footer_.IsInitialized());
   footer_was_rebuilt_ = true;
-  readable_to_offset_.Store(reader.offset());
+  readable_to_offset_.store(reader.offset(), std::memory_order_relaxed);
 
   VLOG(1) << "Successfully rebuilt footer for segment: " << path_
           << " (valid entries through byte offset " << reader.offset() << ")";
@@ -415,7 +417,7 @@ Status ReadableLogSegment::ReadFileSize() {
   // underflow bugs. Use a local to convert.
   uint64_t size;
   RETURN_NOT_OK_PREPEND(file_->Size(&size), "Unable to read file size");
-  file_size_.Store(size);
+  file_size_.store(size, std::memory_order_relaxed);
   if (size == 0) {
     VLOG(1) << "Log segment file $0 is zero-length: " << path();
     return Status::OK();

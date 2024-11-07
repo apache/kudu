@@ -16,11 +16,13 @@
 // under the License.
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include <gflags/gflags_declare.h>
@@ -31,8 +33,7 @@
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/util/atomic.h"
-#include "kudu/util/env.h"
+#include "kudu/util/env.h"  // IWYU pragma: keep
 #include "kudu/util/faststring.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
@@ -258,7 +259,7 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
   }
 
   int64_t file_size() const {
-    return file_size_.Load();
+    return file_size_.load(std::memory_order_relaxed);
   }
 
   int64_t first_entry_offset() const {
@@ -375,7 +376,7 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
   // The size of the file.
   // This is set by Init(). In the case of a log being written to,
   // this may be increased by UpdateReadableToOffset()
-  AtomicInt<int64_t> file_size_;
+  std::atomic<int64_t> file_size_;
 
   // The offset up to which we can read the file.
   // For already written segments this is fixed and equal to the file size
@@ -383,7 +384,7 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
   // we can read without the fear of reading garbage/zeros.
   // This is atomic because the Log thread might be updating the segment's readable
   // offset while an async reader is reading the segment's entries.
-  AtomicInt<int64_t> readable_to_offset_;
+  std::atomic<int64_t> readable_to_offset_;
 
   // File handle for a log segment (used on replay).
   //
