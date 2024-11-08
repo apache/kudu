@@ -22,6 +22,7 @@
 #include <atomic>
 #include <csignal>
 #include <map>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -50,6 +51,10 @@ namespace kudu {
 //
 // Note that, when the Subprocess object is destructed, the child process
 // will be forcibly SIGKILLed to avoid orphaning processes.
+// Note that DoWait(), WaitNoBlock() and WaitAndCheckExitCode() are thread-safe to
+// each other, but Kill(), KillAndWait() and GetExitStatus() are not thread-safe
+// with the waiting functions if the subprocess is stopped on its own at approximately
+// the same time of the Kill() command.
 class Subprocess {
  public:
   // Constructs a new Subprocess that will execute 'argv' on Start().
@@ -102,6 +107,7 @@ class Subprocess {
   // NOTE: unlike the standard wait(2) call, this may be called multiple
   // times. If the process has exited, it will repeatedly return the same
   // exit code.
+  // Note: this is thread-safe with WaitNoBlock() and WaitAndCheckExitCode()
   Status Wait(int* wait_status = nullptr) WARN_UNUSED_RESULT;
 
   // Like the above, but does not block. This returns Status::TimedOut
@@ -111,10 +117,12 @@ class Subprocess {
   // NOTE: unlike the standard wait(2) call, this may be called multiple
   // times. If the process has exited, it will repeatedly return the same
   // exit code.
+  // Note: this is thread-safe with Wait() and WaitAndCheckExitCode()
   Status WaitNoBlock(int* wait_status = nullptr) WARN_UNUSED_RESULT;
 
   // Like Wait, but it also checks the exit code is 0. If it's not, or if it's
   // not a clean exit, it returns RemoteError.
+  // Note: this is thread-safe with WaitNoBlock() and Wait()
   Status WaitAndCheckExitCode() WARN_UNUSED_RESULT;
 
   // Send a signal to the subprocess.
@@ -219,6 +227,10 @@ class Subprocess {
   // The cached wait status if Wait()/WaitNoBlock() has been called.
   // Only valid if state_ == kExited.
   int wait_status_;
+
+  // Mutex to make sure that only one thread is running waitpid() and possibly updating
+  // Wait()/WaitNoBlock() cache with its result at any given time.
+  std::mutex wait_mutex_;
 
   // Custom signal to deliver when the subprocess goes out of scope, provided
   // the process hasn't already been killed.

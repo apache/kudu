@@ -223,6 +223,16 @@ TEST_F(SubprocessTest, TestGetExitStatusExitSuccess) {
   ASSERT_STR_CONTAINS(exit_info, "process successfully exited");
 }
 
+TEST_F(SubprocessTest, TestMultiThreadWait) {
+  Subprocess p({ "/bin/sh", "-c", "sleep 1; exit 0" });
+  ASSERT_OK(p.Start());
+  thread subprocess_thread([&]() {
+    ASSERT_OK(p.Wait());
+  });
+  SCOPED_CLEANUP({ subprocess_thread.join(); });
+  ASSERT_OK(p.Wait());
+}
+
 TEST_F(SubprocessTest, TestGetExitStatusExitFailure) {
   static const vector<int> kStatusCodes = { 1, 255 };
   for (auto code : kStatusCodes) {

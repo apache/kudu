@@ -799,6 +799,18 @@ pid_t Subprocess::pid() const {
 }
 
 Status Subprocess::DoWait(int* wait_status, WaitMode mode) {
+  std::unique_lock lock(wait_mutex_, std::try_to_lock);
+  if (!lock.owns_lock()) {
+    // Mutex wasn't locked. If this is a non blocking request, then it's fine to return as nothing
+    // happened.
+    if (mode == NON_BLOCKING) {
+      return Status::TimedOut("");
+    }
+    lock.lock();
+  }
+
+  // Now, we are in a locked state. It's important to check state_, because other threads
+  // may have updated it.
   if (state_ == kExited) {
     if (wait_status) {
       *wait_status = wait_status_;
