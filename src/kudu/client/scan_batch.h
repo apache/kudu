@@ -160,6 +160,7 @@ class KUDU_EXPORT KuduScanBatch {
   DISALLOW_COPY_AND_ASSIGN(KuduScanBatch);
 };
 
+/// @brief A handle for a single row in @c KuduScanBatch
 class KUDU_EXPORT KuduScanBatch::RowPtr {
  public:
   /// Construct an invalid RowPtr. Before use, you must assign
@@ -375,6 +376,7 @@ class KUDU_EXPORT KuduScanBatch::RowPtr {
 // required by the STL iterator traits, the deprecation warnings are silenced.
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+/// @brief Iterator to work with immutable KuduScanBatch instances
 class KUDU_EXPORT KuduScanBatch::const_iterator
     : public std::iterator<std::forward_iterator_tag, KuduScanBatch::RowPtr> {
  public:
