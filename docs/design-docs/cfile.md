@@ -28,7 +28,8 @@ which are internal to CFiles, and discussed for the remainder of this document).
 
 A CFile is composed of a header, a variable number of blocks, and a footer.
 There are a few different types of blocks, each with a different format: data
-blocks, nullable data blocks, index blocks, and dictionary blocks.
+blocks, nullable data blocks, array data blocks, index blocks,
+and dictionary blocks.
 
 Data blocks consist of a sequence of consecutive values. Each value is assigned
 an ordinal index, or offset, which is unique within the CFile. Thus, a block can
@@ -113,6 +114,155 @@ and null cells are marked with zero bits correspondingly.
 If the CFile is configured to use compression then the value count, bitmap
 length, non-null bitmap, and encoded data are compressed before the checksum is
 appended.
+
+### Array Data Block Layout
+
+One-dimensional arrays of primitive types are stored in array data blocks.
+It's a columnar data format dedicated to effective storage and retrieval
+of data representing a single column of one-dimensional array type.
+The idea is to flatten/concatenate the elements of all the arrays cells
+in one column into a single sequence, while maintaining the information
+on the number of elements in each array cell. The information on whether
+an array cell is null/non-null is stored in a dedicated non-null bitmap
+field in the block's metadata as well. With that, it's possible to attribute
+each element of the flattened/concatenated sequence to a particular element
+in the corresponding array cell, while using the metadata on the validity
+of individual array elements and array cells themselves.
+
+The flattened sequence of values of the same primitive type is stored similarly
+to the way it's done for a regular (non-array) nullable data block which backs
+a column of values of the corresponding type in a table. This approach allows
+for reusing all the existing encoders/decoders without any modifications
+in the layout of encoded data blocks: there is no need to introduce any
+new encoders/decoders.
+
+| field | width (bytes) | notes |
+| --- | --- | --- |
+| flattened value count | variable | unsigned [LEB128] encoded count of values (including nulls) |
+| array count | variable | unsigned [LEB128] encoded count of arrays (including null array cells) |
+| 'flattened non-null bitmap' size | variable | unsigned [LEB128] encoded size of the following bitmap field |
+| flattened non-null bitmap | variable | [RLE] encoded bitmap on non-nullness of elements in the flattened sequence |
+| 'array element numbers' size | variable | unsigned [LEB128] encoded size of the following field |
+| array element numbers | variable | [RLE] encoded sequence of 16-bit unsigned integers |
+| 'array non-null bitmap' size | variable | unsigned [LEB128] encoded size of the following bitmap field |
+| array non-null bitmap | variable | [RLE] encoded bitmap on non-nullness of array cells |
+| data | variable | encoded non-null data values (flattened sequence of all non-null elements in array cells) |
+| checksum | 4 | optional CRC-32 checksum of the preceding fields |
+
+The 'array element numbers' field provides information on the number
+of elements (including nulls) in each array cell of the column.
+The maximum possible number of elements in one array cell is 65535: the
+limitation comes from the width of the RLE-encoded integers used to store
+that information in the field.
+
+The number of logical bits in 'flattened non-null bitmap' equals
+to the number stored in the 'flattened value count' field.
+
+The number of logical bits in 'array non-null bitmap' is the same
+as the number of elements in 'array element numbers': that's the total
+number of array cells in the column stored in the data block. The latter
+is stored separately as-is in the 'array count' field.
+
+If the CFile is configured to use compression then all the fields preceding
+the `checksum` field are compressed before the checksum is appended.
+
+Using [RLE] encoding for the number of elements in array cells allows for
+effective usage of the storage space for the following use cases:
+* data with all the arrays having same number of elements
+* data with long runs of arrays having same number of elements in one long run
+* sparse data with long runs of empty or null arrays
+
+Since the array data block format was introduced long after the data and
+nullable data blocks formats, a dedicated feature flag
+`IncompatibleFeatures::ARRAY_DATA_BLOCK` is set in the `incompatible_features`
+field of the CFileFooterPB message. The feature flag is used to ensure that
+CFile reader implementation is aware of the array data block format,
+so it can properly read the data stored in the file's blocks without confusing
+it with nullable data block data.
+
+#### Examples of Array Data Block Layout
+Below is a few examples of representing columns of integer arrays of
+arbitrary length in array data blocks. For the illustrative purposes,
+the data is shown in human readable format, not the actual binary formats
+used to store the data as per the specification above.
+
+##### Example A
+
+| field | value in human readable format for illustration |
+| --- | --- |
+| flattened value count | 10 |
+| array count | 7 |
+| 'flattened non-null bitmap' size | ... |
+| flattened non-null bitmap | 1111111101 |
+| 'array element numbers' size | ... |
+| array element numbers | 2,0,0,2,4,1,1 |
+| 'array non-null bitmap' size | ... |
+| array non-null bitmap | 1101111 |
+| data | 1,2,3,4,5,6,7,8,9 |
+| checksum | ... |
+
+This results in the following sequence of arrays, where the first column
+shows the array cell's boundaries in the flattened sequence, and the second
+column shows the result cells of the decoded array column:
+
+| array boundaries | array value |
+| --- | --- |
+| [0, 2) | { 1,2 } |
+| [2, 2) | {} |
+| [2, 2) | null |
+| [2, 4) | { 3,4 } |
+| [4, 8) | { 5,6,7,8 } |
+| [8, 9) | { null } |
+| [9, .) | { 9 } |
+
+##### Example B
+
+| field | value in human readable format for illustration |
+| --- | --- |
+| flattened value count | 3 |
+| array count | 4 |
+| 'flattened non-null bitmap' size | ... |
+| flattened non-null bitmap | 011 |
+| 'array element numbers' size | ... |
+| array element numbers | 1,0,0,2 |
+| 'array non-null bitmap' size | ... |
+| array non-null bitmap | 1011 |
+| data | 4,2 |
+| checksum | ... |
+
+This results in the following sequence of arrays, where the first column
+shows the array cell's boundaries in the flattened sequence, and the second
+column shows the result cells of the decoded array column:
+
+| array boundaries | array value |
+| --- | --- |
+| [0, 1) | { null } |
+| [1, 1) | null |
+| [1, 1) | {} |
+| [1, .) | { 4,2 } |
+
+##### Example C
+
+| field | value in human readable format for illustration |
+| --- | --- |
+| flattened value count | 10 |
+| array count | 1 |
+| 'flattened non-null bitmap' size | ... |
+| flattened non-null bitmap | 1101111101 |
+| 'array element numbers' size | ... |
+| array element numbers | 10 |
+| 'array non-null bitmap' size | ... |
+| array non-null bitmap | 1 |
+| data | 2,3,6,8,5,3,1,0 |
+| checksum | ... |
+
+This results in the following sequence of arrays, where the first column
+shows the array cell's boundaries in the flattened sequence, and the second
+column shows the result cells of the decoded array column:
+
+| field | value in human readable format |
+| --- | --- |
+| [0, .) | { 2,3,null,6,8,5,3,1,null,0 } |
 
 ### Checksums
 
