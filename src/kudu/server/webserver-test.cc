@@ -150,7 +150,7 @@ class WebserverTest : public KuduTest {
     curl_.set_return_headers(true);
     ASSERT_OK(curl_.FetchURL(url_, &buf_));
     ASSERT_STR_CONTAINS(buf_.ToString(),
-                        "Allow: GET, POST, HEAD, OPTIONS");
+                        "Allow: GET, POST, HEAD, CONNECT, PUT, DELETE, OPTIONS");
   }
 
  protected:
@@ -660,6 +660,18 @@ TEST_F(WebserverTest, TestStaticFiles) {
   ASSERT_OK(env_->CreateDir(Substitute("$0/dir", static_dir_)));
   s = curl_.FetchURL(Substitute("$0/dir/", url_), &buf_);
   ASSERT_EQ("Remote error: HTTP 403", s.ToString());
+}
+
+TEST_F(WebserverTest, TestDeleteMethodNotAllowed) {
+  curl_.set_custom_method("DELETE");
+  Status s = curl_.FetchURL(Substitute("$0/index.html", url_), &buf_);
+  ASSERT_EQ("Remote error: HTTP 401", s.ToString());
+}
+
+TEST_F(WebserverTest, TestPutMethodNotAllowed) {
+  curl_.set_custom_method("PUT");
+  Status s = curl_.FetchURL(Substitute("$0/index.html", url_), &buf_);
+  ASSERT_EQ("Remote error: HTTP 401", s.ToString());
 }
 
 namespace {
