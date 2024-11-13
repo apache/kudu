@@ -1,0 +1,876 @@
+---
+title: Apache Kudu 1.17.1 Release Notes
+layout: default
+active_nav: docs
+last_updated: 'Last updated 2024-10-30 12:07:52 -0700'
+---
+<!--
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+
+
+<div class="container">
+  <div class="row">
+    <div class="col-md-9">
+
+<h1>Apache Kudu 1.17.1 Release Notes</h1>
+      <div id="preamble">
+<div class="sectionbody">
+<div id="rn_1.17.1" class="paragraph">
+<p>Apache Kudu 1.17.1 is a maintenance release which fixes several bugs and build issues seen
+in Kudu 1.17.0.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.17.1_upgrade_notes"><a class="link" href="#rn_1.17.1_upgrade_notes">Upgrade Notes</a></h2>
+<div class="sectionbody">
+
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.17.1_fixed_issues"><a class="link" href="#rn_1.17.1_fixed_issues">Fixed Issues</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Fixed issue where unexpected behavior was seen when trying to drop an unbounded range
+in a table using hash and range partitioned schema and created in Kudu 1.16.0 or earlier
+(see <a href="https://issues.apache.org/jira/browse/KUDU-3515">KUDU-3515</a>).</p>
+</li>
+<li>
+<p>Upgraded 3rd-party libunwind to fix issues seen with aarch64, in particular Graviton3 instances.</p>
+</li>
+<li>
+<p>Fixed issue where flushing of data in batches causes index out of bound exception
+if the table schema has changed (see <a href="https://issues.apache.org/jira/browse/KUDU-3483">KUDU-3483</a>).</p>
+</li>
+<li>
+<p>Fixed crash of Kudu servers when system time is being synchronized by PTPd
+(see <a href="https://issues.apache.org/jira/browse/KUDU-3521">KUDU-3521</a>).</p>
+</li>
+<li>
+<p>Fixed file descriptor leak issue when issues are encountered during encryption-at-rest
+(see <a href="https://issues.apache.org/jira/browse/KUDU-3520">KUDU-3520</a>).</p>
+</li>
+<li>
+<p>Fixed bug in range-aware tablet replica placement causing Kudu master to crash
+(see <a href="https://issues.apache.org/jira/browse/KUDU-3532">KUDU-3532</a>).</p>
+</li>
+<li>
+<p>Fixed NPE thrown by Kudu Java client when establishing a connection to a Kudu server
+in busy clusters.</p>
+</li>
+<li>
+<p>Fixed issue when changing multi-master configuration through kudu command line tools
+(see <a href="https://issues.apache.org/jira/browse/KUDU-3491">KUDU-3491</a>).</p>
+</li>
+<li>
+<p>Do not expose non-arithmetic gauges via Prometheus metrics.
+(see <a href="https://issues.apache.org/jira/browse/KUDU-3549">KUDU-3549</a>).</p>
+</li>
+<li>
+<p>Optimizations around tombstoned tablets to reduce resource usage in specific scenarios
+(see <a href="https://issues.apache.org/jira/browse/KUDU-3486">KUDU-3486</a> and <a href="https://issues.apache.org/jira/browse/KUDU-3535">KUDU-3535</a>).</p>
+</li>
+<li>
+<p>Fixed the IN-list predicate pruning to get the right hash schema based on specific
+partition&#8217;s lower bound key (see <a href="https://issues.apache.org/jira/browse/KUDU-3564">KUDU-3564</a>).</p>
+</li>
+<li>
+<p>Fixed the issue of unexpectedly setting a newly added column cell to its default value
+when a C++ client application was using stale table schema
+(see <a href="https://issues.apache.org/jira/browse/KUDU-3495">KUDU-3495</a>).</p>
+</li>
+<li>
+<p>Fixed scan issues where an unexpected predicate was introduced
+(see <a href="https://issues.apache.org/jira/browse/KUDU-3518">KUDU-3518</a>).</p>
+</li>
+<li>
+<p>Upgraded Netty to version 4.1.110.Final, addressing the well-known
+<a href="https://www.cve.org/CVERecord?id=CVE-2023-44487">CVE</a>.</p>
+</li>
+<li>
+<p>Removed the dependency on sse2neon by rewriting SSE2 and AVX code
+with native NEON instructions.</p>
+</li>
+<li>
+<p>Upgraded 3rd-party curl to version 8.4.0.</p>
+</li>
+<li>
+<p>Upgraded 3rd-party gperftools to version 2.13.</p>
+</li>
+<li>
+<p>Fixed integer overflow in available space metrics
+(see <a href="https://issues.apache.org/jira/browse/KUDU-3562">KUDU-3562</a>).</p>
+</li>
+<li>
+<p>Fixed an issue where altering the number of columns in tables with per-range hash
+schemas causes the table to become unusable
+(see <a href="https://issues.apache.org/jira/browse/KUDU-3577">KUDU-3577</a>).</p>
+</li>
+<li>
+<p>Fixed heap-use-after-free and data races in MajorDeltaCompactionOp when AlterTablet
+is running (see <a href="https://issues.apache.org/jira/browse/KUDU-3570">KUDU-3570</a>).</p>
+</li>
+<li>
+<p>Fixed data race in CFileSet::Iterator::OptimizePKPredicates()
+(see <a href="https://issues.apache.org/jira/browse/KUDU-3569">KUDU-3569</a>).</p>
+</li>
+<li>
+<p>Fixed memory barriers in concurrent binary tree implementation which causes
+failures in ARM platform as ARM allows stores to memory locations not
+necessarily in program order.</p>
+</li>
+<li>
+<p>Fixed an issue where major compactions would fail on empty rowsets due to a
+regression from a previous fix
+(see <a href="https://issues.apache.org/jira/browse/KUDU-3619">KUDU-3619</a>).</p>
+</li>
+<li>
+<p>Fixed heap-use-after-free and undefined behavior in OpDriver
+(see <a href="https://issues.apache.org/jira/browse/KUDU-3620">KUDU-3620</a>).</p>
+</li>
+<li>
+<p>Added support for Python versions 3.9 and 3.10.</p>
+</li>
+<li>
+<p>Simplified setting up of Kudu Python client by automatically installing
+the supported version of Cython during the setup process.</p>
+</li>
+<li>
+<p>Implemented code changes to address the compiler bugs introduced in g10
+and g11 (see <a href="https://github.com/apache/kudu/commit/bb469cbfc00d10ddac7201199c57506e1abf8675">commit</a>).</p>
+</li>
+<li>
+<p>Fixed docker scripts for Ubuntu 22.04 and later to use Python3 to deal with
+the Python package name changes.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.17.1_obsoletions"><a class="link" href="#rn_1.17.1_obsoletions">Obsoletions</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Discontinued support for Python verions 3.0 to 3.5.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<h1 id="rn_1.17.0" class="sect0"><a class="link" href="#rn_1.17.0">Apache Kudu 1.17.0 Release Notes</a></h1>
+<div class="sect1">
+<h2 id="rn_1.17.0_upgrade_notes"><a class="link" href="#rn_1.17.0_upgrade_notes">Upgrade Notes</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>TLSv1.2 is the minimum TLS protocol version that newer Kudu clients are able to use for secure
+Kudu RPC. The newer clients are not able to communicate with servers built and run with OpenSSL of
+versions prior to 1.0.1.  If such a Kudu cluster is running on a deprecated OS versions
+(e.g., RHEL/CentOS 6.4), the following options are available to work around the incompatibility:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>use Kudu clients of 1.14 or earlier versions to communicate with such cluster</p>
+</li>
+<li>
+<p>disable RPC encryption and authentication for Kudu RPC, setting <code>--rpc_authentication=disabled</code>
+and <code>--rpc_encryption=disabled</code> for all masters and tablet servers in the cluster to allow the new
+client to work with the old cluster</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>TLSv1.2 is the minimum TLS protocol version that newer Kudu servers are able to use for secure
+Kudu RPC. The newer servers are not able to communicate using secure Kudu RPC with Kudu C++ client
+applications linked with libkudu_client library built against OpenSSL of versions prior to 1.0.1 or
+with Java client applications run with outdated Java runtime that doesn&#8217;t support TLSv1.2.  The
+following options are available to work around this incompatibility:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>customize settings for the <code>--rpc_tls_min_protocol</code> and <code>--rpc_tls_ciphers</code> flags on all masters
+and tablet servers in the cluster, setting <code>--rpc_tls_min_protocol=TLSv1</code> and adding TLSv1-capable
+cipher suites (e.g. AES128-SHA and AES256-SHA) into the list</p>
+</li>
+<li>
+<p>disable RPC encryption and authentication for Kudu RPC, setting <code>--rpc_authentication=disabled</code>
+and <code>--rpc_encryption=disabled</code> for all masters and tablet servers in the cluster to allow such Kudu
+clients to work with newer clusters</p>
+</li>
+</ul>
+</div>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.17.0_obsoletions"><a class="link" href="#rn_1.17.0_obsoletions">Obsoletions</a></h2>
+<div class="sectionbody">
+
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.17.0_deprecations"><a class="link" href="#rn_1.17.0_deprecations">Deprecations</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Support for Python 2.x and Python 3.4 and earlier is deprecated and may be removed in the next minor
+release.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.17.0_new_features"><a class="link" href="#rn_1.17.0_new_features">New features</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Kudu now supports encrypting data at rest. Kudu supports <code>AES-128-CTR</code>, <code>AES-192-CTR</code>, and
+<code>AES-256-CTR</code> ciphers to encrypt data, supports Apache Ranger KMS and Apache Hadoop KMS. See
+<a href="https://kudu.apache.org/docs/security.html#<em>data_at_rest</em>">Data at rest</a> for more details.</p>
+</li>
+<li>
+<p>Kudu now supports range-specific hash schemas for tables. It&#8217;s now possible to add ranges with
+their own unique hash schema independent of the table-wide hash schema. This can be done at table
+creation time and while altering the table. It’s controlled by the <code>--enable_per_range_hash_schemas</code>
+master flag which is enabled by default (see
+<a href="https://issues.apache.org/jira/browse/KUDU-2671">KUDU-2671</a>).</p>
+</li>
+<li>
+<p>Kudu now supports soft-deleted tables. Kudu keeps a soft-deleted table aside for a period of time
+(a.k.a. reservation), not purging the data yet.  The table can be restored/recalled back before its
+reservation expires.  The reservation period can be customized via Kudu client API upon
+soft-deleting the table.  The default reservation period is controlled by the
+<code>--default_deleted_table_reserve_seconds</code> master&#8217;s flag.
+NOTE: As of Kudu 1.17 release, the soft-delete functionality is not supported when HMS integration
+is enabled, but this should be addressed in a future release (see
+<a href="https://issues.apache.org/jira/browse/KUDU-3326">KUDU-3326</a>).</p>
+</li>
+<li>
+<p>Introduced <code>Auto-Incrementing</code> column. An auto-incrementing column is populated on the server side
+with a monotonically increasing counter. The counter is local to every tablet, i.e. each tablet has
+a separate auto incrementing counter (see
+<a href="https://issues.apache.org/jira/browse/KUDU-1945">KUDU-1945</a>).</p>
+</li>
+<li>
+<p>Kudu now supports experimental non-unique primary key. When a table with non-unique primary key is
+created, an <code>Auto-Incrementing</code> column named <code>auto_incrementing_id</code> is added automatically to the
+table as the key column. The non-unique key columns and the <code>Auto-Incrementing</code> column together form
+the effective primary key (see <a href="https://issues.apache.org/jira/browse/KUDU-1945">KUDU-1945</a>).</p>
+</li>
+<li>
+<p>Introduced <code>Immutable</code> column. It&#8217;s useful to represent a semantically constant entity (see
+<a href="https://issues.apache.org/jira/browse/KUDU-3353">KUDU-3353</a>).</p>
+</li>
+<li>
+<p>An experimental feature is added to Kudu that allows it to automatically rebalance tablet leader
+replicas among tablet servers. The background task can be enabled by setting the
+<code>--auto_leader_rebalancing_enabled</code> flag on the Kudu masters. By default, the flag is set to 'false'
+(see <a href="https://issues.apache.org/jira/browse/KUDU-3390">KUDU-3390</a>).</p>
+</li>
+<li>
+<p>Introduced an experimental feature: authentication of Kudu client applications to Kudu servers
+using JSON Web Tokens (JWT).  The JWT-based authentication can be used as an alternative to Kerberos
+authentication for Kudu applications running at edge nodes where configuring Kerberos might be
+cumbersome.  Similar to Kerberos credentials, a JWT is considered a primary client&#8217;s credentials.
+The server-side capability of JWT-based authentication is controlled by the
+<code>--enable_jwt_token_auth</code> flag (set 'false' by default).  When the flat set to 'true', a Kudu server
+is capable of authenticating Kudu clients using the JWT provided by the client during RPC connection
+negotiation.  From its side, a Kudu client authenticates a Kudu server by verifying its TLS
+certificate.  For the latter to succeed, the client should use Kudu client API to add the cluster&#8217;s
+IPKI CA certificate into the list of trusted certificates.</p>
+</li>
+<li>
+<p>The C++ client scan token builder can now create multiple tokens per tablet. So, it&#8217;s now possible
+to dynamically scale the set of readers/scanners fetching data from a Kudu table in parallel. To use
+this functionality, use the newly introduced <code>SetSplitSizeBytes()</code> method of the Kudu client API to
+specify how many bytes of data each token should scan
+(see <a href="https://issues.apache.org/jira/browse/KUDU-3393">KUDU-3393</a>).</p>
+</li>
+<li>
+<p>Kudu&#8217;s default replica placement algorithm is now range and table aware to prevent hotspotting
+unlike the old power of two choices algorithm. New replicas from the same range are spread evenly
+across available tablet servers, the table the range belongs to is used as a tiebreaker (see
+<a href="https://issues.apache.org/jira/browse/KUDU-3476">KUDU-3476</a>).</p>
+</li>
+<li>
+<p>Statistics on various write operations is now available via Kudu client API at the session level
+(see <a href="https://issues.apache.org/jira/browse/KUDU-3351">KUDU-3351</a>,
+<a href="https://issues.apache.org/jira/browse/KUDU-3365">KUDU-3365</a>).</p>
+</li>
+<li>
+<p>Kudu now exposes all its metrics except for string gauges in Prometheus format via the embedded
+webserver&#8217;s <code>/metrics_prometheus</code> endpoint (see
+<a href="https://issues.apache.org/jira/browse/KUDU-3375">KUDU-3375</a>).</p>
+</li>
+<li>
+<p>It’s now possible to deploy Kudu clusters in an internal network (e.g. in K8S environment) and
+avoid internal traffic (i.e. tservers and masters) using advertised addresses and allow Kudu clients
+running in external networks. This can be achieved by customizing the setting for the newly
+introduced <code>--rpc_proxy_advertised_addresses</code> and <code>--rpc_proxied_addresses</code> server flags. This might
+be useful in various scenarios where Kudu cluster is running in an internal network behind a
+firewall, but Kudu clients are running at the other side of the firewall using JWT to authenticate
+to Kudu servers, and the RPC traffic between to the Kudu cluster is forwarded through a TCP/SOCKS
+proxy (see <a href="https://issues.apache.org/jira/browse/KUDU-3357">KUDU-3357</a>).</p>
+</li>
+<li>
+<p>It’s now possible to clean up metadata for deleted tables/tablets from Kudu master&#8217;s in-memory map
+and the <code>sys.catalog</code> table.  This is useful in reducing the memory consumption and bootstrap time
+for masters. This can be achieved by customizing the setting for the newly introduced
+<code>--enable_metadata_cleanup_for_deleted_tables_and_tablets</code> and
+<code>--metadata_for_deleted_table_and_tablet_reserved_secs</code> kudu-master’s flags.</p>
+</li>
+<li>
+<p>It’s now possible to perform range rebalancing for a single table per run in the <code>kudu cluster
+rebalance</code> CLI tool by setting the newly introduced <code>--enable_range_rebalancing</code> tool flag.  This is
+useful to address various hot-spotting issues when too many tablet replicas from the same range (but
+different hash buckets) were placed at the same tablet server.  The hot-spotting issue in tablet
+replica placement should be address in a follow-up releases, see
+<a href="https://issues.apache.org/jira/browse/KUDU-3476">KUDU-3476</a> for details.</p>
+</li>
+<li>
+<p>It’s now possible to compact log container metadata files at runtime.  This is useful in
+reclaiming the disk space once the container becomes full. This feature can be turned on/off by
+customizing the setting for the newly introduced <code>--log_container_metadata_runtime_compact</code>
+kudu-tserver flag (see <a href="https://issues.apache.org/jira/browse/KUDU-3318">KUDU-3318</a>).</p>
+</li>
+<li>
+<p>New CLI tools <code>kudu master/tserver set_flag_for_all</code> are added to update flags for all masters and
+tablet servers in a Kudu cluster at once.</p>
+</li>
+<li>
+<p>A new CLI tool <code>kudu local_replica copy_from_local</code> is added to copy tablet replicas' data at the
+filesystem level. It can be used when adding disks and for quick rebalancing of data between disks,
+or can be used when migrating data from one data directory to the other. It will make data more
+dense than data on old data directories too.</p>
+</li>
+<li>
+<p>A new CLI tool <code>kudu diagnose parse_metrics</code> is added to parse metrics out of diagnostic logs (see
+<a href="https://issues.apache.org/jira/browse/KUDU-2353">KUDU-2353</a>).</p>
+</li>
+<li>
+<p>A new CLI tool <code>kudu local_replica tmeta delete_rowsets</code> is added to delete rowsets from the
+tablet.</p>
+</li>
+<li>
+<p>A sanity check has been added to detect wall clock jumps, it is controlled by the newly introduced
+<code>--wall_clock_jump_detection</code> and <code>--wall_clock_jump_threshold_sec</code> flags. That should help to
+address issues reported in <a href="https://issues.apache.org/jira/browse/KUDU-2906">KUDU-2906</a>.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.17.0_improvements"><a class="link" href="#rn_1.17.0_improvements">Optimizations and improvements</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Reduce the memory consumption if there are frequent alter schema operations for tablet servers
+(see <a href="https://issues.apache.org/jira/browse/KUDU-3197">KUDU-3197</a>).</p>
+</li>
+<li>
+<p>Reduce the memory consumption by implementing memory budgeting for performing RowSet merge
+compactions (i.e. CompactRowSetsOp maintenance operations). Several flags have been introduced,
+while the <code>--rowset_compaction_memory_estimate_enabled</code> flag indicates whether to check for
+available memory necessary to run CompactRowSetsOp maintenance operations (see
+<a href="https://issues.apache.org/jira/browse/KUDU-3406">KUDU-3406</a>).</p>
+</li>
+<li>
+<p>Optimized evaluating in-list predicates based on RowSet PK bounds.  A tablet server can now
+effectively skip rows when the predicate is on a non-prefix part of the primary key and the leading
+columns' cardinality is 1 (see <a href="https://issues.apache.org/jira/browse/KUDU-1644">KUDU-1644</a>).</p>
+</li>
+<li>
+<p>Speed up CLI tool <code>kudu cluster rebalance</code> to run intra-location rebalancing in parallel for
+location-aware Kudu cluster. Theoretically, running intra-location rebalancing in parallel might
+shorten the runtime by N times compared with running sequentially, where N is the number of
+locations in a Kudu cluster. This can be achieved by customizing the setting for the newly
+introduced <code>--intra_location_rebalancing_concurrency</code> flag.</p>
+</li>
+<li>
+<p>Two new flags <code>--show_tablet_partition_info</code> and <code>--show_hash_partition_info</code> have been introduced
+for the <code>kudu table list</code> CLI tool to show the corresponding relationship between partitions and
+tablet ids, and it&#8217;s possible to specify the output format by specifying
+<code>--list_table_output_format</code> flag.</p>
+</li>
+<li>
+<p>A new flag <code>--create_table_replication_factor</code> has been introduced for the <code>kudu table copy</code> CLI
+tool to specify the replication factor for the destination table.</p>
+</li>
+<li>
+<p>A new flag <code>--create_table_hash_bucket_nums</code> has been introduced for the <code>kudu table copy</code> CLI
+tool to specify the number of hash buckets in each hash dimension for the destination table.</p>
+</li>
+<li>
+<p>A new flag <code>--tables</code> has been introduced for the <code>kudu master unsafe_rebuild</code> CLI tool to rebuild
+the metadata of specified tables on Kudu master, and it has no effect on the other tables.</p>
+</li>
+<li>
+<p>A new flag <code>--fault_tolerant</code> has been introduced for the <code>kudu table copy/scan</code> and
+<code>kudu perf table_scan</code> CLI tool to make the scanner fault-tolerant and the results returned in
+primary key order per-tablet.</p>
+</li>
+<li>
+<p>A new flag <code>--show_column_comment</code> has been introduced for the <code>kudu table describe</code> CLI tool to
+show column comments.</p>
+</li>
+<li>
+<p>A new flag <code>--current_leader_uuid</code> has been introduced for the <code>kudu tablet leader_step_down</code> CLI
+tool to conveniently step down leader replica using a given UUID.</p>
+</li>
+<li>
+<p>A new flag <code>--use_readable_format</code> has been introduced for the <code>kudu local_replica dump rowset</code>
+CLI tool to indicate whether to dump the primary key in human readable format. Besides, another flag
+<code>--dump_primary_key_bounds_only</code> has been introduced to this tool to indicate whether to dump rowset
+primary key bounds only.</p>
+</li>
+<li>
+<p>A new flag <code>--tables</code> has been introduced for the <code>kudu local_replica delete</code> CLI tool to
+conveniently delete multiple tablets by table name.</p>
+</li>
+<li>
+<p>It’s now possible to specify <code>owner</code> and <code>comment</code> fields when using the <code>kudu table create</code> CLI
+tool to create tables.</p>
+</li>
+<li>
+<p>It’s now possible to use the <code>kudu local_replica copy_from_remote</code> CLI tool to copy tablets in a
+batch.</p>
+</li>
+<li>
+<p>It’s now possible to enable or disable auto rebalancer by setting <code>--auto_rebalancing_enabled</code>
+flag to Kudu master at runtime.</p>
+</li>
+<li>
+<p>It’s now possible for <code>kudu tserver/master get_flags</code> CLI tool to filter flags even if the server
+side doesn’t support flags filter function (the latter is for Kudu servers of releases prior to
+1.12).</p>
+</li>
+<li>
+<p>Added a CSP (Content Security Policy) header to prevent security scanners flagging Kudu&#8217;s web UI
+as vulnerable.</p>
+</li>
+<li>
+<p>A separated section has been introduced to include all non-default flags specially on path <code>/varz</code>
+of Kudu&#8217;s web UI.</p>
+</li>
+<li>
+<p>A separated section has been introduced to show slow scans on path <code>/scans</code> of Kudu&#8217;s web UI, it
+can be enabled by tweaking the <code>--show_slow_scans</code> flag for tablet servers. A scan is called 'slow'
+if it takes more time than defined by <code>--slow_scanner_threshold_ms</code>.</p>
+</li>
+<li>
+<p>A new <code>Data retained</code> column has been introduced to the <code>Non-running operations</code> section to
+indicate the approximate amount of disk space that would be freed on path <code>/maintenance-manager</code> of
+Kudu&#8217;s web UI.</p>
+</li>
+<li>
+<p>The default value of tablet history retention time (controlled by <code>--tablet_history_max_age_sec</code>
+flag) on Kudu master has been reduced from 7 days to 5 minutes. It&#8217;s not necessary to keep such a
+long history of the system tablet since masters always scan data at the latest available snapshot.</p>
+</li>
+<li>
+<p>Kudu can now be built and run on Apple M chips and macOS 11, 12. As with prior releases, Kudu&#8217;s
+support for macOS is experimental, and should only be used for development.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.17.0_fixed_issues"><a class="link" href="#rn_1.17.0_fixed_issues">Fixed Issues</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Fixed an issue where historical MVCC data older than the ancient history mark (configured by
+<code>--tablet_history_max_age_sec</code>) that had only DELETE operations wouldn&#8217;t be compacted correctly. As
+a result, the ancient history data could not be GCed if the tablet had been created by Kudu servers
+of releases prior to 1.10 (those versions did not support live row counting) (see
+<a href="https://issues.apache.org/jira/browse/KUDU-3367">KUDU-3367</a>).</p>
+</li>
+<li>
+<p>Fixed an issue where the Kudu server could potentially crash on malicious negotiation attempts.</p>
+</li>
+<li>
+<p>Fixed a bug when a Kudu tablet server started under an OS account that had no permission to access
+tablet metadata files would stuck in the tablet bootstrapping phase (see
+<a href="https://issues.apache.org/jira/browse/KUDU-3419">KUDU-3419</a>).</p>
+</li>
+<li>
+<p>Fixed a bug in the C++ client where toggling <code>SetFaultTolerant(false)</code> would not work.</p>
+</li>
+<li>
+<p>Fixed a bug in the C++ client where toggling <code>KuduScanner::SetSelection()</code> would not work.</p>
+</li>
+<li>
+<p>Fixed a bug in the Java client where under certain conditions same rows would be returned multiple
+times even if the scanner was configured to be fault-tolerant.</p>
+</li>
+<li>
+<p>Fixed a bug in the Java client where the last propagated timestamp and resource metrics would not
+be updated in subsequent scan responses.</p>
+</li>
+<li>
+<p>Fixed a bug in the Java client where it would not invalidate stale locations of the leader master.</p>
+</li>
+<li>
+<p>Fixed a bug in the Kudu HMS client that was causing failures when scanning Kudu tables from Hive
+(see <a href="https://issues.apache.org/jira/browse/KUDU-3401">KUDU-3401</a>).</p>
+</li>
+<li>
+<p>Fixed a bug where the <code>kudu table copy</code> CLI tool would fail copying an unpartitioned table.</p>
+</li>
+<li>
+<p>Fixed a bug where the <code>kudu master unsafe_rebuild</code> CLI tool would rebuild the system catalog with
+outdated schemas of tables that were unhealthy during the rebuild process.</p>
+</li>
+<li>
+<p>Fixed a bug where <code>kudu table copy</code> failed to copy tables that had STRING, BINARY or VARCHAR type
+of columns in their range keys (see
+<a href="https://issues.apache.org/jira/browse/KUDU-3306">KUDU-3306</a>).</p>
+</li>
+<li>
+<p>Fixed a bug of the <code>kudu table copy</code> CLI tool crashing if encountering an error while copying rows
+to the destination table. The tool now exits gracefully and provides additional information for
+troubleshooting in such a condition.</p>
+</li>
+<li>
+<p>Fixed a bug where the <code>kudu local_replica list</code> CLI tool would crash if the <code>--list_detail</code> flag
+was enabled.</p>
+</li>
+<li>
+<p>Fixed a bug when a sub-process running Ranger client would crash when receiving a oversized
+message from Kudu master.  With the fix, each peer communicating via the Subprocess protocol now
+discards an oversized message, logs about the issue, and clears the channel, and is able to receive
+further messages after encountering such a condition.</p>
+</li>
+<li>
+<p>Fixed a bug when a Kudu application linked with kudu_client library would crash with SIGILL if
+running on a machine lacking SSE4.2 support (see
+<a href="https://issues.apache.org/jira/browse/KUDU-3248">KUDU-3248</a>).</p>
+</li>
+<li>
+<p>Fixed a bug where the subprocess crashes in case of receiving large messages from the Kudu master
+when the pipe gets full to transport the entire message in one go or when there is a delay in
+sending from the master (see
+<a href="https://issues.apache.org/jira/browse/KUDU-3489">KUDU-3489</a>).</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.17.0_wire_compatibility"><a class="link" href="#rn_1.17.0_wire_compatibility">Wire Protocol compatibility</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu 1.17.0 is wire-compatible with previous versions of Kudu:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Kudu 1.17 clients may connect to servers running Kudu 1.0 or later. If the client uses
+features that are not available on the target server, an error will be returned.</p>
+</li>
+<li>
+<p>Rolling upgrade between Kudu 1.16 and Kudu 1.17 servers is believed to be possible
+though has not been sufficiently tested. Users are encouraged to shut down all nodes
+in the cluster, upgrade the software, and then restart the daemons on the new version.</p>
+</li>
+<li>
+<p>Kudu 1.0 clients may connect to servers running Kudu 1.17 with the exception of the
+below-mentioned restrictions regarding secure clusters.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>The authentication features introduced in Kudu 1.3 place the following limitations
+on wire compatibility between Kudu 1.17 and versions earlier than 1.3:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>If a Kudu 1.17 cluster is configured with authentication or encryption set to "required",
+clients older than Kudu 1.3 will be unable to connect.</p>
+</li>
+<li>
+<p>If a Kudu 1.17 cluster is configured with authentication and encryption set to "optional"
+or "disabled", older clients will still be able to connect.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.17.0_incompatible_changes"><a class="link" href="#rn_1.17.0_incompatible_changes">Incompatible Changes in Kudu 1.17.0</a></h2>
+<div class="sectionbody">
+<div class="sect2">
+<h3 id="rn_1.17.0_client_compatibility"><a class="link" href="#rn_1.17.0_client_compatibility">Client Library Compatibility</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p>The Kudu 1.17 Java client library is API- and ABI-compatible with Kudu 1.16. Applications written
+against Kudu 1.16 will compile and run against the Kudu 1.17 client library. Applications written
+against Kudu 1.17 will compile and run against the Kudu 1.16 client library unless they use the
+API newly introduced in Kudu 1.17.</p>
+</li>
+<li>
+<p>The Kudu 1.17 C&#43;&#43; client is API- and ABI-forward-compatible with Kudu 1.16. Applications written
+and compiled against the Kudu 1.16 client library will run without modification against the Kudu
+1.17 client library. Applications written and compiled against the Kudu 1.17 client library will
+run without modification against the Kudu 1.16 client library unless they use the API newly
+introduced in Kudu 1.17.</p>
+</li>
+<li>
+<p>The Kudu 1.17 Python client is API-compatible with Kudu 1.16. Applications
+written against Kudu 1.16 will continue to run against the Kudu 1.17 client
+and vice-versa.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.17.0_known_issues"><a class="link" href="#rn_1.17.0_known_issues">Known Issues and Limitations</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Please refer to the <a href="known_issues.html">Known Issues and Limitations</a> section of the
+documentation.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.17.0_contributors"><a class="link" href="#rn_1.17.0_contributors">Contributors</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu 1.17.0 includes contributions from 26 people, including 12 first-time contributors:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Ashwani Raina</p>
+</li>
+<li>
+<p>Hari Reddy</p>
+</li>
+<li>
+<p>Kurt Deschler</p>
+</li>
+<li>
+<p>Marton Greber</p>
+</li>
+<li>
+<p>Song Jiacheng</p>
+</li>
+<li>
+<p>Zoltan Martonka</p>
+</li>
+<li>
+<p>bsglz</p>
+</li>
+<li>
+<p>mammadli.khazar</p>
+</li>
+<li>
+<p>wzhou-code</p>
+</li>
+<li>
+<p>xinghuayu007</p>
+</li>
+<li>
+<p>xlwh</p>
+</li>
+<li>
+<p>Ádám Bakai</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="resources_and_next_steps"><a class="link" href="#resources_and_next_steps">Resources</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p><a href="http://kudu.apache.org">Kudu Website</a></p>
+</li>
+<li>
+<p><a href="http://github.com/apache/kudu">Kudu GitHub Repository</a></p>
+</li>
+<li>
+<p><a href="index.html">Kudu Documentation</a></p>
+</li>
+<li>
+<p><a href="prior_release_notes.html">Release notes for older releases</a></p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_installation_options"><a class="link" href="#_installation_options">Installation Options</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>For full installation details, see <a href="installation.html">Kudu Installation</a>.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_next_steps"><a class="link" href="#_next_steps">Next Steps</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p><a href="quickstart.html">Kudu Quickstart</a></p>
+</li>
+<li>
+<p><a href="installation.html">Installing Kudu</a></p>
+</li>
+<li>
+<p><a href="configuration.html">Configuring Kudu</a></p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+    </div>
+    <div class="col-md-3">
+
+  <div id="toc" data-spy="affix" data-offset-top="70">
+  <ul>
+
+      <li>
+
+          <a href="index.html">Introducing Kudu</a> 
+      </li> 
+      <li>
+<span class="active-toc">Kudu Release Notes</span>
+            <ul class="sectlevel1">
+<li><a href="#rn_1.17.1_upgrade_notes">Upgrade Notes</a></li>
+<li><a href="#rn_1.17.1_fixed_issues">Fixed Issues</a></li>
+<li><a href="#rn_1.17.1_obsoletions">Obsoletions</a></li>
+<li><a href="#rn_1.17.0">Apache Kudu 1.17.0 Release Notes</a>
+<ul class="sectlevel1">
+<li><a href="#rn_1.17.0_upgrade_notes">Upgrade Notes</a></li>
+<li><a href="#rn_1.17.0_obsoletions">Obsoletions</a></li>
+<li><a href="#rn_1.17.0_deprecations">Deprecations</a></li>
+<li><a href="#rn_1.17.0_new_features">New features</a></li>
+<li><a href="#rn_1.17.0_improvements">Optimizations and improvements</a></li>
+<li><a href="#rn_1.17.0_fixed_issues">Fixed Issues</a></li>
+<li><a href="#rn_1.17.0_wire_compatibility">Wire Protocol compatibility</a></li>
+<li><a href="#rn_1.17.0_incompatible_changes">Incompatible Changes in Kudu 1.17.0</a>
+<ul class="sectlevel2">
+<li><a href="#rn_1.17.0_client_compatibility">Client Library Compatibility</a></li>
+</ul>
+</li>
+<li><a href="#rn_1.17.0_known_issues">Known Issues and Limitations</a></li>
+<li><a href="#rn_1.17.0_contributors">Contributors</a></li>
+<li><a href="#resources_and_next_steps">Resources</a></li>
+<li><a href="#_installation_options">Installation Options</a></li>
+<li><a href="#_next_steps">Next Steps</a></li>
+</ul>
+</li>
+</ul> 
+      </li> 
+      <li>
+
+          <a href="quickstart.html">Quickstart Guide</a> 
+      </li> 
+      <li>
+
+          <a href="installation.html">Installation Guide</a> 
+      </li> 
+      <li>
+
+          <a href="configuration.html">Configuring Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="hive_metastore.html">Using the Hive Metastore with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="kudu_impala_integration.html">Using Impala with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="administration.html">Administering Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="troubleshooting.html">Troubleshooting Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="developing.html">Developing Applications with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="schema_design.html">Kudu Schema Design</a> 
+      </li> 
+      <li>
+
+          <a href="scaling_guide.html">Kudu Scaling Guide</a> 
+      </li> 
+      <li>
+
+          <a href="security.html">Kudu Security</a> 
+      </li> 
+      <li>
+
+          <a href="transaction_semantics.html">Kudu Transaction Semantics</a> 
+      </li> 
+      <li>
+
+          <a href="background_tasks.html">Background Maintenance Tasks</a> 
+      </li> 
+      <li>
+
+          <a href="configuration_reference.html">Kudu Configuration Reference</a> 
+      </li> 
+      <li>
+
+          <a href="command_line_tools_reference.html">Kudu Command Line Tools Reference</a> 
+      </li> 
+      <li>
+
+          <a href="metrics_reference.html">Kudu Metrics Reference</a> 
+      </li> 
+      <li>
+
+          <a href="known_issues.html">Known Issues and Limitations</a> 
+      </li> 
+      <li>
+
+          <a href="contributing.html">Contributing to Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="export_control.html">Export Control Notice</a> 
+      </li> 
+  </ul>
+  </div>
+    </div>
+  </div>
+</div>

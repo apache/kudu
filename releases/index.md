@@ -9,12 +9,17 @@ single_col_extra_classes: releases
 
 ### Latest release
 
+* **[Kudu 1.17.1](1.17.1/)** was released on Nov 15, 2024. <!-- LATREL: DO NOT REMOVE -->
+    * [Kudu 1.17.1 Documentation](1.17.1/docs/)
+    * [Kudu 1.17.1 Java API docs](1.17.1/apidocs/)
+    * [Kudu 1.17.1 C++ API docs](1.17.1/cpp-client-api/)
+
+### Previous releases (ongoing support)
+
 * **[Kudu 1.17.0](1.17.0/)** was released on Sep 1st, 2023. <!-- LATREL: DO NOT REMOVE -->
     * [Kudu 1.17.0 Documentation](1.17.0/docs/)
     * [Kudu 1.17.0 Java API docs](1.17.0/apidocs/)
     * [Kudu 1.17.0 C++ API docs](1.17.0/cpp-client-api/)
-
-### Previous releases (ongoing support)
 
 * **[Kudu 1.16.0](1.16.0/)** was released on Apr 11, 2022. <!-- PREVREL: DO NOT REMOVE -->
     * [Kudu 1.16.0 Documentation](1.16.0/docs/)

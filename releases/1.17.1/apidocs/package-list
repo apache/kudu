@@ -1,0 +1,5 @@
+org.apache.kudu
+org.apache.kudu.client
+org.apache.kudu.spark.tools
+org.apache.kudu.test
+org.apache.kudu.util
