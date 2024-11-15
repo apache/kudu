@@ -544,8 +544,9 @@ void Master::ShutdownImpl() {
     init_pool_->Shutdown();
     maintenance_manager_->Shutdown();
     catalog_manager_->Shutdown();
-    fs_manager_->UnsetErrorNotificationCb(ErrorHandlerType::DISK_ERROR);
+    fs_manager_->UnsetErrorNotificationCb(ErrorHandlerType::KUDU_2233_CORRUPTION);
     fs_manager_->UnsetErrorNotificationCb(ErrorHandlerType::CFILE_CORRUPTION);
+    fs_manager_->UnsetErrorNotificationCb(ErrorHandlerType::DISK_ERROR);
 
     // 3. Shut down generic subsystems.
     KuduServer::Shutdown();

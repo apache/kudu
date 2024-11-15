@@ -20,8 +20,6 @@
 #include <string>
 #include <utility>
 
-#include "kudu/gutil/map-util.h"
-
 using std::string;
 
 namespace kudu {
@@ -32,26 +30,27 @@ static void DoNothingErrorNotification(const string& /* uuid */,
                                        const string& /* tenant_id */) {}
 
 FsErrorManager::FsErrorManager() {
-  InsertOrDie(&callbacks_, ErrorHandlerType::DISK_ERROR, &DoNothingErrorNotification);
-  InsertOrDie(&callbacks_, ErrorHandlerType::NO_AVAILABLE_DISKS, &DoNothingErrorNotification);
-  InsertOrDie(&callbacks_, ErrorHandlerType::CFILE_CORRUPTION, &DoNothingErrorNotification);
+  callbacks_.fill(&DoNothingErrorNotification);
 }
 
 void FsErrorManager::SetErrorNotificationCb(ErrorHandlerType e, ErrorNotificationCb cb) {
+  DCHECK_LT(e, callbacks_.max_size());
   std::lock_guard l(lock_);
-  EmplaceOrUpdate(&callbacks_, e, std::move(cb));
+  callbacks_[e] = std::move(cb);
 }
 
 void FsErrorManager::UnsetErrorNotificationCb(ErrorHandlerType e) {
+  DCHECK_LT(e, callbacks_.max_size());
   std::lock_guard l(lock_);
-  EmplaceOrUpdate(&callbacks_, e, &DoNothingErrorNotification);
+  callbacks_[e] = &DoNothingErrorNotification;
 }
 
 void FsErrorManager::RunErrorNotificationCb(ErrorHandlerType e,
                                             const string& uuid,
                                             const string& tenant_id) const {
+  DCHECK_LT(e, callbacks_.max_size());
   std::lock_guard l(lock_);
-  FindOrDie(callbacks_, e)(uuid, tenant_id);
+  callbacks_[e](uuid, tenant_id);
 }
 
 }  // namespace fs

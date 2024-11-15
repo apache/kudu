@@ -16,18 +16,19 @@
 // under the License.
 #pragma once
 
+#include <array>
+#include <cstdint>
 #include <functional>
+#include <mutex>
 #include <string>
-#include <unordered_map>
-#include <utility>
 
 #include <glog/logging.h>
 
 #include "kudu/fs/dir_manager.h"
 #include "kudu/fs/dir_util.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/util/mutex.h"
 
 namespace kudu {
 namespace fs {
@@ -85,9 +86,9 @@ typedef std::function<void(const std::string&, const std::string&)> ErrorNotific
   } \
 } while (0)
 
-enum ErrorHandlerType {
+enum ErrorHandlerType : uint8_t {
   // For disk failures.
-  DISK_ERROR,
+  DISK_ERROR = 0,
 
   // For errors that caused by no data dirs being available (e.g. if all disks
   // are full or failed when creating a block).
@@ -112,13 +113,16 @@ enum ErrorHandlerType {
   // is the subsequent failure to create a block because all disks have been
   // marked as failed) must complete before ERROR2 can be returned to its
   // caller.
-  NO_AVAILABLE_DISKS,
+  NO_AVAILABLE_DISKS = 1,
 
   // For CFile corruptions.
-  CFILE_CORRUPTION,
+  CFILE_CORRUPTION = 2,
 
   // For broken invariants caused by KUDU-2233.
-  KUDU_2233_CORRUPTION,
+  KUDU_2233_CORRUPTION = 3,
+
+  // Update ERROR_HANDLER_TYPE_MAX if adding new elements into the enum.
+  ERROR_HANDLER_TYPE_MAX = KUDU_2233_CORRUPTION,
 };
 
 // When certain operations fail, the side effects of the error can span multiple
@@ -133,6 +137,7 @@ enum ErrorHandlerType {
 class FsErrorManager : public RefCountedThreadSafe<FsErrorManager> {
  public:
   FsErrorManager();
+  ~FsErrorManager() = default;
 
   // Sets the error notification callback.
   //
@@ -166,15 +171,16 @@ class FsErrorManager : public RefCountedThreadSafe<FsErrorManager> {
   }
 
  private:
-  friend class RefCountedThreadSafe<FsErrorManager>;
-  ~FsErrorManager() {}
+  // Callbacks to be run when an error occurs.
+  std::array<ErrorNotificationCb,
+             ErrorHandlerType::ERROR_HANDLER_TYPE_MAX + 1> callbacks_;
 
-   // Callbacks to be run when an error occurs.
-  std::unordered_map<ErrorHandlerType, ErrorNotificationCb, std::hash<int>> callbacks_;
+  // Protects calls to notifications, enforcing that a single callback runs at
+  // a time. Since callbacks might lead to IO and memory allocation, using a
+  // busy-waiting primitive isn't an option here.
+  mutable std::mutex lock_;
 
-   // Protects calls to notifications, enforcing that a single callback runs at
-   // a time.
-   mutable Mutex lock_;
+  DISALLOW_COPY_AND_ASSIGN(FsErrorManager);
 };
 
 }  // namespace fs
