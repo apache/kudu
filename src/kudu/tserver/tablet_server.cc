@@ -183,8 +183,9 @@ void TabletServer::ShutdownImpl() {
     // 2. Shut down the tserver's subsystems.
     maintenance_manager_->Shutdown();
     WARN_NOT_OK(heartbeater_->Stop(), "Failed to stop TS Heartbeat thread");
-    fs_manager_->UnsetErrorNotificationCb(ErrorHandlerType::DISK_ERROR);
+    fs_manager_->UnsetErrorNotificationCb(ErrorHandlerType::KUDU_2233_CORRUPTION);
     fs_manager_->UnsetErrorNotificationCb(ErrorHandlerType::CFILE_CORRUPTION);
+    fs_manager_->UnsetErrorNotificationCb(ErrorHandlerType::DISK_ERROR);
     tablet_manager_->Shutdown();
 
     client_initializer_->Shutdown();
