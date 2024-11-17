@@ -95,20 +95,23 @@ compressed before the checksum is appended.
 
 ### Nullable Data Block Layout
 
-Columns marked as nullable in the schema are stored in a nullable block, which
-includes a bitmap which tracks which rows (ordinal offsets) are null and not
-null.
+A column marked as nullable in the schema is stored in a nullable data block.
+Since null cells aren't stored in the encoded data, it's necessary to preserve
+information on nullity of the cells elsewhere. To do so, such a block includes
+an additional bitmap to track that. Bit positions correspond to ordinal offsets
+of the cells in their rowset. Non-null cells are marked with ones,
+and null cells are marked with zero bits correspondingly.
 
 | field | width (bytes) | notes |
 | --- | --- | --- |
 | value count | variable | [LEB128] encoded count of values |
-| bitmap length | variable | [LEB128] encoded length of the following null bitmap |
-| null bitmap | variable | [RLE] encoded bitmap |
+| bitmap length | variable | [LEB128] encoded length of the following non-null bitmap |
+| non-null bitmap | variable | [RLE] encoded bitmap |
 | data | variable | encoded non-null data values |
-| checksum | 4 | optional CRC-32 checksum of the value count, bitmap length, null bitmap, and data |
+| checksum | 4 | optional CRC-32 checksum of the value count, bitmap length, non-null bitmap, and data |
 
 If the CFile is configured to use compression then the value count, bitmap
-length, null bitmap, and encoded data are compressed before the checksum is
+length, non-null bitmap, and encoded data are compressed before the checksum is
 appended.
 
 ### Checksums

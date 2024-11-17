@@ -340,9 +340,9 @@ class RowBlock {
 
     const ColumnSchema& col_schema = schema_->column(col_idx);
     uint8_t* col_data = columns_data_[col_idx];
-    uint8_t* nulls_bitmap = column_non_null_bitmaps_[col_idx];
+    uint8_t* non_null_bitmap = column_non_null_bitmaps_[col_idx];
 
-    return ColumnBlock(col_schema.type_info(), nulls_bitmap, col_data, nrows, memory_);
+    return ColumnBlock(col_schema.type_info(), non_null_bitmap, col_data, nrows, memory_);
   }
 
   // Return the base pointer for the given column's data.

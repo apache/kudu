@@ -653,7 +653,7 @@ Status DefaultColumnValueIterator::Scan(ColumnMaterializationContext* ctx) {
   ColumnBlock* dst = ctx->block();
   if (dst->is_nullable()) {
     ColumnDataView dst_view(dst);
-    dst_view.SetNullBits(dst->nrows(), value_ != nullptr);
+    dst_view.SetNonNullBits(dst->nrows(), value_ != nullptr);
   }
   // Cases where the selection vector can be cleared:
   // 1. There is a read_default and it does not satisfy the predicate
@@ -1185,7 +1185,7 @@ Status CFileIterator::Scan(ColumnMaterializationContext* ctx) {
         }
 
         // Set the ColumnBlock bitmap
-        remaining_dst.SetNullBits(this_batch, not_null);
+        remaining_dst.SetNonNullBits(this_batch, not_null);
 
         rem -= this_batch;
         count -= this_batch;
@@ -1207,7 +1207,7 @@ Status CFileIterator::Scan(ColumnMaterializationContext* ctx) {
 
       // If the column is nullable, set all bits to true
       if (ctx->block()->is_nullable()) {
-        remaining_dst.SetNullBits(this_batch, true);
+        remaining_dst.SetNonNullBits(this_batch, true);
       }
 
       rem -= this_batch;

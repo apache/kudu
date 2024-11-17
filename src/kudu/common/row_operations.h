@@ -128,7 +128,7 @@ class RowOperationsPBDecoder {
  private:
   Status ReadOpType(RowOperationsPB::Type* type);
   Status ReadIssetBitmap(const uint8_t** bitmap);
-  Status ReadNullBitmap(const uint8_t** null_bm);
+  Status ReadNonNullBitmap(const uint8_t** bitmap);
   // Read one row's column data from 'src_', read result is stored in 'slice'.
   // Return bad Status if data is corrupt.
   // NOTE: If 'row_status' is not nullptr, column data validate will be performed,
@@ -178,7 +178,7 @@ class RowOperationsPBDecoder {
   const Schema* const tablet_schema_;
   Arena* const dst_arena_;
 
-  const int bm_size_;
+  const size_t bm_size_;
   const size_t tablet_row_size_;
   Slice src_;
 

@@ -481,7 +481,7 @@ void CopySelectedCellsFromColumn(const ColumnBlock& cblock,
   size_t sizeof_type = cblock.type_info()->size();
   int n_sel = sel_rows.num_selected();
 
-  // Number of initial rows in the dst values and null_bitmap.
+  // Number of initial rows in the dst values and non-null bitmap.
   DCHECK_EQ(dst->data.size() % sizeof_type, 0);
   size_t initial_rows = div_sizeof_type(dst->data.size(), sizeof_type);
   size_t new_num_rows = initial_rows + n_sel;
@@ -565,7 +565,7 @@ void CopySelectedVarlenCellsFromColumn(const ColumnBlock& cblock,
     dst->data.append(&zero_offset, sizeof(zero_offset));
   }
 
-  // Number of initial rows in the dst values and null_bitmap.
+  // Number of initial rows in the dst values and non-null bitmap.
   DCHECK_EQ(dst->data.size() % sizeof(offset_type), 0);
   size_t initial_offset_count = div_sizeof_type(dst->data.size(), sizeof(offset_type));
   size_t initial_rows = initial_offset_count - 1;

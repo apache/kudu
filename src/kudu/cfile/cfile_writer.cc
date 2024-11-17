@@ -82,9 +82,9 @@ const size_t kChecksumSize = sizeof(uint32_t);
 
 static const size_t kMinBlockSize = 512;
 
-class NullBitmapBuilder {
+class NonNullBitmapBuilder {
  public:
-  explicit NullBitmapBuilder(size_t initial_row_capacity)
+  explicit NonNullBitmapBuilder(size_t initial_row_capacity)
       : nitems_(0),
         bitmap_(BitmapSize(initial_row_capacity)),
         rle_encoder_(&bitmap_, 1) {
@@ -218,7 +218,7 @@ Status CFileWriter::Start() {
   if (is_nullable_) {
     size_t nrows = ((options_.storage_attributes.cfile_block_size + typeinfo_->size() - 1) /
                     typeinfo_->size());
-    non_null_bitmap_builder_.reset(new NullBitmapBuilder(nrows * 8));
+    non_null_bitmap_builder_.reset(new NonNullBitmapBuilder(nrows * 8));
   }
 
   state_ = kWriterWriting;

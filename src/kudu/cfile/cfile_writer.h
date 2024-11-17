@@ -52,7 +52,7 @@ extern const char kMagicStringV2[];
 extern const int kMagicLength;
 extern const size_t kChecksumSize;
 
-class NullBitmapBuilder;
+class NonNullBitmapBuilder;
 
 // Main class used to write a CFile.
 class CFileWriter final {
@@ -188,7 +188,7 @@ class CFileWriter final {
   std::unique_ptr<BlockBuilder> data_block_;
   std::unique_ptr<IndexTreeBuilder> posidx_builder_;
   std::unique_ptr<IndexTreeBuilder> validx_builder_;
-  std::unique_ptr<NullBitmapBuilder> non_null_bitmap_builder_;
+  std::unique_ptr<NonNullBitmapBuilder> non_null_bitmap_builder_;
   std::unique_ptr<CompressedBlockBuilder> block_compressor_;
 
   enum State {

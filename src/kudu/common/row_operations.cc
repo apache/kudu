@@ -248,12 +248,12 @@ Status RowOperationsPBDecoder::ReadIssetBitmap(const uint8_t** bitmap) {
   return Status::OK();
 }
 
-Status RowOperationsPBDecoder::ReadNullBitmap(const uint8_t** null_bm) {
+Status RowOperationsPBDecoder::ReadNonNullBitmap(const uint8_t** bitmap) {
   if (PREDICT_FALSE(src_.size() < bm_size_)) {
-    *null_bm = nullptr;
+    *bitmap = nullptr;
     return Status::Corruption("Cannot find null bitmap");
   }
-  *null_bm = src_.data();
+  *bitmap = src_.data();
   src_.remove_prefix(bm_size_);
   return Status::OK();
 }
@@ -423,12 +423,12 @@ Status RowOperationsPBDecoder::DecodeInsertOrUpsert(const uint8_t* prototype_row
                                                     DecodedRowOperation* op,
                                                     int64_t* auto_incrementing_counter) {
   const uint8_t* client_isset_map = nullptr;
-  const uint8_t* client_null_map = nullptr;
+  const uint8_t* client_non_null_map = nullptr;
 
   // Read the null and isset bitmaps for the client-provided row.
   RETURN_NOT_OK(ReadIssetBitmap(&client_isset_map));
   if (client_schema_->has_nullables()) {
-    RETURN_NOT_OK(ReadNullBitmap(&client_null_map));
+    RETURN_NOT_OK(ReadNonNullBitmap(&client_non_null_map));
   }
 
   // Allocate a row with the tablet's layout.
@@ -471,7 +471,7 @@ Status RowOperationsPBDecoder::DecodeInsertOrUpsert(const uint8_t* prototype_row
       // If the client provided a value for this column, copy it.
       // Copy null-ness, if the server side column is nullable.
       const bool client_set_to_null = client_schema_->has_nullables() &&
-          BitmapTest(client_null_map, client_col_idx);
+          BitmapTest(client_non_null_map, client_col_idx);
       if (col.is_nullable()) {
         tablet_row.set_null(tablet_col_idx, client_set_to_null);
       }
@@ -572,12 +572,12 @@ Status RowOperationsPBDecoder::DecodeInsertOrUpsert(const uint8_t* prototype_row
 Status RowOperationsPBDecoder::DecodeUpdateOrDelete(const ClientServerMapping& mapping,
                                                     DecodedRowOperation* op) {
   const uint8_t* client_isset_map = nullptr;
-  const uint8_t* client_null_map = nullptr;
+  const uint8_t* client_non_null_map = nullptr;
 
   // Read the null and isset bitmaps for the client-provided row.
   RETURN_NOT_OK(ReadIssetBitmap(&client_isset_map));
   if (client_schema_->has_nullables()) {
-    RETURN_NOT_OK(ReadNullBitmap(&client_null_map));
+    RETURN_NOT_OK(ReadNonNullBitmap(&client_non_null_map));
   }
 
   // Allocate space for the row key.
@@ -612,7 +612,7 @@ Status RowOperationsPBDecoder::DecodeUpdateOrDelete(const ClientServerMapping& m
     }
 
     bool client_set_to_null = client_schema_->has_nullables() &&
-        BitmapTest(client_null_map, client_col_idx);
+        BitmapTest(client_non_null_map, client_col_idx);
     if (PREDICT_FALSE(client_set_to_null)) {
       op->SetFailureStatusOnce(Status::InvalidArgument("NULL values not allowed for key column",
                                                        col.ToString()));
@@ -641,7 +641,7 @@ Status RowOperationsPBDecoder::DecodeUpdateOrDelete(const ClientServerMapping& m
 
       if (BitmapTest(client_isset_map, client_col_idx)) {
         bool client_set_to_null = client_schema_->has_nullables() &&
-          BitmapTest(client_null_map, client_col_idx);
+          BitmapTest(client_non_null_map, client_col_idx);
 
         if (col.is_immutable()) {
           if (op->type == RowOperationsPB::UPDATE) {
@@ -703,7 +703,7 @@ Status RowOperationsPBDecoder::DecodeUpdateOrDelete(const ClientServerMapping& m
             "DELETE should not have a value for column", col.ToString()));
 
         bool client_set_to_null = client_schema_->has_nullables() &&
-            BitmapTest(client_null_map, client_col_idx);
+            BitmapTest(client_non_null_map, client_col_idx);
         if (!client_set_to_null || !col.is_nullable()) {
           RETURN_NOT_OK(ReadColumnAndDiscard(col));
         }
@@ -723,13 +723,12 @@ Status RowOperationsPBDecoder::DecodeSplitRow(const ClientServerMapping& mapping
                                               DecodedRowOperation* op) {
   op->split_row = std::make_shared<KuduPartialRow>(tablet_schema_);
 
-  const uint8_t* client_isset_map;
-  const uint8_t* client_null_map;
-
   // Read the null and isset bitmaps for the client-provided row.
+  const uint8_t* client_isset_map;
   RETURN_NOT_OK(ReadIssetBitmap(&client_isset_map));
   if (client_schema_->has_nullables()) {
-    RETURN_NOT_OK(ReadNullBitmap(&client_null_map));
+    const uint8_t* client_non_null_map;
+    RETURN_NOT_OK(ReadNonNullBitmap(&client_non_null_map));
   }
 
   // Now handle each of the columns passed by the user.
