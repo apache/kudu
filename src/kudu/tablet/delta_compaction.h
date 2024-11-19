@@ -17,6 +17,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -30,6 +31,7 @@
 namespace kudu {
 
 class FsManager;
+class MemTracker;
 
 namespace fs {
 struct IOContext;
@@ -97,6 +99,13 @@ class MajorDeltaCompaction {
   // deltas need to be written back into a delta file.
   Status FlushRowSetAndDeltas(const fs::IOContext* io_context);
 
+  // Logs warning messages if compaction has crossed a certain memory threshold limit.
+  void MemoryExceededWarnMsgs();
+
+  // Updates memory tracker for compaction operation for the tablet under process and
+  // logs warning messages if memory exceeds a certain limit..
+  void UpdateMemTracker(int64_t mem_consumed);
+
   FsManager* const fs_manager_;
 
   // TODO: doc me
@@ -143,6 +152,9 @@ class MajorDeltaCompaction {
     kFinished = 2,
   };
   State state_;
+
+  std::shared_ptr<MemTracker> parent_tracker_;
+  std::shared_ptr<MemTracker> tracker_;
 };
 
 } // namespace tablet

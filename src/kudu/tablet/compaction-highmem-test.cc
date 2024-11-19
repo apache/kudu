@@ -34,6 +34,7 @@
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/local_tablet_writer.h"
+#include "kudu/tablet/rowset.h"
 #include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/util/logging_test_util.h"
@@ -46,6 +47,7 @@
 DECLARE_bool(rowset_compaction_enforce_preset_factor);
 DECLARE_bool(rowset_compaction_memory_estimate_enabled);
 DECLARE_bool(rowset_compaction_ancient_delta_threshold_enabled);
+DECLARE_double(memory_limit_compact_usage_warn_threshold_percentage);
 DECLARE_double(rowset_compaction_delta_memory_factor);
 DECLARE_int64(memory_limit_hard_bytes);
 DECLARE_uint32(rowset_compaction_estimate_min_deltas_size_mb);
@@ -123,6 +125,9 @@ class TestHighMemCompaction : public KuduRowSetTest {
   // If constraints are applied, compaction may be skipped.
   void TestRowSetCompactionWithOrWithoutBudgetingConstraints(bool budgeting_constraints_applied);
 
+  // Tests appropriate logs are printed when major compaction crosses memory threshold.
+  void TestMajorCompactionCrossingMemoryThreshold();
+
   static void SetUpTestSuite() {
     // Keep the memory hard limit as 1GB for deterministic results.
     // The tests in this file have a requirement of memory hard limit to be of
@@ -172,6 +177,20 @@ void TestHighMemCompaction::TestRowSetCompactionWithOrWithoutBudgetingConstraint
   }
 }
 
+void TestHighMemCompaction::TestMajorCompactionCrossingMemoryThreshold() {
+  // Size factor as 2 generates ~2MB memory size worth of deltas.
+  GenHighMemConsumptionDeltas(2);
+
+  // Run major delta compaction.
+  StringVectorSink sink;
+  ScopedRegisterSink reg(&sink);
+  scoped_refptr<Trace> trace(new Trace);
+  ADOPT_TRACE(trace.get());
+  ASSERT_OK(tablet()->CompactWorstDeltas(RowSet::MAJOR_DELTA_COMPACTION));
+  ASSERT_STR_CONTAINS(JoinStrings(sink.logged_msgs(), "\n"),
+                      "Beyond hard memory limit of");
+}
+
 void TestHighMemCompaction::GenHighMemConsumptionDeltas(const uint32_t size_factor) {
   constexpr const uint32_t num_rowsets = 10;
   constexpr const uint32_t num_rows_per_rowset = 2;
@@ -214,6 +233,21 @@ TEST_F(TestHighMemCompaction, TestRowSetCompactionSkipWithBudgetingConstraints) 
   // forces to skip compaction
   FLAGS_rowset_compaction_delta_memory_factor = 1024000;
   TestRowSetCompactionWithOrWithoutBudgetingConstraints(true);
+}
+
+TEST_F(TestHighMemCompaction, TestMajorCompactionMemoryPressure) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+  // Approximate memory consumed by delta compaction during the course of this test.
+  // Total consumption would always exceed this usage. Since we want to be
+  // certain that warning threshold limit is crossed, this value is kept low.
+  const int64_t compaction_mem_usage_approx = 3 * 1024 * 1024;
+
+  // Set appropriate flags to ensure memory threshold checks fail.
+  FLAGS_memory_limit_compact_usage_warn_threshold_percentage =
+      static_cast<double>(compaction_mem_usage_approx * 100) / FLAGS_memory_limit_hard_bytes;
+
+  TestMajorCompactionCrossingMemoryThreshold();
 }
 
 } // namespace tablet

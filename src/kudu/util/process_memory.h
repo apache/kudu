@@ -47,6 +47,10 @@ int64_t MaxMemoryAvailable();
 // Return the configured hard limit for the process.
 int64_t HardLimit();
 
+// Return true if we have crossed hard limit by a certain margin. The margin
+// is defined by memory_limit_compact_usage_warn_threshold_percentage flag.
+bool OverHardLimitThreshold();
+
 // Return the configured soft limit for the process.
 int64_t SoftLimit();
 
