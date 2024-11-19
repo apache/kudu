@@ -1261,10 +1261,11 @@ TEST_P(FsManagerTestBase, TestAddRemoveDataDirsFuzz) {
   // When using a sanitizer, reduce the loop times to get a more stable result.
   const int kNumAttempts = 10;
 #else
-  // In some situations, the tests would last too long time, so we reduce the loop times if not
-  // AllowSlowTests(). For example, when FLAGS_block_manager == "logr", opens a data directory will
-  // open a RocksDB instance, it consumes more time than that if FLAGS_block_manager == "log".
-  const int kNumAttempts = AllowSlowTests() ? 1000 : 10;
+  // In some situations, the tests would take too long, so we reduce number of times the loop
+  // runs if slow tests are not allowed. Since logr will open multiple RocksDB instances and it
+  // takes longer than log block manager, it will only run the loop 100 times if slow
+  // tests are allowed.
+  const int kNumAttempts = AllowSlowTests() ? (FLAGS_block_manager == "logr" ? 100 : 1000) : 10;
 #endif
 
   Random rng_(SeedRandom());
