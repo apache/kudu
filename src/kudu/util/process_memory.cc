@@ -66,6 +66,12 @@ DEFINE_int32(memory_limit_warn_threshold_percentage, 98,
              "consume before WARNING level messages are periodically logged.");
 TAG_FLAG(memory_limit_warn_threshold_percentage, advanced);
 
+// TODO(araina): Remove this flag when compaction logic starts honoring hard limit memory setting.
+DEFINE_double(memory_limit_compact_usage_warn_threshold_percentage, 105.0,
+              "Percentage of the hard memory limit that this daemon may consume before WARNING "
+              "level messages are periodically logged during an ongoing compaction op.");
+TAG_FLAG(memory_limit_compact_usage_warn_threshold_percentage, experimental);
+
 #ifdef TCMALLOC_ENABLED
 DEFINE_bool(disable_tcmalloc_gc_by_memory_tracker_for_testing, false,
             "For testing only! Whether to disable tcmalloc GC by memory tracker.");
@@ -226,6 +232,16 @@ int64_t MaxMemoryAvailable() {
 int64_t HardLimit() {
   InitLimits();
   return g_hard_limit;
+}
+
+bool OverHardLimitThreshold() {
+  InitLimits();
+  int64_t over_hard_limit_threshold =
+      g_hard_limit * FLAGS_memory_limit_compact_usage_warn_threshold_percentage / 100;
+  if (CurrentConsumption() > over_hard_limit_threshold) {
+    return true;
+  }
+  return false;
 }
 
 int64_t SoftLimit() {

@@ -17,7 +17,6 @@
 
 #include "kudu/tablet/delta_compaction.h"
 
-#include <cstdint>
 #include <map>
 #include <ostream>
 #include <string>
@@ -25,6 +24,7 @@
 #include <utility>
 #include <vector>
 
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/common/generic_iterators.h"
@@ -40,6 +40,7 @@
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/cfile_set.h"
@@ -52,14 +53,15 @@
 #include "kudu/tablet/mutation.h"
 #include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/rowset_metadata.h"
+#include "kudu/util/logging.h"
+#include "kudu/util/mem_tracker.h"
+#include "kudu/util/memory/arena.h"
+#include "kudu/util/process_memory.h"
 #include "kudu/util/trace.h"
 
-namespace kudu {
-class Arena;
-}
+DECLARE_int32(memory_limit_warn_threshold_percentage);
 
 using kudu::fs::BlockCreationTransaction;
-using kudu::fs::BlockManager;
 using kudu::fs::CreateBlockOptions;
 using kudu::fs::IOContext;
 using kudu::fs::WritableBlock;
@@ -98,9 +100,14 @@ MajorDeltaCompaction::MajorDeltaCompaction(
       undo_delta_mutations_written_(0),
       state_(kInitialized) {
   CHECK(!column_ids_.empty());
+  parent_tracker_ = MemTracker::FindOrCreateGlobalTracker(-1, "major_compaction");
+  tracker_ = MemTracker::CreateTracker(-1, Substitute("major_compaction:$0",
+                                                      tablet_id_),
+                                       parent_tracker_);
 }
 
 MajorDeltaCompaction::~MajorDeltaCompaction() {
+  tracker_->Release(tracker_->consumption());
 }
 
 string MajorDeltaCompaction::ColumnNamesToString() const {
@@ -115,6 +122,24 @@ string MajorDeltaCompaction::ColumnNamesToString() const {
     }
   }
   return JoinStrings(col_names, ", ");
+}
+
+// Log warning messages if the memory consumption has exceeded a certain threshold.
+void MajorDeltaCompaction::MemoryExceededWarnMsgs() {
+  if (process_memory::OverHardLimitThreshold()) {
+    string msg = StringPrintf(
+        "Beyond hard memory limit of %ld with current consumption at %ld. "
+        "MajorDeltaCompaction ops consumption: tablet-%s %ld, total %ld.",
+        process_memory::HardLimit(), process_memory::CurrentConsumption(),
+        tablet_id_.c_str(), tracker_->consumption(), parent_tracker_->consumption());
+    KLOG_EVERY_N_SECS(WARNING, 1) << msg
+                                  << THROTTLE_MSG;
+  }
+}
+
+void MajorDeltaCompaction::UpdateMemTracker(int64_t mem_consumed) {
+  tracker_->Consume(mem_consumed);
+  MemoryExceededWarnMsgs();
 }
 
 Status MajorDeltaCompaction::FlushRowSetAndDeltas(const IOContext* io_context) {
@@ -134,7 +159,10 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas(const IOContext* io_context) {
   RETURN_NOT_OK(delta_iter_->Init(&spec));
   RETURN_NOT_OK(delta_iter_->SeekToOrdinal(0));
 
-  RowBlockMemory mem(32 * 1024);
+  RowBlockMemory mem(kInitRowBlockMemSize);
+  // Update memory tracker with initialized arena memory footprint.
+  UpdateMemTracker(mem.arena.memory_footprint());
+
   RowBlock block(&partial_schema_, kRowsPerBlock, &mem);
 
   DVLOG(1) << "Applying deltas and rewriting columns (" << partial_schema_.ToString() << ")";
@@ -145,6 +173,8 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas(const IOContext* io_context) {
   MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllOps();
   while (old_base_data_rwise->HasNext()) {
 
+    // Update memory tracker with arena memory footprint that is to be released.
+    UpdateMemTracker(-static_cast<int64_t>(mem.arena.memory_footprint()));
     // 1) Get the next batch of base data for the columns we're compacting.
     mem.Reset();
     RETURN_NOT_OK(old_base_data_rwise->NextBlock(&block));
@@ -152,8 +182,18 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas(const IOContext* io_context) {
 
     // 2) Fetch all the REDO mutations.
     vector<Mutation *> redo_mutation_block(kRowsPerBlock, static_cast<Mutation *>(nullptr));
+    size_t delta_blocks_mem_before_prepare_batch = delta_iter_->memory_footprint();
     RETURN_NOT_OK(delta_iter_->PrepareBatch(n, DeltaIterator::PREPARE_FOR_COLLECT));
+
+    // Update memory tracker with memory allocated for delta blocks.
+    UpdateMemTracker(
+        static_cast<int64_t>(delta_iter_->memory_footprint()) -
+        static_cast<int64_t>(delta_blocks_mem_before_prepare_batch));
+
     RETURN_NOT_OK(delta_iter_->CollectMutations(&redo_mutation_block, block.arena()));
+
+    // Update memory tracker with memory allocated for mutations.
+    UpdateMemTracker(mem.arena.memory_footprint());
 
     // 3) Write new UNDO mutations for the current block. The REDO mutations
     //    are written out in step 6.
@@ -179,6 +219,7 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas(const IOContext* io_context) {
       DVLOG(3) << "MDC Input Row - RowId: " << row_id << " "
                << CompactionInputRowToString(*input_row);
 
+      size_t arena_memory_footprint_before_mutations = mem.arena.memory_footprint();
       RETURN_NOT_OK(ApplyMutationsAndGenerateUndos(snap,
                                                    *input_row,
                                                    &mem.arena,
@@ -186,6 +227,12 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas(const IOContext* io_context) {
                                                    &dst_row,
                                                    &new_undos_head,
                                                    &new_redos_head));
+      // Update memory tracker to account for memory allocation for
+      // prepared deltas, in-memory blocks and in-memory change lists.
+      UpdateMemTracker(
+          static_cast<int64_t>(mem.arena.memory_footprint()) -
+          static_cast<int64_t>(arena_memory_footprint_before_mutations));
+
       RemoveAncientUndos(history_gc_opts_,
                          new_redos_head,
                          &new_undos_head);
@@ -208,12 +255,18 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas(const IOContext* io_context) {
     // 4) Write the new base data.
     RETURN_NOT_OK(base_data_writer_->AppendBlock(block));
 
+    // Update memory tracker with arena memory footprint that is to be released.
+    UpdateMemTracker(-static_cast<int64_t>(mem.arena.memory_footprint()));
+
     // 5) Remove the columns that we've done our major REDO delta compaction on
     //    from this delta flush, except keep all the delete and reinsert
     //    mutations.
     mem.Reset();
     vector<DeltaKeyAndUpdate> out;
     RETURN_NOT_OK(delta_iter_->FilterColumnIdsAndCollectDeltas(column_ids_, &out, &mem.arena));
+
+    // Update memory tracker with arena memory footprint for reinsert and delete mutations.
+    UpdateMemTracker(mem.arena.memory_footprint());
 
     // We only create a new redo delta file if we need to.
     if (!out.empty() && !new_redo_delta_writer_) {
@@ -344,6 +397,9 @@ Status MajorDeltaCompaction::Compact(const IOContext* io_context) {
   TRACE_COUNTER_INCREMENT("delete_count", stats.delete_count);
   TRACE_COUNTER_INCREMENT("reinsert_count", stats.reinsert_count);
   TRACE_COUNTER_INCREMENT("update_count", stats.update_count);
+
+  // Update stats with peak memory consumption.
+  TRACE_COUNTER_INCREMENT("peak_mem_usage", tracker_->peak_consumption());
   VLOG(1) << Substitute("Finished major delta compaction of columns $0. "
                         "Compacted $1 delta files. Overall stats: $2",
                         ColumnNamesToString(),

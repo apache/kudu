@@ -24,6 +24,7 @@
 
 namespace kudu {
 
+const size_t kInitRowBlockMemSize = 32 * 1024; // Initial memory size allocated for rowblock
 class RowBlockRefCounted;
 
 // Handles the memory allocated alongside a RowBlock for variable-length
@@ -41,7 +42,7 @@ class RowBlockRefCounted;
 struct RowBlockMemory {
   Arena arena;
 
-  explicit RowBlockMemory(int arena_size = 32 * 1024) : arena(arena_size) {}
+  explicit RowBlockMemory(int arena_size = kInitRowBlockMemSize) : arena(arena_size) {}
   ~RowBlockMemory() { Reset(); }
 
   void Reset() {

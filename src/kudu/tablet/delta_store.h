@@ -475,6 +475,16 @@ class DeltaPreparer : public PreparedDeltas {
     return deltas_selected_;
   }
 
+  int64_t delta_blocks_mem_size() const {
+    int64_t delta_blocks_size_total = prepared_deltas_.size() * sizeof(PreparedDelta);
+
+    for (const auto& delta : prepared_deltas_) {
+      delta_blocks_size_total += delta.val.size();
+    }
+
+    return delta_blocks_size_total;
+  }
+
   void set_deltas_selected(int64_t deltas_selected) {
     // NOTE: it's possible that the iterator's number of 'deltas_selected'
     // hasn't changed if no deltas were selected since last being called, hence
