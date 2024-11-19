@@ -725,14 +725,14 @@ Status FsManager::InitAndOpenBlockManager(FsReport* report,
                                           std::atomic<int>* containers_processed,
                                           std::atomic<int>* containers_total,
                                           const string& tenant_id,
-                                          BlockManager::MergeReport need_merage) {
+                                          BlockManager::MergeReport need_merge) {
   auto block_manager = InitBlockManager(tenant_id);
   DCHECK(block_manager);
   LOG_TIMING(INFO, "opening block manager") {
     if (opts_.block_manager_type == "file") {
-      RETURN_NOT_OK(block_manager->Open(report, need_merage, nullptr, nullptr));
+      RETURN_NOT_OK(block_manager->Open(report, need_merge, nullptr, nullptr));
     } else {
-      RETURN_NOT_OK(block_manager->Open(report, need_merage,
+      RETURN_NOT_OK(block_manager->Open(report, need_merge,
                                         containers_processed, containers_total));
     }
   }

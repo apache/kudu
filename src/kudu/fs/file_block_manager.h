@@ -82,7 +82,7 @@ class FileBlockManager : public BlockManager {
 
   ~FileBlockManager() override;
 
-  Status Open(FsReport* report, MergeReport need_merage,
+  Status Open(FsReport* report, MergeReport need_merge,
               std::atomic<int>* containers_processed,
               std::atomic<int>* containers_total) override;
 

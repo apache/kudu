@@ -2861,7 +2861,7 @@ Status LogBlockManagerNativeMeta::OpenContainer(Dir* dir,
   return LogBlockContainerNativeMeta::Open(this, dir, report, id, container);
 }
 
-Status LogBlockManager::Open(FsReport* report, MergeReport need_merage,
+Status LogBlockManager::Open(FsReport* report, MergeReport need_merge,
                              std::atomic<int>* containers_processed,
                              std::atomic<int>* containers_total) {
   // Establish (and log) block limits for each data directory using kernel,
@@ -3006,7 +3006,7 @@ Status LogBlockManager::Open(FsReport* report, MergeReport need_merage,
 
   // Either return or log the report.
   if (report) {
-    if (need_merage == MergeReport::REQUIRED) {
+    if (need_merge == MergeReport::REQUIRED) {
       report->MergeFrom(merged_report);
     } else {
       *report = std::move(merged_report);

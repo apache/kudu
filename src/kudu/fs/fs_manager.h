@@ -596,7 +596,7 @@ class FsManager {
                                  std::atomic<int>* containers_processed = nullptr,
                                  std::atomic<int>* containers_total = nullptr,
                                  const std::string& tenant_id = fs::kDefaultTenantID,
-                                 fs::BlockManager::MergeReport need_merage =
+                                 fs::BlockManager::MergeReport need_merge =
                                      fs::BlockManager::MergeReport::NOT_REQUIRED);
 
   // Add data dir manager to the 'dd_manager_map_' keyed by tenant_id.

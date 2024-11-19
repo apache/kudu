@@ -729,7 +729,7 @@ FileBlockManager::FileBlockManager(Env* env,
 FileBlockManager::~FileBlockManager() {
 }
 
-Status FileBlockManager::Open(FsReport* report, MergeReport need_merage,
+Status FileBlockManager::Open(FsReport* report, MergeReport need_merge,
                               atomic<int>* /* containers_processed */,
                               atomic<int>* /* containers_total */) {
   // Prepare the filesystem report and either return or log it.
@@ -751,7 +751,7 @@ Status FileBlockManager::Open(FsReport* report, MergeReport need_merage,
     local_report.data_dirs.push_back(dd->dir());
   }
   if (report) {
-    if (need_merage == MergeReport::REQUIRED) {
+    if (need_merge == MergeReport::REQUIRED) {
       report->MergeFrom(local_report);
     } else {
       *report = std::move(local_report);

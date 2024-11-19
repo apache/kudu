@@ -226,7 +226,7 @@ class BlockManager : public RefCountedThreadSafe<BlockManager> {
   // If 'containers_processed' and 'containers_total' are not nullptr, they will
   // be populated with total containers attempted to be opened/processed and
   // total containers present respectively.
-  virtual Status Open(FsReport* report, MergeReport need_merage,
+  virtual Status Open(FsReport* report, MergeReport need_merge,
                       std::atomic<int>* containers_processed,
                       std::atomic<int>* containers_total) = 0;
 
