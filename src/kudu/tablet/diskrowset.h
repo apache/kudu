@@ -383,7 +383,7 @@ class DiskRowSet :
   Status NewCompactionInput(const Schema* projection,
                             const MvccSnapshot& snap,
                             const fs::IOContext* io_context,
-                            std::unique_ptr<CompactionOrFlushInput>* out) const override;
+                            std::shared_ptr<CompactionOrFlushInput>* out) const override;
 
   // Gets the number of rows in this rowset, checking 'num_rows_' first. If not
   // yet set, consults the base data and stores the result in 'num_rows_'.

@@ -168,7 +168,7 @@ class RowSet {
   virtual Status NewCompactionInput(const Schema* projection,
                                     const MvccSnapshot &snap,
                                     const fs::IOContext* io_context,
-                                    std::unique_ptr<CompactionOrFlushInput>* out) const = 0;
+                                    std::shared_ptr<CompactionOrFlushInput>* out) const = 0;
 
   // Count the number of rows in this rowset.
   virtual Status CountRows(const fs::IOContext* io_context, rowid_t *count) const = 0;
@@ -423,7 +423,7 @@ class DuplicatingRowSet : public RowSet {
   Status NewCompactionInput(const Schema* projection,
                             const MvccSnapshot &snap,
                             const fs::IOContext* io_context,
-                            std::unique_ptr<CompactionOrFlushInput>* out) const override;
+                            std::shared_ptr<CompactionOrFlushInput>* out) const override;
 
   Status CountRows(const fs::IOContext* io_context, rowid_t *count) const override;
 
