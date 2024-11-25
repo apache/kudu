@@ -675,7 +675,7 @@ Status DiskRowSet::NewRowIterator(const RowIteratorOptions& opts,
 Status DiskRowSet::NewCompactionInput(const Schema* projection,
                                       const MvccSnapshot &snap,
                                       const IOContext* io_context,
-                                      unique_ptr<CompactionOrFlushInput>* out) const {
+                                      shared_ptr<CompactionOrFlushInput>* out) const {
   return CompactionOrFlushInput::Create(*this, projection, snap, io_context, out);
 }
 
@@ -931,7 +931,7 @@ Status DiskRowSet::DeleteAncientUndoDeltas(Timestamp ancient_history_mark,
 Status DiskRowSet::DebugDumpImpl(int64_t* rows_left, vector<string>* lines) {
   // Using CompactionOrFlushInput to dump our data is an easy way of seeing all the
   // rows and deltas.
-  unique_ptr<CompactionOrFlushInput> input;
+  shared_ptr<CompactionOrFlushInput> input;
   RETURN_NOT_OK(NewCompactionInput(rowset_metadata_->tablet_schema().get(),
                                    MvccSnapshot::CreateSnapshotIncludingAllOps(),
                                    nullptr, &input));

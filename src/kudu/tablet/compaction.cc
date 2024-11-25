@@ -66,6 +66,7 @@ using kudu::fs::IOContext;
 using kudu::fs::FsErrorManager;
 using kudu::fs::KUDU_2233_CORRUPTION;
 using std::deque;
+using std::make_shared;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
@@ -1100,7 +1101,7 @@ Status CompactionOrFlushInput::Create(const DiskRowSet& rowset,
                                       const Schema* projection,
                                       const MvccSnapshot& snap,
                                       const IOContext* io_context,
-                                      unique_ptr<CompactionOrFlushInput>* out) {
+                                      shared_ptr<CompactionOrFlushInput>* out) {
   CHECK(projection->has_column_ids());
 
   unique_ptr<ColumnwiseIterator> base_cwise(rowset.base_data_->NewIterator(projection, io_context));
@@ -1124,24 +1125,24 @@ Status CompactionOrFlushInput::Create(const DiskRowSet& rowset,
   RETURN_NOT_OK_PREPEND(rowset.delta_tracker_->NewDeltaIterator(
       undo_opts, DeltaTracker::UNDOS_ONLY, &undo_deltas), "Could not open UNDOs");
 
-  out->reset(new DiskRowSetCompactionInput(std::move(base_iter),
-                                           std::move(redo_deltas),
-                                           std::move(undo_deltas)));
+  *out = make_shared<DiskRowSetCompactionInput>(
+      std::move(base_iter), std::move(redo_deltas), std::move(undo_deltas));
   return Status::OK();
 }
 
-CompactionOrFlushInput* CompactionOrFlushInput::Create(const MemRowSet& memrowset,
-                                                       const Schema* projection,
-                                                       const MvccSnapshot& snap) {
+shared_ptr<CompactionOrFlushInput> CompactionOrFlushInput::Create(
+    const MemRowSet& memrowset,
+    const Schema* projection,
+    const MvccSnapshot& snap) {
   CHECK(projection->has_column_ids());
-  return new MemRowSetCompactionInput(memrowset, snap, projection);
+  return make_shared<MemRowSetCompactionInput>(memrowset, snap, projection);
 }
 
-CompactionOrFlushInput* CompactionOrFlushInput::Merge(
+shared_ptr<CompactionOrFlushInput> CompactionOrFlushInput::Merge(
     const vector<shared_ptr<CompactionOrFlushInput>>& inputs,
     const Schema* schema) {
   CHECK(schema->has_column_ids());
-  return new MergeCompactionInput(inputs, schema);
+  return make_shared<MergeCompactionInput>(inputs, schema);
 }
 
 
@@ -1154,17 +1155,17 @@ Status RowSetsInCompactionOrFlush::CreateCompactionOrFlushInput(
 
   vector<shared_ptr<CompactionOrFlushInput>> inputs;
   for (const auto& rs : rowsets_) {
-    unique_ptr<CompactionOrFlushInput> input;
+    shared_ptr<CompactionOrFlushInput> input;
     RETURN_NOT_OK_PREPEND(rs->NewCompactionInput(schema, snap, io_context, &input),
                           Substitute("Could not create compaction input for rowset $0",
                                      rs->ToString()));
-    inputs.push_back(shared_ptr<CompactionOrFlushInput>(input.release()));
+    inputs.emplace_back(std::move(input));
   }
 
   if (inputs.size() == 1) {
     *out = std::move(inputs[0]);
   } else {
-    out->reset(CompactionOrFlushInput::Merge(inputs, schema));
+    *out = CompactionOrFlushInput::Merge(inputs, schema);
   }
 
   return Status::OK();

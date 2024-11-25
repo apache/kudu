@@ -106,8 +106,6 @@ using strings::Substitute;
 namespace kudu {
 namespace tablet {
 
-class RowSetMetadata;
-
 constexpr const char* const kRowKeyFormat = "hello %010" PRId64;
 constexpr const size_t kLargeRollThreshold = 8UL * 1024 * 1024 * 1024;  // 8GB
 constexpr const size_t kSmallRollThreshold = 1024; // 1KB
@@ -352,14 +350,14 @@ class TestCompaction : public KuduRowSetTest {
   static Status BuildCompactionInput(const MvccSnapshot& merge_snap,
                                      const vector<shared_ptr<DiskRowSet>>& rowsets,
                                      const Schema& projection,
-                                     unique_ptr<CompactionOrFlushInput>* out) {
+                                     shared_ptr<CompactionOrFlushInput>* out) {
     vector<shared_ptr<CompactionOrFlushInput>> merge_inputs;
     for (const auto& rs : rowsets) {
-      unique_ptr<CompactionOrFlushInput> input;
+      shared_ptr<CompactionOrFlushInput> input;
       RETURN_NOT_OK(CompactionOrFlushInput::Create(*rs, &projection, merge_snap, nullptr, &input));
-      merge_inputs.emplace_back(input.release());
+      merge_inputs.emplace_back(std::move(input));
     }
-    out->reset(CompactionOrFlushInput::Merge(merge_inputs, &projection));
+    *out = CompactionOrFlushInput::Merge(merge_inputs, &projection);
     return Status::OK();
   }
 
@@ -371,7 +369,7 @@ class TestCompaction : public KuduRowSetTest {
                           size_t roll_threshold,
                           vector<shared_ptr<DiskRowSet>>* result_rowsets) {
     MvccSnapshot merge_snap(mvcc_);
-    unique_ptr<CompactionOrFlushInput> compact_input;
+    shared_ptr<CompactionOrFlushInput> compact_input;
     RETURN_NOT_OK(BuildCompactionInput(merge_snap, rowsets, projection, &compact_input));
     return DoFlushAndReopen(
         compact_input.get(), projection, merge_snap, roll_threshold, result_rowsets);
@@ -395,10 +393,7 @@ class TestCompaction : public KuduRowSetTest {
                            size_t roll_threshold,
                            vector<shared_ptr<DiskRowSet>>* result_rowsets) {
     MvccSnapshot snap(mvcc_);
-    vector<shared_ptr<RowSetMetadata>> rowset_metas;
-    unique_ptr<CompactionOrFlushInput> input(CompactionOrFlushInput::Create(mrs,
-                                                                            &projection,
-                                                                            snap));
+    auto input(CompactionOrFlushInput::Create(mrs, &projection, snap));
     return DoFlushAndReopen(input.get(), projection, snap, roll_threshold, result_rowsets);
   }
 
@@ -533,7 +528,7 @@ class TestCompaction : public KuduRowSetTest {
     LOG_TIMING(INFO, "compacting " +
                std::string((OVERLAP_INPUTS ? "with overlap" : "without overlap"))) {
       MvccSnapshot merge_snap(mvcc_);
-      unique_ptr<CompactionOrFlushInput> compact_input;
+      shared_ptr<CompactionOrFlushInput> compact_input;
       ASSERT_OK(BuildCompactionInput(merge_snap, rowsets, schema_, &compact_input));
       // Use a low target row size to increase the number of resulting rowsets.
       RollingDiskRowSetWriter rdrsw(tablet()->metadata(), schema_,
@@ -581,7 +576,7 @@ TEST_F(TestCompaction, TestMemRowSetInput) {
   // and mutations.
   vector<string> out;
   MvccSnapshot snap(mvcc_);
-  unique_ptr<CompactionOrFlushInput> input(CompactionOrFlushInput::Create(*mrs, &schema_, snap));
+  auto input(CompactionOrFlushInput::Create(*mrs, &schema_, snap));
   IterateInput(input.get(), &out);
   ASSERT_EQ(10, out.size());
   EXPECT_EQ("RowIdxInBlock: 0; Base: (string key=\"hello 0000000000\", int64 val=0, "
@@ -644,7 +639,7 @@ TEST_F(TestCompaction, TestRowSetInput) {
 
   // Check compaction input
   vector<string> out;
-  unique_ptr<CompactionOrFlushInput> input;
+  shared_ptr<CompactionOrFlushInput> input;
   ASSERT_OK(CompactionOrFlushInput::Create(*rs, &schema_, MvccSnapshot(mvcc_), nullptr, &input));
   IterateInput(input.get(), &out);
   ASSERT_EQ(10, out.size());
@@ -707,7 +702,7 @@ TEST_F(TestCompaction, TestDuplicatedGhostRowsMerging) {
   shared_ptr<DiskRowSet> result;
   CompactAndReopenNoRoll(all_rss, schema_, &result);
 
-  unique_ptr<CompactionOrFlushInput> input;
+  shared_ptr<CompactionOrFlushInput> input;
   ASSERT_OK(CompactionOrFlushInput::Create(*result,
                                            &schema_,
                                            MvccSnapshot::CreateSnapshotIncludingAllOps(),
@@ -881,9 +876,9 @@ TEST_F(TestCompaction, TestDuplicatedRowsRandomCompaction) {
 
   vector<shared_ptr<CompactionOrFlushInput>> inputs;
   for (const auto& row_set : row_sets) {
-    unique_ptr<CompactionOrFlushInput> ci;
+    shared_ptr<CompactionOrFlushInput> ci;
     ASSERT_OK(row_set->NewCompactionInput(&schema_, all_snap, nullptr, &ci));
-    inputs.emplace_back(ci.release());
+    inputs.emplace_back(std::move(ci));
   }
 
   // Compact the row sets by picking a few at random until we're left with just one.
@@ -904,7 +899,7 @@ TEST_F(TestCompaction, TestDuplicatedRowsRandomCompaction) {
   }
 
   vector<string> out;
-  unique_ptr<CompactionOrFlushInput> ci;
+  shared_ptr<CompactionOrFlushInput> ci;
   ASSERT_OK(row_sets[0]->NewCompactionInput(&schema_, all_snap, nullptr, &ci));
   IterateInput(ci.get(), &out);
 
@@ -953,17 +948,17 @@ TEST_F(TestCompaction, TestMRSCompactionDoesntOutputUnobservableRows) {
 
   vector<shared_ptr<CompactionOrFlushInput>> to_merge;
   {
-    unique_ptr<CompactionOrFlushInput> rs1_input;
+    shared_ptr<CompactionOrFlushInput> rs1_input;
     ASSERT_OK(CompactionOrFlushInput::Create(*rs1, &schema_, all_snap, nullptr, &rs1_input));
 
-    unique_ptr<CompactionOrFlushInput> rs2_input;
+    shared_ptr<CompactionOrFlushInput> rs2_input;
     ASSERT_OK(CompactionOrFlushInput::Create(*rs2, &schema_, all_snap, nullptr, &rs2_input));
 
-    to_merge.emplace_back(rs1_input.release());
-    to_merge.emplace_back(rs2_input.release());
+    to_merge.emplace_back(std::move(rs1_input));
+    to_merge.emplace_back(std::move(rs2_input));
   }
 
-  unique_ptr<CompactionOrFlushInput> merged(CompactionOrFlushInput::Merge(to_merge, &schema_));
+  auto merged(CompactionOrFlushInput::Merge(to_merge, &schema_));
 
   // Make sure the unobservable version of the row that was inserted and deleted in the MRS
   // in the same op doesn't show up in the compaction input.
@@ -998,12 +993,10 @@ TEST_F(TestCompaction, TestOneToOne) {
 
   // Catch the updates that came in after the snapshot flush was made.
   MvccSnapshot snap2(mvcc_);
-  unique_ptr<CompactionOrFlushInput> input(CompactionOrFlushInput::Create(*mrs, &schema_, snap2));
+  auto input(CompactionOrFlushInput::Create(*mrs, &schema_, snap2));
 
   // Add some more updates which come into the new rowset while the "reupdate" is happening.
   UpdateRows(rs.get(), 1000, 0, 3);
-
-  string dummy_name = "";
 
   ASSERT_OK(ReupdateMissedDeltas(nullptr, input.get(), HistoryGcOpts::Disabled(), snap, snap2,
                                  { rs }));
@@ -1020,7 +1013,7 @@ TEST_F(TestCompaction, TestOneToOne) {
 
   // And compact (1 input to 1 output)
   MvccSnapshot snap3(mvcc_);
-  unique_ptr<CompactionOrFlushInput> compact_input;
+  shared_ptr<CompactionOrFlushInput> compact_input;
   ASSERT_OK(CompactionOrFlushInput::Create(*rs, &schema_, snap3, nullptr, &compact_input));
   ASSERT_OK(DoFlushAndReopen(compact_input.get(), schema_, snap3, kLargeRollThreshold, nullptr));
 }
@@ -1054,9 +1047,7 @@ TEST_F(TestCompaction, TestKUDU102) {
   vector<shared_ptr<CompactionOrFlushInput>> merge_inputs;
   merge_inputs.emplace_back(CompactionOrFlushInput::Create(*mrs, &schema_, snap2));
   merge_inputs.emplace_back(CompactionOrFlushInput::Create(*mrs_b, &schema_, snap2));
-  unique_ptr<CompactionOrFlushInput> input(CompactionOrFlushInput::Merge(merge_inputs, &schema_));
-
-  string dummy_name = "";
+  auto input(CompactionOrFlushInput::Merge(merge_inputs, &schema_));
 
   // This would fail without KUDU-102
   ASSERT_OK(ReupdateMissedDeltas(nullptr, input.get(), HistoryGcOpts::Disabled(), snap, snap2,
@@ -1110,10 +1101,10 @@ TEST_F(TestCompaction, TestMergeMRS) {
 
   MvccSnapshot snap(mvcc_);
   vector<shared_ptr<CompactionOrFlushInput>> merge_inputs {
-    shared_ptr<CompactionOrFlushInput>(CompactionOrFlushInput::Create(*mrs_a, &schema_, snap)),
-    shared_ptr<CompactionOrFlushInput>(CompactionOrFlushInput::Create(*mrs_b, &schema_, snap))
+    CompactionOrFlushInput::Create(*mrs_a, &schema_, snap),
+    CompactionOrFlushInput::Create(*mrs_b, &schema_, snap)
   };
-  unique_ptr<CompactionOrFlushInput> input(CompactionOrFlushInput::Merge(merge_inputs, &schema_));
+  auto input(CompactionOrFlushInput::Merge(merge_inputs, &schema_));
   vector<shared_ptr<DiskRowSet>> result_rs;
   ASSERT_OK(DoFlushAndReopen(input.get(), schema_, snap, kSmallRollThreshold, &result_rs));
   ASSERT_EQ(20, CountRows(result_rs));
@@ -1129,10 +1120,10 @@ TEST_F(TestCompaction, TestMergeMRSWithInvisibleRows) {
   InsertRows(mrs_b.get(), 10, 0);
   MvccSnapshot snap(mvcc_);
   vector<shared_ptr<CompactionOrFlushInput>> merge_inputs {
-    shared_ptr<CompactionOrFlushInput>(CompactionOrFlushInput::Create(*mrs_a, &schema_, snap)),
-    shared_ptr<CompactionOrFlushInput>(CompactionOrFlushInput::Create(*mrs_b, &schema_, snap))
+    CompactionOrFlushInput::Create(*mrs_a, &schema_, snap),
+    CompactionOrFlushInput::Create(*mrs_b, &schema_, snap)
   };
-  unique_ptr<CompactionOrFlushInput> input(CompactionOrFlushInput::Merge(merge_inputs, &schema_));
+  auto input(CompactionOrFlushInput::Merge(merge_inputs, &schema_));
   vector<shared_ptr<DiskRowSet>> result_rs;
   ASSERT_OK(DoFlushAndReopen(input.get(), schema_, snap, kSmallRollThreshold, &result_rs));
   ASSERT_EQ(1, result_rs.size());
@@ -1209,10 +1200,10 @@ TEST_F(TestCompaction, TestRandomizeDuplicatedRowsAcrossTransactions) {
   MvccSnapshot snap(mvcc_);
   vector<shared_ptr<CompactionOrFlushInput>> merge_inputs;
   merge_inputs.emplace_back(CompactionOrFlushInput::Create(*main_mrs, &schema_, snap));
-  for (auto& mrs : txn_mrss) {
+  for (const auto& mrs : txn_mrss) {
     merge_inputs.emplace_back(CompactionOrFlushInput::Create(*mrs, &schema_, snap));
   }
-  unique_ptr<CompactionOrFlushInput> input(CompactionOrFlushInput::Merge(merge_inputs, &schema_));
+  auto input(CompactionOrFlushInput::Merge(merge_inputs, &schema_));
   vector<shared_ptr<DiskRowSet>> result_rs;
   ASSERT_OK(DoFlushAndReopen(input.get(), schema_, snap, kSmallRollThreshold, &result_rs));
   ASSERT_EQ(1, result_rs.size());
@@ -1254,11 +1245,11 @@ TEST_F(TestCompaction, TestRowHistoryJumpsBetweenRowsets) {
   // should go off without a hitch.
   MvccSnapshot snap(mvcc_);
   vector<shared_ptr<CompactionOrFlushInput>> merge_inputs {
-    shared_ptr<CompactionOrFlushInput>(CompactionOrFlushInput::Create(*mrs_a, &schema_, snap)),
-    shared_ptr<CompactionOrFlushInput>(CompactionOrFlushInput::Create(*mrs_b, &schema_, snap)),
-    shared_ptr<CompactionOrFlushInput>(CompactionOrFlushInput::Create(*mrs_c, &schema_, snap)),
+    CompactionOrFlushInput::Create(*mrs_a, &schema_, snap),
+    CompactionOrFlushInput::Create(*mrs_b, &schema_, snap),
+    CompactionOrFlushInput::Create(*mrs_c, &schema_, snap),
   };
-  unique_ptr<CompactionOrFlushInput> input(CompactionOrFlushInput::Merge(merge_inputs, &schema_));
+  auto input(CompactionOrFlushInput::Merge(merge_inputs, &schema_));
   vector<shared_ptr<DiskRowSet>> result_rs;
   ASSERT_OK(DoFlushAndReopen(input.get(), schema_, snap, kSmallRollThreshold, &result_rs));
   ASSERT_EQ(1, result_rs.size());
@@ -1271,10 +1262,10 @@ TEST_F(TestCompaction, TestMergeMRSWithAllInvisibleRows) {
   shared_ptr<MemRowSet> mrs_b = CreateInvisibleMRS();
   MvccSnapshot snap(mvcc_);
   vector<shared_ptr<CompactionOrFlushInput>> merge_inputs {
-    shared_ptr<CompactionOrFlushInput>(CompactionOrFlushInput::Create(*mrs_a, &schema_, snap)),
-    shared_ptr<CompactionOrFlushInput>(CompactionOrFlushInput::Create(*mrs_b, &schema_, snap))
+    CompactionOrFlushInput::Create(*mrs_a, &schema_, snap),
+    CompactionOrFlushInput::Create(*mrs_b, &schema_, snap)
   };
-  unique_ptr<CompactionOrFlushInput> input(CompactionOrFlushInput::Merge(merge_inputs, &schema_));
+  auto input(CompactionOrFlushInput::Merge(merge_inputs, &schema_));
   vector<shared_ptr<DiskRowSet>> result_rs;
   ASSERT_OK(DoFlushAndReopen(input.get(), schema_, snap, kSmallRollThreshold, &result_rs));
   ASSERT_TRUE(result_rs.empty());

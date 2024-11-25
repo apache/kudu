@@ -345,7 +345,7 @@ class MemRowSet : public RowSet,
   Status NewCompactionInput(const Schema* projection,
                             const MvccSnapshot& snap,
                             const fs::IOContext* io_context,
-                            std::unique_ptr<CompactionOrFlushInput>* out) const override;
+                            std::shared_ptr<CompactionOrFlushInput>* out) const override;
 
   // Return the Schema for the rows in this memrowset.
    const Schema &schema() const {

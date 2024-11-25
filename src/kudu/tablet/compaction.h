@@ -110,17 +110,18 @@ class CompactionOrFlushInput {
                        const Schema* projection,
                        const MvccSnapshot& snap,
                        const fs::IOContext* io_context,
-                       std::unique_ptr<CompactionOrFlushInput>* out);
+                       std::shared_ptr<CompactionOrFlushInput>* out);
 
   // Create an input which reads from the given memrowset, yielding base rows and updates
   // prior to the given snapshot.
-  static CompactionOrFlushInput* Create(const MemRowSet& memrowset,
-                                        const Schema* projection,
-                                        const MvccSnapshot& snap);
+  static std::shared_ptr<CompactionOrFlushInput> Create(
+      const MemRowSet& memrowset,
+      const Schema* projection,
+      const MvccSnapshot& snap);
 
   // Create a collection of merge states containing a state per input. The inputs are merged
   // in key-order according to the given schema. All inputs must have matching schemas.
-  static CompactionOrFlushInput* Merge(
+  static std::shared_ptr<CompactionOrFlushInput> Merge(
       const std::vector<std::shared_ptr<CompactionOrFlushInput>>& inputs,
       const Schema* schema);
 

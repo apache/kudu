@@ -2024,7 +2024,6 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompactionOrFlush &input,
   const auto& tid = tablet_id();
   const IOContext io_context({ tid });
 
-  shared_ptr<CompactionOrFlushInput> merge;
   const SchemaPtr schema_ptr = schema();
   MvccSnapshot flush_snap(mvcc_);
   VLOG_WITH_PREFIX(1) << Substitute("$0: entering phase 1 (flushing snapshot). "
@@ -2041,6 +2040,7 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompactionOrFlush &input,
   //   - For compaction ops, create input that contains initialized base,
   //     relevant REDO and UNDO delta iterators to be used read from persistent storage.
   //   - For Flush ops, create iterator for in-memory tree holding data updates.
+  shared_ptr<CompactionOrFlushInput> merge;
   RETURN_NOT_OK(input.CreateCompactionOrFlushInput(flush_snap,
                                                    schema_ptr.get(),
                                                    &io_context,
