@@ -18,10 +18,10 @@ The changes include the following:
   issues discovered with contemporary releases.
 
 * Fixed file descriptor leak in encryption-at-rest
-  (see https://issues.apache.org/jira/browse/KUDU-3520[KUDU-3520]).
+  (see [KUDU-3520](https://issues.apache.org/jira/browse/KUDU-3520)).
 
 * Fixed bug in range-aware tablet replica placement causing Kudu master to crash
-  (see https://issues.apache.org/jira/browse/KUDU-3532[KUDU-3532]).
+  (see [KUDU-3532](https://issues.apache.org/jira/browse/KUDU-3532)).
 
 The above is just a few of the fixes, for a more complete list of  improvements and
 fixes please refer to the [release notes](/releases/1.17.1/docs/release_notes.html).
