@@ -121,7 +121,7 @@ class SLRUCacheShard {
   // Used when upgrading entry to protected segment.
   std::vector<SLRUHandle*> InsertAndReturnEvicted(SLRUHandle* handle);
   // Same as InsertAndReturnEvicted but it returns the inserted handle too.
-  // Used for upsert case in protected segment.
+  // Used for update case in protected segment.
   Handle* ProtectedInsert(SLRUHandle* handle,
                           EvictionCallback* eviction_callback,
                           std::vector<SLRUHandle*>* evictions);
@@ -136,7 +136,7 @@ class SLRUCacheShard {
   void SoftErase(const Slice& key, uint32_t hash);
   // Returns true if shard contains entry, false if not.
   bool Contains(const Slice& key, uint32_t hash);
-  // Like Insert but sets refs to 1 and no possibility for upsert case.
+  // Like Insert but sets refs to 1 and no possibility for update case.
   // Used when evicted entries from protected segment are being added to probationary segment.
   void ReInsert(SLRUHandle* handle);
   // Update the high-level metrics for a lookup operation.
@@ -154,12 +154,12 @@ class SLRUCacheShard {
   static bool Unref(SLRUHandle* e);
   // Call the user's eviction callback, if it exists, and free the entry.
   void FreeEntry(SLRUHandle* e);
-  // Updates memtracker to reflect entry being erased from cache.
-  // Unlike FreeEntry(), the eviction callback is not called and the entry is not freed.
-  void SoftFreeEntry(SLRUHandle* e);
   // Updates eviction related metrics.
   void UpdateMetricsEviction(size_t charge);
-
+  // Removes any entries past capacity.
+  void RemoveEntriesPastCapacity();
+  // Adds any entries past capacity to a vector to be processed later.
+  void SoftRemoveEntriesPastCapacity(std::vector<SLRUHandle*>* evicted_entries);
 
   // Update the memtracker's consumption by the given amount.
   //
@@ -269,6 +269,7 @@ class ShardedSLRUCache : public Cache {
 
  private:
   friend class SLRUCacheBaseTest;
+  friend class CacheBench;
   FRIEND_TEST(SLRUCacheTest, EntriesArePinned);
   static int DetermineShardBits();
 
