@@ -98,14 +98,6 @@ void SLRUCacheShard<segment>::FreeEntry(SLRUHandle* e) {
   delete [] e;
 }
 
-template<Segment segment>
-void SLRUCacheShard<segment>::SoftFreeEntry(SLRUHandle* e) {
-  UpdateMemTracker(-static_cast<int64_t>(e->charge));
-  if (PREDICT_TRUE(metrics_)) {
-    UpdateMetricsEviction(e->charge);
-  }
-}
-
 template<>
 void SLRUCacheShard<Segment::kProbationary>::UpdateMetricsEviction(size_t charge) {
   metrics_->probationary_segment_cache_usage->DecrementBy(charge);
@@ -245,6 +237,31 @@ void SLRUCacheShard<segment>::Release(Handle* handle) {
   }
 }
 
+template<Segment segment>
+void SLRUCacheShard<segment>::RemoveEntriesPastCapacity() {
+  while (usage_ > capacity_ && rl_.next != &rl_) {
+    SLRUHandle* old = rl_.next;
+    RL_Remove(old);
+    table_.Remove(old->key(), old->hash);
+    if (Unref(old)) {
+      FreeEntry(old);
+    }
+  }
+}
+
+template<Segment segment>
+void SLRUCacheShard<segment>::SoftRemoveEntriesPastCapacity(vector<SLRUHandle*>* evicted_entries) {
+  while (usage_ > capacity_ && rl_.next != &rl_) {
+    SLRUHandle* old = rl_.next;
+    RL_Remove(old);
+    table_.Remove(old->key(), old->hash);
+    if (PREDICT_TRUE(metrics_)) {
+      UpdateMetricsEviction(old->charge);
+    }
+    evicted_entries->emplace_back(old);
+  }
+}
+
 template<>
 Handle* SLRUCacheShard<Segment::kProbationary>::Insert(SLRUHandle* handle,
                                                        EvictionCallback* eviction_callback) {
@@ -262,21 +279,14 @@ Handle* SLRUCacheShard<Segment::kProbationary>::Insert(SLRUHandle* handle,
   RL_Append(handle);
 
   SLRUHandle* old_entry = table_.Insert(handle);
+  // If entry with key already exists, remove it.
   if (old_entry != nullptr) {
     RL_Remove(old_entry);
     if (Unref(old_entry)) {
       FreeEntry(old_entry);
     }
   }
-
-  while (usage_ > capacity_ && rl_.next != &rl_) {
-    SLRUHandle* old = rl_.next;
-    RL_Remove(old);
-    table_.Remove(old->key(), old->hash);
-    if (Unref(old)) {
-      FreeEntry(old);
-    }
-  }
+  RemoveEntriesPastCapacity();
 
   return reinterpret_cast<Handle*>(handle);
 }
@@ -284,16 +294,13 @@ Handle* SLRUCacheShard<Segment::kProbationary>::Insert(SLRUHandle* handle,
 template<>
 vector<SLRUHandle*> SLRUCacheShard<Segment::kProtected>::InsertAndReturnEvicted(
     SLRUHandle* handle) {
-  handle->refs.fetch_add(1, std::memory_order_relaxed);
   handle->in_protected_segment.store(true, std::memory_order_relaxed);
-  UpdateMemTracker(handle->charge);
   if (PREDICT_TRUE(metrics_)) {
     metrics_->upgrades->Increment();
     metrics_->protected_segment_cache_usage->IncrementBy(handle->charge);
     metrics_->protected_segment_inserts->Increment();
   }
 
-  vector<SLRUHandle*> evicted_entries;
   handle->Sanitize();
   RL_Append(handle);
 
@@ -301,15 +308,8 @@ vector<SLRUHandle*> SLRUCacheShard<Segment::kProtected>::InsertAndReturnEvicted(
   SLRUHandle* old_entry = table_.Insert(handle);
   DCHECK(old_entry == nullptr);
 
-  while (usage_ > capacity_ && rl_.next != &rl_) {
-    SLRUHandle* old = rl_.next;
-    RL_Remove(old);
-    table_.Remove(old->key(), old->hash);
-    Unref(old);
-    SoftFreeEntry(old);
-    evicted_entries.emplace_back(old);
-  }
-
+  vector<SLRUHandle*> evicted_entries;
+  SoftRemoveEntriesPastCapacity(&evicted_entries);
   return evicted_entries;
 }
 
@@ -318,6 +318,9 @@ Handle* SLRUCacheShard<Segment::kProtected>::ProtectedInsert(SLRUHandle* handle,
                                                              EvictionCallback* eviction_callback,
                                                              vector<SLRUHandle*>* evictions) {
   handle->eviction_callback = eviction_callback;
+  // Two refs for the handle: one from SLRUCacheShard, one for the returned handle.
+  // Even though this function is for updates in the protected segment, it's treated similarly
+  // to Insert() in the probationary segment.
   handle->refs.store(2, std::memory_order_relaxed);
   handle->in_protected_segment.store(true, std::memory_order_relaxed);
   UpdateMemTracker(handle->charge);
@@ -330,7 +333,7 @@ Handle* SLRUCacheShard<Segment::kProtected>::ProtectedInsert(SLRUHandle* handle,
 
   RL_Append(handle);
 
-  // Upsert case so Insert should return a non-null entry.
+  // Update case so Insert should return a non-null entry.
   SLRUHandle* old_entry = table_.Insert(handle);
   DCHECK(old_entry != nullptr);
   RL_Remove(old_entry);
@@ -338,44 +341,25 @@ Handle* SLRUCacheShard<Segment::kProtected>::ProtectedInsert(SLRUHandle* handle,
     FreeEntry(old_entry);
   }
 
-  while (usage_ > capacity_ && rl_.next != &rl_) {
-    SLRUHandle* old = rl_.next;
-    RL_Remove(old);
-    table_.Remove(old->key(), old->hash);
-    Unref(old);
-    SoftFreeEntry(old);
-    evictions->emplace_back(old);
-  }
-
+  SoftRemoveEntriesPastCapacity(evictions);
   return reinterpret_cast<Handle*>(handle);
 }
 
 template<>
 void SLRUCacheShard<Segment::kProbationary>::ReInsert(SLRUHandle* handle) {
-  handle->refs.fetch_add(1, std::memory_order_relaxed);
   handle->in_protected_segment.store(false, std::memory_order_relaxed);
-  UpdateMemTracker(handle->charge);
   if (PREDICT_TRUE(metrics_)) {
     metrics_->downgrades->Increment();
     metrics_->probationary_segment_cache_usage->IncrementBy(handle->charge);
     metrics_->probationary_segment_inserts->Increment();
   }
-
   handle->Sanitize();
   RL_Append(handle);
 
   // No entries should exist with same key in probationary segment when downgrading.
   SLRUHandle* old_entry = table_.Insert(handle);
   DCHECK(old_entry == nullptr);
-
-  while (usage_ > capacity_ && rl_.next != &rl_) {
-    SLRUHandle* old = rl_.next;
-    RL_Remove(old);
-    table_.Remove(old->key(), old->hash);
-    if (Unref(old)) {
-      FreeEntry(old);
-    }
-  }
+  RemoveEntriesPastCapacity();
 }
 
 template<Segment segment>
@@ -395,8 +379,9 @@ void SLRUCacheShard<segment>::SoftErase(const Slice& key, uint32_t hash) {
   SLRUHandle* e = table_.Remove(key, hash);
   if (e != nullptr) {
     RL_Remove(e);
-    Unref(e);
-    SoftFreeEntry(e);
+    if (PREDICT_TRUE(metrics_)) {
+      UpdateMetricsEviction(e->charge);
+    }
   }
 }
 
@@ -420,7 +405,7 @@ void SLRUCacheShardPair::SetMetrics(SLRUCacheMetrics* metrics) {
 
 // Commit a prepared entry into the probationary segment if entry does not exist or if it
 // exists in the probationary segment (upsert case).
-// If entry exists in protected segment, entry will be upserted and any evicted entries will
+// If entry exists in protected segment, entry will be updated and any evicted entries will
 // be properly downgraded to the probationary segment.
 // Look at Cache::Insert() for more details.
 Handle* SLRUCacheShardPair::Insert(SLRUHandle* handle,
