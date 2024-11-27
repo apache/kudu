@@ -18,6 +18,7 @@
 // Integration test for flexible partitioning (eg buckets, range partitioning
 // of PK subsets, etc).
 
+#include <functional>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -38,6 +39,7 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/tablet/tablet.pb.h"
@@ -394,7 +396,6 @@ TEST_F(AutoIncrementingItest, BootstrapWithNoWals) {
   }
 }
 
-
 TEST_F(AutoIncrementingItest, BootstrapNoWalsNoData) {
   string tablet_uuid;
   TestSetup(&tablet_uuid);
@@ -437,13 +438,17 @@ TEST_F(AutoIncrementingItest, BootstrapNoWalsNoData) {
     cluster_->tablet_server(i)->Shutdown();
     ASSERT_OK(cluster_->tablet_server(i)->Restart());
   }
+  // Ensure that the tablet is running and leader elected.
+  ASSERT_EVENTUALLY([&] { ASSERT_OK(ClusterVerifier(cluster_.get()).RunKsck()); });
 
   // Insert new data and verify auto_incrementing_id starts from 1.
   ASSERT_OK(InsertData(kNumRows, kNumRows * 2));
+  // Wait for all the replicas to converge.
+  NO_FATALS(ClusterVerifier(cluster_.get()).CheckCluster());
   for (int j = 0; j < kNumTabletServers; j++) {
     vector<string> results;
     ASSERT_OK(ScanTablet(j, tablet_uuid, &results));
-    ASSERT_EQ(200, results.size());
+    ASSERT_EQ(kNumRows, results.size());
     for (int i = 0; i < results.size(); i++) {
       ASSERT_EQ(Substitute("(int32 c0=$0, int64 $1=$2, string c1=\"string_val\")", i + kNumRows,
                            Schema::GetAutoIncrementingColumnName(), i + 1), results[i]);
@@ -503,7 +508,7 @@ TEST_F(AutoIncrementingItest, BootstrapWalsDiverge) {
   // Write 200 rows at the rate of 1 row every 5ms which are sent to the leader replica. After
   // 100ms of starting to insert data, we shutdown the followers and at this point the write
   // request is expected to 900ms more. Since the leader would mark the followers as
-  // unavailable after 3 lost hearbeats (1500ms), there will for sure be a situation where the
+  // unavailable after 3 lost heartbeats (1500ms), there will for sure be a situation where the
   // leader has sent a write op and hasn't gotten the response from majority-1 number of
   // followers. In this case the write op is not marked committed in the leader replica. All
   // the writes including this are considered failed.
