@@ -345,8 +345,7 @@ fi
 export EXTRA_GRADLE_FLAGS="--console=plain"
 EXTRA_GRADLE_FLAGS="$EXTRA_GRADLE_FLAGS --no-daemon"
 EXTRA_GRADLE_FLAGS="$EXTRA_GRADLE_FLAGS --continue"
-# Temporarily disable parallel builds for automated builds.
-EXTRA_GRADLE_FLAGS="$EXTRA_GRADLE_FLAGS --no-parallel"
+EXTRA_GRADLE_FLAGS="$EXTRA_GRADLE_FLAGS --build-cache"
 # KUDU-2524: temporarily disable scalafmt until we can work out its JDK
 # incompatibility issue.
 EXTRA_GRADLE_FLAGS="$EXTRA_GRADLE_FLAGS -DskipFormat"
@@ -546,6 +545,10 @@ if [ "$BUILD_JAVA" == "1" ]; then
   # Run the full Gradle build.
   # If we're running distributed Java tests, submit them asynchronously.
   if [ "$ENABLE_DIST_TEST" == "1" ]; then
+    if ! ./gradlew $EXTRA_GRADLE_FLAGS clean assemble; then
+      TESTS_FAILED=1
+      FAILURES="$FAILURES"$'Java Gradle build failed\n'
+    fi
     echo
     echo Submitting Java distributed-test job.
     echo ------------------------------------------------------------
