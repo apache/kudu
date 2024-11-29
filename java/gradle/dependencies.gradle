@@ -52,7 +52,7 @@ versions += [
     murmur         : "1.0.0",
     netty          : "4.1.115.Final",
     osdetector     : "1.6.2",
-    protobuf       : "3.21.12",
+    protobuf       : "3.25.5",
     ranger         : "2.1.0",
     scala211       : "2.11.12",
     scala          : "2.12.15",
