@@ -482,7 +482,7 @@ fi
 
 # our tests leave lots of data lying around, clean up before we run
 if [ -d "$TEST_TMPDIR" ]; then
-  rm -Rf $TEST_TMPDIR/*
+  rm -Rf $TEST_TMPDIR
 fi
 
 # actually do the build
