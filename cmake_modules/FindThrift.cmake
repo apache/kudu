@@ -108,8 +108,8 @@ function(THRIFT_GENERATE_CPP SRCS HDRS TGTS)
     list(APPEND ${HDRS} "${THRIFT_H_OUT}")
 
     if(ARG_FB303)
-      list(APPEND ${SRCS} fb303_types.cpp fb303_constants.cpp FacebookService.cpp)
-      list(APPEND ${HDRS} fb303_types.h fb303_constants.h FacebookService.h)
+      list(APPEND ${SRCS} fb303_types.cpp FacebookService.cpp)
+      list(APPEND ${HDRS} fb303_types.h FacebookService.h)
     endif()
 
     add_custom_command(

@@ -986,26 +986,30 @@ build_thrift() {
   # Configure for a very minimal install - only the C++ client libraries are needed.
   # Thrift requires C++11 when compiled on Linux against libc++ (see cxxfunctional.h).
   CFLAGS="$EXTRA_CFLAGS" \
-    CXXFLAGS="$EXTRA_CXXFLAGS -std=c++11" \
+    CFLAGS="$EXTRA_CFLAGS -fPIC" \
+    CXXFLAGS="$EXTRA_CXXFLAGS -fPIC -std=c++17" \
     LDFLAGS="$EXTRA_LDFLAGS" \
     LIBS="$EXTRA_LIBS" \
     cmake \
     -DBOOST_ROOT=$PREFIX \
+    -DBUILD_AS3=OFF \
     -DBUILD_C_GLIB=OFF \
     -DBUILD_COMPILER=ON \
     -DBUILD_CPP=ON \
-    -DBUILD_EXAMPLES=OFF \
-    -DBUILD_HASKELL=OFF \
     -DBUILD_JAVA=OFF \
+    -DBUILD_JAVASCRIPT=OFF \
+    -DBUILD_NODEJS=OFF \
     -DBUILD_PYTHON=OFF \
+    -DBUILD_SHARED_LIBS=OFF \
     -DBUILD_TESTING=OFF \
     -DBUILD_TUTORIALS=OFF \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX=$PREFIX \
-    -DWITH_BOOSTTHREADS=OFF \
     -DWITH_LIBEVENT=OFF \
     -DWITH_OPENSSL=OFF \
     -DWITH_PLUGIN=OFF \
+    -DWITH_QT5=OFF \
+    -DWITH_ZLIB=OFF \
     $EXTRA_CMAKE_FLAGS \
     $THRIFT_SOURCE
 
