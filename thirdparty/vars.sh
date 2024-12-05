@@ -208,7 +208,7 @@ HIVE_SOURCE=$TP_SOURCE_DIR/$HIVE_NAME
 
 # Note: The Hadoop release tarball is stripped of unnecessary jars before being
 # uploaded. See thirdparty/package-hadoop.sh for details.
-HADOOP_VERSION=3.2.0
+HADOOP_VERSION=3.4.1
 HADOOP_NAME=hadoop-$HADOOP_VERSION
 HADOOP_SOURCE=$TP_SOURCE_DIR/$HADOOP_NAME
 
