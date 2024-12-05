@@ -1,6 +1,6 @@
---- src/bin/initdb/initdb.c.orig	2020-03-30 20:56:39.000000000 -0700
-+++ src/bin/initdb/initdb.c	2020-03-30 20:56:57.000000000 -0700
-@@ -637,25 +637,11 @@
+--- src/bin/initdb/initdb.c.orig	2024-12-04 17:08:24.402706737 -0800
++++ src/bin/initdb/initdb.c	2024-12-04 17:09:06.643734596 -0800
+@@ -805,23 +805,11 @@
  
  /*
   * find the current user
@@ -16,9 +16,7 @@
 -	if (geteuid() == 0)			/* 0 is root's uid */
 -	{
 -		pg_log_error("cannot be run as root");
--		fprintf(stderr,
--				_("Please log in (using, e.g., \"su\") as the (unprivileged) user that will\n"
--				  "own the server process.\n"));
+-		pg_log_error_hint("Please log in (using, e.g., \"su\") as the (unprivileged) user that will own the server process.");
 -		exit(1);
 -	}
 -#endif
