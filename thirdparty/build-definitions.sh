@@ -1163,11 +1163,12 @@ build_postgres() {
   mkdir -p $POSTGRES_BDIR
   pushd $POSTGRES_BDIR
 
-  # We don't need readline and zlib, so let's simplify build.
+  # We don't need readline, zlib and icu, so let's simplify build.
   CFLAGS="$EXTRA_CFLAGS" \
     LDFLAGS="$EXTRA_LDFLAGS" \
     $POSTGRES_SOURCE/configure \
     --prefix=$PREFIX \
+    --without-icu \
     --without-readline \
     --without-zlib
 
