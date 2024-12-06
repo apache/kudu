@@ -45,7 +45,6 @@
 DECLARE_bool(cache_force_single_shard);
 DECLARE_double(cache_memtracker_approximation_ratio);
 
-using std::vector;
 using Handle = kudu::Cache::Handle;
 using EvictionCallback = kudu::Cache::EvictionCallback;
 
@@ -237,8 +236,8 @@ void SLRUCacheShard<segment>::Release(Handle* handle) {
   }
 }
 
-template<Segment segment>
-void SLRUCacheShard<segment>::RemoveEntriesPastCapacity() {
+template<>
+void SLRUCacheShard<Segment::kProbationary>::RemoveEntriesPastCapacity() {
   while (usage_ > capacity_ && rl_.next != &rl_) {
     SLRUHandle* old = rl_.next;
     RL_Remove(old);
@@ -246,19 +245,6 @@ void SLRUCacheShard<segment>::RemoveEntriesPastCapacity() {
     if (Unref(old)) {
       FreeEntry(old);
     }
-  }
-}
-
-template<Segment segment>
-void SLRUCacheShard<segment>::SoftRemoveEntriesPastCapacity(vector<SLRUHandle*>* evicted_entries) {
-  while (usage_ > capacity_ && rl_.next != &rl_) {
-    SLRUHandle* old = rl_.next;
-    RL_Remove(old);
-    table_.Remove(old->key(), old->hash);
-    if (PREDICT_TRUE(metrics_)) {
-      UpdateMetricsEviction(old->charge);
-    }
-    evicted_entries->emplace_back(old);
   }
 }
 
@@ -292,8 +278,7 @@ Handle* SLRUCacheShard<Segment::kProbationary>::Insert(SLRUHandle* handle,
 }
 
 template<>
-vector<SLRUHandle*> SLRUCacheShard<Segment::kProtected>::InsertAndReturnEvicted(
-    SLRUHandle* handle) {
+void SLRUCacheShard<Segment::kProtected>::UpgradeInsert(SLRUHandle* handle) {
   handle->in_protected_segment.store(true, std::memory_order_relaxed);
   if (PREDICT_TRUE(metrics_)) {
     metrics_->upgrades->Increment();
@@ -307,16 +292,11 @@ vector<SLRUHandle*> SLRUCacheShard<Segment::kProtected>::InsertAndReturnEvicted(
   // No entries should exist with same key in protected segment when upgrading.
   SLRUHandle* old_entry = table_.Insert(handle);
   DCHECK(old_entry == nullptr);
-
-  vector<SLRUHandle*> evicted_entries;
-  SoftRemoveEntriesPastCapacity(&evicted_entries);
-  return evicted_entries;
 }
 
 template<>
-Handle* SLRUCacheShard<Segment::kProtected>::ProtectedInsert(SLRUHandle* handle,
-                                                             EvictionCallback* eviction_callback,
-                                                             vector<SLRUHandle*>* evictions) {
+Handle* SLRUCacheShard<Segment::kProtected>::UpdateInsert(SLRUHandle* handle,
+                                                          EvictionCallback* eviction_callback) {
   handle->eviction_callback = eviction_callback;
   // Two refs for the handle: one from SLRUCacheShard, one for the returned handle.
   // Even though this function is for updates in the protected segment, it's treated similarly
@@ -341,7 +321,6 @@ Handle* SLRUCacheShard<Segment::kProtected>::ProtectedInsert(SLRUHandle* handle,
     FreeEntry(old_entry);
   }
 
-  SoftRemoveEntriesPastCapacity(evictions);
   return reinterpret_cast<Handle*>(handle);
 }
 
@@ -374,8 +353,8 @@ void SLRUCacheShard<segment>::Erase(const Slice& key, uint32_t hash) {
   }
 }
 
-template<Segment segment>
-void SLRUCacheShard<segment>::SoftErase(const Slice& key, uint32_t hash) {
+template<>
+void SLRUCacheShard<Segment::kProbationary>::SoftErase(const Slice& key, uint32_t hash) {
   SLRUHandle* e = table_.Remove(key, hash);
   if (e != nullptr) {
     RL_Remove(e);
@@ -414,14 +393,10 @@ Handle* SLRUCacheShardPair::Insert(SLRUHandle* handle,
   if (!ProtectedContains(handle->key(), handle->hash)) {
     return probationary_shard_.Insert(handle, eviction_callback);
   }
+  auto* inserted = protected_shard_.UpdateInsert(handle, eviction_callback);
   // If newly inserted entry has greater charge than previous one,
   // possible that entries can be evicted if at capacity.
-  vector<SLRUHandle*> evictions;
-  auto* inserted = protected_shard_.ProtectedInsert(handle, eviction_callback, &evictions);
-  for (auto it = evictions.begin(); it != evictions.end(); ++it) {
-    SLRUHandle* evicted_entry = *it;
-    probationary_shard_.ReInsert(evicted_entry);
-  }
+  DowngradeEntries();
   return inserted;
 }
 
@@ -465,17 +440,13 @@ Handle* SLRUCacheShardPair::Lookup(const Slice& key, uint32_t hash, bool caching
     return probationary_handle;
   }
 
-  // Upgrade from the probationary segment.
-  // Erase entry from the probationary segment then add entry to the protected segment.
+  // Upgrade entry from the probationary segment by erasing it from the
+  // probationary segment then adding entry to the protected segment.
+  // Downgrade any entries in the protected segment if past capacity.
   probationary_shard_.SoftErase(key, hash);
-  vector<SLRUHandle*> evictions = protected_shard_.InsertAndReturnEvicted(val_handle);
+  protected_shard_.UpgradeInsert(val_handle);
+  DowngradeEntries();
 
-  // Go through all evicted entries from the protected segment and insert them into
-  // the probationary segment. Insert the LRU entries from the protected segment first.
-  for (auto it = evictions.begin(); it != evictions.end(); ++it) {
-    SLRUHandle* evicted_entry = *it;
-    probationary_shard_.ReInsert(evicted_entry);
-  }
   return probationary_handle;
 }
 
@@ -502,6 +473,22 @@ bool SLRUCacheShardPair::ProbationaryContains(const Slice& key, uint32_t hash) {
 
 bool SLRUCacheShardPair::ProtectedContains(const Slice& key, uint32_t hash) {
   return protected_shard_.Contains(key, hash);
+}
+
+void SLRUCacheShardPair::DowngradeEntries() {
+  // Removes LRU entries of the protected shard while its usage exceeds its capacity
+  // and reinserts them into the probationary shard.
+  while (protected_shard_.usage_ > protected_shard_.capacity_ &&
+         protected_shard_.rl_.next != &protected_shard_.rl_) {
+    SLRUHandle* lru_entry = protected_shard_.rl_.next;
+    protected_shard_.RL_Remove(lru_entry);
+    protected_shard_.table_.Remove(lru_entry->key(), lru_entry->hash);
+    if (PREDICT_TRUE(protected_shard_.metrics_)) {
+      protected_shard_.UpdateMetricsEviction(lru_entry->charge);
+    }
+    DCHECK(lru_entry);
+    probationary_shard_.ReInsert(lru_entry);
+  }
 }
 
 ShardedSLRUCache::ShardedSLRUCache(size_t probationary_capacity, size_t protected_capacity,

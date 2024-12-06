@@ -115,16 +115,14 @@ class SLRUCacheShard {
 
   void SetMetrics(SLRUCacheMetrics* metrics) { metrics_ = metrics; }
 
-  // Inserts handle into shard and removes any entries if past capacity.
+  // Inserts handle into the probationary shard and removes any entries if past capacity.
+  // Returns the inserted handle.
   Handle* Insert(SLRUHandle* handle, EvictionCallback* eviction_callback);
-  // Same as Insert but also returns any evicted entries.
-  // Used when upgrading entry to protected segment.
-  std::vector<SLRUHandle*> InsertAndReturnEvicted(SLRUHandle* handle);
-  // Same as InsertAndReturnEvicted but it returns the inserted handle too.
-  // Used for update case in protected segment.
-  Handle* ProtectedInsert(SLRUHandle* handle,
-                          EvictionCallback* eviction_callback,
-                          std::vector<SLRUHandle*>* evictions);
+  // Inserts handle into the protected shard when upgrading entry from the probationary segment.
+  void UpgradeInsert(SLRUHandle* handle);
+  // Inserts handle into the protected shard when updating entry in protected segment.
+  // Returns the inserted handle.
+  Handle* UpdateInsert(SLRUHandle* handle, EvictionCallback* eviction_callback);
   // Like SLRUCache::Lookup, but with an extra "hash" parameter.
   Handle* Lookup(const Slice& key, uint32_t hash, bool caching);
   // Reduces the entry's ref by one, frees the entry if no refs are remaining.
@@ -136,8 +134,7 @@ class SLRUCacheShard {
   void SoftErase(const Slice& key, uint32_t hash);
   // Returns true if shard contains entry, false if not.
   bool Contains(const Slice& key, uint32_t hash);
-  // Like Insert but sets refs to 1 and no possibility for update case.
-  // Used when evicted entries from protected segment are being added to probationary segment.
+  // Inserts handle into the probationary shard when downgrading entry from the protected segment.
   void ReInsert(SLRUHandle* handle);
   // Update the high-level metrics for a lookup operation.
   void UpdateMetricsLookup(bool was_hit, bool caching);
@@ -145,6 +142,7 @@ class SLRUCacheShard {
   void UpdateSegmentMetricsLookup(bool was_hit, bool caching);
 
  private:
+  friend class SLRUCacheShardPair;
   void RL_Remove(SLRUHandle* e);
   void RL_Append(SLRUHandle* e);
   // Update the recency list after a lookup operation.
@@ -156,10 +154,8 @@ class SLRUCacheShard {
   void FreeEntry(SLRUHandle* e);
   // Updates eviction related metrics.
   void UpdateMetricsEviction(size_t charge);
-  // Removes any entries past capacity.
+  // Removes any entries past capacity of the probationary shard.
   void RemoveEntriesPastCapacity();
-  // Adds any entries past capacity to a vector to be processed later.
-  void SoftRemoveEntriesPastCapacity(std::vector<SLRUHandle*>* evicted_entries);
 
   // Update the memtracker's consumption by the given amount.
   //
@@ -223,6 +219,10 @@ class SLRUCacheShardPair {
   bool ProtectedContains(const Slice& key, uint32_t hash);
 
  private:
+  // Remove any entries past capacity in the protected shard and insert them into the probationary
+  // shard. As a result of inserting them into the probationary shard, the LRU entries of the
+  // probationary shard will be evicted if the probationary shard's usage exceeds its capacity.
+  void DowngradeEntries();
   SLRUCacheShard<Segment::kProbationary> probationary_shard_;
   SLRUCacheShard<Segment::kProtected> protected_shard_;
 
