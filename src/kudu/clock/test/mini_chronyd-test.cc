@@ -44,6 +44,16 @@ class MiniChronydTest: public KuduTest {
 // Run chronyd without any reference: neither local reference mode, nor
 // reference NTP server present. Such server cannot be a good NTP source
 // because its clock is unsynchronized.
+//
+// NOTE: Some scenarios and sub-scenarios are disabled on macOS because
+//       chronyd doesn't allow multiple servers on the same IP address,
+//       even if they are listening on different NTP server ports.
+//       On macOS, the same IP address 127.0.0.1 (loopback) is used for all
+//       the test NTP servers since multiple loopback addresses from
+//       the 127.0.0.0/8 range are not available out of the box. So, on macOS,
+//       the end-points of the test NTP servers differ only by their port
+//       number. In essence, any scenario which involves multiple NTP servers
+//       as source of true time for chrony isn't run on macOS.
 TEST_F(MiniChronydTest, UnsynchronizedServer) {
   unique_ptr<MiniChronyd> chrony;
   {
@@ -116,6 +126,7 @@ TEST_F(MiniChronydTest, BasicSingleServerInstance) {
   }
 }
 
+#ifndef __APPLE__
 // This scenario runs multiple chronyd and verifies they can co-exist without
 // conflicts w.r.t. resources such as port numbers and paths to their
 // configuration files, command sockets, and other related files.
@@ -153,9 +164,7 @@ TEST_F(MiniChronydTest, BasicMultipleServerInstances) {
   for (auto& server : servers) {
     MiniChronyd::ServerStats stats;
     ASSERT_OK(server->GetServerStats(&stats));
-#ifndef __APPLE__
     ASSERT_LT(0, stats.ntp_packets_received);
-#endif
     ASSERT_LT(0, stats.cmd_packets_received);
   }
 
@@ -169,7 +178,6 @@ TEST_F(MiniChronydTest, BasicMultipleServerInstances) {
     ASSERT_OK(servers[i]->SetTime(ref_time + i * 10));
   }
 
-#ifndef __APPLE__
   {
     // Now, with contradicting source NTP servers, it should be impossible
     // to synchronize the time.
@@ -177,7 +185,6 @@ TEST_F(MiniChronydTest, BasicMultipleServerInstances) {
     ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "No suitable source for synchronisation");
   }
-#endif
 }
 
 // This scenario runs multi-tier set of chronyd servers: few servers of
@@ -232,6 +239,7 @@ TEST_F(MiniChronydTest, MultiTierBasic) {
     ASSERT_TRUE(s.ok()) << s.ToString();
   }
 }
+#endif // ifndef __APPLE__ ...
 
 } // namespace clock
 } // namespace kudu
