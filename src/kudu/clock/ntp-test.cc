@@ -427,18 +427,14 @@ TEST(TimeIntervalsTest, ThreeResponses) {
 //       requires super-user privileges to bind to.
 //
 // NOTE: Some scenarios and sub-scenarios are disabled on macOS because
-//       of a bug in chronyd: it doesn't differentiate between configured NTP
-//       sources by IP address + port, using only IP address as the key.
+//       chronyd doesn't allow multiple servers on the same IP address,
+//       even if they are listening on different NTP server ports.
 //       On macOS, the same IP address 127.0.0.1 (loopback) is used for all
 //       the test NTP servers since multiple loopback addresses from
 //       the 127.0.0.0/8 range are not available out of the box. So, on macOS,
 //       the end-points of the test NTP servers differ only by their port
-//       number. It means chronyd doesn't see multiple NTP servers and talks
-//       only with the first one as listed in chrony.conf configuration file.
-//       In essence, any scenario which involves multiple NTP servers as source
-//       of true time for chrony doesn't run as expected on macOS.
-//
-// TODO(aserbin): fix the described chrony's bug, at least in thirdparty
+//       number. In essence, any scenario which involves multiple NTP servers
+//       as source of true time for chrony isn't run on macOS.
 class BuiltinNtpWithMiniChronydTest: public KuduTest {
  public:
   BuiltinNtpWithMiniChronydTest()
@@ -500,9 +496,13 @@ TEST_F(BuiltinNtpWithMiniChronydTest, Basic) {
     servers.emplace_back(std::move(chrony));
   }
 
+#ifndef __APPLE__
   // All chronyd servers that use the system clock as a reference lock should
   // present themselves as a set of NTP servers suitable for synchronisation.
+  //
+  // NOTE: see class-wide notes for details on macOS-specific exclusion
   ASSERT_OK(MiniChronyd::CheckNtpSource(servers_endpoints));
+#endif
 
   // chronyd supports very short polling intervals (down to 1/64 second).
   FLAGS_builtin_ntp_poll_interval_ms = 50;
@@ -529,7 +529,7 @@ TEST_F(BuiltinNtpWithMiniChronydTest, Basic) {
 #ifndef __APPLE__
 // Make sure the built-in client doesn't latch on NTP servers if they have their
 // true time spaced far away from each other. Basically, when no intersection is
-// registered between the true time reference intervals, the build-in NTP client
+// registered between the true time reference intervals, the built-in NTP client
 // should not synchronize its clock with any of the servers.
 //
 // NOTE: see class-wide notes for details on macOS-specific exclusion
@@ -692,8 +692,13 @@ TEST_F(BuiltinNtpWithMiniChronydTest, SyncAndUnsyncReferenceServers) {
     copy(unsync_servers_refs.begin(), unsync_servers_refs.end(),
          back_inserter(refs));
 
-    // Verify chronyd's client itself accepts the set of of NTP sources.
-    ASSERT_OK(MiniChronyd::CheckNtpSource(refs));
+    // Version 3.5 of the chronyd was able to work with such a configuration,
+    // but version 4.6.1 reports an error measuring clock offset because at
+    // least one of the source NTP servers is unsynchronized.
+    const auto s = MiniChronyd::CheckNtpSource(refs);
+    ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(),
+                        "failed measure clock offset from reference NTP servers");
 
     FLAGS_builtin_ntp_servers = HostPort::ToCommaSeparatedString(refs);
     BuiltInNtp c(metric_entity_);

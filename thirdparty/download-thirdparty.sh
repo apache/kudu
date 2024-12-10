@@ -421,12 +421,11 @@ fetch_and_patch \
  $YAML_SOURCE \
  $YAML_PATCHLEVEL
 
-CHRONY_PATCHLEVEL=2
+CHRONY_PATCHLEVEL=1
 fetch_and_patch \
  $CHRONY_NAME.tar.gz \
  $CHRONY_SOURCE \
  $CHRONY_PATCHLEVEL \
- "patch -p1 < $TP_DIR/patches/chrony-no-superuser.patch" \
  "patch -p1 < $TP_DIR/patches/chrony-reuseport.patch"
 
 GUMBO_PARSER_PATCHLEVEL=1

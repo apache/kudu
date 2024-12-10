@@ -107,21 +107,26 @@ Status MiniChronyd::CheckNtpSource(const vector<HostPort>& servers,
   // packets. Also, it's desirable to use the same NTP protocol version that is
   // used by the Kudu built-in NTP client. Some more details:
   //   * 'minpoll' parameter is set to the smallest possible that is supported
-  //      by chrony (-6, i.e. 1/64 second)
+  //      by chrony (-7, i.e. 1/128 second in chrony 4.6.1)
   //   * 'maxpoll' parameter is set to be at least 2 times longer interval
   //      than 'minpoll' with some margin to accumulate at least 4 samples
   //      with current setting of 'minpoll' interval
-  //   * 'iburst' option allows to send first 4 NTP packets in burst.
+  //   * 'burst' option allows the client sending bursts of up to 4 requests
+  //     when it cannot get a good measurement from the server -- this helps
+  //     stabilize measurements and avoid problems while measuring the offset
+  //     of an NTP server's reference clock
+  //   * 'iburst' option allows to send first 4-8 NTP packets in burst mode.
   //   * 'version' is set to 3 to enforce using NTP v3 since the current
   //     implementation of the Kudu built-in NTP client uses NTPv3 (chrony
   //     supports NTP v4 and would use newer version of protocol otherwise)
   static const string kConfigTemplate =
-      "server $0 port $1 maxpoll -1 minpoll -6 iburst version 3\n";
+      "server $0 port $1 maxpoll -3 minpoll -7 iburst burst version 3\n";
 
   if (servers.empty()) {
     return Status::InvalidArgument("empty set of NTP server endpoints");
   }
-  string cfg;
+  // Require all the reference servers to be selectable for synchronisation.
+  string cfg = Substitute("minsources $0\n", servers.size());
   for (const auto& hp : servers) {
     cfg += Substitute(kConfigTemplate, hp.host(), hp.port());
   }
@@ -129,7 +134,9 @@ Status MiniChronyd::CheckNtpSource(const vector<HostPort>& servers,
   RETURN_NOT_OK(MiniChronyd::GetChronydPath(&chronyd_bin));
   const vector<string> cmd_and_args = {
     chronyd_bin,
+    "-4",                               // use only IPv4 addresses
     "-Q",                               // client-only mode without setting time
+    "-U",                               // disable super-user privileges check
     "-f", "/dev/stdin",                 // read config file from stdin
     "-t", std::to_string(timeout_sec),  // timeout for clock synchronisation
   };
@@ -211,7 +218,9 @@ Status MiniChronyd::Start() {
 
   process_.reset(new Subprocess({
       server_bin,
+      "-4", // use only IPv4 addresses
       "-f", config_file_path(),
+      "-U", // disable super-user privileges check
       "-x", // do not drive the system clock (server-only mode)
       "-d", // do not daemonize; print logs into standard out
   }));
@@ -470,18 +479,22 @@ Status MiniChronyd::RunChronyCmd(const vector<string>& args,
                                  string* out_stderr) const {
   string chronyc_bin;
   RETURN_NOT_OK(GetChronycPath(&chronyc_bin));
+  // The rest of the test scaffolding isn't yet working with IPv6:
+  // let's limit chronyc to the IPv4 stack to avoid unexpected outcomes
+  // if running against on machines with IPv6 or dual IP stack configured.
   // Use '-m' switch to allow for multiple commands to be sent at once: each
   // argument is interpreted as a separate command.
   // Use '-n' switch to avoid resolving IP addresses into DNS names in case if
   // chronyc outputs anything related to to IP addresses/hostnames (e.g.,
   // list of source NTP servers or list of NTP clients server by chronyd, etc.).
+  // Use '-N' option to avoid reverse DNS lookups, if any.
   // Since non-default command address is used for chronyd (the 'bindcmdaddress'
   // option in 'chrony.conf'), it's necessary to specify the address using the
   // '-h' switch (it's a path of the Unix domain socket in case of MiniChronyd).
   // See 'man chronyc' for more details on the switches used for 'chronyc'
   // invocation.
   vector<string> cmd_and_args = {
-      chronyc_bin, "-n", "-m", "-h", cmdaddress(), };
+      chronyc_bin, "-4", "-n", "-N", "-m", "-h", cmdaddress(), };
   std::copy(args.begin(), args.end(), std::back_inserter(cmd_and_args));
   return Subprocess::Call(cmd_and_args, "", out_stdout, out_stderr);
 }
