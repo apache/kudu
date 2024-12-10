@@ -248,6 +248,7 @@ void SLRUCacheShard<Segment::kProbationary>::RemoveEntriesPastCapacity() {
   }
 }
 
+// Inserts handle into the probationary shard and removes any entries past capacity.
 template<>
 Handle* SLRUCacheShard<Segment::kProbationary>::Insert(SLRUHandle* handle,
                                                        EvictionCallback* eviction_callback) {
@@ -277,26 +278,10 @@ Handle* SLRUCacheShard<Segment::kProbationary>::Insert(SLRUHandle* handle,
   return reinterpret_cast<Handle*>(handle);
 }
 
+// Inserts handle into the protected shard when updating entry in the protected segment.
 template<>
-void SLRUCacheShard<Segment::kProtected>::UpgradeInsert(SLRUHandle* handle) {
-  handle->in_protected_segment.store(true, std::memory_order_relaxed);
-  if (PREDICT_TRUE(metrics_)) {
-    metrics_->upgrades->Increment();
-    metrics_->protected_segment_cache_usage->IncrementBy(handle->charge);
-    metrics_->protected_segment_inserts->Increment();
-  }
-
-  handle->Sanitize();
-  RL_Append(handle);
-
-  // No entries should exist with same key in protected segment when upgrading.
-  SLRUHandle* old_entry = table_.Insert(handle);
-  DCHECK(old_entry == nullptr);
-}
-
-template<>
-Handle* SLRUCacheShard<Segment::kProtected>::UpdateInsert(SLRUHandle* handle,
-                                                          EvictionCallback* eviction_callback) {
+Handle* SLRUCacheShard<Segment::kProtected>::Insert(SLRUHandle* handle,
+                                                    EvictionCallback* eviction_callback) {
   handle->eviction_callback = eviction_callback;
   // Two refs for the handle: one from SLRUCacheShard, one for the returned handle.
   // Even though this function is for updates in the protected segment, it's treated similarly
@@ -324,6 +309,7 @@ Handle* SLRUCacheShard<Segment::kProtected>::UpdateInsert(SLRUHandle* handle,
   return reinterpret_cast<Handle*>(handle);
 }
 
+// Inserts handle into the probationary shard when downgrading entry from the protected segment.
 template<>
 void SLRUCacheShard<Segment::kProbationary>::ReInsert(SLRUHandle* handle) {
   handle->in_protected_segment.store(false, std::memory_order_relaxed);
@@ -339,6 +325,24 @@ void SLRUCacheShard<Segment::kProbationary>::ReInsert(SLRUHandle* handle) {
   SLRUHandle* old_entry = table_.Insert(handle);
   DCHECK(old_entry == nullptr);
   RemoveEntriesPastCapacity();
+}
+
+// Inserts handle into the protected shard when upgrading entry from the probationary segment.
+template<>
+void SLRUCacheShard<Segment::kProtected>::ReInsert(SLRUHandle* handle) {
+  handle->in_protected_segment.store(true, std::memory_order_relaxed);
+  if (PREDICT_TRUE(metrics_)) {
+    metrics_->upgrades->Increment();
+    metrics_->protected_segment_cache_usage->IncrementBy(handle->charge);
+    metrics_->protected_segment_inserts->Increment();
+  }
+
+  handle->Sanitize();
+  RL_Append(handle);
+
+  // No entries should exist with same key in protected segment when upgrading.
+  SLRUHandle* old_entry = table_.Insert(handle);
+  DCHECK(old_entry == nullptr);
 }
 
 template<Segment segment>
@@ -393,7 +397,7 @@ Handle* SLRUCacheShardPair::Insert(SLRUHandle* handle,
   if (!ProtectedContains(handle->key(), handle->hash)) {
     return probationary_shard_.Insert(handle, eviction_callback);
   }
-  auto* inserted = protected_shard_.UpdateInsert(handle, eviction_callback);
+  auto* inserted = protected_shard_.Insert(handle, eviction_callback);
   // If newly inserted entry has greater charge than previous one,
   // possible that entries can be evicted if at capacity.
   DowngradeEntries();
@@ -444,7 +448,7 @@ Handle* SLRUCacheShardPair::Lookup(const Slice& key, uint32_t hash, bool caching
   // probationary segment then adding entry to the protected segment.
   // Downgrade any entries in the protected segment if past capacity.
   probationary_shard_.SoftErase(key, hash);
-  protected_shard_.UpgradeInsert(val_handle);
+  protected_shard_.ReInsert(val_handle);
   DowngradeEntries();
 
   return probationary_handle;

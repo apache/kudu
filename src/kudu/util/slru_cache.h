@@ -115,14 +115,12 @@ class SLRUCacheShard {
 
   void SetMetrics(SLRUCacheMetrics* metrics) { metrics_ = metrics; }
 
-  // Inserts handle into the probationary shard and removes any entries if past capacity.
-  // Returns the inserted handle.
+  // Inserts handle into the appropriate shard and returns the inserted handle.
+  // See comments on template specialization for each function for more details.
   Handle* Insert(SLRUHandle* handle, EvictionCallback* eviction_callback);
-  // Inserts handle into the protected shard when upgrading entry from the probationary segment.
-  void UpgradeInsert(SLRUHandle* handle);
-  // Inserts handle into the protected shard when updating entry in protected segment.
-  // Returns the inserted handle.
-  Handle* UpdateInsert(SLRUHandle* handle, EvictionCallback* eviction_callback);
+  // Inserts handle into the appropriate shard when upgrading or downgrading entry.
+  // See comments on template specialization for each function for more details.
+  void ReInsert(SLRUHandle* handle);
   // Like SLRUCache::Lookup, but with an extra "hash" parameter.
   Handle* Lookup(const Slice& key, uint32_t hash, bool caching);
   // Reduces the entry's ref by one, frees the entry if no refs are remaining.
@@ -134,8 +132,6 @@ class SLRUCacheShard {
   void SoftErase(const Slice& key, uint32_t hash);
   // Returns true if shard contains entry, false if not.
   bool Contains(const Slice& key, uint32_t hash);
-  // Inserts handle into the probationary shard when downgrading entry from the protected segment.
-  void ReInsert(SLRUHandle* handle);
   // Update the high-level metrics for a lookup operation.
   void UpdateMetricsLookup(bool was_hit, bool caching);
   // Update the segment-level metrics for a lookup operation.
