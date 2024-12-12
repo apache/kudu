@@ -237,13 +237,14 @@ void SLRUCacheShard<segment>::Release(Handle* handle) {
 }
 
 template<>
-void SLRUCacheShard<Segment::kProbationary>::RemoveEntriesPastCapacity() {
+void SLRUCacheShard<Segment::kProbationary>::RemoveEntriesPastCapacity(SLRUHandle** free_entries) {
   while (usage_ > capacity_ && rl_.next != &rl_) {
     SLRUHandle* old = rl_.next;
     RL_Remove(old);
     table_.Remove(old->key(), old->hash);
     if (Unref(old)) {
-      FreeEntry(old);
+      old->next = *free_entries;
+      *free_entries = old;
     }
   }
 }
@@ -251,7 +252,8 @@ void SLRUCacheShard<Segment::kProbationary>::RemoveEntriesPastCapacity() {
 // Inserts handle into the probationary shard and removes any entries past capacity.
 template<>
 Handle* SLRUCacheShard<Segment::kProbationary>::Insert(SLRUHandle* handle,
-                                                       EvictionCallback* eviction_callback) {
+                                                       EvictionCallback* eviction_callback,
+                                                       SLRUHandle** free_entries) {
   // Set the remaining SLRUHandle members which were not already allocated during Allocate().
   handle->eviction_callback = eviction_callback;
   // Two refs for the handle: one from SLRUCacheShard, one for the returned handle.
@@ -270,10 +272,11 @@ Handle* SLRUCacheShard<Segment::kProbationary>::Insert(SLRUHandle* handle,
   if (old_entry != nullptr) {
     RL_Remove(old_entry);
     if (Unref(old_entry)) {
-      FreeEntry(old_entry);
+      old_entry->next = *free_entries;
+      *free_entries = old_entry;
     }
   }
-  RemoveEntriesPastCapacity();
+  RemoveEntriesPastCapacity(free_entries);
 
   return reinterpret_cast<Handle*>(handle);
 }
@@ -281,7 +284,8 @@ Handle* SLRUCacheShard<Segment::kProbationary>::Insert(SLRUHandle* handle,
 // Inserts handle into the protected shard when updating entry in the protected segment.
 template<>
 Handle* SLRUCacheShard<Segment::kProtected>::Insert(SLRUHandle* handle,
-                                                    EvictionCallback* eviction_callback) {
+                                                    EvictionCallback* eviction_callback,
+                                                    SLRUHandle** free_entries) {
   handle->eviction_callback = eviction_callback;
   // Two refs for the handle: one from SLRUCacheShard, one for the returned handle.
   // Even though this function is for updates in the protected segment, it's treated similarly
@@ -303,7 +307,8 @@ Handle* SLRUCacheShard<Segment::kProtected>::Insert(SLRUHandle* handle,
   DCHECK(old_entry != nullptr);
   RL_Remove(old_entry);
   if (Unref(old_entry)) {
-    FreeEntry(old_entry);
+    old_entry->next = *free_entries;
+    *free_entries = old_entry;
   }
 
   return reinterpret_cast<Handle*>(handle);
@@ -311,7 +316,8 @@ Handle* SLRUCacheShard<Segment::kProtected>::Insert(SLRUHandle* handle,
 
 // Inserts handle into the probationary shard when downgrading entry from the protected segment.
 template<>
-void SLRUCacheShard<Segment::kProbationary>::ReInsert(SLRUHandle* handle) {
+void SLRUCacheShard<Segment::kProbationary>::ReInsert(SLRUHandle* handle,
+                                                      SLRUHandle** free_entries) {
   handle->in_protected_segment.store(false, std::memory_order_relaxed);
   if (PREDICT_TRUE(metrics_)) {
     metrics_->downgrades->Increment();
@@ -324,12 +330,14 @@ void SLRUCacheShard<Segment::kProbationary>::ReInsert(SLRUHandle* handle) {
   // No entries should exist with same key in probationary segment when downgrading.
   SLRUHandle* old_entry = table_.Insert(handle);
   DCHECK(old_entry == nullptr);
-  RemoveEntriesPastCapacity();
+  RemoveEntriesPastCapacity(free_entries);
 }
 
 // Inserts handle into the protected shard when upgrading entry from the probationary segment.
+// The parameter 'free_entries' is unused in this implementation.
 template<>
-void SLRUCacheShard<Segment::kProtected>::ReInsert(SLRUHandle* handle) {
+void SLRUCacheShard<Segment::kProtected>::ReInsert(SLRUHandle* handle,
+                                                   SLRUHandle** /*free_entries*/) {
   handle->in_protected_segment.store(true, std::memory_order_relaxed);
   if (PREDICT_TRUE(metrics_)) {
     metrics_->upgrades->Increment();
@@ -346,13 +354,13 @@ void SLRUCacheShard<Segment::kProtected>::ReInsert(SLRUHandle* handle) {
 }
 
 template<Segment segment>
-void SLRUCacheShard<segment>::Erase(const Slice& key, uint32_t hash) {
+void SLRUCacheShard<segment>::Erase(const Slice& key, uint32_t hash, SLRUHandle** free_entry) {
   SLRUHandle* e = table_.Remove(key, hash);
   if (e != nullptr) {
     RL_Remove(e);
     // Free entry if this is the last reference.
     if (Unref(e)) {
-      FreeEntry(e);
+      *free_entry = e;
     }
   }
 }
@@ -393,15 +401,38 @@ void SLRUCacheShardPair::SetMetrics(SLRUCacheMetrics* metrics) {
 // Look at Cache::Insert() for more details.
 Handle* SLRUCacheShardPair::Insert(SLRUHandle* handle,
                                    EvictionCallback* eviction_callback) {
-  std::lock_guard l(mutex_);
-  if (!ProtectedContains(handle->key(), handle->hash)) {
-    return probationary_shard_.Insert(handle, eviction_callback);
+  Handle* inserted_handle;
+  SLRUHandle* probationary_free_entries = nullptr;
+  SLRUHandle* protected_free_entries = nullptr;
+  {
+    std::lock_guard l(mutex_);
+    if (!ProtectedContains(handle->key(), handle->hash)) {
+      inserted_handle = probationary_shard_.Insert(handle,
+                                                   eviction_callback,
+                                                   &probationary_free_entries);
+    } else {
+      inserted_handle = protected_shard_.Insert(handle,
+                                                eviction_callback,
+                                                &protected_free_entries);
+      // If newly inserted entry has greater charge than previous one,
+      // possible that entries can be evicted if at capacity.
+      DowngradeEntries(&probationary_free_entries);
+    }
   }
-  auto* inserted = protected_shard_.Insert(handle, eviction_callback);
-  // If newly inserted entry has greater charge than previous one,
-  // possible that entries can be evicted if at capacity.
-  DowngradeEntries();
-  return inserted;
+  // Free entries outside lock for performance reasons.
+  // The evicted entries are freed in the opposite order of their eviction.
+  // Of the evicted entries, the MRU entries are freed first and the LRU entries are freed last.
+  while (probationary_free_entries != nullptr) {
+    auto* next = probationary_free_entries->next;
+    probationary_shard_.FreeEntry(probationary_free_entries);
+    probationary_free_entries = next;
+  }
+  while (protected_free_entries != nullptr) {
+    auto* next = protected_free_entries->next;
+    protected_shard_.FreeEntry(protected_free_entries);
+    protected_free_entries = next;
+  }
+  return inserted_handle;
 }
 
 Handle* SLRUCacheShardPair::Lookup(const Slice& key, uint32_t hash, bool caching) {
@@ -416,40 +447,54 @@ Handle* SLRUCacheShardPair::Lookup(const Slice& key, uint32_t hash, bool caching
   //      - Miss: Return the handle.
   //
   // Lookup metrics for both segments and the high-level cache are updated with each lookup.
-  std::lock_guard l(mutex_);
-  Handle* protected_handle = protected_shard_.Lookup(key, hash, caching);
 
-  // If the key exists in the protected segment, return the result from the lookup of the
-  // protected segment.
-  if (protected_handle) {
+  SLRUHandle* probationary_free_entries = nullptr;
+  Handle* probationary_handle;
+  {
+    std::lock_guard l(mutex_);
+    auto* protected_handle = protected_shard_.Lookup(key, hash, caching);
+
+    // If the key exists in the protected segment, return the result from the lookup of the
+    // protected segment.
+    if (protected_handle) {
+      protected_shard_.UpdateMetricsLookup(true, caching);
+      probationary_shard_.UpdateSegmentMetricsLookup(false, caching);
+      return protected_handle;
+    }
+    probationary_handle = probationary_shard_.Lookup(key, hash, caching);
+
+    // Return null handle if handle is not found in either the probationary or protected segment.
+    if (!probationary_handle) {
+      protected_shard_.UpdateMetricsLookup(false, caching);
+      return probationary_handle;
+    }
     protected_shard_.UpdateMetricsLookup(true, caching);
-    probationary_shard_.UpdateSegmentMetricsLookup(false, caching);
-    return protected_handle;
-  }
-  Handle* probationary_handle = probationary_shard_.Lookup(key, hash, caching);
+    auto* val_handle = reinterpret_cast<SLRUHandle*>(probationary_handle);
+    // If the number of lookups for entry isn't at the minimum number required before
+    // upgrading to the protected segment, return the entry found in probationary segment.
+    // If the entry's charge is larger than the protected segment's capacity, return entry found
+    // in probationary segment to avoid evicting any entries in the protected segment.
+    if (val_handle->lookups < lookups_threshold_ ||
+        val_handle->charge > protected_shard_.capacity()) {
+      return probationary_handle;
+    }
 
-  // Return null handle if handle is not found in either the probationary or protected segment.
-  if (!probationary_handle) {
-    protected_shard_.UpdateMetricsLookup(false, caching);
-    return probationary_handle;
-  }
-  protected_shard_.UpdateMetricsLookup(true, caching);
-  auto* val_handle = reinterpret_cast<SLRUHandle*>(probationary_handle);
-  // If the number of lookups for entry isn't at the minimum number required before
-  // upgrading to the protected segment, return the entry found in probationary segment.
-  // If the entry's charge is larger than the protected segment's capacity, return entry found
-  // in probationary segment to avoid evicting any entries in the protected segment.
-  if (val_handle->lookups < lookups_threshold_ ||
-      val_handle->charge > protected_shard_.capacity()) {
-    return probationary_handle;
+    // Upgrade entry from the probationary segment by erasing it from the
+    // probationary segment then adding entry to the protected segment.
+    // Downgrade any entries in the protected segment if past capacity.
+    probationary_shard_.SoftErase(key, hash);
+    protected_shard_.ReInsert(val_handle, nullptr);
+    DowngradeEntries(&probationary_free_entries);
   }
 
-  // Upgrade entry from the probationary segment by erasing it from the
-  // probationary segment then adding entry to the protected segment.
-  // Downgrade any entries in the protected segment if past capacity.
-  probationary_shard_.SoftErase(key, hash);
-  protected_shard_.ReInsert(val_handle);
-  DowngradeEntries();
+  // Free entries outside lock for performance reasons.
+  // The evicted entries are freed in the opposite order of their eviction.
+  // Of the evicted entries, the MRU entries are freed first and the LRU entries are freed last.
+  while (probationary_free_entries != nullptr) {
+    auto* next = probationary_free_entries->next;
+    probationary_shard_.FreeEntry(probationary_free_entries);
+    probationary_free_entries = next;
+  }
 
   return probationary_handle;
 }
@@ -466,9 +511,20 @@ void SLRUCacheShardPair::Release(Handle* handle) {
 }
 
 void SLRUCacheShardPair::Erase(const Slice& key, uint32_t hash) {
-  std::lock_guard l(mutex_);
-  probationary_shard_.Erase(key, hash);
-  protected_shard_.Erase(key, hash);
+  SLRUHandle* probationary_free_entry = nullptr;
+  SLRUHandle* protected_free_entry = nullptr;
+  {
+    std::lock_guard l(mutex_);
+    probationary_shard_.Erase(key, hash, &probationary_free_entry);
+    protected_shard_.Erase(key, hash, &protected_free_entry);
+  }
+
+  // Free entry outside lock for performance reasons.
+  if (probationary_free_entry) {
+    probationary_shard_.FreeEntry(probationary_free_entry);
+  } else if (protected_free_entry) {
+    protected_shard_.FreeEntry(protected_free_entry);
+  }
 }
 
 bool SLRUCacheShardPair::ProbationaryContains(const Slice& key, uint32_t hash) {
@@ -479,19 +535,19 @@ bool SLRUCacheShardPair::ProtectedContains(const Slice& key, uint32_t hash) {
   return protected_shard_.Contains(key, hash);
 }
 
-void SLRUCacheShardPair::DowngradeEntries() {
+void SLRUCacheShardPair::DowngradeEntries(SLRUHandle** free_entries) {
   // Removes LRU entries of the protected shard while its usage exceeds its capacity
   // and reinserts them into the probationary shard.
   while (protected_shard_.usage_ > protected_shard_.capacity_ &&
          protected_shard_.rl_.next != &protected_shard_.rl_) {
-    SLRUHandle* lru_entry = protected_shard_.rl_.next;
+    auto* lru_entry = protected_shard_.rl_.next;
     protected_shard_.RL_Remove(lru_entry);
     protected_shard_.table_.Remove(lru_entry->key(), lru_entry->hash);
     if (PREDICT_TRUE(protected_shard_.metrics_)) {
       protected_shard_.UpdateMetricsEviction(lru_entry->charge);
     }
     DCHECK(lru_entry);
-    probationary_shard_.ReInsert(lru_entry);
+    probationary_shard_.ReInsert(lru_entry, free_entries);
   }
 }
 

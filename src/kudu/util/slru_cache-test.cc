@@ -19,6 +19,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <deque>
 #include <memory>
 #include <string>
 #include <utility>
@@ -77,9 +78,12 @@ class SLRUCacheBaseTest : public KuduTest,
         { }
 
   // Implementation of the EvictionCallback interface.
+  // A deque is used here with the latest freed entry inserted at the beginning.
+  // With entries being freed outside of lock, now MRU entries are freed first instead of the
+  // LRU entries. Using a deque makes it easier to verify this.
   void EvictedEntry(Slice key, Slice val) override {
-    evicted_keys_.push_back(DecodeInt(key));
-    evicted_values_.push_back(DecodeInt(val));
+    evicted_keys_.push_front(DecodeInt(key));
+    evicted_values_.push_front(DecodeInt(val));
   }
 
   // Returns -1 if no key is found in cache.
@@ -149,8 +153,8 @@ class SLRUCacheBaseTest : public KuduTest,
    const size_t protected_segment_size_;
    const size_t total_cache_size_;
    const uint32_t lookups_threshold_;
-   std::vector<int> evicted_keys_;
-   std::vector<int> evicted_values_;
+   std::deque<int> evicted_keys_;
+   std::deque<int> evicted_values_;
    std::shared_ptr<MemTracker> mem_tracker_;
    std::unique_ptr<ShardedSLRUCache> slru_cache_;
    MetricRegistry metric_registry_;
@@ -292,8 +296,8 @@ TEST_P(SLRUCacheTest, Erase) {
   // Erase second entry from protected segment.
   Erase(200);
   ASSERT_EQ(2, evicted_keys_.size());
-  ASSERT_EQ(200, evicted_keys_[1]);
-  ASSERT_EQ(201, evicted_values_[1]);
+  ASSERT_EQ(200, evicted_keys_[0]);
+  ASSERT_EQ(201, evicted_values_[0]);
 }
 
 // Underlying entry isn't actually freed until handle around it from lookup is reset.
@@ -327,8 +331,8 @@ TEST_P(SLRUCacheTest, EntriesArePinned) {
   // Reset lookup handle, entry is now freed.
   h2.reset();
   ASSERT_EQ(2, evicted_keys_.size());
-  ASSERT_EQ(100, evicted_keys_[1]);
-  ASSERT_EQ(102, evicted_values_[1]);
+  ASSERT_EQ(100, evicted_keys_[0]);
+  ASSERT_EQ(102, evicted_values_[0]);
   ASSERT_EQ(2, metrics->probationary_segment_evictions.get()->value());
 
   Insert(200, 201);
@@ -354,8 +358,8 @@ TEST_P(SLRUCacheTest, EntriesArePinned) {
   // Reset lookup handle of entry that was upserted, it should be freed now.
   h3.reset();
   ASSERT_EQ(3, evicted_keys_.size());
-  ASSERT_EQ(200, evicted_keys_[2]);
-  ASSERT_EQ(201, evicted_values_[2]);
+  ASSERT_EQ(200, evicted_keys_[0]);
+  ASSERT_EQ(201, evicted_values_[0]);
   ASSERT_EQ(1, metrics->protected_segment_evictions.get()->value());
 
   // Erase value, lookup handle is still held so entry will not be freed yet.
@@ -367,8 +371,8 @@ TEST_P(SLRUCacheTest, EntriesArePinned) {
   // Reset lookup handle, entry is now freed.
   h4.reset();
   ASSERT_EQ(4, evicted_keys_.size());
-  ASSERT_EQ(200, evicted_keys_[3]);
-  ASSERT_EQ(202, evicted_values_[3]);
+  ASSERT_EQ(200, evicted_keys_[0]);
+  ASSERT_EQ(202, evicted_values_[0]);
   ASSERT_EQ(2, metrics->protected_segment_evictions.get()->value());
 }
 
@@ -522,7 +526,6 @@ TEST_P(SLRUSingleShardCacheTest, DowngradeEviction) {
   }
   ASSERT_FALSE(ProbationaryContains(EncodeInt(last_key)));
   ASSERT_TRUE(ProtectedContains(EncodeInt(last_key)));
-
 
   // Verify that the LRU entries from the probationary segment are evicted to make space for entry
   // from protected segment being downgraded.
