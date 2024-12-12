@@ -116,17 +116,21 @@ class SLRUCacheShard {
   void SetMetrics(SLRUCacheMetrics* metrics) { metrics_ = metrics; }
 
   // Inserts handle into the appropriate shard and returns the inserted handle.
+  // Returns entries to be freed outside the lock with parameter 'free_entries'.
   // See comments on template specialization for each function for more details.
-  Handle* Insert(SLRUHandle* handle, EvictionCallback* eviction_callback);
+  Handle* Insert(SLRUHandle* handle,
+                 EvictionCallback* eviction_callback,
+                 SLRUHandle** free_entries);
   // Inserts handle into the appropriate shard when upgrading or downgrading entry.
+  // Returns entries to be freed outside the lock with parameter 'free_entries'.
   // See comments on template specialization for each function for more details.
-  void ReInsert(SLRUHandle* handle);
+  void ReInsert(SLRUHandle* handle, SLRUHandle** free_entries);
   // Like SLRUCache::Lookup, but with an extra "hash" parameter.
   Handle* Lookup(const Slice& key, uint32_t hash, bool caching);
   // Reduces the entry's ref by one, frees the entry if no refs are remaining.
   void Release(Handle* handle);
-  // Removes entry from shard, frees the entry if no refs are remaining.
-  void Erase(const Slice& key, uint32_t hash);
+  // Removes entry from shard, returns it to be freed if no refs are remaining.
+  void Erase(const Slice& key, uint32_t hash, SLRUHandle** free_entry);
   // Like Erase, but underlying entry is not freed.
   // Necessary when upgrading entry to protected segment.
   void SoftErase(const Slice& key, uint32_t hash);
@@ -151,7 +155,8 @@ class SLRUCacheShard {
   // Updates eviction related metrics.
   void UpdateMetricsEviction(size_t charge);
   // Removes any entries past capacity of the probationary shard.
-  void RemoveEntriesPastCapacity();
+  // Those entries are returned through parameter 'free_entries' to be freed outside the lock.
+  void RemoveEntriesPastCapacity(SLRUHandle** free_entries);
 
   // Update the memtracker's consumption by the given amount.
   //
@@ -218,7 +223,9 @@ class SLRUCacheShardPair {
   // Remove any entries past capacity in the protected shard and insert them into the probationary
   // shard. As a result of inserting them into the probationary shard, the LRU entries of the
   // probationary shard will be evicted if the probationary shard's usage exceeds its capacity.
-  void DowngradeEntries();
+  // Any entries evicted from the probationary shard are returned through the parameter
+  // 'free_entries' to be freed outside the lock.
+  void DowngradeEntries(SLRUHandle** free_entries);
   SLRUCacheShard<Segment::kProbationary> probationary_shard_;
   SLRUCacheShard<Segment::kProtected> protected_shard_;
 
