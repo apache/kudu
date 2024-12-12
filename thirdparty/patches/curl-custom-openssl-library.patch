@@ -1,14 +1,13 @@
-diff --git a/m4/curl-openssl.m4 b/m4/curl-openssl.m4
-index a4811d2a3..a465ffacb 100644
---- a/m4/curl-openssl.m4
-+++ b/m4/curl-openssl.m4
-@@ -136,9 +136,13 @@ if test "x$OPT_OPENSSL" != xno; then
+--- a/m4/curl-openssl.m4	2024-12-11 18:13:35
++++ b/m4/curl-openssl.m4	2024-12-11 18:15:27
+@@ -137,10 +137,14 @@
      fi
    fi
  
 -  dnl finally, set flags to use SSL
 -  CPPFLAGS="$CPPFLAGS $SSL_CPPFLAGS"
 -  LDFLAGS="$LDFLAGS $SSL_LDFLAGS"
+-  LDFLAGSPC="$LDFLAGSPC $SSL_LDFLAGS"
 +  dnl Finally, set flags to use SSL.
 +  dnl If another version of OpenSSL library is present under the 'standard'
 +  dnl system paths, it's necessary to pick up the header and binary files
@@ -16,6 +15,7 @@ index a4811d2a3..a465ffacb 100644
 +  dnl for both the preprocessor and the linker.
 +  CPPFLAGS="$SSL_CPPFLAGS $CPPFLAGS"
 +  LDFLAGS="$SSL_LDFLAGS $LDFLAGS"
++  LDFLAGSPC="$SSL_LDFLAGS $LDFLAGSPC"
  
    AC_CHECK_LIB(crypto, HMAC_Update,[
-      HAVECRYPTO="yes"
+     HAVECRYPTO="yes"

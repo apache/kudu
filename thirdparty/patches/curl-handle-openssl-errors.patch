@@ -1,8 +1,14 @@
+commit 82ae546ef4dc7a5ff9e823f91d1c2ebfa16b9f32
+Author: Alexey Serbin <alexey@apache.org>
+Date:   Wed Dec 11 18:55:02 2024 -0800
+
+    openssl: more robust error handling for edge cases
+
 diff --git a/lib/vtls/openssl.c b/lib/vtls/openssl.c
-index 9f9c8d136..446d54bcd 100644
+index 1b0e8dd5f..37ac97ccb 100644
 --- a/lib/vtls/openssl.c
 +++ b/lib/vtls/openssl.c
-@@ -954,6 +954,19 @@ static char *ossl_strerror(unsigned long error, char *buf, size_t size)
+@@ -995,6 +995,19 @@ static char *ossl_strerror(unsigned long error, char *buf, size_t size)
    return buf;
  }
  
@@ -22,7 +28,7 @@ index 9f9c8d136..446d54bcd 100644
  static int passwd_callback(char *buf, int num, int encrypting,
                             void *global_passwd)
  {
-@@ -1456,14 +1469,17 @@ int cert_stuff(struct Curl_easy *data,
+@@ -1484,14 +1497,17 @@ int cert_stuff(struct Curl_easy *data,
        }
  
        if(SSL_CTX_use_PrivateKey(ctx, pri) != 1) {
@@ -44,12 +50,13 @@ index 9f9c8d136..446d54bcd 100644
          goto fail;
        }
        /* Set Certificate Verification chain */
-@@ -1521,8 +1537,10 @@ fail:
-         SSL_CTX_use_PrivateKey_blob(ctx, key_blob, file_type, key_passwd) :
+@@ -1549,9 +1565,10 @@ fail:
+         use_privatekey_blob(ctx, key_blob, file_type, key_passwd) :
        SSL_CTX_use_PrivateKey_file(ctx, key_file, file_type);
        if(cert_use_result != 1) {
 -        failf(data, "unable to set private key file: '%s' type %s",
--              key_file?key_file:"(memory blob)", key_type?key_type:"PEM");
+-              key_file ? key_file : "(memory blob)",
+-              key_type ? key_type : "PEM");
 +        failf(data, "unable to set private key file: '%s' type %s: %s",
 +              key_file, key_type ? key_type : "PEM",
 +              ossl_strerror(ERR_get_error(), error_buffer,
@@ -57,7 +64,7 @@ index 9f9c8d136..446d54bcd 100644
          return 0;
        }
        break;
-@@ -1562,7 +1580,9 @@ fail:
+@@ -1591,7 +1608,9 @@ fail:
            return 0;
          }
          if(SSL_CTX_use_PrivateKey(ctx, priv_key) != 1) {
@@ -68,7 +75,7 @@ index 9f9c8d136..446d54bcd 100644
            EVP_PKEY_free(priv_key);
            return 0;
          }
-@@ -1635,7 +1655,9 @@ fail:
+@@ -1664,7 +1683,9 @@ fail:
        /* Now we know that a key and cert have been set against
         * the SSL context */
        if(!SSL_CTX_check_private_key(ctx)) {
@@ -79,7 +86,7 @@ index 9f9c8d136..446d54bcd 100644
          return 0;
        }
      }
-@@ -3234,17 +3256,19 @@ static CURLcode populate_x509_store(struct Curl_cfilter *cf,
+@@ -3222,17 +3243,19 @@ static CURLcode populate_x509_store(struct Curl_cfilter *cf,
        /* tell OpenSSL where to find CA certificates that are used to verify the
           server's certificate. */
        if(!X509_STORE_load_locations(store, ssl_cafile, ssl_capath)) {
@@ -103,7 +110,7 @@ index 9f9c8d136..446d54bcd 100644
          }
        }
  #endif
-@@ -3268,7 +3292,9 @@ static CURLcode populate_x509_store(struct Curl_cfilter *cf,
+@@ -3256,7 +3279,9 @@ static CURLcode populate_x509_store(struct Curl_cfilter *cf,
      lookup = X509_STORE_add_lookup(store, X509_LOOKUP_file());
      if(!lookup ||
         (!X509_load_crl_file(lookup, ssl_crlfile, X509_FILETYPE_PEM)) ) {
@@ -114,9 +121,9 @@ index 9f9c8d136..446d54bcd 100644
        return CURLE_SSL_CRL_BADFILE;
      }
      /* Everything is fine. */
-@@ -3960,6 +3986,8 @@ static CURLcode ossl_connect_step2(struct Curl_cfilter *cf,
-         result = CURLE_SSL_CONNECT_ERROR;
-         ossl_strerror(errdetail, error_buffer, sizeof(error_buffer));
+@@ -4251,6 +4276,8 @@ static CURLcode ossl_connect_step2(struct Curl_cfilter *cf,
+         failf(data, "TLS connect error: %s",
+               ossl_strerror(errdetail, error_buffer, sizeof(error_buffer)));
        }
 +      // Clear the rest of the errors as well.
 +      ERR_clear_error();
