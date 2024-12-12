@@ -302,13 +302,14 @@ fetch_and_patch \
  $GCOVR_SOURCE \
  $GCOVR_PATCHLEVEL
 
-CURL_PATCHLEVEL=2
+CURL_PATCHLEVEL=3
 fetch_and_patch \
  curl-${CURL_VERSION}.tar.gz \
  $CURL_SOURCE \
  $CURL_PATCHLEVEL \
  "patch -p1 < $TP_DIR/patches/curl-custom-openssl-library.patch" \
  "patch -p1 < $TP_DIR/patches/curl-handle-openssl-errors.patch" \
+ "patch -p1 < $TP_DIR/patches/curl-eventfd-double-close.patch" \
  "autoreconf -fvi"
 
 CRCUTIL_PATCHLEVEL=0
