@@ -159,6 +159,18 @@ DEFINE_int32(log_container_rdb_level0_file_num_compaction_trigger, 4,
              "effective when --block_manager='logr'");
 TAG_FLAG(log_container_rdb_level0_file_num_compaction_trigger, advanced);
 TAG_FLAG(log_container_rdb_level0_file_num_compaction_trigger, experimental);
+
+DEFINE_bool(log_container_rdb_paranoid_checks, true,
+            "If true, RocksDB aggressively checks consistency of its data. "
+            "Effective only when --block_manager='logr'");
+TAG_FLAG(log_container_rdb_paranoid_checks, advanced);
+TAG_FLAG(log_container_rdb_paranoid_checks, experimental);
+
+DEFINE_bool(log_container_rdb_skip_stats_update_on_db_open, false,
+            "Whether to skip updating the RocksDB's stats for compaction "
+            "decision upon startup. Effective only when --block_manager='logr'");
+TAG_FLAG(log_container_rdb_skip_stats_update_on_db_open, advanced);
+TAG_FLAG(log_container_rdb_skip_stats_update_on_db_open, experimental);
 #endif
 
 namespace kudu {
@@ -353,6 +365,9 @@ Status RdbDir::InitRocksDBInstance(bool newly_created) {
   opts.max_manifest_file_size = FLAGS_log_container_rdb_max_manifest_file_size;
   opts.level0_file_num_compaction_trigger =
       FLAGS_log_container_rdb_level0_file_num_compaction_trigger;
+  opts.paranoid_checks = FLAGS_log_container_rdb_paranoid_checks;
+  opts.skip_stats_update_on_db_open =
+      FLAGS_log_container_rdb_skip_stats_update_on_db_open;
 
   static std::once_flag flag;
   std::call_once(flag, [&]() {

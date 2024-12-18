@@ -82,14 +82,20 @@ using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 
+
+
 DECLARE_bool(crash_on_eio);
+DECLARE_bool(encrypt_data_at_rest);
+DECLARE_bool(enable_multi_tenancy);
+DECLARE_bool(log_container_rdb_paranoid_checks);
+DECLARE_bool(log_container_rdb_skip_stats_update_on_db_open);
 DECLARE_double(env_inject_eio);
 DECLARE_string(block_manager);
 DECLARE_string(env_inject_eio_globs);
 DECLARE_string(env_inject_lock_failure_globs);
 DECLARE_string(umask);
-DECLARE_bool(encrypt_data_at_rest);
-DECLARE_bool(enable_multi_tenancy);
+DECLARE_uint32(log_container_rdb_max_background_jobs);
+DECLARE_uint64(log_container_rdb_write_buffer_size);
 
 namespace kudu {
 namespace fs {
@@ -1265,8 +1271,19 @@ TEST_P(FsManagerTestBase, TestAddRemoveDataDirsFuzz) {
   // runs if slow tests are not allowed. Since logr will open multiple RocksDB instances and it
   // takes longer than log block manager, it will only run the loop 100 times if slow
   // tests are allowed.
-  const int kNumAttempts = AllowSlowTests() ? (FLAGS_block_manager == "logr" ? 100 : 1000) : 10;
+  const int kNumAttempts = AllowSlowTests() ? (FLAGS_block_manager == "logr" ? 25 : 1000) : 10;
 #endif
+
+  // In case of the "logr" block manager, it's quite expensive to run paranoid
+  // checks, allocate big RocksDB memtables, spawn many threads, and update
+  // compaction stats on startup just to do that again next iteration
+  // when almost no data is being written. To speed up the test, let's change
+  // a few configuration settings to speed up this test scenario while still
+  // having a meaningful configuration for the embedded RocksDB instance.
+  FLAGS_log_container_rdb_paranoid_checks = false;
+  FLAGS_log_container_rdb_skip_stats_update_on_db_open = true;
+  FLAGS_log_container_rdb_max_background_jobs = 2;
+  FLAGS_log_container_rdb_write_buffer_size = 1 << 20;
 
   Random rng_(SeedRandom());
 
