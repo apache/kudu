@@ -547,6 +547,12 @@ void Master::ShutdownImpl() {
     fs_manager_->UnsetErrorNotificationCb(ErrorHandlerType::KUDU_2233_CORRUPTION);
     fs_manager_->UnsetErrorNotificationCb(ErrorHandlerType::CFILE_CORRUPTION);
     fs_manager_->UnsetErrorNotificationCb(ErrorHandlerType::DISK_ERROR);
+    if (expired_reserved_tables_deleter_thread_) {
+      // Set the countdown latch to zero to trigger expired_reserved_tables_deleter_thread_
+      // to stop. Then wait for the thread to actually stop.
+      stop_background_threads_latch_.Reset(0);
+      expired_reserved_tables_deleter_thread_->Join();
+    }
 
     // 3. Shut down generic subsystems.
     KuduServer::Shutdown();
