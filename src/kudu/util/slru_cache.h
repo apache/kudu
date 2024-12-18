@@ -130,7 +130,8 @@ class SLRUCacheShard {
   // Reduces the entry's ref by one, frees the entry if no refs are remaining.
   void Release(Handle* handle);
   // Removes entry from shard, returns it to be freed if no refs are remaining.
-  void Erase(const Slice& key, uint32_t hash, SLRUHandle** free_entry);
+  // Returns a bool indicating whether the entry was erased.
+  bool Erase(const Slice& key, uint32_t hash, SLRUHandle** free_entry);
   // Like Erase, but underlying entry is not freed.
   // Necessary when upgrading entry to protected segment.
   void SoftErase(const Slice& key, uint32_t hash);

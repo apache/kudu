@@ -27,6 +27,7 @@
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
+#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/bits.h"
 #include "kudu/gutil/hash/city.h"
 #include "kudu/gutil/port.h"
@@ -354,15 +355,18 @@ void SLRUCacheShard<Segment::kProtected>::ReInsert(SLRUHandle* handle,
 }
 
 template<Segment segment>
-void SLRUCacheShard<segment>::Erase(const Slice& key, uint32_t hash, SLRUHandle** free_entry) {
+bool SLRUCacheShard<segment>::Erase(const Slice& key, uint32_t hash, SLRUHandle** free_entry) {
+  bool erased = false;
   SLRUHandle* e = table_.Remove(key, hash);
   if (e != nullptr) {
     RL_Remove(e);
+    erased = true;
     // Free entry if this is the last reference.
     if (Unref(e)) {
       *free_entry = e;
     }
   }
+  return erased;
 }
 
 template<>
@@ -515,8 +519,10 @@ void SLRUCacheShardPair::Erase(const Slice& key, uint32_t hash) {
   SLRUHandle* protected_free_entry = nullptr;
   {
     std::lock_guard l(mutex_);
-    probationary_shard_.Erase(key, hash, &probationary_free_entry);
-    protected_shard_.Erase(key, hash, &protected_free_entry);
+    // Only call Erase for protected shard if the entry was not erased from the probationary shard.
+    if (!probationary_shard_.Erase(key, hash, &probationary_free_entry)) {
+      ignore_result(protected_shard_.Erase(key, hash, &protected_free_entry));
+    }
   }
 
   // Free entry outside lock for performance reasons.
