@@ -326,12 +326,6 @@ Status RunRebalance(const RunnerContext& context) {
   const vector<string> table_filters =
       Split(FLAGS_tables, ",", strings::SkipEmpty());
 
-  if (FLAGS_enable_range_rebalancing && table_filters.size() != 1) {
-    return Status::NotSupported(
-        "range rebalancing is currently implemented for a single table only: "
-        "use '--tables' to specify a table for range rebalancing");
-  }
-
   // Evaluate --move_single_replicas flag: decide whether enable to disable
   // moving of single-replica tablets based on the reported version of the
   // Kudu components.

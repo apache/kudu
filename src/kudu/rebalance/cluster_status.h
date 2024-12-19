@@ -157,6 +157,7 @@ struct TableSummary {
   int underreplicated_tablets = 0;
   int consensus_mismatch_tablets = 0;
   int unavailable_tablets = 0;
+  bool is_range_partitioned = false;
 
   int TotalTablets() const {
     return healthy_tablets + recovering_tablets + underreplicated_tablets +

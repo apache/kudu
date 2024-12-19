@@ -420,7 +420,8 @@ Status Rebalancer::BuildClusterInfo(const ClusterRawInfo& raw_info,
       }
 
       auto table_ins = table_replicas_info.emplace(
-          TableIdAndTag{tablet.table_id, tablet.range_key_begin},
+          TableIdAndTag{tablet.table_id,
+                        config_.enable_range_rebalancing ? tablet.range_key_begin : ""},
           TableReplicasAtServer());
       TableReplicasAtServer& replicas_at_server = table_ins.first->second;
 
