@@ -27,6 +27,7 @@
 #include <initializer_list>
 #include <iosfwd>
 #include <memory>
+#include <ostream>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -673,6 +674,69 @@ TEST_F(WebserverTest, TestPutMethodNotAllowed) {
   Status s = curl_.FetchURL(Substitute("$0/index.html", url_), &buf_);
   ASSERT_EQ("Remote error: HTTP 401", s.ToString());
 }
+
+// Test that authenticated principal is correctly passed to the handler.
+static void Handler(const Webserver::WebRequest& req, Webserver::PrerenderedWebResponse* resp) {
+  resp->output << req.authn_principal;
+}
+
+class AuthnWebserverTest : public SpnegoWebserverTest {
+ protected:
+  void SetUp() override {
+    WebserverTest::SetUp();
+    server_->RegisterPrerenderedPathHandler(
+        "/authn", "AuthnWebserverTest", Handler, StyleMode::UNSTYLED, false);
+  }
+};
+
+class NoAuthnWebserverTest : public WebserverTest {
+ protected:
+  void SetUp() override {
+    WebserverTest::SetUp();
+    server_->RegisterPrerenderedPathHandler(
+        "/authn", "NoAuthnWebserverTest", Handler, StyleMode::UNSTYLED, false);
+  }
+};
+
+TEST_F(NoAuthnWebserverTest, TestUnauthenticatedUser) {
+  ASSERT_OK(curl_.FetchURL(Substitute("$0/authn", url_), &buf_));
+  ASSERT_EQ(buf_.ToString(), "");
+}
+
+// The following tests are skipped on macOS due to inconsistent behavior of SPNEGO.
+// macOS heimdal kerberos caches the KDC port number, which can cause subsequent tests to fail.
+// For more details, refer to KUDU-3533 (https://issues.apache.org/jira/browse/KUDU-3533)
+#ifndef __APPLE__
+
+TEST_F(AuthnWebserverTest, TestAuthenticatedUserPassedToHandler) {
+  ASSERT_OK(kdc_->Kinit("alice"));
+  curl_.set_auth(CurlAuthType::SPNEGO);
+  ASSERT_OK(curl_.FetchURL(Substitute("$0/authn", url_), &buf_));
+  ASSERT_STR_CONTAINS(buf_.ToString(), "alice@KRBTEST.COM");
+}
+
+TEST_F(AuthnWebserverTest, TestUnauthenticatedBadKeytab) {
+  // Test based on the SpnegoWebserverTest::TestUnauthenticatedBadKeytab test.
+  ASSERT_OK(kdc_->Kinit("alice"));
+  ASSERT_OK(kdc_->RandomizePrincipalKey("HTTP/127.0.0.1"));
+  curl_.set_auth(CurlAuthType::SPNEGO);
+  Status s = curl_.FetchURL(Substitute("$0/authn", url_), &buf_);
+  EXPECT_EQ(s.ToString(), "Remote error: HTTP 401");
+  ASSERT_STR_MATCHES(buf_.ToString(),
+                     "(Unspecified GSS failure|"
+                     "GSSAPI Error: Miscellaneous failure|"
+                     "Must authenticate with SPNEGO)");
+}
+
+TEST_F(AuthnWebserverTest, TestUnauthenticatedRequestWithoutClientAuth) {
+  // Test based on the SpnegoWebserverTest::TestUnauthenticatedNoClientAuth test.
+  curl_.set_auth(CurlAuthType::SPNEGO);
+  Status curl_status = curl_.FetchURL(Substitute("$0/authn", url_), &buf_);
+  EXPECT_EQ("Remote error: HTTP 401", curl_status.ToString());
+  EXPECT_EQ("Must authenticate with SPNEGO.", buf_.ToString());
+}
+
+#endif
 
 namespace {
 
