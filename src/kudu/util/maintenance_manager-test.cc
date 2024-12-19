@@ -446,15 +446,24 @@ TEST_F(MaintenanceManagerTest, TestRegisterUnregisterWithContention) {
 // Regression test for KUDU-1495: when an operation is being unregistered,
 // new instances of that operation should not be scheduled.
 TEST_F(MaintenanceManagerTest, TestNewOpsDontGetScheduledDuringUnregister) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+  // Set the op to run up to 10 times, and each time it sleeps for some time.
+  // The sleep time is set quite high to avoid flakiness due to scheduler
+  // anomalies when running this scenario on busy machines, especially if the
+  // binaries are instrumented by ASAN/TSAN. When all the avaiable maintenance
+  // worker threads are busy with running their first iteration of 'op1',
+  // if the main thread is scheduled off the CPU for a long time before
+  // unregistering the operation, the sleep time should provide enough margin
+  // for the main thread becoming active again and unregistering 'op1'.
   TestMaintenanceOp op1("1", MaintenanceOp::HIGH_IO_USAGE);
   op1.set_perf_improvement(10);
-
-  // Set the op to run up to 10 times, and each time should sleep for a second.
   op1.set_remaining_runs(10);
-  op1.set_sleep_time(MonoDelta::FromSeconds(1));
+  op1.set_sleep_time(MonoDelta::FromSeconds(5));
   manager_->RegisterOp(&op1);
 
-  // Wait until two instances of the ops start running, since we have two MM threads.
+  // Wait until two instances of the ops start running, since we have two
+  // maintenance worker threads.
   ASSERT_EVENTUALLY([&]() {
     ASSERT_EQ(op1.RunningGauge()->value(), 2);
   });
