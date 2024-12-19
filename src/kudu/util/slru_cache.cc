@@ -142,47 +142,6 @@ void SLRUCacheShard<segment>::UpdateMetricsLookup(bool was_hit, bool caching) {
   }
 }
 
-template<>
-void SLRUCacheShard<Segment::kProbationary>::UpdateSegmentMetricsLookup(bool was_hit,
-                                                                        bool caching) {
-  if (PREDICT_TRUE(metrics_)) {
-    metrics_->probationary_segment_lookups->Increment();
-    if (was_hit) {
-      if (caching) {
-        metrics_->probationary_segment_cache_hits_caching->Increment();
-      } else {
-        metrics_->probationary_segment_cache_hits->Increment();
-      }
-    } else {
-      if (caching) {
-        metrics_->probationary_segment_cache_misses_caching->Increment();
-      } else {
-        metrics_->probationary_segment_cache_misses->Increment();
-      }
-    }
-  }
-}
-
-template<>
-void SLRUCacheShard<Segment::kProtected>::UpdateSegmentMetricsLookup(bool was_hit, bool caching) {
-  if (PREDICT_TRUE(metrics_)) {
-    metrics_->protected_segment_lookups->Increment();
-    if (was_hit) {
-      if (caching) {
-        metrics_->protected_segment_cache_hits_caching->Increment();
-      } else {
-        metrics_->protected_segment_cache_hits->Increment();
-      }
-    } else {
-      if (caching) {
-        metrics_->protected_segment_cache_misses_caching->Increment();
-      } else {
-        metrics_->protected_segment_cache_misses->Increment();
-      }
-    }
-  }
-}
-
 template<Segment segment>
 void SLRUCacheShard<segment>::RL_Remove(SLRUHandle* e) {
   e->next->prev = e->prev;
@@ -211,14 +170,13 @@ void SLRUCacheShard<segment>::RL_UpdateAfterLookup(SLRUHandle* e) {
 // shards and its tables are protected by mutexes. Same logic applies to the all the below
 // methods in SLRUCacheShard.
 template<Segment segment>
-Handle* SLRUCacheShard<segment>::Lookup(const Slice& key, uint32_t hash, bool caching) {
+Handle* SLRUCacheShard<segment>::Lookup(const Slice& key, uint32_t hash) {
   SLRUHandle* e = table_.Lookup(key, hash);
   if (e != nullptr) {
     e->refs.fetch_add(1, std::memory_order_relaxed);
     e->lookups++;
     RL_UpdateAfterLookup(e);
   }
-  UpdateSegmentMetricsLookup(e != nullptr, caching);
 
   return reinterpret_cast<Handle*>(e);
 }
@@ -276,6 +234,11 @@ Handle* SLRUCacheShard<Segment::kProbationary>::Insert(SLRUHandle* handle,
       old_entry->next = *free_entries;
       *free_entries = old_entry;
     }
+
+    // In the update case, a new entry is inserted, but it should retain the same values for the
+    // fields 'upgrades' and 'downgrades' as the old entry.
+    handle->upgrades = old_entry->upgrades;
+    handle->downgrades = old_entry->downgrades;
   }
   RemoveEntriesPastCapacity(free_entries);
 
@@ -312,6 +275,11 @@ Handle* SLRUCacheShard<Segment::kProtected>::Insert(SLRUHandle* handle,
     *free_entries = old_entry;
   }
 
+  // In the update case, a new entry is inserted, but it should retain the same values for the
+  // fields 'upgrades' and 'downgrades' as the old entry.
+  handle->upgrades = old_entry->upgrades;
+  handle->downgrades = old_entry->downgrades;
+
   return reinterpret_cast<Handle*>(handle);
 }
 
@@ -320,8 +288,9 @@ template<>
 void SLRUCacheShard<Segment::kProbationary>::ReInsert(SLRUHandle* handle,
                                                       SLRUHandle** free_entries) {
   handle->in_protected_segment.store(false, std::memory_order_relaxed);
+  handle->downgrades++;
   if (PREDICT_TRUE(metrics_)) {
-    metrics_->downgrades->Increment();
+    metrics_->downgrades_stats->Increment(handle->downgrades);
     metrics_->probationary_segment_cache_usage->IncrementBy(handle->charge);
     metrics_->probationary_segment_inserts->Increment();
   }
@@ -340,8 +309,9 @@ template<>
 void SLRUCacheShard<Segment::kProtected>::ReInsert(SLRUHandle* handle,
                                                    SLRUHandle** /*free_entries*/) {
   handle->in_protected_segment.store(true, std::memory_order_relaxed);
+  handle->upgrades++;
   if (PREDICT_TRUE(metrics_)) {
-    metrics_->upgrades->Increment();
+    metrics_->upgrades_stats->Increment(handle->upgrades);
     metrics_->protected_segment_cache_usage->IncrementBy(handle->charge);
     metrics_->protected_segment_inserts->Increment();
   }
@@ -450,22 +420,21 @@ Handle* SLRUCacheShardPair::Lookup(const Slice& key, uint32_t hash, bool caching
   //                protected segment, insert them into the probationary segment.
   //      - Miss: Return the handle.
   //
-  // Lookup metrics for both segments and the high-level cache are updated with each lookup.
+  // Lookup metrics for the cache are updated with each lookup.
 
   SLRUHandle* probationary_free_entries = nullptr;
   Handle* probationary_handle;
   {
     std::lock_guard l(mutex_);
-    auto* protected_handle = protected_shard_.Lookup(key, hash, caching);
+    auto* protected_handle = protected_shard_.Lookup(key, hash);
 
     // If the key exists in the protected segment, return the result from the lookup of the
     // protected segment.
     if (protected_handle) {
       protected_shard_.UpdateMetricsLookup(true, caching);
-      probationary_shard_.UpdateSegmentMetricsLookup(false, caching);
       return protected_handle;
     }
-    probationary_handle = probationary_shard_.Lookup(key, hash, caching);
+    probationary_handle = probationary_shard_.Lookup(key, hash);
 
     // Return null handle if handle is not found in either the probationary or protected segment.
     if (!probationary_handle) {
@@ -589,6 +558,8 @@ Cache::UniquePendingHandle ShardedSLRUCache::Allocate(Slice key, int val_len, in
                         PendingHandleDeleter(this));
   SLRUHandle* handle = reinterpret_cast<SLRUHandle*>(h.get());
   handle->lookups = 0;
+  handle->upgrades = 0;
+  handle->downgrades = 0;
   handle->in_protected_segment.store(false, std::memory_order_relaxed);
   handle->key_length = key_len;
   handle->val_length = val_len;
