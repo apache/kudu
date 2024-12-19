@@ -66,6 +66,12 @@ struct SLRUHandle {
   // Used for releasing from the right shard in the SLRU cache implementation.
   std::atomic<bool> in_protected_segment;
 
+  // Number of times an entry has been upgraded or downgraded. These fields are tied to the key,
+  // not the entry itself. For example, when an entry is updated, a new handle is inserted, but it
+  // retains the values of these fields from the previous entry with the same key.
+  int32_t upgrades;
+  int32_t downgrades;
+
   // The storage for the key/value pair itself. The data is stored as:
   //   [key bytes ...] [padding up to 8-byte boundary] [value bytes ...]
   uint8_t kv_data[1];   // Beginning of key/value pair
@@ -126,7 +132,7 @@ class SLRUCacheShard {
   // See comments on template specialization for each function for more details.
   void ReInsert(SLRUHandle* handle, SLRUHandle** free_entries);
   // Like SLRUCache::Lookup, but with an extra "hash" parameter.
-  Handle* Lookup(const Slice& key, uint32_t hash, bool caching);
+  Handle* Lookup(const Slice& key, uint32_t hash);
   // Reduces the entry's ref by one, frees the entry if no refs are remaining.
   void Release(Handle* handle);
   // Removes entry from shard, returns it to be freed if no refs are remaining.
@@ -139,8 +145,6 @@ class SLRUCacheShard {
   bool Contains(const Slice& key, uint32_t hash);
   // Update the high-level metrics for a lookup operation.
   void UpdateMetricsLookup(bool was_hit, bool caching);
-  // Update the segment-level metrics for a lookup operation.
-  void UpdateSegmentMetricsLookup(bool was_hit, bool caching);
 
  private:
   friend class SLRUCacheShardPair;

@@ -59,53 +59,23 @@ METRIC_DEFINE_gauge_uint64(server, block_cache_usage, "Block Cache Memory Usage"
                            "Memory consumed by the block cache",
                            kudu::MetricLevel::kInfo);
 
-METRIC_DEFINE_counter(server, block_cache_upgrades,
-                      "Block Cache Upgrades", kudu::MetricUnit::kBlocks,
-                      "Number of blocks upgraded from the probationary segment to "
-                      "the protected segment of the block cache",
-                      kudu::MetricLevel::kDebug);
-METRIC_DEFINE_counter(server, block_cache_downgrades,
-                      "Block Cache downgrades", kudu::MetricUnit::kBlocks,
-                      "Number of blocks downgraded from the protected segment to "
-                      "the probationary segment of the block cache",
-                      kudu::MetricLevel::kDebug);
+METRIC_DEFINE_histogram(server, block_cache_upgrades_stats,
+                        "Block Cache Upgrades Stats", kudu::MetricUnit::kBlocks,
+                        "Histogram of the number of times an entry has been upgraded",
+                        kudu::MetricLevel::kDebug, 1000000, 2);
+METRIC_DEFINE_histogram(server, block_cache_downgrades_stats,
+                        "Block Cache Downgrades Stats", kudu::MetricUnit::kBlocks,
+                        "Histogram of the number of times an entry has been downgraded",
+                        kudu::MetricLevel::kDebug, 1000000, 2);
 
 METRIC_DEFINE_counter(server, block_cache_probationary_segment_inserts,
                       "Block Cache Probationary Segment Inserts", kudu::MetricUnit::kBlocks,
                       "Number of blocks inserted in the probationary segment of the cache",
                       kudu::MetricLevel::kDebug);
-METRIC_DEFINE_counter(server, block_cache_probationary_segment_lookups,
-                      "Block Cache Probationary Segment Lookups", kudu::MetricUnit::kBlocks,
-                      "Number of blocks looked up from the probationary segment of the cache",
-                      kudu::MetricLevel::kDebug);
 METRIC_DEFINE_counter(server, block_cache_probationary_segment_evictions,
                       "Block Cache Probationary Segment Evictions", kudu::MetricUnit::kBlocks,
                       "Number of blocks evicted from the probationary segment of the cache",
                       kudu::MetricLevel::kDebug);
-METRIC_DEFINE_counter(server, block_cache_probationary_segment_misses,
-                      "Block Cache Probationary Segment Misses", kudu::MetricUnit::kBlocks,
-                      "Number of lookups in the probationary segment that didn't yield a block",
-                      kudu::MetricLevel::kDebug);
-METRIC_DEFINE_counter(server, block_cache_probationary_segment_misses_caching,
-                      "Block Cache Probationary Segment Misses (Caching)",
-                      kudu::MetricUnit::kBlocks,
-                      "Number of lookups in the probationary segment that were expecting a block "
-                      "that didn't yield one. Use this number instead of "
-                      "block_cache_probationary_segment_misses when trying to determine how "
-                      "efficient the probationary segment is",
-                      kudu::MetricLevel::kDebug);
-METRIC_DEFINE_counter(server, block_cache_probationary_segment_hits,
-                      "Block Cache Probationary Segment Hits", kudu::MetricUnit::kBlocks,
-                      "Number of lookups in the probationary segment that found a block",
-                      kudu::MetricLevel::kDebug);
-METRIC_DEFINE_counter(server, block_cache_probationary_segment_hits_caching,
-                      "Block Cache Probationary Segment Hits (Caching)", kudu::MetricUnit::kBlocks,
-                      "Number of lookups in the probationary segment that were expecting a block "
-                      "that found one. Use this number instead of "
-                      "block_cache_probationary_segment_hits when trying to determine "
-                      "how efficient the probationary segment is",
-                      kudu::MetricLevel::kDebug);
-
 METRIC_DEFINE_gauge_uint64(server, block_cache_probationary_segment_usage,
                            "Block Cache Probationary Segment Memory Usage",
                            kudu::MetricUnit::kBytes,
@@ -116,36 +86,10 @@ METRIC_DEFINE_counter(server, block_cache_protected_segment_inserts,
                       "Block Cache Protected Segment Inserts", kudu::MetricUnit::kBlocks,
                       "Number of blocks inserted in the protected segment of the cache",
                       kudu::MetricLevel::kDebug);
-METRIC_DEFINE_counter(server, block_cache_protected_segment_lookups,
-                      "Block Cache Protected Segment Lookups", kudu::MetricUnit::kBlocks,
-                      "Number of blocks looked up from the protected segment of the cache",
-                      kudu::MetricLevel::kDebug);
 METRIC_DEFINE_counter(server, block_cache_protected_segment_evictions,
                       "Block Cache Protected Segment Evictions", kudu::MetricUnit::kBlocks,
                       "Number of blocks evicted from the protected segment of the cache",
                       kudu::MetricLevel::kDebug);
-METRIC_DEFINE_counter(server, block_cache_protected_segment_misses,
-                      "Block Cache Protected Segment Misses", kudu::MetricUnit::kBlocks,
-                      "Number of lookups in the protected segment that didn't yield a block",
-                      kudu::MetricLevel::kDebug);
-METRIC_DEFINE_counter(server, block_cache_protected_segment_misses_caching,
-                      "Block Cache Protected Segment Misses (Caching)", kudu::MetricUnit::kBlocks,
-                      "Number of lookups in the protected segment that were expecting a block that "
-                      "didn't yield one. Use this number instead of "
-                      "block_cache_protected_segment_misses when trying to determine "
-                      "how efficient the protected segment is",
-                      kudu::MetricLevel::kDebug);
-METRIC_DEFINE_counter(server, block_cache_protected_segment_hits,
-                      "Block Cache Protected Segment Hits", kudu::MetricUnit::kBlocks,
-                      "Number of lookups in the protected segment that found a block",
-                      kudu::MetricLevel::kDebug);
-METRIC_DEFINE_counter(server, block_cache_protected_segment_hits_caching,
-                      "Block Cache Protected Segment Hits (Caching)", kudu::MetricUnit::kBlocks,
-                      "Number of lookups in the protected segment that were expecting a block that "
-                      "found one. Use this number instead of block_cache_protected_segment_hits "
-                      "when trying to determine how efficient the protected segment is",
-                      kudu::MetricLevel::kDebug);
-
 METRIC_DEFINE_gauge_uint64(server, block_cache_protected_segment_usage,
                            "Block Cache Protected Segment Memory Usage", kudu::MetricUnit::kBytes,
                            "Memory consumed by the protected segment of the block cache",
@@ -176,25 +120,14 @@ SLRUCacheMetrics::SLRUCacheMetrics(const scoped_refptr<MetricEntity>& entity) {
   MINIT(cache_misses_caching, block_cache_misses_caching);
   GINIT(cache_usage, block_cache_usage);
 
-  MINIT(upgrades, block_cache_upgrades);
-  MINIT(downgrades, block_cache_downgrades);
+  MINIT(upgrades_stats, block_cache_upgrades_stats);
+  MINIT(downgrades_stats, block_cache_downgrades_stats);
 
   MINIT(probationary_segment_inserts, block_cache_probationary_segment_inserts);
-  MINIT(probationary_segment_lookups, block_cache_probationary_segment_lookups);
   MINIT(probationary_segment_evictions, block_cache_probationary_segment_evictions);
-  MINIT(probationary_segment_cache_hits, block_cache_probationary_segment_hits);
-  MINIT(probationary_segment_cache_hits_caching, block_cache_probationary_segment_hits_caching);
-  MINIT(probationary_segment_cache_misses, block_cache_probationary_segment_misses);
-  MINIT(probationary_segment_cache_misses_caching, block_cache_probationary_segment_misses_caching);
   GINIT(probationary_segment_cache_usage, block_cache_probationary_segment_usage);
-
   MINIT(protected_segment_inserts, block_cache_protected_segment_inserts);
-  MINIT(protected_segment_lookups, block_cache_protected_segment_lookups);
   MINIT(protected_segment_evictions, block_cache_protected_segment_evictions);
-  MINIT(protected_segment_cache_hits, block_cache_protected_segment_hits);
-  MINIT(protected_segment_cache_hits_caching, block_cache_protected_segment_hits_caching);
-  MINIT(protected_segment_cache_misses, block_cache_protected_segment_misses);
-  MINIT(protected_segment_cache_misses_caching, block_cache_protected_segment_misses_caching);
   GINIT(protected_segment_cache_usage, block_cache_protected_segment_usage);
 }
 #undef MINIT
