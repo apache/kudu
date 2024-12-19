@@ -702,7 +702,9 @@ TEST_F(KsckResultsToClusterBalanceInfoTest, RangeRebalancingInfo) {
     },
   };
 
-  NO_FATALS(RunTest(Rebalancer::Config(), test_configs));
+  Rebalancer::Config config;
+  config.enable_range_rebalancing = true;
+  NO_FATALS(RunTest(config, test_configs));
 }
 
 } // namespace rebalance

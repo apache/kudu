@@ -845,6 +845,8 @@ bool Ksck::VerifyTable(const shared_ptr<KsckTable>& table, vector<TableSummary>*
   ts.id = table->id();
   ts.name = table->name();
   ts.replication_factor = table->num_replicas();
+  const auto& tablet = table->tablets().front();
+  ts.is_range_partitioned = !tablet->partition().begin().range_key().empty();
   VLOG(1) << Substitute("Verifying $0 tablet(s) for table $1 configured with num_replicas = $2",
                         table->tablets().size(), table->name(), table->num_replicas());
   for (const auto& tablet : table->tablets()) {

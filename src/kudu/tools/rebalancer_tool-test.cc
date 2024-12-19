@@ -2307,6 +2307,12 @@ class TableRangeRebalancingTest : public RebalancingTest {
   int num_range_partitions_for_test_tables() const override {
     return 2;
   }
+
+  // There should be 8 tablet replicas for a particular range per tablet server.
+  static constexpr char kFirstRangeReferencePattern[] =
+      "Range start key: '00000000'\n.+\n.+\n .+ 8\n .+ 8\n .+ 8\n";
+  static constexpr char kSecondRangeReferencePattern[] =
+      "Range start key: 'ff80000000'\n.+\n.+\n .+ 8\n .+ 8\n .+ 8\n";
 };
 
 TEST_F(TableRangeRebalancingTest, Basic) {
@@ -2327,12 +2333,6 @@ TEST_F(TableRangeRebalancingTest, Basic) {
  Minimum      | 0
  Maximum      | 0
  Average      | 0)***";
-
-  // There should be 8 tablet replicas for a particular range per tablet server.
-  constexpr const char kFirstRangeReferencePattern[] =
-    "Range start key: '00000000'\n.+\n.+\n .+ 8\n .+ 8\n .+ 8\n";
-  constexpr const char kSecondRangeReferencePattern[] =
-    "Range start key: 'ff80000000'\n.+\n.+\n .+ 8\n .+ 8\n .+ 8\n";
 
   vector<string> table_names;
   NO_FATALS(Prepare({}, {}, {}, kEmptySet, &table_names));
@@ -2370,6 +2370,102 @@ TEST_F(TableRangeRebalancingTest, Basic) {
     ASSERT_STR_CONTAINS(out, kReplicaDistributionReferenceOutput);
     ASSERT_STR_MATCHES(out, kFirstRangeReferencePattern);
     ASSERT_STR_MATCHES(out, kSecondRangeReferencePattern);
+  }
+}
+
+TEST_F(TableRangeRebalancingTest, ClusterWideRangeRebalancing) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+  const auto schema_flag =
+      Substitute("--raft_prepare_replacement_before_eviction=$0", is_343_scheme());
+  FLAGS_num_tablet_servers = num_tservers_;
+  FLAGS_num_replicas = rep_factor_;
+  NO_FATALS(
+      BuildAndStart({schema_flag},
+                    {schema_flag,
+                     "--enable_range_replica_placement=false",
+                     Substitute("--tserver_unresponsive_timeout_ms=$0", tserver_unresponsive_ms_)},
+                    {},
+                    false));
+
+  string range_partitioned_table_name;
+  string non_range_partitioned_table_name;
+  vector<string> table_names;
+
+  ASSERT_OK(CreateUnbalancedTables(cluster_.get(),
+                                   client_.get(),
+                                   schema_,
+                                   "range_partitioned_table_$0",
+                                   1,
+                                   rep_factor_,
+                                   rep_factor_ + 1,
+                                   num_tservers_,
+                                   tserver_unresponsive_ms_,
+                                   num_hash_partitions_for_test_tables(),
+                                   num_range_partitions_for_test_tables(),
+                                   &table_names));
+  ASSERT_EQ(1, table_names.size());
+  range_partitioned_table_name = table_names[0];
+
+  ASSERT_OK(CreateUnbalancedTables(cluster_.get(),
+                                   client_.get(),
+                                   schema_,
+                                   "non_range_partitioned_table_$0",
+                                   1,
+                                   rep_factor_,
+                                   rep_factor_ + 1,
+                                   num_tservers_,
+                                   tserver_unresponsive_ms_,
+                                   num_hash_partitions_for_test_tables(),
+                                   0,
+                                   &table_names));
+  ASSERT_EQ(2, table_names.size());
+  non_range_partitioned_table_name = table_names[1];
+
+  {
+    const vector<string> tool_args = {"cluster",
+                                      "rebalance",
+                                      cluster_->master()->bound_rpc_addr().ToString(),
+                                      "--enable_range_rebalancing"};
+    string out;
+    string err;
+    const Status s = RunKuduTool(tool_args, &out, &err);
+    ASSERT_TRUE(s.ok()) << ToolRunInfo(s, out, err);
+    ASSERT_STR_CONTAINS(out, "rebalancing is complete: cluster is balanced") << "stderr: " << err;
+  }
+
+  {
+    const vector<string> report_tool_args = {"cluster",
+                                             "rebalance",
+                                             cluster_->master()->bound_rpc_addr().ToString(),
+                                             "--enable_range_rebalancing",
+                                             "--report_only",
+                                             "--output_replica_distribution_details"};
+    string out;
+    string err;
+    const Status s = RunKuduTool(report_tool_args, &out, &err);
+    ASSERT_TRUE(s.ok()) << ToolRunInfo(s, out, err);
+
+    const string rangePartitionedTableStats =
+        string("Per-range replica distribution details for tables\n\n") +
+        "Table: .+" + range_partitioned_table_name + ".+\n\n" +
+        "Number of tablet replicas at servers for each range\n" +
+        " Max Skew | Total Count | Range Start Key\n" +
+        "----------+-------------+-----------------\n" +
+        " 0        | 24          | 00000000\n" +
+        " 0        | 24          | ff80000000";
+
+    const auto nonRangePartitionedTableStats =
+        string("Per-table replica distribution details for non range partitioned tables:\n") +
+        "             Table Id             | Replica Count | Replica Skew |          Table Name\n" +
+        "----------------------------------+---------------+--------------+------------------------"
+        "-------\n" +
+        " .+ | 24            | 0            | " + non_range_partitioned_table_name;
+
+    ASSERT_STR_MATCHES(out, rangePartitionedTableStats);
+    ASSERT_STR_MATCHES(out, kFirstRangeReferencePattern);
+    ASSERT_STR_MATCHES(out, kSecondRangeReferencePattern);
+    ASSERT_STR_MATCHES(out, nonRangePartitionedTableStats);
   }
 }
 

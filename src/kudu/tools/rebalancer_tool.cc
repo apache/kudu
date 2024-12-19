@@ -586,6 +586,9 @@ Status RebalancerTool::PrintLocationBalanceStats(const string& location,
         for (const auto& [_, balance_info] : table_skew_info) {
           const auto& table_id = balance_info.table_id;
           const auto& tag = balance_info.tag;
+          if (!table_info[table_id]->is_range_partitioned) {
+            continue;
+          }
           auto it = range_dist_stats.emplace(
               std::make_pair(table_id, tag), map<string, size_t>{});
           const auto& server_info = balance_info.servers_by_replica_count;
@@ -616,16 +619,18 @@ Status RebalancerTool::PrintLocationBalanceStats(const string& location,
         }
 
         string prev_table_id;
-        for (const auto& [table_info, per_server_stats] : range_dist_stats) {
-          const auto& table_id = table_info.first;
-          const auto& table_range = table_info.second;
+        for (const auto& [table_id_and_tag, per_server_stats] : range_dist_stats) {
+          const auto& table_id = table_id_and_tag.first;
+          const auto& table_range = table_id_and_tag.second;
           if (prev_table_id != table_id) {
             prev_table_id = table_id;
-            out << endl << "Table: " << table_id << endl << endl;
+            out << endl
+                << Substitute("Table: $0 ($1)", table_id, table_info[table_id]->name) << endl
+                << endl;
             out << "Number of tablet replicas at servers for each range" << endl;
             DataTable range_skew_summary_table(
                 { "Max Skew", "Total Count", "Range Start Key" });
-            const auto it_begin = range_skew_stats.find(table_info);
+            const auto it_begin = range_skew_stats.find(table_id_and_tag);
             for (auto it = it_begin; it != range_skew_stats.end(); ++it) {
               const auto& cur_table_id = it->first.first;
               if (cur_table_id != table_id) {
@@ -650,12 +655,23 @@ Status RebalancerTool::PrintLocationBalanceStats(const string& location,
           RETURN_NOT_OK(skew_table.PrintTo(out));
           out << endl;
         }
-      } else {
-        out << "Per-table replica distribution details:" << endl;
+      }
+
+      const auto has_non_range_partitioned_table =
+          std::any_of(table_info.begin(), table_info.end(), [&](const auto& info) {
+            return !info.second->is_range_partitioned;
+          });
+      if (!config_.enable_range_rebalancing || has_non_range_partitioned_table) {
+        out << "Per-table replica distribution details for "
+            << (config_.enable_range_rebalancing ? "non range partitioned tables:" : "tables:")
+            << endl;
         DataTable skew_table(
             { "Table Id", "Replica Count", "Replica Skew", "Table Name" });
         for (const auto& [skew, balance_info] : table_skew_info) {
           const auto& table_id = balance_info.table_id;
+          if (config_.enable_range_rebalancing && table_info[table_id]->is_range_partitioned) {
+            continue;
+          }
           const auto it = table_info.find(table_id);
           const auto* table_summary =
               (it == table_info.end()) ? nullptr : it->second;
