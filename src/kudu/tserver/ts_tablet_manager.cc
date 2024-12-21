@@ -2048,7 +2048,7 @@ Status TSTabletManager::WaitForNoTransitionsForTests(const MonoDelta& timeout) c
 
 void TSTabletManager::UpdateTabletStatsIfNecessary() {
   // Only one thread is allowed to update at the same time.
-  std::unique_lock<rw_spinlock> try_lock(lock_update_, std::try_to_lock);
+  std::unique_lock try_lock(lock_update_, std::try_to_lock);
   if (!try_lock.owns_lock()) {
     return;
   }

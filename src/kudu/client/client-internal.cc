@@ -863,7 +863,7 @@ void KuduClient::Data::ConnectToClusterAsync(KuduClient* client,
   // this information in parallel, since the requests should end up with the
   // same result. Instead, simply piggy-back onto the existing request by adding
   // our the callback to leader_master_callbacks_{any_creds,primary_creds}_.
-  std::unique_lock<simple_spinlock> l(leader_master_lock_);
+  std::unique_lock l(leader_master_lock_);
 
   // Optimize sending out a new request in the presence of already existing
   // requests to the leader master. Depending on the credentials policy for the

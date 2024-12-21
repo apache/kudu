@@ -1091,7 +1091,7 @@ void LogBlockContainerNativeMeta::CompactMetadata() {
   SCOPED_LOG_SLOW_EXECUTION(WARNING, 5, Substitute("CompactMetadata $0", ToString()));
   // Skip compacting if lock failed to reduce overhead, metadata is on compacting or will be
   // compacted next time.
-  std::unique_lock<RWMutex> l(metadata_compact_lock_, std::try_to_lock);
+  std::unique_lock l(metadata_compact_lock_, std::try_to_lock);
   if (!l.owns_lock()) {
     return;
   }

@@ -497,7 +497,7 @@ void OpDriver::Abort(const Status& status) {
 
 Status OpDriver::ApplyAsync() {
   {
-    std::unique_lock<simple_spinlock> lock(lock_);
+    std::unique_lock lock(lock_);
     DCHECK_EQ(prepare_state_, PREPARED);
     if (op_status_.ok()) {
       DCHECK_EQ(replication_state_, REPLICATED);

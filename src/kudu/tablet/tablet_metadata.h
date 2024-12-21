@@ -414,8 +414,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   State state_;
 
   // Lock protecting the underlying data.
-  typedef simple_spinlock LockType;
-  mutable LockType data_lock_;
+  mutable simple_spinlock data_lock_;
 
   // Lock protecting flushing the data to disk.
   // If taken together with 'data_lock_', must be acquired first.

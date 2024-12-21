@@ -64,7 +64,6 @@ using std::unique_ptr;
 using strings::Substitute;
 
 namespace kudu {
-class rw_semaphore;
 
 namespace tablet {
 
@@ -88,7 +87,8 @@ void ParticipantOpState::AcquireTxnAndLock() {
 
 void ParticipantOpState::ReleaseTxn() {
   if (txn_lock_.owns_lock()) {
-    txn_lock_ = std::unique_lock<rw_semaphore>();
+    decltype(txn_lock_) tmp;
+    txn_lock_.swap(tmp);
   }
   txn_.reset();
   TRACE("Released txn lock");

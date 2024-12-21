@@ -207,7 +207,7 @@ Status TokenSigner::CheckNeedKey(unique_ptr<TokenSigningPrivateKey>* tsk) const 
   CHECK(tsk);
   const int64_t now = WallTime_Now();
 
-  unique_lock<RWMutex> l(lock_);
+  unique_lock l(lock_);
   if (tsk_deque_.empty()) {
     // No active key: need a new one.
     const int64_t key_seq_num = last_key_seq_num_ + 1;

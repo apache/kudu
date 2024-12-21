@@ -426,8 +426,7 @@ class MvccManager {
   // finishes applying or aborts.
   void AdvanceEarliestInFlightTimestamp();
 
-  typedef simple_spinlock LockType;
-  mutable LockType lock_;
+  mutable simple_spinlock lock_;
 
   // The kLatest snapshot that gets updated with op timestamps as MVCC ops
   // start and complete through the lifespan of this MvccManager.

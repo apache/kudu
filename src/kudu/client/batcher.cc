@@ -632,7 +632,7 @@ Batcher::Batcher(KuduClient* client,
 }
 
 void Batcher::Abort() {
-  std::unique_lock<simple_spinlock> l(lock_);
+  std::unique_lock l(lock_);
   state_ = kAborted;
 
   vector<InFlightOp*> to_abort;
@@ -811,7 +811,7 @@ void Batcher::TabletLookupFinished(InFlightOp* op, const Status& s) {
   // Acquire the batcher lock early to atomically:
   // 1. Test if the batcher was aborted, and
   // 2. Change the op state.
-  std::unique_lock<simple_spinlock> l(lock_);
+  std::unique_lock l(lock_);
 
   if (IsAbortedUnlocked()) {
     VLOG(1) << "Aborted batch: TabletLookupFinished for " << op->ToString();

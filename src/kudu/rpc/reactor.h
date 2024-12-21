@@ -405,8 +405,7 @@ class Reactor {
 
  private:
   friend class ReactorThread;
-  typedef simple_spinlock LockType;
-  mutable LockType lock_;
+  mutable simple_spinlock lock_;
 
   // parent messenger
   std::shared_ptr<Messenger> messenger_;

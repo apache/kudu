@@ -22,6 +22,7 @@
 #include <ostream>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -62,6 +63,7 @@ using std::string;
 using std::thread;
 using std::unique_ptr;
 using std::vector;
+using strings::Substitute;
 
 DECLARE_bool(master_support_authz_tokens);
 DECLARE_bool(tserver_enforce_access_control);
@@ -75,8 +77,6 @@ DECLARE_int64(authz_token_validity_seconds);
 METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetTableSchema);
 
 namespace kudu {
-
-class RWMutex;
 
 using cluster::InternalMiniCluster;
 using cluster::InternalMiniClusterOptions;
@@ -97,7 +97,6 @@ using security::SignedTokenPB;
 using security::TablePrivilegePB;
 using security::TokenSigner;
 using security::TokenSigningPrivateKeyPB;
-using strings::Substitute;
 
 namespace {
 
@@ -426,7 +425,7 @@ TEST_F(AuthzTokenTest, TestSingleMasterUnavailable) {
 
   // Take the leader lock on the master, which will prevent successful attempts
   // to get a new token, but will allow retries.
-  std::unique_lock<RWMutex> leader_lock(
+  std::unique_lock leader_lock(
       cluster_->mini_master()->master()->catalog_manager()->leader_lock_);
 
   // After a while, the client operation will time out.

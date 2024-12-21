@@ -954,7 +954,7 @@ void Reactor::QueueCancellation(shared_ptr<OutboundCall> call) {
 void Reactor::ScheduleReactorTask(ReactorTask* task) {
   bool was_empty;
   {
-    std::unique_lock<LockType> l(lock_);
+    std::unique_lock l(lock_);
     if (PREDICT_FALSE(closing_)) {
       // We guarantee the reactor lock is not taken when calling Abort().
       l.unlock();

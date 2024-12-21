@@ -165,7 +165,7 @@ void MethodSampler::SampleCall(InboundCall* call) {
   int64_t us_since_trace = now - bucket->last_sample_time;
   if (us_since_trace > kSampleIntervalUs) {
     {
-      std::unique_lock<simple_spinlock> lock(bucket->sample_lock, std::try_to_lock);
+      std::unique_lock lock(bucket->sample_lock, std::try_to_lock);
       // If another thread is already taking a sample, it's not worth waiting.
       if (!lock.owns_lock()) {
         return;

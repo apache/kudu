@@ -310,7 +310,7 @@ class RowSet {
     // the compaction selection has finished because only one thread
     // makes compaction selection at a time on a given Tablet due to
     // Tablet::compact_select_lock_.
-    std::unique_lock<std::mutex> try_lock(*compact_flush_lock(), std::try_to_lock);
+    std::unique_lock try_lock(*compact_flush_lock(), std::try_to_lock);
     return try_lock.owns_lock() && !has_been_compacted();
   }
 

@@ -53,10 +53,8 @@ class ObjectIdGenerator {
  private:
   DISALLOW_COPY_AND_ASSIGN(ObjectIdGenerator);
 
-  typedef simple_spinlock LockType;
-
   // Protects 'oid_generator_'.
-  LockType oid_lock_;
+  simple_spinlock oid_lock_;
 
   // Generates new UUIDs.
   boost::uuids::random_generator oid_generator_;

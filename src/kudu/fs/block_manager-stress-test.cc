@@ -441,7 +441,7 @@ void BlockManagerStressTest<T>::DeleterThread() {
     shared_ptr<BlockDeletionTransaction> deletion_transaction =
         this->bm_->NewDeletionTransaction();
     {
-      std::unique_lock<simple_spinlock> l(lock_);
+      std::unique_lock l(lock_);
       // If we only have a small number of live blocks, don't delete any.
       // This ensures that, when we restart, we always have a reasonable
       // amount of data -- otherwise the deletion threads are likely to

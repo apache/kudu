@@ -477,9 +477,6 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
     std::string OpsRangeString() const;
   };
 
-  using LockGuard = std::lock_guard<simple_spinlock>;
-  using UniqueLock = std::unique_lock<simple_spinlock>;
-
   // Returns string description for State enum value.
   static const char* State_Name(State state);
 

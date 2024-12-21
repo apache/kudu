@@ -155,7 +155,7 @@ void RemoteTabletServer::DnsResolutionFinished(const HostPort& hp,
 void RemoteTabletServer::InitProxy(KuduClient* client, const StatusCallback& cb) {
   HostPort hp;
   {
-    std::unique_lock<simple_spinlock> l(lock_);
+    std::unique_lock l(lock_);
 
     if (proxy_) {
       // Already have a proxy created.

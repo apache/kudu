@@ -702,7 +702,7 @@ TEST_F(RaftConsensusQuorumTest, TestConsensusContinuesIfAMinorityFallsBehind) {
     shared_ptr<RaftConsensus> follower0;
     CHECK_OK(peers_->GetPeerByIdx(kFollower0Idx, &follower0));
 
-    RaftConsensus::LockGuard l(follower0->lock_);
+    std::lock_guard l(follower0->lock_);
 
     // If the locked replica would stop consensus we would hang here
     // as we wait for operations to be replicated to a majority.
@@ -740,11 +740,11 @@ TEST_F(RaftConsensusQuorumTest, TestConsensusStopsIfAMajorityFallsBehind) {
     // and never letting them go.
     shared_ptr<RaftConsensus> follower0;
     CHECK_OK(peers_->GetPeerByIdx(kFollower0Idx, &follower0));
-    RaftConsensus::LockGuard l_0(follower0->lock_);
+    std::lock_guard l_0(follower0->lock_);
 
     shared_ptr<RaftConsensus> follower1;
     CHECK_OK(peers_->GetPeerByIdx(kFollower1Idx, &follower1));
-    RaftConsensus::LockGuard l_1(follower1->lock_);
+    std::lock_guard l_1(follower1->lock_);
 
     // Append a single message to the queue
     ASSERT_OK(AppendDummyMessage(kLeaderIdx, &round));

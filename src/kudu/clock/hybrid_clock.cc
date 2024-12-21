@@ -726,7 +726,7 @@ Status HybridClock::WalltimeWithError(uint64_t* now_usec, uint64_t* error_usec) 
   } else {
     // We failed to read the clock. Extrapolate the new time based on our
     // last successful read.
-    std::unique_lock<decltype(last_clock_read_lock_)> l(last_clock_read_lock_);
+    std::unique_lock l(last_clock_read_lock_);
     if (!is_extrapolating_) {
       is_extrapolating_ = true;
       extrapolating_->set_value(is_extrapolating_);

@@ -121,7 +121,7 @@ void AuthzTokenCache::RetrieveNewAuthzToken(const KuduTable* table,
   DCHECK(table);
   DCHECK(deadline.Initialized());
   const string& table_id = table->id();
-  std::unique_lock<simple_spinlock> l(rpc_lock_);
+  std::unique_lock l(rpc_lock_);
   // If there already exists an RPC for this table; attach the callback.
   auto* rpc_and_cbs = FindOrNull(authz_rpcs_, table_id);
   if (rpc_and_cbs) {

@@ -628,10 +628,8 @@ class FsManager {
   static const char *kInstanceMetadataFileName;
   static const char *kConsensusMetadataDirName;
 
-  typedef rw_spinlock LockType;
-
   // Lock protecting the env_map_ below.
-  mutable LockType env_lock_;
+  mutable rw_spinlock env_lock_;
   // The environment to be used for all filesystem operations.
   // Different tenant use different env.
   typedef std::map<std::string, std::shared_ptr<Env>> EnvMap;
@@ -662,13 +660,13 @@ class FsManager {
   // Shared by all the block managers.
   scoped_refptr<fs::FsErrorManager> error_manager_;
   // Lock protecting 'dd_manager_map_' below.
-  mutable LockType ddm_lock_;
+  mutable rw_spinlock ddm_lock_;
   typedef scoped_refptr<fs::DataDirManager> ScopedDDManagerPtr;
   typedef std::map<std::string, ScopedDDManagerPtr> DataDirManagerMap;
   DataDirManagerMap dd_manager_map_;
 
   // Lock protecting 'block_manager_map_'.
-  mutable LockType bm_lock_;
+  mutable rw_spinlock bm_lock_;
   typedef scoped_refptr<fs::BlockManager> ScopedBlockManagerPtr;
   typedef std::map<std::string, ScopedBlockManagerPtr> BlockManagerMap;
   BlockManagerMap block_manager_map_;

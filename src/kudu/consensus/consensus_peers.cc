@@ -190,7 +190,7 @@ Status Peer::SignalRequest(bool even_if_queue_empty) {
 }
 
 void Peer::SendNextRequest(bool even_if_queue_empty) {
-  std::unique_lock<simple_spinlock> l(peer_lock_);
+  std::unique_lock l(peer_lock_);
   if (PREDICT_FALSE(closed_)) {
     return;
   }
@@ -439,7 +439,7 @@ Status Peer::PrepareTabletCopyRequest() {
 
 void Peer::ProcessTabletCopyResponse() {
   // If the peer is already closed return.
-  std::unique_lock<simple_spinlock> lock(peer_lock_);
+  std::unique_lock lock(peer_lock_);
   if (PREDICT_FALSE(closed_)) {
     return;
   }

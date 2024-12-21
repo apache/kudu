@@ -1069,7 +1069,7 @@ Status TxnStatusManager::BeginCommitTransaction(int64_t txn_id, const string& us
 
   if (PREDICT_TRUE(FLAGS_txn_schedule_background_tasks)) {
     auto participant_ids = txn->GetParticipantIds();
-    std::unique_lock<simple_spinlock> l(lock_);
+    std::unique_lock l(lock_);
     auto [map_iter, emplaced] = commits_in_flight_.emplace(txn_id,
         new CommitTasks(txn_id, std::move(participant_ids),
                         txn_client, commit_pool_, this));
@@ -1204,7 +1204,7 @@ Status TxnStatusManager::BeginAbortTransaction(int64_t txn_id,
       // (and have removed the commit tasks), while at the same time, we've
       // just served a client-initiated abort and so the state is already
       // ABORT_IN_PROGRESS. If so, we should start abort tasks.
-      std::unique_lock<simple_spinlock> l(lock_);
+      std::unique_lock l(lock_);
       if (PREDICT_FALSE(!ContainsKey(commits_in_flight_, txn_id))) {
         auto participant_ids = txn->GetParticipantIds();
         auto tasks = EmplaceOrDie(&commits_in_flight_, txn_id,
@@ -1233,7 +1233,7 @@ Status TxnStatusManager::BeginAbortTransaction(int64_t txn_id,
 
   if (PREDICT_TRUE(FLAGS_txn_schedule_background_tasks)) {
     auto participant_ids = txn->GetParticipantIds();
-    std::unique_lock<simple_spinlock> l(lock_);
+    std::unique_lock l(lock_);
     auto [map_iter, emplaced] = commits_in_flight_.emplace(txn_id,
         new CommitTasks(txn_id, std::move(participant_ids),
                         txn_client, commit_pool_, this));

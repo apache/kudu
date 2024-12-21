@@ -61,13 +61,15 @@ using tserver::TabletServerErrorPB;
 
 void AlterSchemaOpState::AcquireSchemaLock(rw_semaphore* l) {
   TRACE("Acquiring schema lock in exclusive mode");
-  schema_lock_ = std::unique_lock<rw_semaphore>(*l);
+  decltype(schema_lock_) tmp(*l);
+  schema_lock_.swap(tmp);
   TRACE("Acquired schema lock");
 }
 
 void AlterSchemaOpState::ReleaseSchemaLock() {
   CHECK(schema_lock_.owns_lock());
-  schema_lock_ = std::unique_lock<rw_semaphore>();
+  decltype(schema_lock_) tmp;
+  schema_lock_.swap(tmp);
   TRACE("Released schema lock");
 }
 

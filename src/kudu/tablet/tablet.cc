@@ -1660,7 +1660,7 @@ Status Tablet::ReplaceMemRowSetsUnlocked(RowSetsInCompactionOrFlush* new_mrss,
   // Mark the memrowsets as locked, so compactions won't consider it
   // for inclusion in any concurrent compactions.
   for (auto& mrs : *old_mrss) {
-    std::unique_lock<std::mutex> ms_lock(*mrs->compact_flush_lock(), std::try_to_lock);
+    std::unique_lock ms_lock(*mrs->compact_flush_lock(), std::try_to_lock);
     CHECK(ms_lock.owns_lock());
     new_mrss->AddRowSet(mrs, std::move(ms_lock));
   }
@@ -1861,7 +1861,7 @@ Status Tablet::PickRowSetsToCompact(RowSetsInCompactionOrFlush *picked,
     // compaction from selecting this same rowset, and also ensures that
     // we don't select a rowset which is currently in the middle of being
     // flushed.
-    std::unique_lock<std::mutex> lock(*rs->compact_flush_lock(), std::try_to_lock);
+    std::unique_lock lock(*rs->compact_flush_lock(), std::try_to_lock);
     CHECK(lock.owns_lock()) << rs->ToString() << " appeared available for "
       "compaction when inputs were selected, but was unable to lock its "
       "compact_flush_lock to prepare for compaction.";
@@ -2864,7 +2864,7 @@ Status Tablet::CompactWorstDeltas(RowSet::DeltaCompactionType type) {
     if (!rs) {
       return Status::OK();
     }
-    lock = std::unique_lock<std::mutex>(*rs->compact_flush_lock(), std::try_to_lock);
+    lock = std::unique_lock(*rs->compact_flush_lock(), std::try_to_lock);
     CHECK(lock.owns_lock());
   }
 
@@ -2892,7 +2892,7 @@ double Tablet::GetPerfImprovementForBestDeltaCompact(RowSet::DeltaCompactionType
 double Tablet::GetPerfImprovementForBestDeltaCompactUnlocked(RowSet::DeltaCompactionType type,
                                                              shared_ptr<RowSet>* rs) const {
 #ifndef NDEBUG
-  std::unique_lock<std::mutex> cs_lock(compact_select_lock_, std::try_to_lock);
+  std::unique_lock cs_lock(compact_select_lock_, std::try_to_lock);
   CHECK(!cs_lock.owns_lock());
 #endif
   scoped_refptr<TabletComponents> comps;
@@ -3069,7 +3069,7 @@ Status Tablet::DeleteAncientDeletedRowsets() {
       if (deleted_and_empty) {
         // If we intend on deleting the rowset, take its lock so concurrent
         // compactions don't try to select it for compactions.
-        std::unique_lock<std::mutex> l(*rowset->compact_flush_lock(), std::try_to_lock);
+        std::unique_lock l(*rowset->compact_flush_lock(), std::try_to_lock);
         CHECK(l.owns_lock());
         to_delete.emplace_back(rowset);
         rowset_locks.emplace_back(std::move(l));
@@ -3108,7 +3108,7 @@ Status Tablet::DeleteAncientUndoDeltas(int64_t* blocks_deleted, int64_t* bytes_d
       if (!rowset->IsAvailableForCompaction()) {
         continue;
       }
-      std::unique_lock<std::mutex> lock(*rowset->compact_flush_lock(), std::try_to_lock);
+      std::unique_lock lock(*rowset->compact_flush_lock(), std::try_to_lock);
       CHECK(lock.owns_lock()) << rowset->ToString() << " unable to lock compact_flush_lock";
       rowsets_to_gc_undos.push_back(rowset);
       rowset_locks.push_back(std::move(lock));

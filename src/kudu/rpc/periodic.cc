@@ -74,7 +74,7 @@ PeriodicTimer::~PeriodicTimer() {
 }
 
 void PeriodicTimer::Start(optional<MonoDelta> next_task_delta) {
-  std::unique_lock<simple_spinlock> l(lock_);
+  std::unique_lock l(lock_);
   if (!started_) {
     started_ = true;
     SnoozeUnlocked(std::move(next_task_delta));

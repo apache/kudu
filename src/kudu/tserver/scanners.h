@@ -340,7 +340,7 @@ class Scanner {
 
   // Return the delta from the last time this scan was updated to 'now'.
   MonoDelta TimeSinceLastAccess(const MonoTime& now) const {
-    std::unique_lock<Mutex> l(lock_, std::try_to_lock);
+    std::unique_lock l(lock_, std::try_to_lock);
     if (l.owns_lock()) {
       return now - last_access_time_;
     }

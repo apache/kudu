@@ -597,7 +597,7 @@ void TabletMetadata::PinFlush() {
 }
 
 Status TabletMetadata::UnPinFlush() {
-  std::unique_lock<LockType> l(data_lock_);
+  std::unique_lock l(data_lock_);
   CHECK_GT(num_flush_pins_, 0);
   num_flush_pins_--;
   if (needs_flush_) {

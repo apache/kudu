@@ -838,7 +838,7 @@ Status RebalancerTool::GetClusterRawInfo(const optional<string>& location,
 }
 
 Status RebalancerTool::RefreshKsckResults() {
-  std::unique_lock<std::mutex> refresh_guard(ksck_refresh_lock_);
+  std::unique_lock refresh_guard(ksck_refresh_lock_);
   if (ksck_refreshing_) {
     // Other thread is already refreshing the ksck info.
     ksck_refresh_cv_.wait(refresh_guard, [this]{ return !ksck_refreshing_; });

@@ -175,8 +175,8 @@ void FlushMRSOp::UpdateStats(MaintenanceOpStats* stats) {
   }
 
   {
-    std::unique_lock<Semaphore> lock(tablet_replica_->tablet()->rowsets_flush_sem_,
-                                     std::defer_lock);
+    std::unique_lock lock(tablet_replica_->tablet()->rowsets_flush_sem_,
+                          std::defer_lock);
     stats->set_runnable(lock.try_lock());
   }
 

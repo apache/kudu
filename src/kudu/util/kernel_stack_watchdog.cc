@@ -106,7 +106,7 @@ void KernelStackWatchdog::Unregister() {
 
   std::unique_ptr<TLS> tls(tls_);
   {
-    std::unique_lock<Mutex> l(unregister_lock_, std::try_to_lock);
+    std::unique_lock l(unregister_lock_, std::try_to_lock);
     lock_guard l2(tls_lock_);
     CHECK(tls_by_tid_.erase(tid));
     if (!l.owns_lock()) {

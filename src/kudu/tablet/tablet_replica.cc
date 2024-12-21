@@ -321,7 +321,7 @@ const consensus::RaftConfigPB TabletReplica::RaftConfig() const {
 
 void TabletReplica::Stop() {
   {
-    std::unique_lock<simple_spinlock> lock(lock_);
+    std::unique_lock lock(lock_);
     if (state_ == STOPPING || state_ == STOPPED ||
         state_ == SHUTDOWN || state_ == FAILED) {
       lock.unlock();

@@ -76,7 +76,7 @@ bool LifoServiceQueue::BlockingGet(std::unique_ptr<InboundCall>* out) {
 
 QueueStatus LifoServiceQueue::Put(InboundCall* call,
                                   std::optional<InboundCall*>* evicted) {
-  std::unique_lock<simple_spinlock> l(lock_);
+  std::unique_lock l(lock_);
   if (PREDICT_FALSE(shutdown_)) {
     return QUEUE_SHUTDOWN;
   }

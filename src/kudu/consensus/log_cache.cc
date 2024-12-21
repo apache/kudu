@@ -164,7 +164,7 @@ Status LogCache::AppendOperations(vector<ReplicateRefPtr> msgs,
   const int64_t first_idx_in_batch = msgs.front()->get()->id().index();
   const int64_t last_idx_in_batch = msgs.back()->get()->id().index();
 
-  std::unique_lock<simple_spinlock> l(lock_);
+  std::unique_lock l(lock_);
   // If we're not appending a consecutive op we're likely overwriting and
   // need to replace operations in the cache.
   if (first_idx_in_batch != next_sequential_op_index_) {
@@ -299,7 +299,7 @@ Status LogCache::ReadOps(int64_t after_op_index,
   int64_t remaining_space = max_size_bytes;
   int64_t next_index = after_op_index + 1;
 
-  std::unique_lock<simple_spinlock> l(lock_);
+  std::unique_lock l(lock_);
   while (remaining_space > 0 && next_index < next_sequential_op_index_) {
     // If the messages the peer needs haven't been loaded into the queue yet,
     // load them.

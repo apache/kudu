@@ -1358,8 +1358,7 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // easy to make a "gettable set".
 
   // Lock protecting the various maps and sets below.
-  typedef rw_spinlock LockType;
-  mutable LockType lock_;
+  mutable rw_spinlock lock_;
 
   // Table maps: table-id -> TableInfo and normalized-table-name -> TableInfo
   TableInfoMap table_ids_map_;

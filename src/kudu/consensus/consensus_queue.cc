@@ -403,7 +403,7 @@ Status PeerMessageQueue::AppendOperations(vector<ReplicateRefPtr> msgs,
                                           const StatusCallback& log_append_callback) {
 
   DFAKE_SCOPED_LOCK(append_fake_lock_);
-  std::unique_lock<simple_spinlock> lock(queue_lock_);
+  std::unique_lock lock(queue_lock_);
 
   OpId last_id = msgs.back()->get()->id();
 

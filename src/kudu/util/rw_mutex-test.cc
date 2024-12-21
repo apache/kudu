@@ -73,7 +73,7 @@ TEST_P(RWMutexTest, TestDeadlocks) {
     });
     threads.emplace_back([&](){
       while (!done.Load()) {
-        unique_lock<RWMutex> l(lock_, try_to_lock);
+        unique_lock l(lock_, try_to_lock);
         if (l.owns_lock()) {
           number_of_writes++;
         }
