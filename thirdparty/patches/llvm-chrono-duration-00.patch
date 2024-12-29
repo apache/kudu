@@ -1,0 +1,34 @@
+commit eaadc451566f0d1aec873b7fe8b1a9dc3a7b29bd
+Author: Tiago Macarios <tiagomacarios@gmail.com>
+Date:   Thu Feb 3 10:23:15 2022 -0500
+
+    [libc++] Fix chrono::duration constructor constraint
+    
+    As per [time.duration.cons]/1, the constructor constraint should be on
+    const Rep2&. As it is now the code will fail to compile in certain
+    cases, for example (https://godbolt.org/z/c7fPrcTYM):
+    
+         struct S{
+              operator int() const&& noexcept = delete;
+              operator int() const& noexcept;
+         };
+    
+         const S &fun();
+    
+         auto k = std::chrono::microseconds{fun()};
+    
+    Differential Revision: https://reviews.llvm.org/D118902
+
+diff --git a/projects/libcxx/include/chrono b/projects/libcxx/include/chrono
+index 24801772ec5d..b7d88cb52ea8 100644
+--- a/projects/libcxx/include/chrono
++++ b/projects/libcxx/include/chrono
+@@ -1073,7 +1073,7 @@ public:
+         explicit duration(const _Rep2& __r,
+             typename enable_if
+             <
+-               is_convertible<_Rep2, rep>::value &&
++               is_convertible<const _Rep2&, rep>::value &&
+                (treat_as_floating_point<rep>::value ||
+                !treat_as_floating_point<_Rep2>::value)
+             >::type* = 0)

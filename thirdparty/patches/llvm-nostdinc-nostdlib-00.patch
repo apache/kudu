@@ -1,0 +1,59 @@
+commit 14c4de13e920c497c5275f81f74c453da2b3c957
+Author: Louis Dionne <ldionne@apple.com>
+Date:   Mon Jul 20 13:13:38 2020 -0400
+
+    [compiler-rt] Use -nostdinc++ in clang_rt.profile to avoid including C++ headers
+    
+    Most of the code in compiler_rt is C code. However, clang_rt.profile
+    contains the InstrProfilingRuntime.cpp file, which builds as C++. This
+    means that including e.g. <stdint.h> will actually include libc++'s
+    <stdint.h> and then #include_next the system's <stdint.h>. However, if
+    the target we're building compiler-rt for isn't supported by libc++,
+    this will lead to a failure since libc++'s <stdint.h> includes <__config>,
+    which performs various checks.
+    
+    Since the goal seems to *not* be including any header from the C++ Standard
+    Library in clang_rt.profile, using -nostdinc++ to ensure that doesn't
+    happen unknowingly seems to make sense.
+    
+    rdar://65852694
+    
+    Differential Revision: https://reviews.llvm.org/D84205
+
+diff --git a/projects/compiler-rt/cmake/config-ix.cmake b/projects/compiler-rt/cmake/config-ix.cmake
+index e713f3c6b7c7..d1e01d956a7f 100644
+--- a/projects/compiler-rt/cmake/config-ix.cmake
++++ b/projects/compiler-rt/cmake/config-ix.cmake
+@@ -122,7 +122,8 @@ check_cxx_compiler_flag(/wd4800 COMPILER_RT_HAS_WD4800_FLAG)
+ check_symbol_exists(__func__ "" COMPILER_RT_HAS_FUNC_SYMBOL)
+ 
+ # Includes.
+-check_include_files("sys/auxv.h" COMPILER_RT_HAS_AUXV)
++check_cxx_compiler_flag(-nostdinc++ COMPILER_RT_HAS_NOSTDINCXX_FLAG)
++check_include_files("sys/auxv.h"    COMPILER_RT_HAS_AUXV)
+ 
+ # Libraries.
+ check_library_exists(dl dlopen "" COMPILER_RT_HAS_LIBDL)
+diff --git a/projects/compiler-rt/lib/profile/CMakeLists.txt b/projects/compiler-rt/lib/profile/CMakeLists.txt
+index 63532b72ff82..5ff0e10182b4 100644
+--- a/projects/compiler-rt/lib/profile/CMakeLists.txt
++++ b/projects/compiler-rt/lib/profile/CMakeLists.txt
+@@ -97,7 +97,7 @@ if(COMPILER_RT_TARGET_HAS_ATOMICS)
+  set(EXTRA_FLAGS
+      ${EXTRA_FLAGS}
+      -DCOMPILER_RT_HAS_ATOMICS=1)
+-endif() 
++endif()
+ 
+ if(COMPILER_RT_TARGET_HAS_FCNTL_LCK)
+  set(EXTRA_FLAGS
+@@ -111,6 +111,9 @@ if(COMPILER_RT_TARGET_HAS_UNAME)
+      -DCOMPILER_RT_HAS_UNAME=1)
+ endif()
+ 
++# We don't use the C++ Standard Library here, so avoid including it by mistake.
++append_list_if(COMPILER_RT_HAS_NOSTDINCXX_FLAG -nostdinc++ EXTRA_FLAGS)
++
+ # This appears to be a C-only warning banning the use of locals in aggregate
+ # initializers. All other compilers accept this, though.
+ # nonstandard extension used : 'identifier' : cannot be initialized using address of automatic variable
