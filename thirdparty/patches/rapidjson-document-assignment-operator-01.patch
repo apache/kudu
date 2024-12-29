@@ -1,0 +1,19 @@
+commit 862c39be371278a45a88d4d1d75164be57bb7e2d
+Author: Janusz Chorko <janusz.chorko@apdu.pl>
+Date:   Fri Aug 26 21:26:50 2016 +0200
+
+    Explicitly disable copy assignment operator
+
+diff --git a/include/rapidjson/document.h b/include/rapidjson/document.h
+index b0f1f70b..19f5a6a5 100644
+--- a/include/rapidjson/document.h
++++ b/include/rapidjson/document.h
+@@ -326,6 +326,8 @@ private:
+     //! Disallow construction from non-const array
+     template<SizeType N>
+     GenericStringRef(CharType (&str)[N]) /* = delete */;
++    //! Copy assignment operator not permitted - immutable type
++    GenericStringRef& operator=(const GenericStringRef& rhs) /* = delete */;
+ };
+ 
+ //! Mark a character pointer as constant string

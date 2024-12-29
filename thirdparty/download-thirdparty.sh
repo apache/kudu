@@ -267,14 +267,16 @@ fetch_and_patch \
  $LIBEV_PATCHLEVEL \
  "patch -p1 < $TP_DIR/patches/libev-c17.patch"
 
-RAPIDJSON_PATCHLEVEL=3
+RAPIDJSON_PATCHLEVEL=5
 fetch_and_patch \
  rapidjson-${RAPIDJSON_VERSION}.zip \
  $RAPIDJSON_SOURCE \
  $RAPIDJSON_PATCHLEVEL \
  "patch -p1 < $TP_DIR/patches/rapidjson-fix-signed-unsigned-conversion-error.patch" \
  "patch -p1 < $TP_DIR/patches/rapidjson-assertions-for-clang-warnings.patch" \
- "patch -p1 < $TP_DIR/patches/rapidjson-avoid-pointer-arithmetic-on-null-pointer.patch"
+ "patch -p1 < $TP_DIR/patches/rapidjson-avoid-pointer-arithmetic-on-null-pointer.patch" \
+ "patch -p1 < $TP_DIR/patches/rapidjson-document-assignment-operator-00.patch" \
+ "patch -p1 < $TP_DIR/patches/rapidjson-document-assignment-operator-01.patch"
 
 SQUEASEL_PATCHLEVEL=1
 fetch_and_patch \
