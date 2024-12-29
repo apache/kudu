@@ -1,0 +1,22 @@
+commit 7ea7ded187b4d739239f3ab7082fcd5a2ccc1eaa
+Author: mingtaoxt xt <mingtaoxt@gmail.com>
+Date:   Wed Oct 19 19:36:13 2022 +0800
+
+    mainline version gcc-13 cannot use "uintptr_t" via "#include <string>"
+    
+    Change-Id: I0049bb92658b4226e32783ad4d8271787deef5f3
+    Reviewed-on: https://chromium-review.googlesource.com/c/breakpad/breakpad/+/3964166
+    Reviewed-by: Mike Frysinger <vapier@chromium.org>
+
+diff --git a/src/client/linux/handler/minidump_descriptor.h b/src/client/linux/handler/minidump_descriptor.h
+index 4349b88f..d822c9d9 100644
+--- a/src/client/linux/handler/minidump_descriptor.h
++++ b/src/client/linux/handler/minidump_descriptor.h
+@@ -32,6 +32,7 @@
+ #include <assert.h>
+ #include <sys/types.h>
+ 
++#include <cstdint>
+ #include <string>
+ 
+ #include "client/linux/handler/microdump_extra_info.h"

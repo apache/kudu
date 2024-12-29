@@ -1,0 +1,27 @@
+commit 00f76018ccb4d27265d92a993f5443ae2a8d043c
+Author: Lei Zhang <thestig@chromium.org>
+Date:   Wed Sep 7 09:38:41 2022 -0700
+
+    Fix fread() check in ExploitabilityLinux.
+    
+    This fread() call did not intend to always fill the buffer, so the
+    change in https://crrev.com/c/3872234 is incorrect. Revert that one line
+    change.
+    
+    Change-Id: I3fbe38fce11c24aa77b39dc229c7c5ed2a8d6960
+    Reviewed-on: https://chromium-review.googlesource.com/c/breakpad/breakpad/+/3879289
+    Reviewed-by: Mike Frysinger <vapier@chromium.org>
+
+diff --git a/src/processor/exploitability_linux.cc b/src/processor/exploitability_linux.cc
+index c54cb046..bc1b0b08 100644
+--- a/src/processor/exploitability_linux.cc
++++ b/src/processor/exploitability_linux.cc
+@@ -522,7 +522,7 @@ bool ExploitabilityLinux::DisassembleBytes(const string& architecture,
+     BPLOG(ERROR) << "Failed to call objdump.";
+     return false;
+   }
+-  if (fread(objdump_output_buffer, 1, buffer_len, objdump_fp) != buffer_len) {
++  if (fread(objdump_output_buffer, 1, buffer_len, objdump_fp) <= 0) {
+     pclose(objdump_fp);
+     unlink(raw_bytes_tmpfile);
+     BPLOG(ERROR) << "Failed to read objdump output.";

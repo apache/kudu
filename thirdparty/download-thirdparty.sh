@@ -369,14 +369,18 @@ fetch_and_patch \
  $BOOST_PATCHLEVEL \
  "patch -p0 < $TP_DIR/patches/boost-bootstrap.patch"
 
-BREAKPAD_PATCHLEVEL=3
+BREAKPAD_PATCHLEVEL=7
 fetch_and_patch \
  breakpad-${BREAKPAD_VERSION}.tar.gz \
  $BREAKPAD_SOURCE \
  $BREAKPAD_PATCHLEVEL \
  "patch -p1 < $TP_DIR/patches/breakpad-add-basic-support-for-dwz-dwarf-extension.patch" \
  "patch -p1 < $TP_DIR/patches/breakpad-syscall-rsp-clobber-fix.patch" \
- "patch -p0 < $TP_DIR/patches/breakpad-SIGSTKSZ-error.patch"
+ "patch -p1 < $TP_DIR/patches/breakpad-SIGSTKSZ-error.patch" \
+ "patch -p1 < $TP_DIR/patches/breakpad-fclose.patch" \
+ "patch -p1 < $TP_DIR/patches/breakpad-fread.patch" \
+ "patch -p1 < $TP_DIR/patches/breakpad-minidump-descriptor.patch" \
+ "patch -p1 < $TP_DIR/patches/breakpad-guid-creator.patch"
 
 SPARSEHASH_PATCHLEVEL=3
 fetch_and_patch \
