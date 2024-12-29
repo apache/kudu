@@ -1,0 +1,69 @@
+commit 7d9540ea96ecb1e83f19cc68a202e8fa697c513d
+Author: Mark de Wever <koraq@xs4all.nl>
+Date:   Sat Feb 10 14:21:57 2024 +0100
+
+    [libc++][chrono] Implements duration Rep constraints. (#80539)
+    
+    Applies LWG3050 to the constraints of operator*, operator/, and
+    operator%. The changes to the constructor were done in
+    https://reviews.llvm.org/D118902, but that patch did not identify the
+    related LWG-issue, and only adjusted the constructor to the wording in
+    the Standard.
+    
+    Implements:
+    - LWG 3050: Conversion specification problem in chrono::duration
+    constructor
+    
+    ---------
+    
+    Co-authored-by: h-vetinari <h.vetinari@gmx.com>
+
+diff --git a/projects/libcxx/include/chrono b/projects/libcxx/include/chrono
+index c80fa78a56ba..f8407419c954 100644
+--- a/projects/libcxx/include/chrono
++++ b/projects/libcxx/include/chrono
+@@ -58,7 +58,7 @@ public:
+         constexpr explicit duration(const Rep2& r,
+             typename enable_if
+             <
+-               is_convertible<Rep2, rep>::value &&
++               is_convertible<const Rep2&, rep>::value &&
+                (treat_as_floating_point<rep>::value ||
+                !treat_as_floating_point<rep>::value && !treat_as_floating_point<Rep2>::value)
+             >::type* = 0);
+@@ -1267,7 +1267,7 @@
+ _LIBCPP_CONSTEXPR
+ typename enable_if
+ <
+-    is_convertible<_Rep2, typename common_type<_Rep1, _Rep2>::type>::value,
++    is_convertible<const _Rep2&, typename common_type<_Rep1, _Rep2>::type>::value,
+     duration<typename common_type<_Rep1, _Rep2>::type, _Period>
+ >::type
+ operator*(const duration<_Rep1, _Period>& __d, const _Rep2& __s)
+@@ -1282,7 +1282,7 @@
+ _LIBCPP_CONSTEXPR
+ typename enable_if
+ <
+-    is_convertible<_Rep1, typename common_type<_Rep1, _Rep2>::type>::value,
++    is_convertible<const _Rep1&, typename common_type<_Rep1, _Rep2>::type>::value,
+     duration<typename common_type<_Rep1, _Rep2>::type, _Period>
+ >::type
+ operator*(const _Rep1& __s, const duration<_Rep2, _Period>& __d)
+@@ -1298,7 +1298,7 @@
+ typename enable_if
+ <
+     !__is_duration<_Rep2>::value &&
+-      is_convertible<_Rep2, typename common_type<_Rep1, _Rep2>::type>::value,
++      is_convertible<const _Rep2&, typename common_type<_Rep1, _Rep2>::type>::value,
+     duration<typename common_type<_Rep1, _Rep2>::type, _Period>
+ >::type
+ operator/(const duration<_Rep1, _Period>& __d, const _Rep2& __s)
+@@ -1326,7 +1326,7 @@
+ typename enable_if
+ <
+     !__is_duration<_Rep2>::value &&
+-      is_convertible<_Rep2, typename common_type<_Rep1, _Rep2>::type>::value,
++      is_convertible<const _Rep2&, typename common_type<_Rep1, _Rep2>::type>::value,
+     duration<typename common_type<_Rep1, _Rep2>::type, _Period>
+ >::type
+ operator%(const duration<_Rep1, _Period>& __d, const _Rep2& __s)

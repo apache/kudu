@@ -1,0 +1,65 @@
+commit 59d503159134de548c3958efb597db545bdef650
+Author: Petr Hosek <phosek@google.com>
+Date:   Fri Oct 30 16:16:09 2020 -0700
+
+    [CMake] Add -fno-rtti into tsan unittests
+    
+    And some other NFC parts of D88922
+
+diff --git a/projects/compiler-rt/cmake/config-ix.cmake b/projects/compiler-rt/cmake/config-ix.cmake
+index 38a1a2bdfac5..88a874f20ec2 100644
+--- a/projects/compiler-rt/cmake/config-ix.cmake
++++ b/projects/compiler-rt/cmake/config-ix.cmake
+@@ -123,6 +123,7 @@ check_symbol_exists(__func__ "" COMPILER_RT_HAS_FUNC_SYMBOL)
+ 
+ # Includes.
+ check_cxx_compiler_flag(-nostdinc++ COMPILER_RT_HAS_NOSTDINCXX_FLAG)
++check_cxx_compiler_flag(-nostdlib++ COMPILER_RT_HAS_NOSTDLIBXX_FLAG)
+ check_include_files("sys/auxv.h"    COMPILER_RT_HAS_AUXV)
+ 
+ # Libraries.
+diff --git a/projects/compiler-rt/lib/fuzzer/CMakeLists.txt b/projects/compiler-rt/lib/fuzzer/CMakeLists.txt
+index b98c27145687..48bb7fb956af 100644
+--- a/projects/compiler-rt/lib/fuzzer/CMakeLists.txt
++++ b/projects/compiler-rt/lib/fuzzer/CMakeLists.txt
+@@ -64,6 +64,7 @@ if(OS_NAME MATCHES "Linux|Fuchsia" AND
+   # Remove -stdlib= which is unused when passing -nostdinc++.
+   string(REGEX REPLACE "-stdlib=[a-zA-Z+]*" "" CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS})
+ elseif(TARGET cxx-headers OR HAVE_LIBCXX)
++  # libFuzzer uses C++ standard library headers.
+   set(LIBFUZZER_DEPS cxx-headers)
+ endif()
+ 
+diff --git a/projects/compiler-rt/lib/tsan/tests/CMakeLists.txt b/projects/compiler-rt/lib/tsan/tests/CMakeLists.txt
+index 61b01a8b4da1..5d27e134555a 100644
+--- a/projects/compiler-rt/lib/tsan/tests/CMakeLists.txt
++++ b/projects/compiler-rt/lib/tsan/tests/CMakeLists.txt
+@@ -5,13 +5,14 @@ set_target_properties(TsanUnitTests PROPERTIES
+   FOLDER "Compiler-RT Tests")
+ 
+ set(TSAN_UNITTEST_CFLAGS
+-  ${TSAN_CFLAGS}
+   ${COMPILER_RT_UNITTEST_CFLAGS}
+   ${COMPILER_RT_GTEST_CFLAGS}
+   -I${COMPILER_RT_SOURCE_DIR}/include
+   -I${COMPILER_RT_SOURCE_DIR}/lib
+   -I${COMPILER_RT_SOURCE_DIR}/lib/tsan/rtl
+-  -DGTEST_HAS_RTTI=0)
++  -DGTEST_HAS_RTTI=0
++  -fno-rtti
++)
+ 
+ set(TSAN_TEST_ARCH ${TSAN_SUPPORTED_ARCH})
+ 
+diff --git a/projects/compiler-rt/lib/xray/CMakeLists.txt b/projects/compiler-rt/lib/xray/CMakeLists.txt
+index 3798f557c42c..1b738d0ff5bf 100644
+--- a/projects/compiler-rt/lib/xray/CMakeLists.txt
++++ b/projects/compiler-rt/lib/xray/CMakeLists.txt
+@@ -149,6 +149,7 @@ set(XRAY_COMMON_RUNTIME_OBJECT_LIBS
+     RTSanitizerCommon
+     RTSanitizerCommonLibc)
+ 
++# XRay uses C++ standard library headers.
+ if (TARGET cxx-headers OR HAVE_LIBCXX)
+   set(XRAY_DEPS cxx-headers)
+ endif()

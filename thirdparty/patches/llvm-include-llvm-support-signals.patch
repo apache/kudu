@@ -1,0 +1,26 @@
+commit ff1681ddb303223973653f7f5f3f3435b48a1983
+Author: Sergei Trofimovich <slyich@gmail.com>
+Date:   Mon May 23 08:03:23 2022 +0100
+
+    [Support] Add missing <cstdint> header to Signals.h
+    
+    Without the change llvm build fails on this week's gcc-13 snapshot as:
+    
+        [  0%] Building CXX object lib/Support/CMakeFiles/LLVMSupport.dir/Signals.cpp.o
+        In file included from llvm/lib/Support/Signals.cpp:14:
+        llvm/include/llvm/Support/Signals.h:119:8: error: variable or field 'CleanupOnSignal' declared void
+          119 |   void CleanupOnSignal(uintptr_t Context);
+              |        ^~~~~~~~~~~~~~~
+
+diff --git a/include/llvm/Support/Signals.h b/include/llvm/Support/Signals.h
+index 44f5a750ff5c..937e0572d4a7 100644
+--- a/include/llvm/Support/Signals.h
++++ b/include/llvm/Support/Signals.h
+@@ -14,6 +14,7 @@
+ #ifndef LLVM_SUPPORT_SIGNALS_H
+ #define LLVM_SUPPORT_SIGNALS_H
+ 
++#include <cstdint>
+ #include <string>
+ 
+ namespace llvm {
