@@ -1,11 +1,33 @@
---- src/client/linux/handler/exception_handler.cc	2022-04-01 18:31:33.463554421 +0200
-+++ src/client/linux/handler/exception_handler.cc	2022-04-01 18:32:20.503739341 +0200
-@@ -138,7 +138,7 @@
+commit 605c51ed96ad44b34c457bbca320e74e194c317e
+Author: David Faure <david.faure@kdab.com>
+Date:   Wed Dec 15 22:26:40 2021 +0100
+
+    Fix for non-constant SIGSTKSZ
+    
+    On glibc > 2.33, `SIGSTKSZ` might not be constant (in which case
+    it expands to a call to `sysconf` which returns a `long int`); see
+    https://sourceware.org/pipermail/libc-alpha/2020-October/118513.html
+    
+    Pass unsigned explicitly to std::max, to avoid relying on template
+    argument deduction. This works both with the old-style constant
+    `SIGSTKSZ` and the new configurable one.
+    
+    Initially based on https://chromium-review.googlesource.com/c/2776379
+    
+    Change-Id: I9fc95337f973e871b84735ce822b5e11ba73ea8c
+    Reviewed-on: https://chromium-review.googlesource.com/c/breakpad/breakpad/+/3340721
+    Reviewed-by: Mark Mentovai <mark@chromium.org>
+
+diff --git a/src/client/linux/handler/exception_handler.cc b/src/client/linux/handler/exception_handler.cc
+index ca353c40..499be0a9 100644
+--- a/src/client/linux/handler/exception_handler.cc
++++ b/src/client/linux/handler/exception_handler.cc
+@@ -138,7 +138,7 @@ void InstallAlternateStackLocked() {
    // SIGSTKSZ may be too small to prevent the signal handlers from overrunning
    // the alternative stack. Ensure that the size of the alternative stack is
    // large enough.
 -  static const unsigned kSigStackSize = std::max(16384, SIGSTKSZ);
-+  static const unsigned kSigStackSize = std::max(16384u, (unsigned)SIGSTKSZ);
++  const unsigned kSigStackSize = std::max<unsigned>(16384, SIGSTKSZ);
  
    // Only set an alternative stack if there isn't already one, or if the current
    // one is too small.

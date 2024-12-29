@@ -1,0 +1,40 @@
+commit 30c7f3cfc11cdbf93a12efbe9d46c66d9785879e
+Author: Lei Zhang <thestig@chromium.org>
+Date:   Tue Sep 6 08:00:52 2022 -0700
+
+    Fix some Coverity defects.
+    
+    Fix a few issues Coverity detected in exploitability_linux.cc:
+    
+    CID 277681, 277682, 277683
+    
+    Change-Id: I8ad0581f075da7346b9be8100b3690555a358b16
+    Reviewed-on: https://chromium-review.googlesource.com/c/breakpad/breakpad/+/3872234
+    Reviewed-by: Mike Frysinger <vapier@chromium.org>
+
+diff --git a/src/processor/exploitability_linux.cc b/src/processor/exploitability_linux.cc
+index d4900bb0..c54cb046 100644
+--- a/src/processor/exploitability_linux.cc
++++ b/src/processor/exploitability_linux.cc
+@@ -518,18 +518,17 @@ bool ExploitabilityLinux::DisassembleBytes(const string& architecture,
+            raw_bytes_tmpfile);
+   FILE* objdump_fp = popen(cmd, "r");
+   if (!objdump_fp) {
+-    fclose(objdump_fp);
+     unlink(raw_bytes_tmpfile);
+     BPLOG(ERROR) << "Failed to call objdump.";
+     return false;
+   }
+-  if (fread(objdump_output_buffer, 1, buffer_len, objdump_fp) <= 0) {
+-    fclose(objdump_fp);
++  if (fread(objdump_output_buffer, 1, buffer_len, objdump_fp) != buffer_len) {
++    pclose(objdump_fp);
+     unlink(raw_bytes_tmpfile);
+     BPLOG(ERROR) << "Failed to read objdump output.";
+     return false;
+   }
+-  fclose(objdump_fp);
++  pclose(objdump_fp);
+   unlink(raw_bytes_tmpfile);
+   return true;
+ }

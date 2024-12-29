@@ -1,0 +1,23 @@
+commit 4beee493f626ffd6d05d8d05e603df9ff3b8717b
+Author: Mike Frysinger <vapier@chromium.org>
+Date:   Sat Aug 3 10:37:57 2019 -0400
+
+    guid_creater: include string.h for memcpy
+    
+    Bug: google-breakpad:779
+    Change-Id: If0cfb036ee924178033c89d4dc3e2ce75ddd46f2
+    Reviewed-on: https://chromium-review.googlesource.com/c/breakpad/breakpad/+/1732887
+    Reviewed-by: Mark Mentovai <mark@chromium.org>
+
+diff --git a/src/common/linux/guid_creator.cc b/src/common/linux/guid_creator.cc
+index f81c2911..03e3d781 100644
+--- a/src/common/linux/guid_creator.cc
++++ b/src/common/linux/guid_creator.cc
+@@ -39,6 +39,7 @@
+ #include <pthread.h>
+ #include <stdio.h>
+ #include <stdlib.h>
++#include <string.h>
+ #include <sys/stat.h>
+ #include <time.h>
+ #include <unistd.h>
