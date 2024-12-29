@@ -1274,6 +1274,7 @@ TEST_P(FsManagerTestBase, TestAddRemoveDataDirsFuzz) {
   const int kNumAttempts = AllowSlowTests() ? (FLAGS_block_manager == "logr" ? 25 : 1000) : 10;
 #endif
 
+#if !defined(NO_ROCKSDB)
   // In case of the "logr" block manager, it's quite expensive to run paranoid
   // checks, allocate big RocksDB memtables, spawn many threads, and update
   // compaction stats on startup just to do that again next iteration
@@ -1284,6 +1285,7 @@ TEST_P(FsManagerTestBase, TestAddRemoveDataDirsFuzz) {
   FLAGS_log_container_rdb_skip_stats_update_on_db_open = true;
   FLAGS_log_container_rdb_max_background_jobs = 2;
   FLAGS_log_container_rdb_write_buffer_size = 1 << 20;
+#endif // #if !defined(NO_ROCKSDB)
 
   Random rng_(SeedRandom());
 
