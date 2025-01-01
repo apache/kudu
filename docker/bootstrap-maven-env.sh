@@ -26,8 +26,8 @@
 set -xe
 set -o pipefail
 
-MVN_VERSION="3.6.3"
-MVN_CHECKSUM="c35a1803a6e70a126e80b2b3ae33eed961f83ed74d18fcd16909b2d44d7dada3203f1ffe726c17ef8dcca2dcaa9fca676987befeadc9b9f759967a8cb77181c0"
+MVN_VERSION="3.9.9"
+MVN_CHECKSUM="a555254d6b53d267965a3404ecb14e53c3827c09c3b94b5678835887ab404556bfaf78dcfe03ba76fa2508649dca8531c74bca4d5846513522404d48e8c4ac8b"
 wget -nv \
   https://downloads.apache.org/maven/maven-3/$MVN_VERSION/binaries/apache-maven-$MVN_VERSION-bin.tar.gz
 sha512sum -c - <<< "$MVN_CHECKSUM apache-maven-$MVN_VERSION-bin.tar.gz"
