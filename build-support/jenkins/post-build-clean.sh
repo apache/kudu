@@ -27,6 +27,10 @@
 ROOT=$(cd $(dirname "$BASH_SOURCE")/../..; pwd)
 cd $ROOT
 
+# Clean up TEST_TMPDIR: this cleanup script is supposed to run only in the
+# context of Jenkins jobs, where each job has its own TEST_TMPDIR.
+rm -Rf $TEST_TMPDIR
+
 # Note that we use simple shell commands instead of "make clean"
 # or "gradle clean". This is more foolproof even if something ends
 # up partially compiling, etc.
