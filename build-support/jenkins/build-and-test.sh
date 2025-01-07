@@ -28,10 +28,16 @@
 #     Runs the "slow" version of the unit tests. Set to 0 to
 #     run the tests more quickly.
 #
-#   TEST_TMPDIR   Default: /tmp/kudutest-$UID
-#     Specifies the temporary directory where tests should write their
-#     data. It is expected that following the completion of all tests, this
-#     directory is empty (i.e. every test cleaned up after itself).
+#   TEST_TMPDIR   Default: /tmp/$BUILD_TAG if BUILD_TAG is defined (Jenkins),
+#                          /tmp/kudutest-$UID otherwise
+#     Specifies the temporary directory where tests should write their data
+#     and logs. It is expected that following successful completion
+#     (i.e. no failures) of all the tests, this directory is empty: every
+#     successfully completed test cleans up after itself. Failed tests leave
+#     relevant data and logs in the temporary directory upon exit: that's for
+#     post-mortem troubleshooting and debugging. In case of Jenkins builds
+#     (i.e. when the BUILD_TAG environment variable is defined),
+#     the whole TEST_TMPDIR directory is removed when this script exists.
 #
 #   RUN_FLAKY_ONLY    Default: 0
 #     Only runs tests which have failed recently, if this is 1.
@@ -155,7 +161,12 @@ BUILD_ROOT=$SOURCE_ROOT/build/$BUILD_TYPE_LOWER
 export KUDU_FLAKY_TEST_ATTEMPTS=${KUDU_FLAKY_TEST_ATTEMPTS:-1}
 export KUDU_ALLOW_SLOW_TESTS=${KUDU_ALLOW_SLOW_TESTS:-$DEFAULT_ALLOW_SLOW_TESTS}
 export KUDU_COMPRESS_TEST_OUTPUT=${KUDU_COMPRESS_TEST_OUTPUT:-1}
-export TEST_TMPDIR=${TEST_TMPDIR:-/tmp/kudutest-$UID}
+if [ -n "$BUILD_TAG" ]; then
+  export TEST_TMPDIR=${TEST_TMPDIR:-/tmp/$BUILD_TAG}
+else
+  export TEST_TMPDIR=${TEST_TMPDIR:-/tmp/kudutest-$UID}
+fi
+export CLEANUP_TEST_TMPDIR=${CLEANUP_TEST_TMPDIR:-0}
 export PARALLEL=${PARALLEL:-$(getconf _NPROCESSORS_ONLN)}
 export PARALLEL_TESTS=${PARALLEL_TESTS:-$PARALLEL}
 export THIRDPARTY_DIR=${THIRDPARTY_DIR:-$SOURCE_ROOT/thirdparty}
@@ -197,12 +208,13 @@ TEST_LOGDIR="$BUILD_ROOT/test-logs"
 TEST_DEBUGDIR="$BUILD_ROOT/test-debug"
 
 cleanup() {
-  echo Cleaning up all build artifacts...
+  echo Cleaning up all build artifacts and temporary data...
   $SOURCE_ROOT/build-support/jenkins/post-build-clean.sh
 }
-# If we're running inside Jenkins (the BUILD_ID is set), then install
-# an exit handler which will clean up all of our build results.
-if [ -n "$BUILD_ID" ]; then
+# If we're running inside Jenkins (the BUILD_TAG is set), then install
+# an exit handler which will clean up all of our build results and temporary
+# data.
+if [ -n "$BUILD_TAG" ]; then
   trap cleanup EXIT
 fi
 
@@ -477,11 +489,6 @@ fi
 # Only enable test core dumps for certain build types.
 if [ "$BUILD_TYPE" != "ASAN" ]; then
   export KUDU_TEST_ULIMIT_CORE=unlimited
-fi
-
-# our tests leave lots of data lying around, clean up before we run
-if [ -d "$TEST_TMPDIR" ]; then
-  rm -Rf $TEST_TMPDIR
 fi
 
 # actually do the build
