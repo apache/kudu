@@ -1,0 +1,57 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+apply from: "$rootDir/gradle/shadow.gradle"
+
+dependencies {
+  compile project(path: ":kudu-client")
+  compile libs.commonsIo
+  compile libs.guava
+  compile libs.httpClient
+  compile libs.httpMime
+  compile libs.osdetector
+
+  compileUnshaded libs.hamcrest
+  compileUnshaded(libs.junit) {
+    // Use the Kudu specified hamcrest.
+    exclude group: "org.hamcrest"
+  }
+  compileUnshaded libs.slf4jApi
+
+  // Support using any kudu-binary jar for tests via `-PuseBinJar=<version>`.
+  if (propertyExists("useBinJar")) {
+    apply plugin: "com.google.osdetector"
+    def jarVersion = propertyWithDefault("useBinJar", project.version)
+    runtime "org.apache.kudu:kudu-binary:$jarVersion:${osdetector.classifier}"
+  }
+
+  // Needed for CapturingLogAppender. Optional otherwise.
+  optional libs.log4jApi
+  optional libs.log4jCore
+  optional libs.log4jSlf4jImpl
+
+  optional libs.jsr305
+  optional libs.yetusAnnotations
+
+  testCompile libs.jetty
+  testCompile libs.jettyServlet
+}
+
+// kudu-test-utils has no public Javadoc.
+javadoc {
+  enabled = false
+}
