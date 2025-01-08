@@ -216,5 +216,8 @@ const std::unordered_map<std::string, std::string>& GetTServerWebserverEndpoints
 const std::unordered_map<std::string, std::string>& GetMasterWebserverEndpoints(
     const std::string& table_id);
 
+// Prometheus metrics output sanity check. This check is used in both the tablet_server-test
+// and the master-test, so it is placed here.
+void CheckPrometheusOutput(const std::string& prometheus_output);
 } // namespace kudu
 #endif

@@ -126,9 +126,9 @@ METRIC_DEFINE_counter(tablet, scanner_cells_scanned_from_disk, "Scanner Cells Sc
                       "as a raw count prior to application of predicates, deleted data,"
                       "or MVCC-based filtering. Thus, this is a better measure of actual "
                       "table cells that have been processed by scan operations compared "
-                      "to the Scanner Cells Returned metric.\n"
+                      "to the Scanner Cells Returned metric. "
                       "Note that this only counts data that has been flushed to disk, "
-                      "and does not include data read from in-memory stores. However, it"
+                      "and does not include data read from in-memory stores. However, it "
                       "includes both cache misses and cache hits.",
                       kudu::MetricLevel::kDebug);
 
@@ -138,9 +138,9 @@ METRIC_DEFINE_counter(tablet, scanner_bytes_scanned_from_disk, "Scanner Bytes Sc
                       "as a raw count prior to application of predicates, deleted data,"
                       "or MVCC-based filtering. Thus, this is a better measure of actual "
                       "IO that has been caused by scan operations compared "
-                      "to the Scanner Bytes Returned metric.\n"
+                      "to the Scanner Bytes Returned metric. "
                       "Note that this only counts data that has been flushed to disk, "
-                      "and does not include data read from in-memory stores. However, it"
+                      "and does not include data read from in-memory stores. However, it "
                       "includes both cache misses and cache hits.",
                       kudu::MetricLevel::kDebug);
 
