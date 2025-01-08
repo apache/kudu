@@ -1584,9 +1584,104 @@ tool breaks its work into three phases:
   location, as if the location were a cluster on its own. Use the
   `--disable_intra_location_rebalancing` flag to skip this phase.
 
+Note: Each of the above rebalancing phases can be independently skipped using the
+corresponding flags.
+
 By using the `--report_only` flag, it's also possible to check if all tablets in
 the cluster conform to the placement policy without attempting any replica
 movement.
+
+[[rebalancer_with_rack_awareness_example]]
+==== Examples
+The behavior of each of the these flags can be better explained with examples.
+Consider a case where there are 3 locations and 3 tablets (9 replicas
+total) and running the tool with the below flags (effectively running only the placement policy
+fixer):
+
+  --disable_cross_location_rebalancing --disable_intra_location_rebalancing
+
+[[rebalancer_example_policy_fixer]]
+.Before running the tool
+[options="header"]
+|===
+| Location A | Location B | Location C
+| Replica X  | Replica Y  | Replica Z
+| Replica X  | Replica Y  | Replica Z
+| Replica X  | Replica Y  | Replica Z
+|===
+
+[[rebalancer_example]]
+.After running the tool with the flags
+[options="header"]
+|===
+| Location A | Location B | Location C
+| Replica X  | Replica X  | Replica X
+| Replica Y  | Replica Y  | Replica Y
+| Replica Z  | Replica Z  | Replica Z
+|===
+
+Notice the replicas of every tablet are now spread across all the 3 locations.
+
+Next, let's consider the below tablet distribution and running the tool with the below flags
+(effectively running only the cross-location rebalancing):
+
+  --disable_policy_fixer --disable_intra_location_rebalancing
+
+[[rebalancer_example_cross_location_rebalancing]]
+.Before running the tool
+[options="header"]
+|===
+| Location             | Number of replicas across all tables in the location
+| A (5 tablet servers) | 15
+| B (5 tablet servers) | 18
+| C (5 tablet servers) | 21
+|===
+
+[[rebalancer_example]]
+.After running the tool with the flags
+[options="header"]
+|===
+| Location             | Number of replicas across all tables in the location
+| A (5 tablet servers) | 21 replicas
+| B (5 tablet servers) | 21 replicas
+| C (5 tablet servers) | 21 replicas
+|===
+
+Notice the number of replicas in each of the locations is now equal.
+
+Continuing the above example, let's examine location A before and after running the
+tool with the flags (effectively running only the intra-location rebalancing):
+
+  --disable_policy_fixer --disable_cross_location_rebalancing
+
+[[rebalancer_example_intra_location_rebalancing]]
+.Before running the tool
+[options="header"]
+|===
+| Tablet server | Number of replicas across all tables in the server
+| TS_1          | 3
+| TS_2          | 5
+| TS_3          | 8
+| TS_4          | 4
+| TS_5          | 1
+|===
+
+[[rebalancer_example]]
+.After running the tool with the flags
+[options="header"]
+|===
+| Tablet server | Number of replicas across all tables in the server
+| TS_1          | 4
+| TS_2          | 5
+| TS_3          | 4
+| TS_4          | 4
+| TS_5          | 4
+|===
+
+Notice the number of replicas in each tablet server is now balanced.
+
+Note: In the above example all the three flags can be enabled together. We individually enabled
+them in separate runs to aid understanding.
 
 [[tablet_server_decommissioning]]
 === Decommissioning or Permanently Removing a Tablet Server From a Cluster
