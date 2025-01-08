@@ -4351,6 +4351,16 @@ TEST_F(TabletServerTest, ServerAttributes) {
   ASSERT_STR_CONTAINS(raw, "\"hostname\": \"" + server_hostname + "\"");
 }
 
+// Smoke test that Prometheus Metrics output is correct.
+TEST_F(TabletServerTest, SmokeTestPrometheusMetrics) {
+  EasyCurl c;
+  faststring buf;
+  ASSERT_OK(c.FetchURL(Substitute("http://$0/metrics_prometheus",
+                                  mini_server_->bound_http_addr().ToString()),
+                       &buf));
+  CheckPrometheusOutput(buf.ToString());
+}
+
 // Test that hostname is set properly for TabletServer's Messenger.
 TEST_F(TabletServerTest, ServerHostname) {
   string server_hostname;

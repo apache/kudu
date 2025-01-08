@@ -61,6 +61,21 @@ namespace kudu {
 
 METRIC_DEFINE_entity(test_entity);
 
+METRIC_DEFINE_entity(tablet);
+METRIC_DEFINE_counter(tablet, tablet_test_counter,
+                      "Tablet-wise test counter label",
+                      kudu::MetricUnit::kBytes,
+                      "Tablet-wise test counter description.",
+                      kudu::MetricLevel::kDebug);
+
+METRIC_DEFINE_entity(table);
+METRIC_DEFINE_counter(table, table_test_counter,
+                      "Table-wise test counter label",
+                      kudu::MetricUnit::kBytes,
+                      "Table-wise test counter description.",
+                      kudu::MetricLevel::kDebug);
+
+
 class MetricsTest : public KuduTest {
  public:
   void SetUp() override {
@@ -131,6 +146,50 @@ TEST_F(MetricsTest, ResetCounter) {
   ASSERT_EQ(1, c->value());
   c->Reset();
   ASSERT_EQ(0, c->value());
+}
+
+TEST_F(MetricsTest, TableAndTabletPrometheusTest) {
+  // Simulate two tablets in the metric registry. Write out their metric data.
+  auto tablet_metric_entity =
+      METRIC_ENTITY_tablet.Instantiate(&registry_, "00000000000000000000000000000000");
+  scoped_refptr<Counter> tablet_counter =
+      METRIC_tablet_test_counter.Instantiate(tablet_metric_entity);
+
+  auto tablet_metric_entity2 =
+      METRIC_ENTITY_tablet.Instantiate(&registry_, "11111111111111111111111111111111");
+  scoped_refptr<Counter> tablet_counter2 =
+      METRIC_tablet_test_counter.Instantiate(tablet_metric_entity2);
+
+  auto table_metric_entity = METRIC_ENTITY_table.Instantiate(&registry_, "table_name1");
+  scoped_refptr<Counter> table_counter = METRIC_table_test_counter.Instantiate(table_metric_entity);
+
+  auto table_metric_entity2 = METRIC_ENTITY_table.Instantiate(&registry_, "table_name2");
+  scoped_refptr<Counter> table_counter2 =
+      METRIC_table_test_counter.Instantiate(table_metric_entity2);
+
+  ostringstream output;
+  PrometheusWriter writer(&output);
+  ASSERT_OK(registry_.WriteAsPrometheus(&writer));
+  ASSERT_EQ(
+      "# HELP kudu_table_table_name2_table_test_counter Table-wise test counter "
+      "description.\n"
+      "# TYPE kudu_table_table_name2_table_test_counter counter\n"
+      "kudu_table_table_name2_table_test_counter{unit_type=\"bytes\"} 0\n"
+      "# HELP kudu_tablet_00000000000000000000000000000000_tablet_test_counter Tablet-wise "
+      "test counter description.\n"
+      "# TYPE kudu_tablet_00000000000000000000000000000000_tablet_test_counter counter\n"
+      "kudu_tablet_00000000000000000000000000000000_tablet_test_counter{unit_type=\"bytes\"}"
+      " 0\n"
+      "# HELP kudu_tablet_11111111111111111111111111111111_tablet_test_counter Tablet-wise "
+      "test counter description.\n"
+      "# TYPE kudu_tablet_11111111111111111111111111111111_tablet_test_counter counter\n"
+      "kudu_tablet_11111111111111111111111111111111_tablet_test_counter{unit_type=\"bytes\"}"
+      " 0\n"
+      "# HELP kudu_table_table_name1_table_test_counter Table-wise test counter "
+      "description.\n"
+      "# TYPE kudu_table_table_name1_table_test_counter counter\n"
+      "kudu_table_table_name1_table_test_counter{unit_type=\"bytes\"} 0\n",
+      output.str());
 }
 
 TEST_F(MetricsTest, CounterPrometheusTest) {
@@ -977,7 +1036,7 @@ TEST_F(MetricsTest, TestDumpJsonPrototypes) {
   int num_entities = d["entities"].Size();
   LOG(INFO) << "Parsed " << num_metrics << " metrics and " << num_entities << " entities";
   ASSERT_GT(num_metrics, 5);
-  ASSERT_EQ(num_entities, 2);
+  ASSERT_EQ(num_entities, 4);
 
   // Spot-check that some metrics were properly registered and that the JSON was properly
   // formed.

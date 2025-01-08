@@ -3834,5 +3834,23 @@ TEST_F(MasterTest, TestMasterContentTypeHeaders) {
   }
 }
 
+// Smoke test that Prometheus Metrics output is correct.
+TEST_F(MasterTest, SmokeTestPrometheusMetrics) {
+  constexpr char kTableName[] = "testtb";
+  const Schema kTableSchema({ ColumnSchema("key", INT32),
+                             ColumnSchema("v1", UINT64),
+                             ColumnSchema("v2", STRING) },
+                            1);
+
+  ASSERT_OK(CreateTable(kTableName, kTableSchema));
+
+  EasyCurl c;
+  faststring buf;
+  ASSERT_OK(c.FetchURL(Substitute("http://$0/metrics_prometheus",
+                                  mini_master_->bound_http_addr().ToString()),
+                       &buf));
+  CheckPrometheusOutput(buf.ToString());
+}
+
 } // namespace master
 } // namespace kudu
