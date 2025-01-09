@@ -165,6 +165,7 @@ CAUTION: `COMMIT_WAIT` consistency is considered an experimental feature. It may
 incorrect results, exhibit performance issues, or negatively impact cluster stability.
 Use in production environments is discouraged.
 
+[[multi-tablet-write-transactions]]
 == Multi-tablet write transactions
 
 Kudu provides transactionality on top of the write operations, meaning all operations that occur

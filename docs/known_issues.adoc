@@ -79,7 +79,12 @@ include::top.adoc[tags=version]
 
 * Secondary indexes are not supported.
 
-* Multi-row transactions are not yet supported.
+* Multi-row transactions across multiple tables are supported for INSERT and
+  INSERT_IGNORE operations, providing atomicity in data ingestion scenarios.
+  However, the rest of DML operations (UPDATE, DELETE, etc.) in the context of
+  multi-row transactions are not yet supported. For details, see
+  link:transaction_semantics.html#multi-tablet-write-transactions[this section]
+  on multi-tablet write transaction semantics.
 
 * Relational features, like foreign keys, are not supported.
 
