@@ -120,6 +120,13 @@ Status DeltaIteratorMerger::FilterColumnIdsAndCollectDeltas(
   return Status::OK();
 }
 
+Status DeltaIteratorMerger::FreeDeltaBlocks() {
+  for (const auto& iter : iters_) {
+    RETURN_NOT_OK(iter->FreeDeltaBlocks());
+  }
+  return Status::OK();
+}
+
 bool DeltaIteratorMerger::HasNext() const {
   for (const unique_ptr<DeltaIterator>& iter : iters_) {
     if (iter->HasNext()) {

@@ -237,6 +237,10 @@ class DMSIterator : public DeltaIterator {
                                          std::vector<DeltaKeyAndUpdate>* out,
                                          Arena* arena) override;
 
+  Status FreeDeltaBlocks() override {
+    return Status::NotSupported("No delta blocks queue is maintained for DMS.");
+  }
+
   std::string ToString() const override;
 
   bool HasNext() const override;

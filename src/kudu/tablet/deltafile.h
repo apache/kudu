@@ -266,6 +266,13 @@ class DeltaFileIterator : public DeltaIterator {
                                          std::vector<DeltaKeyAndUpdate>* out,
                                          Arena* arena) override;
 
+  // Release memory that holds delta blocks data read during batch preparation.
+  Status FreeDeltaBlocks() override {
+    delta_blocks_.clear();
+    delta_blocks_mem_size_ = 0;
+    return Status::OK();
+  }
+
   std::string ToString() const override;
 
   bool HasNext() const override;

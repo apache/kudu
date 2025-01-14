@@ -288,6 +288,8 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas(const IOContext* io_context) {
     redo_delta_mutations_written_ += out.size();
     nrows += n;
   }
+  // Release memory used to hold delta blocks data read during batch preparation.
+  RETURN_NOT_OK(delta_iter_->FreeDeltaBlocks());
 
   auto bm = fs_manager_->block_manager();
   unique_ptr<BlockCreationTransaction> transaction = bm->NewCreationTransaction();

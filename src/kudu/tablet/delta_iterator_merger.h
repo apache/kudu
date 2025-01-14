@@ -80,6 +80,7 @@ class DeltaIteratorMerger : public DeltaIterator {
   Status FilterColumnIdsAndCollectDeltas(const std::vector<ColumnId>& col_ids,
                                          std::vector<DeltaKeyAndUpdate>* out,
                                          Arena* arena) override;
+  Status FreeDeltaBlocks() override;
 
   bool HasNext() const override;
 

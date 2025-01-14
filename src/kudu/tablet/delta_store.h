@@ -363,6 +363,12 @@ class DeltaIterator : public PreparedDeltas {
   };
   virtual Status PrepareBatch(size_t nrows, int prepare_flags) = 0;
 
+  // Frees up delta blocks that are read during PrepareBatch phase.
+  // This must be called after PrepareBatch phase is complete and
+  // all the mutations from each delta have been collected and applied,
+  // i.e. after CollectMutations and FilterColumnIdsAndCollectDeltas.
+  virtual Status FreeDeltaBlocks() = 0;
+
   // Returns true if there are any more rows left in this iterator.
   virtual bool HasNext() const = 0;
 

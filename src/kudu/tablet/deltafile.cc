@@ -503,7 +503,7 @@ Status DeltaFileIterator<Type>::ReadCurrentBlockOntoQueue() {
                                   dblk_ptr, cache_blocks_, &block));
 
   // The data has been successfully read. Finish creating the decoder.
-  PreparedDeltaBlock pdb(dblk_ptr, std::move(block),  0);
+  PreparedDeltaBlock pdb(dblk_ptr, std::move(block), 0);
 
   // Decode the block.
   RETURN_NOT_OK_PREPEND(pdb.decoder.ParseHeader(),
