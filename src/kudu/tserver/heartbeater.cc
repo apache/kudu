@@ -107,7 +107,7 @@ DEFINE_uint32(heartbeat_inject_required_feature_flag, 0,
 TAG_FLAG(heartbeat_inject_required_feature_flag, runtime);
 TAG_FLAG(heartbeat_inject_required_feature_flag, unsafe);
 
-DEFINE_int32(tserver_send_tombstoned_tablets_report_inteval_secs, 1800,
+DEFINE_int32(tserver_send_tombstoned_tablets_report_inteval_secs, -1,
              "Time interval in seconds of sending a incremental tablets report "
              "to delete the tombstoned replicas whose tablets had already been "
              "deleted. Turn off this by setting it to a value less than 0. If "
@@ -498,7 +498,6 @@ Status Heartbeater::Thread::DoHeartbeat(MasterErrorPB* error,
   // Send the most recently known TSK sequence number so that the master can
   // send us knew ones if they exist.
   req.set_latest_tsk_seq_num(server_->token_verifier().GetMaxKnownKeySequenceNumber());
-  bool including_tombstoned = false;
   if (send_full_tablet_report_) {
     LOG(INFO) << Substitute(
         "Master $0 was elected leader, sending a full tablet report...",
@@ -516,10 +515,14 @@ Status Heartbeater::Thread::DoHeartbeat(MasterErrorPB* error,
     VLOG(2) << Substitute("Sending an incremental tablet report to master $0...",
                           master_address_.ToString());
     // Check if it is time to send a report with tombstoned replicas.
-    including_tombstoned = FLAGS_tserver_send_tombstoned_tablets_report_inteval_secs >= 0 &&
-        (MonoTime::Now() - last_tombstoned_report_time_).ToSeconds() >=
+    const auto now = MonoTime::Now();
+    const auto tombstoned_report_interval =
         FLAGS_tserver_send_tombstoned_tablets_report_inteval_secs;
-    GenerateIncrementalTabletReport(req.mutable_tablet_report(), including_tombstoned);
+    const auto include_tombstoned = tombstoned_report_interval >= 0 &&
+        (now - last_tombstoned_report_time_).ToSeconds() >= tombstoned_report_interval;
+    GenerateIncrementalTabletReport(req.mutable_tablet_report(), include_tombstoned);
+    // Update the timestamp of last report on tombstoned tablet replicas.
+    last_tombstoned_report_time_ = now;
   }
 
   req.set_num_live_tablets(server_->tablet_manager()->GetNumLiveTablets());
