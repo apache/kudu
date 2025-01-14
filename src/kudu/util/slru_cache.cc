@@ -229,16 +229,15 @@ Handle* SLRUCacheShard<Segment::kProbationary>::Insert(SLRUHandle* handle,
   SLRUHandle* old_entry = table_.Insert(handle);
   // If entry with key already exists, remove it.
   if (old_entry != nullptr) {
+    // In the update case, a new entry is inserted, but it should retain the same values for the
+    // fields 'upgrades' and 'downgrades' as the old entry.
+    handle->upgrades = old_entry->upgrades;
+    handle->downgrades = old_entry->downgrades;
     RL_Remove(old_entry);
     if (Unref(old_entry)) {
       old_entry->next = *free_entries;
       *free_entries = old_entry;
     }
-
-    // In the update case, a new entry is inserted, but it should retain the same values for the
-    // fields 'upgrades' and 'downgrades' as the old entry.
-    handle->upgrades = old_entry->upgrades;
-    handle->downgrades = old_entry->downgrades;
   }
   RemoveEntriesPastCapacity(free_entries);
 
@@ -269,16 +268,15 @@ Handle* SLRUCacheShard<Segment::kProtected>::Insert(SLRUHandle* handle,
   // Update case so Insert should return a non-null entry.
   SLRUHandle* old_entry = table_.Insert(handle);
   DCHECK(old_entry != nullptr);
+  // In the update case, a new entry is inserted, but it should retain the same values for the
+  // fields 'upgrades' and 'downgrades' as the old entry.
+  handle->upgrades = old_entry->upgrades;
+  handle->downgrades = old_entry->downgrades;
   RL_Remove(old_entry);
   if (Unref(old_entry)) {
     old_entry->next = *free_entries;
     *free_entries = old_entry;
   }
-
-  // In the update case, a new entry is inserted, but it should retain the same values for the
-  // fields 'upgrades' and 'downgrades' as the old entry.
-  handle->upgrades = old_entry->upgrades;
-  handle->downgrades = old_entry->downgrades;
 
   return reinterpret_cast<Handle*>(handle);
 }
