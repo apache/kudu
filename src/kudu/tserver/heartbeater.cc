@@ -521,7 +521,9 @@ Status Heartbeater::Thread::DoHeartbeat(MasterErrorPB* error,
         (now - last_tombstoned_report_time_).ToSeconds() >= tombstoned_report_interval;
     GenerateIncrementalTabletReport(req.mutable_tablet_report(), include_tombstoned);
     // Update the timestamp of last report on tombstoned tablet replicas.
-    last_tombstoned_report_time_ = now;
+    if (include_tombstoned) {
+      last_tombstoned_report_time_ = now;
+    }
   }
 
   req.set_num_live_tablets(server_->tablet_manager()->GetNumLiveTablets());
