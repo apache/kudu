@@ -381,9 +381,13 @@ TEST_F(AutoIncrementingItest, BootstrapWithNoWals) {
   // Restart the cluster.
   cluster_->Shutdown();
   ASSERT_OK(cluster_->Restart());
+  // Ensure that the tablet is running and leader elected.
+  ASSERT_EVENTUALLY([&] { ASSERT_OK(ClusterVerifier(cluster_.get()).RunKsck()); });
 
   // Insert new data and validate the auto incrementing column values.
   ASSERT_OK(InsertData(kNumRows, kNumRows * 2));
+  // Wait for all the replicas to converge.
+  NO_FATALS(ClusterVerifier(cluster_.get()).CheckCluster());
   for (int j = 0; j < kNumTabletServers; j++) {
     vector<string> results;
     ASSERT_OK(ScanTablet(j, tablet_uuid, &results));
@@ -391,7 +395,6 @@ TEST_F(AutoIncrementingItest, BootstrapWithNoWals) {
     for (int i = 0; i < results.size(); i++) {
       ASSERT_EQ(Substitute("(int32 c0=$0, int64 $1=$2, string c1=\"string_val\")", i + 100,
                            Schema::GetAutoIncrementingColumnName(), i + 100 + 1), results[i]);
-
     }
   }
 }
@@ -523,16 +526,14 @@ TEST_F(AutoIncrementingItest, BootstrapWalsDiverge) {
   ASSERT_OK(InsertData(kNumRows, kNumRows * 2));
 
   // Start back the tablet server and ensure all the replicas contain the same data.
-  // We scan the replica on leader_ts_index last to give it reasonable time to start
-  // serving scans.
   ASSERT_OK(cluster_->tablet_server(leader_ts_index)->Restart());
-  int j = (leader_ts_index + 1) % kNumTabletServers;
+  // Wait for all the replicas to converge.
+  NO_FATALS(ClusterVerifier(cluster_.get()).CheckCluster());
   vector<vector<string>> results;
   for (int i = 0; i < kNumTabletServers; i++) {
     vector<string> result;
-    ASSERT_OK(ScanTablet(j, tablet_uuid, &result));
+    ASSERT_OK(ScanTablet(i, tablet_uuid, &result));
     results.emplace_back(result);
-    j = (j + 1) % kNumTabletServers;
   }
   ASSERT_EQ(kNumTabletServers, results.size());
   for (int i = 0; i < kNumTabletServers - 1; i++) {
