@@ -480,21 +480,21 @@ fetch_and_patch \
 
 JWT_CPP_PATCHLEVEL=0
 fetch_and_patch \
-  $JWT_CPP_NAME.tar.gz \
-  $JWT_CPP_SOURCE \
-  $JWT_CPP_PATCHLEVEL
+ $JWT_CPP_NAME.tar.gz \
+ $JWT_CPP_SOURCE \
+ $JWT_CPP_PATCHLEVEL
 
 RANGER_KMS_PATCHLEVEL=0
 fetch_and_patch \
-  $RANGER_KMS_NAME.tar.gz \
-  $RANGER_KMS_SOURCE \
-  $RANGER_KMS_PATCHLEVEL
+ $RANGER_KMS_NAME.tar.gz \
+ $RANGER_KMS_SOURCE \
+ $RANGER_KMS_PATCHLEVEL
 
 ROCKSDB_PATCHLEVEL=1
 fetch_and_patch \
-  $ROCKSDB_NAME.tar.gz \
-  $ROCKSDB_SOURCE \
-  $ROCKSDB_PATCHLEVEL \
+ $ROCKSDB_NAME.tar.gz \
+ $ROCKSDB_SOURCE \
+ $ROCKSDB_PATCHLEVEL \
  "patch -p1 < $TP_DIR/patches/rocksdb-gcc13.patch"
 
 echo "---------------"
