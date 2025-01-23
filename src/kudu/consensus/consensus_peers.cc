@@ -538,7 +538,7 @@ Peer::~Peer() {
   }
 
   // We don't own the ops (the queue does).
-  request_.mutable_ops()->ExtractSubrange(0, request_.ops_size(), nullptr);
+  request_.mutable_ops()->UnsafeArenaExtractSubrange(0, request_.ops_size(), nullptr);
 }
 
 RpcPeerProxy::RpcPeerProxy(HostPort hostport,

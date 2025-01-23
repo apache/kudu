@@ -28,7 +28,7 @@
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
-#include <google/protobuf/stubs/common.h>
+#include <google/protobuf/stubs/common.h> // IWYU pragma: keep
 #include <google/protobuf/stubs/status.h>
 #include <google/protobuf/stubs/stringpiece.h>
 #include <google/protobuf/util/json_util.h>
@@ -451,7 +451,7 @@ string SerializeRequest(const ControlShellRequestPB& req) {
       req, &serialized);
   CHECK(google_status.ok()) << Substitute(
       "unable to serialize JSON ($0): $1",
-      google_status.error_message().ToString(), pb_util::SecureDebugString(req));
+      google_status.message().ToString(), pb_util::SecureDebugString(req));
   return serialized;
 }
 

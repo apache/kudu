@@ -268,7 +268,7 @@ class PeerMessageQueue {
   // WARNING: In order to avoid copying the same messages to every peer,
   // entries are added to 'request' via AddAllocated() methods.
   // The owner of 'request' is expected not to delete the request prior
-  // to removing the entries through ExtractSubRange() or any other method
+  // to removing the entries through UnsafeArenaExtractSubRange() or any other method
   // that does not delete the entries. The simplest way is to pass the same
   // instance of ConsensusRequestPB to RequestForPeer(): the buffer will
   // replace the old entries with new ones without de-allocating the old

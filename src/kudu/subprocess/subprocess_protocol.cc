@@ -92,7 +92,7 @@ Status SubprocessProtocol::ReceiveMessage(M* message) {
       if (!google_status.ok()) {
         return Status::InvalidArgument(
             Substitute("unable to parse JSON: $0", buf.ToString()),
-            google_status.error_message().ToString());
+            google_status.message().ToString());
       }
       break;
     }
@@ -154,7 +154,7 @@ Status SubprocessProtocol::SendMessage(const M& message) {
       if (!google_status.ok()) {
         return Status::InvalidArgument(Substitute(
             "unable to serialize JSON: $0", pb_util::SecureDebugString(message)),
-                                       google_status.error_message().ToString());
+                                       google_status.message().ToString());
       }
 
       buf.append(serialized);

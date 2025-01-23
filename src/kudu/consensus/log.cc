@@ -1016,7 +1016,7 @@ Status Log::Append(LogEntryPB* entry) {
   LogEntryBatchPB entry_batch_pb;
   entry_batch_pb.mutable_entry()->UnsafeArenaAddAllocated(entry);
   LogEntryBatch entry_batch(entry->type(), entry_batch_pb, &DoNothingStatusCB);
-  entry_batch_pb.mutable_entry()->ExtractSubrange(0, 1, nullptr);
+  entry_batch_pb.mutable_entry()->UnsafeArenaExtractSubrange(0, 1, nullptr);
   Status s = WriteBatch(&entry_batch);
   if (s.ok()) {
     s = Sync();

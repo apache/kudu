@@ -31,7 +31,7 @@
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
-#include <google/protobuf/stubs/common.h>
+#include <google/protobuf/stubs/common.h> // IWYU pragma: keep
 #include <google/protobuf/stubs/status.h>
 #include <google/protobuf/stubs/stringpiece.h>
 #include <google/protobuf/util/json_util.h>
@@ -1242,7 +1242,7 @@ Status ModifyRangePartition(const RunnerContext& context, PartitionAction action
           hash_schema_str, &hash_schema, opts); !s.ok()) {
       return Status::InvalidArgument(
           Substitute("unable to parse JSON: $0", hash_schema_str),
-                     s.error_message().ToString());
+                     s.message().ToString());
     }
   }
 
@@ -1851,7 +1851,7 @@ Status CreateTable(const RunnerContext& context) {
   if (!google_status.ok()) {
     return Status::InvalidArgument(
         Substitute("unable to parse JSON: $0", json_str),
-                   google_status.error_message().ToString());
+                   google_status.message().ToString());
   }
 
   client::sp::shared_ptr<KuduClient> client;

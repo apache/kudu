@@ -180,7 +180,7 @@ Status LogEntryReader::ReadNextEntry(unique_ptr<LogEntryPB>* entry) {
       }
       recent_entries_.push_back({ offset_, entry->type(), op_id });
     }
-    current_batch.mutable_entry()->ExtractSubrange(
+    current_batch.mutable_entry()->UnsafeArenaExtractSubrange(
         0, current_batch.entry_size(), nullptr);
   }
 

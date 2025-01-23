@@ -266,7 +266,7 @@ Status EditFile(const RunnerContext& context) {
       if (!google_status.ok()) {
         return Status::InvalidArgument(
             Substitute("Unable to parse JSON text: $0", str),
-            google_status.error_message().ToString());
+            google_status.message().ToString());
       }
 
       // Append the protobuf object to writer.
