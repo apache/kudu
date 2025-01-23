@@ -48,6 +48,17 @@ configurations.archives.artifacts.removeAll {
 // Ensure we always relocate these shaded dependencies to the same
 // location across all modules.
 shadowJar {
+  // TODO(achennaka): Figure out a better way to deal with MR-JAR specific files. For now
+  // we exclude everything as there were no failures seen but probably we need to exclude
+  // based on the target release version.
+  exclude "META-INF/versions/9/**"
+  // Current Gradle version(7.6.4) used to compile Java projects of Kudu project doesn't support
+  // anything above Java19.
+  // https://docs.gradle.org/current/userguide/compatibility.html#java_runtime
+  exclude "META-INF/versions/2?/"
+  // Excluding bouncycastle due to:
+  // https://github.com/apache/hadoop/blob/4d7825309348956336b8f06a08322b78422849b1/hadoop-client-modules/hadoop-client-runtime/pom.xml#L156-L157
+  exclude "org.bouncycastle:*"
   relocate "com.google.common", "org.apache.kudu.shaded.com.google.common"
   relocate "com.google.gradle.osdetector", "org.apache.kudu.shaded.com.google.gradle.osdetector"
   relocate "com.google.gson", "org.apache.kudu.shaded.com.google.gson"

@@ -32,6 +32,7 @@ dependencies {
   compileOnly libs.hadoopClient
 
   implementation libs.yetusAnnotations
+  implementation libs.mockitoCore
 
   testImplementation project(path: ":kudu-test-utils", configuration: "shadow")
   testImplementation libs.hadoopMiniCluster
