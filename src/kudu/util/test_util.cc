@@ -474,7 +474,7 @@ Status WaitForBind(pid_t pid,
   RETURN_NOT_OK(FindExecutable("lsof", {"/sbin", "/usr/sbin"}, &lsof));
 
   const vector<string> cmd = {
-    lsof, "-wbnP", "-Ffn",
+    lsof, "-wnP", "-Ffn",
     "-p", std::to_string(pid),
     "-a", "-i", kind
   };
@@ -558,7 +558,7 @@ Status WaitForBindAtPort(const vector<string>& addresses,
                          MonoDelta timeout) {
   string lsof;
   RETURN_NOT_OK(FindExecutable("lsof", {"/sbin", "/usr/sbin"}, &lsof));
-  const vector<string> cmd = { lsof, "-wbnP", "-Fpfn", "-a", "-i", kind };
+  const vector<string> cmd = { lsof, "-wnP", "-Fpfn", "-a", "-i", kind };
 
   // The '-Fpfn' flag gets lsof to output something like:
   //   p2133

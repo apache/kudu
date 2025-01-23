@@ -60,7 +60,7 @@ wait_for_listen_port() {
       return 1
     fi
     local ports
-    ports=$(lsof -wbnP -Fn -p "$pid" -a -i 4TCP -a -s TCP:LISTEN | \
+    ports=$(lsof -wnP -Fn -p "$pid" -a -i 4TCP -a -s TCP:LISTEN | \
             sed -n '/^n/ s/^[^:].*://p')
     for i in $ports; do
       if [[ $i -eq $expected_port ]]; then
