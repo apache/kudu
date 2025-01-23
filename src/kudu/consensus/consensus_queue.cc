@@ -665,7 +665,7 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
     peer_copy = *peer;
 
     // Clear the requests without deleting the entries, as they may be in use by other peers.
-    request->mutable_ops()->ExtractSubrange(0, request->ops_size(), nullptr);
+    request->mutable_ops()->UnsafeArenaExtractSubrange(0, request->ops_size(), nullptr);
 
     // This is initialized to the queue's last appended op but gets set to the id of the
     // log entry preceding the first one in 'messages' if messages are found for the peer.
