@@ -17,23 +17,35 @@
 
 #include "kudu/master/catalog_manager.h"
 
+#include <cstdint>
+#include <memory>
 #include <numeric>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <vector>
 
-#include <glog/logging.h>
 #include <gflags/gflags_declare.h>
+#include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/client/client.h"
+#include "kudu/client/schema.h"
 #include "kudu/common/common.pb.h"
+#include "kudu/common/partial_row.h"
 #include "kudu/common/row_operations.pb.h"
+#include "kudu/common/schema.h"
+#include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
+#include "kudu/master/mini_master.h"
 #include "kudu/master/ts_descriptor.h"
+#include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/util/cow_object.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -44,6 +56,18 @@ using std::iota;
 using std::string;
 using std::vector;
 using strings::Substitute;
+using std::unique_ptr;
+using kudu::client::KuduClient;
+using kudu::client::KuduClientBuilder;
+using kudu::client::KuduColumnSchema;
+using kudu::client::KuduSchema;
+using kudu::client::KuduSchemaBuilder;
+using kudu::client::KuduTableCreator;
+using kudu::client::sp::shared_ptr;
+using kudu::Status;
+using kudu::KuduPartialRow;
+using kudu::cluster::InternalMiniCluster;
+using kudu::cluster::InternalMiniClusterOptions;
 
 namespace kudu {
 namespace master {
@@ -250,5 +274,128 @@ TEST(TableInfoTest, MaxReturnedLocationsNotSpecified) {
   }
 }
 
-} // namespace master
-} // namespace kudu
+class CatalogManagerRpcAndUserFunctionsTest : public KuduTest {
+ protected:
+  void SetUp() override {
+    KuduTest::SetUp();
+
+    cluster_.reset(new InternalMiniCluster(env_, InternalMiniClusterOptions()));
+    ASSERT_OK(cluster_->Start());
+    master_ = cluster_->mini_master()->master();
+
+    ASSERT_OK(KuduClientBuilder()
+                  .add_master_server_addr(cluster_->mini_master()->bound_rpc_addr().ToString())
+                  .Build(&client_));
+  }
+
+  Status CreateTestTable() {
+    string kTableName = "test_table";
+    KuduSchema schema;
+    KuduSchemaBuilder b;
+    b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+    b.AddColumn("int_val")->Type(KuduColumnSchema::INT32)->NotNull();
+    KUDU_CHECK_OK(b.Build(&schema));
+    vector<string> columnNames;
+    columnNames.emplace_back("key");
+
+    KuduTableCreator* tableCreator = client_->NewTableCreator();
+    tableCreator->table_name(kTableName).schema(&schema).set_range_partition_columns(columnNames);
+
+    int32_t increment = 1000 / 10;
+    for (int32_t i = 1; i < 10; i++) {
+      KuduPartialRow* row = schema.NewRow();
+      KUDU_CHECK_OK(row->SetInt32(0, i * increment));
+      tableCreator->add_range_partition_split(row);
+    }
+    tableCreator->num_replicas(1);
+    Status s = tableCreator->Create();
+    delete tableCreator;
+    return s;
+  }
+
+  static void PopulateCreateTableRequest(CreateTableRequestPB* req) {
+    SchemaPB* schema = req->mutable_schema();
+    ColumnSchemaPB* col = schema->add_columns();
+    col->set_name("key");
+    col->set_type(INT32);
+    col->set_is_key(true);
+    ColumnSchemaPB* col2 = schema->add_columns();
+    col2->set_name("int_val");
+    col2->set_type(INT32);
+    req->set_name("test_table");
+    req->set_owner("default");
+    req->set_num_replicas(1);
+  }
+
+  unique_ptr<InternalMiniCluster> cluster_;
+  Master* master_;
+  shared_ptr<KuduClient> client_;
+};
+
+TEST_F(CatalogManagerRpcAndUserFunctionsTest, TestDeleteTable) {
+  CreateTestTable();
+  DeleteTableRequestPB req;
+  DeleteTableResponsePB resp;
+  req.mutable_table()->set_table_name("test_table");
+  CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
+  ASSERT_OK(master_->catalog_manager()->DeleteTableRpc(req, &resp, nullptr));
+}
+
+TEST_F(CatalogManagerRpcAndUserFunctionsTest, TestDeleteTableWithUser) {
+  CreateTestTable();
+  DeleteTableRequestPB req;
+  DeleteTableResponsePB resp;
+  req.mutable_table()->set_table_name("test_table");
+  CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
+  const string user = "test_user";
+  ASSERT_OK(master_->catalog_manager()->DeleteTableWithUser(req, &resp, user));
+}
+
+TEST_F(CatalogManagerRpcAndUserFunctionsTest, TestCreateTableRpc) {
+  CreateTableRequestPB req;
+  CreateTableResponsePB resp;
+  PopulateCreateTableRequest(&req);
+  CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
+  ASSERT_OK(master_->catalog_manager()->CreateTable(&req, &resp, nullptr));
+}
+
+TEST_F(CatalogManagerRpcAndUserFunctionsTest, TestCreateTableWithUser) {
+  CreateTableRequestPB req;
+  CreateTableResponsePB resp;
+  PopulateCreateTableRequest(&req);
+  CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
+  const string user = "test_user";
+  ASSERT_OK(master_->catalog_manager()->CreateTableWithUser(&req, &resp, user));
+}
+
+TEST_F(CatalogManagerRpcAndUserFunctionsTest, TestAlterTableRpc) {
+  CreateTestTable();
+  AlterTableRequestPB req;
+  AlterTableResponsePB resp;
+
+  req.mutable_table()->set_table_name("test_table");
+  AlterTableRequestPB::Step *step = req.add_alter_schema_steps();
+  step->set_type(AlterTableRequestPB::ADD_COLUMN);
+  ColumnSchemaToPB(ColumnSchema("int_val2", INT32, true),
+                    step->mutable_add_column()->mutable_schema());
+  CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
+  ASSERT_OK(master_->catalog_manager()->AlterTableRpc(req, &resp, nullptr));
+}
+
+TEST_F(CatalogManagerRpcAndUserFunctionsTest, TestAlterTableWithUser) {
+  CreateTestTable();
+  AlterTableRequestPB req;
+  AlterTableResponsePB resp;
+
+  req.mutable_table()->set_table_name("test_table");
+  AlterTableRequestPB::Step *step = req.add_alter_schema_steps();
+  step->set_type(AlterTableRequestPB::ADD_COLUMN);
+  ColumnSchemaToPB(ColumnSchema("int_val2", INT32, true),
+                    step->mutable_add_column()->mutable_schema());
+  CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
+  const string user = "test_user";
+  ASSERT_OK(master_->catalog_manager()->AlterTableWithUser(req, &resp, user));
+}
+
+}  // namespace master
+}  // namespace kudu

@@ -666,6 +666,11 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
                      CreateTableResponsePB* resp,
                      rpc::RpcContext* rpc);
 
+  // Create a new Table with the specified attributes.
+  Status CreateTableWithUser(const CreateTableRequestPB* req,
+                             CreateTableResponsePB* resp,
+                             const std::optional<std::string>& user);
+
   // Get the information about an in-progress create operation. If 'user' is
   // provided, checks that the user is authorized to get such information.
   Status IsCreateTableDone(const IsCreateTableDoneRequestPB* req,
@@ -679,6 +684,11 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   Status DeleteTableRpc(const DeleteTableRequestPB& req,
                         DeleteTableResponsePB* resp,
                         rpc::RpcContext* rpc) WARN_UNUSED_RESULT;
+
+  // Delete the specified table.
+  Status DeleteTableWithUser(const DeleteTableRequestPB& req,
+                             DeleteTableResponsePB* resp,
+                             const std::optional<std::string>& user);
 
   // Mark the table as soft-deleted with ability to restore it back within
   // the soft-delete reservation period.
@@ -717,6 +727,12 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
                        AlterTableResponsePB* resp,
                        rpc::RpcContext* rpc,
                        AlterType alter_type = AlterType::kNormal);
+
+  // Alter the specified table in response to an AlterTableRequest.
+  Status AlterTableWithUser(const AlterTableRequestPB& req,
+                            AlterTableResponsePB* resp,
+                            const std::optional<std::string>& user,
+                            AlterType alter_type = AlterType::kNormal);
 
   // Alter the specified table in response to an 'ALTER TABLE' HMS
   // notification log listener event.
@@ -1034,6 +1050,26 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
       ColumnId* next_col_id,
       bool* needs_range_bounds_refresh);
 
+  // Common logic for CreateTable and CreateTableWithUser.
+  // The rpc context is optional because this function is used by both CreateTable (RPC API)
+  // and CreateTableWithUser (REST API). CreateTable passes an RPC context, which provides
+  // authentication details, whereas CreateTableWithUser does not and instead relies on
+  // an explicitly provided username for authentication.
+  Status CreateTableHelper(const CreateTableRequestPB* req,
+                          CreateTableResponsePB* resp,
+                          std::optional<rpc::RpcContext*> rpc,
+                          const std::optional<std::string>& username);
+
+  // Common logic for DeleteTableRpc and DeleteTableWithUser.
+  // The rpc context is optional because this function is used by both DeleteTableRpc (RPC API)
+  // and DeleteTableWithUser (REST API). DeleteTableRpc passes an RPC context, which provides
+  // authentication details, whereas DeleteTableWithUser does not and instead relies on
+  // an explicitly provided username for authentication.
+  Status DeleteTableHelper(const DeleteTableRequestPB& req,
+                           DeleteTableResponsePB* resp,
+                           std::optional<rpc::RpcContext*> rpc,
+                           const std::optional<std::string>& username);
+
   // Delete the specified table in the catalog. If 'user' is provided,
   // checks that the user is authorized to delete the table. Otherwise,
   // it indicates its an internal operation (originates from catalog
@@ -1045,6 +1081,17 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
                      DeleteTableResponsePB* resp,
                      std::optional<int64_t> hms_notification_log_event_id,
                      const std::optional<std::string>& user) WARN_UNUSED_RESULT;
+
+  // Common logic for AlterTableRpc and AlterTableWithUser.
+  // The rpc context is optional because this function is used by both AlterTableRpc (RPC API)
+  // and AlterTableWithUser (REST API). AlterTableRpc passes an RPC context, which provides
+  // authentication details, whereas AlterTableWithUser does not and instead relies on
+  // an explicitly provided username for authentication.
+  Status AlterTableHelper(const AlterTableRequestPB& req,
+                          AlterTableResponsePB* resp,
+                          std::optional<rpc::RpcContext*> rpc,
+                          const std::optional<std::string>& username,
+                          AlterType alter_type = AlterType::kNormal);
 
   // Alter the specified table in the catalog. If 'user' is provided,
   // checks that the user is authorized to alter the table. Otherwise,
@@ -1340,8 +1387,8 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // events, if the HMS integration is enabled. Handles setting the correct
   // response code in the case of an error.
   template<typename RespClass>
-  Status WaitForNotificationLogListenerCatchUp(RespClass* resp,
-                                               rpc::RpcContext* rpc) WARN_UNUSED_RESULT;
+  Status WaitForNotificationLogListenerCatchUp(
+      RespClass* resp, const std::optional<rpc::RpcContext*>& rpc_opt) WARN_UNUSED_RESULT;
 
   enum class ValidateType {
     kCreateTable = 0,
