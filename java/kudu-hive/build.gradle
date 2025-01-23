@@ -23,7 +23,7 @@ dependencies {
   compileOnly libs.slf4jApi
   // Transitively required through hive-metastore,
   // which has marked it as an optional dependency.
-  compileOnly libs.hadoopCommon
+  implementation libs.hadoopCommon
   testImplementation libs.hadoopMRClientCommon
 
   testImplementation project(path: ":kudu-test-utils", configuration: "shadow")
