@@ -1749,19 +1749,19 @@ Status RaftConsensus::RequestVote(const VoteRequestPB* request,
   // Lock ordering: update_lock_ must be acquired before lock_.
   std::unique_lock update_guard(update_lock_, std::defer_lock);
   if (PREDICT_TRUE(FLAGS_enable_leader_failure_detection)) {
-    update_guard.try_lock();
+    if (!update_guard.try_lock()) {
+      // There is another vote or update concurrent with the vote. In that case, that
+      // other request is likely to reset the timer, and we'll end up just voting
+      // "NO" after waiting. To avoid starving RPC handlers and causing cascading
+      // timeouts, just vote a quick NO.
+      return RequestVoteRespondIsBusy(request, response);
+    }
   } else {
     // If failure detection is not enabled, then we can't just reject the vote,
     // because there will be no automatic retry later. So, block for the lock.
     update_guard.lock();
   }
-  if (!update_guard.owns_lock()) {
-    // There is another vote or update concurrent with the vote. In that case, that
-    // other request is likely to reset the timer, and we'll end up just voting
-    // "NO" after waiting. To avoid starving RPC handlers and causing cascading
-    // timeouts, just vote a quick NO.
-    return RequestVoteRespondIsBusy(request, response);
-  }
+  DCHECK(update_guard.owns_lock());
 
   // Acquire the replica state lock so we can read / modify the consensus state.
   ThreadRestrictions::AssertWaitAllowed();
