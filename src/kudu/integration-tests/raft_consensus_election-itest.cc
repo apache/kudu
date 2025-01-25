@@ -272,9 +272,9 @@ TEST_F(RaftConsensusElectionITest, TestNewLeaderCantResolvePeers) {
   }
   // Cause an election again to trigger a new report to the master. This time
   // the master should place the replica since it has a new tserver available.
-  ASSERT_OK(LeaderStepDown(
-      second_ts, tablet_id, kTimeout, /*error=*/nullptr, second_ts->uuid()));
+  ASSERT_OK(StartElection(second_ts, tablet_id, kTimeout));
   ASSERT_OK(WaitUntilLeader(second_ts, tablet_id, kTimeout));
+  NO_FATALS(cluster_->AssertNoCrashes());
 
   STLDeleteValues(&tablet_servers_);
   ASSERT_OK(itest::CreateTabletServerMap(cluster_->master_proxy(),
