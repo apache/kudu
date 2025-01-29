@@ -241,7 +241,7 @@ TEST_F(TestHighMemCompaction, TestMajorCompactionMemoryPressure) {
   // Approximate memory consumed by delta compaction during the course of this test.
   // Total consumption would always exceed this usage. Since we want to be
   // certain that warning threshold limit is crossed, this value is kept low.
-  const int64_t compaction_mem_usage_approx = 3 * 1024 * 1024;
+  constexpr int64_t compaction_mem_usage_approx = 3 * 1024 * 1024;
 
   // Set appropriate flags to ensure memory threshold checks fail.
   FLAGS_memory_limit_compact_usage_warn_threshold_percentage =
