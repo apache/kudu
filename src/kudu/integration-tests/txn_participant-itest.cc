@@ -23,6 +23,7 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -47,7 +48,6 @@
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
-#include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/mvcc.h"
@@ -1223,9 +1223,7 @@ TEST_F(TxnParticipantITest, TestTxnSystemClientSucceedsOnBootstrap) {
     ASSERT_OK(ts->server()->tablet_manager()->WaitForAllBootstrapsToFinish());
     SleepFor(MonoDelta::FromMilliseconds(500));
   }
-  stop.CountDown();
-  thread_joiner.cancel();
-  t.join();
+  thread_joiner.run();
 
   // None of our transactions should have failed.
   ASSERT_OK(client_error);
@@ -1276,9 +1274,7 @@ TEST_F(TxnParticipantITest, TestTxnSystemClientRetriesWhenReplicaNotFound) {
     ASSERT_OK(r->WaitUntilConsensusRunning(kDefaultTimeout));
   });
 
-  stop.CountDown();
-  thread_joiner.cancel();
-  t.join();
+  thread_joiner.run();
 
   // None of our transactions should have failed.
   ASSERT_OK(client_error);

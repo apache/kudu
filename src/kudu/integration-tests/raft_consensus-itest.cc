@@ -1758,8 +1758,7 @@ TEST_F(RaftConsensusITest, TestConfigChangeUnderLoad) {
 
   LOG(INFO) << "Joining writer threads...";
   finish.Store(true);
-  thread_join_func();
-  thread_joiner.cancel();
+  thread_joiner.run();
 
   LOG(INFO) << "Waiting for replicas to agree...";
   // Wait for all servers to replicate everything up through the last write op.

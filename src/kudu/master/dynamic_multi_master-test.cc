@@ -1689,11 +1689,7 @@ TEST_F(AutoAddMasterTest, TestAddWithOnGoingDdl) {
     ASSERT_OK(cluster_->WaitForTabletServerCount(cluster_->num_tablet_servers(),
                                                  MonoDelta::FromSeconds(5)));
   }
-  proceed = false;
-  thread_joiner.cancel();
-  for (auto& t : threads) {
-    t.join();
-  }
+  thread_joiner.run();
   for (const auto& e : errors) {
     // NOTE: the table may exist if the CreateTable call is retried.
     if (e.ok() || e.IsTimedOut() || e.IsAlreadyPresent()) {

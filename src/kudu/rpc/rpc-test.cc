@@ -631,8 +631,7 @@ TEST_P(TestRpc, TestClientConnectionMetrics) {
 #endif
 
     // Unblock all of the calls and wait for them to finish.
-    latch.Wait();
-    cleanup.cancel();
+    cleanup.run();
 
     // Verify that all the RPCs have finished.
     for (const auto& controller : controllers) {

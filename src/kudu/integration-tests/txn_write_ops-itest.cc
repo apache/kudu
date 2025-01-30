@@ -660,8 +660,7 @@ TEST_F(TxnWriteOpsITest, FrequentElections) {
       max_sleep_ms = std::min(max_sleep_ms * 1.1, 1000.0);
     }
   }
-  std::for_each(writers.begin(), writers.end(), [](thread& t) { t.join(); });
-  cleanup.cancel();
+  cleanup.run();
 
   NO_FATALS(cluster_->AssertNoCrashes());
   for (auto& txn : transactions) {
@@ -1939,8 +1938,7 @@ TEST_F(TxnOpDispatcherITest, RollbackWriteOpPendingParticipantNotYetRegistered) 
   const auto row_status = GetSingleRowError(session.get());
   ASSERT_TRUE(row_status.IsIllegalState()) << s.ToString();
 
-  rollback.join();
-  cleanup.cancel();
+  cleanup.run();
   ASSERT_OK(rollback_status);
 
   bool is_complete = false;
@@ -1993,8 +1991,7 @@ TEST_F(TxnOpDispatcherITest, RollbackWriteOpPendingParticipantRegistered) {
   Status s = InsertRows(txn.get(), 1, &key, &session);
   ASSERT_TRUE(s.IsIOError()) << s.ToString();
 
-  rollback.join();
-  cleanup.cancel();
+  cleanup.run();
   ASSERT_OK(rollback_status);
 
   bool is_complete = false;
@@ -2055,8 +2052,7 @@ TEST_F(TxnOpDispatcherITest, TxnWriteWhileReplicaDeleted) {
   // registered.
   ASSERT_GE(1, GetTxnOpDispatchersTotalCount(replicas));
 
-  cleanup.cancel();
-  tablet_deleter.join();
+  cleanup.run();
   ASSERT_OK(tablet_delete_status);
 }
 

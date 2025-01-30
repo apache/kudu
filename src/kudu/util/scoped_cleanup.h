@@ -40,7 +40,7 @@ namespace kudu {
 //
 // Use 'MakeScopedCleanup()' below to instantiate.
 template<typename F>
-class ScopedCleanup {
+class ScopedCleanup final {
  public:
   explicit ScopedCleanup(F f)
       : cancelled_(false),
@@ -51,7 +51,18 @@ class ScopedCleanup {
       f_();
     }
   }
+
+  // Cancel the cleanup.
   void cancel() { cancelled_ = true; }
+
+  // Explicitly run the cleanup function. Once run, no cleanup is performed
+  // in the destructor.
+  void run() {
+    if (!cancelled_) {
+      f_();
+      cancelled_ = true;
+    }
+  }
 
  private:
   bool cancelled_;
