@@ -143,10 +143,6 @@ TEST(DnsResolverTest, ConcurrentRefreshesAndResolutions) {
       NO_FATALS(validate_addrs(addrs));
     }
   });
-  for (auto& t : threads) {
-    t.join();
-  }
-  cancel_threads.cancel();
 }
 
 TEST(DnsResolverTest, CachingVsNonCachingResolver) {

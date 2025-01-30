@@ -237,8 +237,7 @@ void ExactlyOnceSemanticsITest::DoTestWritesWithExactlyOnceSemantics(
 
   while (true) {
     if (!threads_running.count()) {
-      thread_join_func();
-      thread_cleanup.cancel();
+      thread_cleanup.run();
       break;
     }
     if (allow_crashes) {

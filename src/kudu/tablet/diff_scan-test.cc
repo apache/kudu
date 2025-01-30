@@ -23,6 +23,7 @@
 #include <string>
 #include <thread>
 #include <tuple>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -38,7 +39,6 @@
 #include "kudu/tablet/tablet-harness.h"
 #include "kudu/tablet/tablet-test-base.h"
 #include "kudu/tablet/tablet-test-util.h"
-#include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/scoped_cleanup.h"
@@ -235,8 +235,7 @@ TEST_F(OrderedDiffScanWithDeletesTest, TestDiffScanAfterDeltaFlushRacesWithBatch
       t.join();
   });
   ASSERT_OK(UpdateTestRow(&writer, kRowKey, 0, 10000));
-  t.join();
-  thread_joiner.cancel();
+  thread_joiner.run();
   ASSERT_OK(s);
   ASSERT_OK(tablet->mvcc_manager()->WaitForApplyingOpsToApply());
 

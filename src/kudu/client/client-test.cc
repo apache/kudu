@@ -3670,8 +3670,7 @@ TEST_F(ClientTest, TestWriteWhileRestarting) {
   ts->Shutdown();
   ASSERT_OK(ts->Restart());
   stop.CountDown();
-  thread_joiner.cancel();
-  t.join();
+  thread_joiner.run();
 
   // The writer thread should have hit no issues.
   ASSERT_OK(writer_error);

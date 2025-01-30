@@ -1027,9 +1027,7 @@ TEST_F(IgnoredTserverGoesDownDuringRebalancingTest, TserverDown) {
     }
   }
 
-  run = false;
-  stopper.join();
-  stopper_cleanup.cancel();
+  stopper_cleanup.run();
 
   NO_FATALS(cluster_->AssertNoCrashes());
 }
@@ -1389,9 +1387,7 @@ TEST_P(TserverGoesDownDuringRebalancingTest, TserverDown) {
              "unacceptable health status UNAVAILABLE");
   }
 
-  run = false;
-  stopper.join();
-  stopper_cleanup.cancel();
+  stopper_cleanup.run();
 
   ASSERT_OK(cluster_->tablet_server(shutdown_tserver_idx)->Restart());
   NO_FATALS(cluster_->AssertNoCrashes());
@@ -1450,9 +1446,7 @@ TEST_P(TserverAddedDuringRebalancingTest, TserverStarts) {
 
   // It's time to sneak in and add new tablet server.
   ASSERT_OK(cluster_->AddTabletServer());
-  run = false;
-  runner.join();
-  runner_cleanup.cancel();
+  runner_cleanup.run();
 
   // The rebalancer should not fail, and eventually, after a new tablet server
   // is added, the cluster should become balanced.
@@ -1584,9 +1578,7 @@ TEST_P(RebalancingDuringElectionStormTest, RoundRobin) {
     }
   }
 
-  elector_run = false;
-  elector.join();
-  elector_cleanup.cancel();
+  elector_cleanup.run();
 #if !defined(ADDRESS_SANITIZER) && !defined(THREAD_SANITIZER)
   for (auto& workload : workloads) {
     workload->StopAndJoin();

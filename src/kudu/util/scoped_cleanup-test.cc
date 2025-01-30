@@ -41,7 +41,6 @@ TEST(ScopedCleanup, TestCleanupMacro) {
   ASSERT_EQ(0, var);
 }
 
-
 TEST(ScopedCleanup, TestCancelCleanup) {
   int var = 0;
   {
@@ -51,6 +50,65 @@ TEST(ScopedCleanup, TestCancelCleanup) {
     cleanup.cancel();
   }
   ASSERT_EQ(42, var);
+}
+
+TEST(ScopedCleanup, ExplicitRun) {
+  int var = 0;
+  {
+    auto saved = var;
+    auto cleanup = MakeScopedCleanup([&] () { var = saved; });
+    var = 42;
+    cleanup.run();
+    ASSERT_EQ(0, var);
+
+    // Set 'saved' to 100 to distinguish between invoking the cleanup function
+    // by the destructor and the explicit 'run' call.
+    saved = 100;
+  }
+  // The function call in the destructor of the 'cleanup' shouldn't fire
+  // after explicitly calling ScopedCleanup::run().
+  ASSERT_EQ(0, var);
+}
+
+TEST(ScopedCleanup, CancelAndRun) {
+  int var = 0;
+  {
+    auto saved = var;
+    auto cleanup = MakeScopedCleanup([&] () { var = saved; });
+    var = 42;
+    cleanup.cancel();
+    cleanup.run();
+    ASSERT_EQ(42, var);
+
+    // Set 'saved' to 100 to distinguish between invoking the cleanup function
+    // by the destructor and the explicit 'run' call.
+    saved = 100;
+  }
+  // The function call in the destructor of the 'cleanup' shouldn't have fired.
+  ASSERT_EQ(42, var);
+}
+
+TEST(ScopedCleanup, ExplicitRunTwice) {
+  int var = 0;
+  {
+    auto saved = var;
+    auto cleanup = MakeScopedCleanup([&] () { var = saved; });
+    var = 42;
+    cleanup.run();
+    ASSERT_EQ(0, var);
+
+    // After explicitly running once, the cleanup function isn't called
+    // upon subsequent invocations of ScopedCleanup::run().
+    saved = 1;
+    cleanup.run();
+    ASSERT_EQ(0, var);
+
+    // Set 'saved' to 100 to distinguish between invoking the cleanup function
+    // by the destructor and the explicit 'run' call.
+    saved = 100;
+  }
+  // The function call in the destructor of the 'cleanup' shouldn't have fired.
+  ASSERT_EQ(0, var);
 }
 
 } // namespace kudu

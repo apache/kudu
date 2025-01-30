@@ -190,8 +190,7 @@ class SocketTest : public KuduTest {
     char buf[kData.size()];
     ASSERT_OK(client.BlockingRecv(reinterpret_cast<uint8_t*>(buf), kData.size(), &n,
                                   MonoTime::Now() + MonoDelta::FromSeconds(5)));
-    cleanup.cancel();
-    t.join();
+    cleanup.run();
 
     ASSERT_OK(client.Close());
 

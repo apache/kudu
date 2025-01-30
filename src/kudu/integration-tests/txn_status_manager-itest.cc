@@ -22,13 +22,14 @@
 #include <ostream>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <unordered_map>
 #include <vector>
 
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/client/client.h"
+#include "kudu/client/client.h" // IWYU pragma: keep
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/gutil/map-util.h"
@@ -440,9 +441,7 @@ TEST_F(TxnStatusManagerITest, TxnKeepAliveMultiTxnStatusManagerInstances) {
 
   NO_FATALS(CheckTxnState(txn_id, TxnStatePB::OPEN));
 
-  latch.CountDown();
-  txn_keepalive_sender.join();
-  cleanup.cancel();
+  cleanup.run();
 
   // An extra sanity check: make sure the recent keepalive requests were sent
   // successfully, as expected.
