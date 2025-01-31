@@ -52,6 +52,14 @@ class DnsResolver {
                        MonoDelta cache_ttl = MonoDelta::FromSeconds(60));
   ~DnsResolver();
 
+  // Shutdown the resolver's thread pool. After shutting down the thread pool,
+  // RefreshAddressesAsync() returns Status::ServiceUnavailable(),
+  // while ResolveAddressesAsync() returns cached not-yet-expired entry
+  // from the cache (if present) or Status::ServiceUnavailable() otherwise.
+  // The behavior of ResolveAddresses() isn't affected by the status of the
+  // resolver's thread pool.
+  void Shutdown();
+
   // Synchronously resolve addresses corresponding to the specified host:port
   // pair in 'hostport'. Note that a host may resolve to more than one IP
   // address.

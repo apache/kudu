@@ -67,6 +67,10 @@ DnsResolver::DnsResolver(int max_threads_num,
 }
 
 DnsResolver::~DnsResolver() {
+  Shutdown();
+}
+
+void DnsResolver::Shutdown() {
   pool_->Shutdown();
 }
 
@@ -87,7 +91,7 @@ void DnsResolver::ResolveAddressesAsync(const HostPort& hostport,
   const auto s = pool_->Submit([=]() {
     this->DoResolutionCb(hostport, addresses, cb);
   });
-  if (!s.ok()) {
+  if (PREDICT_FALSE(!s.ok())) {
     cb(s);
   }
 }
@@ -107,7 +111,7 @@ void DnsResolver::RefreshAddressesAsync(const HostPort& hostport,
     }
     this->DoResolutionCb(hostport, addresses, cb);
   });
-  if (!s.ok()) {
+  if (PREDICT_FALSE(!s.ok())) {
     cb(s);
   }
 }

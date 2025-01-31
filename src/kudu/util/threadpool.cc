@@ -387,10 +387,15 @@ ThreadPool::ThreadPool(const ThreadPoolBuilder& builder)
 }
 
 ThreadPool::~ThreadPool() {
-  // There should only be one live token: the one used in tokenless submission.
-  CHECK_EQ(1, tokens_.size()) << Substitute(
-      "Threadpool $0 destroyed with $1 allocated tokens",
-      name_, tokens_.size());
+#if DCHECK_IS_ON()
+  {
+    // There should only be one live token: the one used in tokenless submission.
+    std::lock_guard guard(lock_);
+    DCHECK_EQ(1, tokens_.size()) << Substitute(
+        "Threadpool $0 destroyed with $1 allocated tokens",
+        name_, tokens_.size());
+  }
+#endif
   Shutdown();
 }
 
@@ -472,11 +477,13 @@ void ThreadPool::Shutdown() {
     no_threads_cond_.Wait();
   }
 
+#if DCHECK_IS_ON()
   // All the threads have exited. Check the state of each token.
   for (auto* t : tokens_) {
     DCHECK(t->state() == ThreadPoolToken::State::IDLE ||
            t->state() == ThreadPoolToken::State::QUIESCED);
   }
+#endif
 
   // Finally release the queued tasks, outside the lock.
   lock.unlock();
