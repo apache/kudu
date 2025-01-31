@@ -362,7 +362,9 @@ class MaintenanceManager : public std::enable_shared_from_this<MaintenanceManage
 
   void LaunchOp(MaintenanceOp* op);
 
-  std::string LogPrefix() const;
+  const std::string& LogPrefix() const {
+    return log_prefix_;
+  }
 
   bool HasFreeThreads();
 
@@ -385,6 +387,7 @@ class MaintenanceManager : public std::enable_shared_from_this<MaintenanceManage
   bool ProceedWithFlush(double* used_memory_percentage);
 
   const std::string server_uuid_;
+  const std::string log_prefix_;
   const int32_t num_threads_;
   const MonoDelta polling_interval_;
 

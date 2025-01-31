@@ -203,6 +203,7 @@ MaintenanceManager::MaintenanceManager(
     string server_uuid,
     const scoped_refptr<MetricEntity>& metric_entity)
     : server_uuid_(std::move(server_uuid)),
+      log_prefix_(Substitute("P $0: ", server_uuid_)),
       num_threads_(options.num_threads > 0
                    ? options.num_threads
                    : FLAGS_maintenance_manager_num_threads),
@@ -695,10 +696,6 @@ void MaintenanceManager::GetMaintenanceManagerStatusDump(
       }
     }
   }
-}
-
-string MaintenanceManager::LogPrefix() const {
-  return Substitute("P $0: ", server_uuid_);
 }
 
 bool MaintenanceManager::HasFreeThreads() {
