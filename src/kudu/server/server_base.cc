@@ -1222,6 +1222,7 @@ void ServerBase::ShutdownImpl() {
     web_server_->Stop();
   }
   rpc_server_->Shutdown();
+  dns_resolver_->Shutdown();
   if (messenger_) {
     messenger_->Shutdown();
   }
