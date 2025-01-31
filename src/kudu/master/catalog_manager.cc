@@ -4496,7 +4496,7 @@ class RetryingTSRpcTask : public MonitoredTask {
   }
 
   // Return the id of the tablet that is the subject of the async request.
-  virtual string tablet_id() const = 0;
+  virtual const string& tablet_id() const = 0;
 
   MonoTime start_timestamp() const override { return start_ts_; }
   MonoTime completion_timestamp() const override { return end_ts_; }
@@ -4766,7 +4766,7 @@ class AsyncCreateReplica : public RetrySpecificTSRpcTask {
   }
 
  protected:
-  string tablet_id() const override { return tablet_id_; }
+  const string& tablet_id() const override { return tablet_id_; }
 
   void HandleResponse(int attempt) override {
     if (!resp_.has_error()) {
@@ -4826,7 +4826,7 @@ class AsyncDeleteReplica : public RetrySpecificTSRpcTask {
   }
 
  protected:
-  string tablet_id() const override { return tablet_id_; }
+  const string& tablet_id() const override { return tablet_id_; }
 
   void HandleResponse(int attempt) override {
     if (resp_.has_error()) {
@@ -4931,7 +4931,7 @@ class AsyncAlterTable : public RetryingTSRpcTask {
   }
 
  private:
-  string tablet_id() const override { return tablet_->id(); }
+  const string& tablet_id() const override { return tablet_->id(); }
 
   void HandleResponse(int /*attempt*/) override {
     if (resp_.has_error()) {
@@ -5010,7 +5010,7 @@ class AsyncChangeConfigTask : public RetryingTSRpcTask {
   consensus::ChangeConfigResponsePB resp_;
 
  private:
-  string tablet_id() const override { return tablet_->id(); }
+  const string& tablet_id() const override { return tablet_->id(); }
 };
 
 AsyncChangeConfigTask::AsyncChangeConfigTask(Master* master,
