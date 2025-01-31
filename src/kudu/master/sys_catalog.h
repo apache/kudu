@@ -321,7 +321,7 @@ class SysCatalogTable {
   Status CreateDistributedConfig(const MasterOptions& options,
                                  consensus::RaftConfigPB* committed_config);
 
-  std::string tablet_id() const {
+  const std::string& tablet_id() const {
     return tablet_replica_->tablet_id();
   }
 
