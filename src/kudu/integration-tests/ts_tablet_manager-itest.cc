@@ -24,6 +24,7 @@
 #include <ostream>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -888,10 +889,10 @@ TEST_F(TsTabletManagerITest, TestTableStats) {
       mini_master->Shutdown();
       SleepFor(MonoDelta::FromMilliseconds(kMaxElectionTime));
       ASSERT_OK(mini_master->Restart());
-      // Sometimes the election fails until the node restarts.
-      // And the restarted node is elected leader again.
-      // So, it is necessary to wait for all tservers to report.
-      SleepFor(MonoDelta::FromMilliseconds(FLAGS_heartbeat_interval_ms));
+      // Sometimes the restarted master is elected leader again just after
+      // starting up. It is necessary to wait for all tservers to report before
+      // sampling the table's stats.
+      ASSERT_OK(cluster_->WaitForTabletServerCount(kNumTservers));
       NO_FATALS(CheckStats(kRowsCount));
     }
   }
