@@ -157,6 +157,7 @@ class ColumnBlock {
  protected:
   friend class ColumnBlockCell;
   friend class ColumnDataView;
+  friend class RowBlockRow;
 
   // Return a pointer to the given cell.
   uint8_t* mutable_cell_ptr(size_t idx) {
