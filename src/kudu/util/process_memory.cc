@@ -238,10 +238,7 @@ bool OverHardLimitThreshold() {
   InitLimits();
   int64_t over_hard_limit_threshold =
       g_hard_limit * FLAGS_memory_limit_compact_usage_warn_threshold_percentage / 100;
-  if (CurrentConsumption() > over_hard_limit_threshold) {
-    return true;
-  }
-  return false;
+  return CurrentConsumption() > over_hard_limit_threshold;
 }
 
 int64_t SoftLimit() {

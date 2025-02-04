@@ -118,7 +118,7 @@ class TestHighMemCompaction : public KuduRowSetTest {
   // Callers can adjust the size_factor.
   // For example, to generate 5MB, set size_factor as 5.
   // Similarly, to generate 35MB, set size_factor as 35.
-  void GenHighMemConsumptionDeltas(const uint32_t size_factor);
+  void GenHighMemConsumptionDeltas(uint32_t size_factor);
 
   // Enables compaction memory budgeting and then runs rowset compaction.
   // Caller can set constraints on budget and expect the results accordingly.
@@ -151,7 +151,7 @@ class TestHighMemCompaction : public KuduRowSetTest {
 void TestHighMemCompaction::TestRowSetCompactionWithOrWithoutBudgetingConstraints(
     bool budgeting_constraints_applied) {
   // size factor as 2 generates ~2MB memory size worth of deltas
-  GenHighMemConsumptionDeltas(2);
+  NO_FATALS(GenHighMemConsumptionDeltas(2));
 
   // Run rowset compaction.
   StringVectorSink sink;
@@ -179,28 +179,26 @@ void TestHighMemCompaction::TestRowSetCompactionWithOrWithoutBudgetingConstraint
 
 void TestHighMemCompaction::TestMajorCompactionCrossingMemoryThreshold() {
   // Size factor as 2 generates ~2MB memory size worth of deltas.
-  GenHighMemConsumptionDeltas(2);
+  NO_FATALS(GenHighMemConsumptionDeltas(2));
 
   // Run major delta compaction.
   StringVectorSink sink;
   ScopedRegisterSink reg(&sink);
-  scoped_refptr<Trace> trace(new Trace);
-  ADOPT_TRACE(trace.get());
   ASSERT_OK(tablet()->CompactWorstDeltas(RowSet::MAJOR_DELTA_COMPACTION));
   ASSERT_STR_CONTAINS(JoinStrings(sink.logged_msgs(), "\n"),
-                      "Beyond hard memory limit of");
+                      "beyond hard memory limit of");
 }
 
-void TestHighMemCompaction::GenHighMemConsumptionDeltas(const uint32_t size_factor) {
-  constexpr const uint32_t num_rowsets = 10;
-  constexpr const uint32_t num_rows_per_rowset = 2;
+void TestHighMemCompaction::GenHighMemConsumptionDeltas(uint32_t size_factor) {
+  constexpr const uint32_t kNumRowsets = 10;
+  constexpr const uint32_t kNumRowsPerRowset = 2;
   const uint32_t num_updates = 5000 * size_factor;
 
-  NO_FATALS(InsertOriginalRows(num_rowsets, num_rows_per_rowset));
+  NO_FATALS(InsertOriginalRows(kNumRowsets, kNumRowsPerRowset));
 
   // Mutate all of the rows.
   for (int i = 1; i <= num_updates; i++) {
-    UpdateOriginalRowsNoFlush(num_rowsets, num_rows_per_rowset, i);
+    NO_FATALS(UpdateOriginalRowsNoFlush(kNumRowsets, kNumRowsPerRowset, i));
   }
   ASSERT_OK(tablet()->FlushAllDMSForTests());
 }

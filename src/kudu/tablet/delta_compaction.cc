@@ -17,6 +17,7 @@
 
 #include "kudu/tablet/delta_compaction.h"
 
+#include <cinttypes>
 #include <map>
 #include <ostream>
 #include <string>
@@ -127,13 +128,13 @@ string MajorDeltaCompaction::ColumnNamesToString() const {
 // Log warning messages if the memory consumption has exceeded a certain threshold.
 void MajorDeltaCompaction::MemoryExceededWarnMsgs() {
   if (process_memory::OverHardLimitThreshold()) {
-    string msg = StringPrintf(
-        "Beyond hard memory limit of %ld with current consumption at %ld. "
-        "MajorDeltaCompaction ops consumption: tablet-%s %ld, total %ld.",
+    const auto msg = StringPrintf(
+        "beyond hard memory limit of %" PRId64 " with current consumption "
+        "at %" PRId64 "; MajorDeltaCompaction ops consumption: "
+        "tablet-%s %" PRId64 ", total %" PRId64,
         process_memory::HardLimit(), process_memory::CurrentConsumption(),
         tablet_id_.c_str(), tracker_->consumption(), parent_tracker_->consumption());
-    KLOG_EVERY_N_SECS(WARNING, 1) << msg
-                                  << THROTTLE_MSG;
+    KLOG_EVERY_N_SECS(WARNING, 1) << msg << THROTTLE_MSG;
   }
 }
 
