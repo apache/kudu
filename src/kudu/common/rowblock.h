@@ -40,11 +40,15 @@ class Arena;
 class RowBlockRow;
 class SelectedRows;
 
+namespace tablet {
+class TestDeltaFile;
+}
+
 // Bit-vector representing the selection status of each row in a row block.
 //
 // When scanning through data, a 1 bit in the selection vector indicates that
 // the given row is live and has passed all predicates.
-class SelectionVector {
+class SelectionVector final {
  public:
   // Construct a new vector. The bits are initially in an indeterminate state.
   // Call SetAllTrue() if you require all rows to be initially selected.
@@ -58,7 +62,7 @@ class SelectionVector {
   //
   // The underlying bytes must not be deallocated or else this object will become
   // invalid.
-  SelectionVector(SelectionVector *other, size_t prefix_rows);
+  SelectionVector(SelectionVector* other, size_t prefix_rows);
 
   // Resize the selection vector to the given number of rows.
   // This size must be <= the allocated capacity.
@@ -109,11 +113,11 @@ class SelectionVector {
   // of this SelectionVector and must not be retained longer than this instance.
   SelectedRows GetSelectedRows() const;
 
-  uint8_t *mutable_bitmap() {
+  uint8_t* mutable_bitmap() {
     return &bitmap_[0];
   }
 
-  const uint8_t *bitmap() const {
+  const uint8_t* bitmap() const {
     return &bitmap_[0];
   }
 
@@ -175,7 +179,7 @@ class SelectionVector {
   }
 
   // The number of allocated bytes in bitmap_
-  size_t bytes_capacity_;
+  const size_t bytes_capacity_;
 
   size_t n_rows_;
   size_t n_bytes_;
@@ -192,33 +196,33 @@ bool operator!=(const SelectionVector& a, const SelectionVector& b);
 // batch will start from. After processing a batch, Advance() should be called
 // and the view will move forward by the appropriate amount. In this way, the
 // underlying selection vector can easily be updated batch-by-batch.
-class SelectionVectorView {
+class SelectionVectorView final {
  public:
   // Constructs a new SelectionVectorView.
   //
   // The 'sel_vec' object must outlive this SelectionVectorView.
-  explicit SelectionVectorView(SelectionVector *sel_vec)
-    : sel_vec_(sel_vec), row_offset_(0) {
+  explicit SelectionVectorView(SelectionVector* sel_vec)
+      : sel_vec_(sel_vec), row_offset_(0) {
   }
   void Advance(size_t skip) {
-    DCHECK_LE(skip, sel_vec_->nrows() - row_offset_);
+    DCHECK_LE(skip + row_offset_, sel_vec_->nrows());
     row_offset_ += skip;
   }
   void SetBit(size_t row_idx) {
-    DCHECK_LE(row_idx, sel_vec_->nrows() - row_offset_);
+    DCHECK_LE(row_idx + row_offset_, sel_vec_->nrows());
     BitmapSet(sel_vec_->mutable_bitmap(), row_offset_ + row_idx);
   }
   void ClearBit(size_t row_idx) {
-    DCHECK_LE(row_idx, sel_vec_->nrows() - row_offset_);
+    DCHECK_LE(row_idx + row_offset_, sel_vec_->nrows());
     BitmapClear(sel_vec_->mutable_bitmap(), row_offset_ + row_idx);
   }
-  bool TestBit(size_t row_idx) {
-    DCHECK_LE(row_idx, sel_vec_->nrows() - row_offset_);
+  bool TestBit(size_t row_idx) const {
+    DCHECK_LE(row_idx + row_offset_, sel_vec_->nrows());
     return BitmapTest(sel_vec_->bitmap(), row_offset_ + row_idx);
   }
   // Clear "nrows" bits from the supplied "offset" in the current view.
   void ClearBits(size_t nrows, size_t offset = 0) {
-    DCHECK_LE(offset + nrows, sel_vec_->nrows() - row_offset_);
+    DCHECK_LE(offset + row_offset_ + nrows, sel_vec_->nrows());
     BitmapChangeBits(sel_vec_->mutable_bitmap(), row_offset_ + offset, nrows, false);
   }
  private:
@@ -227,7 +231,7 @@ class SelectionVectorView {
 };
 
 // Result type for SelectionVector::GetSelectedRows.
-class SelectedRows {
+class SelectedRows final {
  public:
   bool all_selected() const {
     return all_selected_;
@@ -305,22 +309,22 @@ class SelectedRows {
 // Typically in C++ this is done with separate wrapper classes for const vs non-const
 // referred-to data, but that would require a lot of duplication elsewhere in the code,
 // so for now, we just use convention: if you have a RowBlock or ColumnBlock parameter
-// that you expect to be modifying, use a "RowBlock *param". Otherwise, use a
+// that you expect to be modifying, use a "RowBlock* param". Otherwise, use a
 // "const RowBlock& param". Just because you _could_ modify the referred-to contents
 // of the latter doesn't mean you _should_.
-class RowBlock {
+class RowBlock final {
  public:
   // Constructs a new RowBlock.
   //
   // The 'schema' and 'arena' objects must outlive this RowBlock.
-  RowBlock(const Schema* schema, size_t nrows, RowBlockMemory* memory);
+  RowBlock(const Schema* schema, size_t nrows_capacity, RowBlockMemory* memory);
   ~RowBlock();
 
   // Resize the block to the given number of rows.
   // This size must be <= the the allocated capacity row_capacity().
   //
   // Ensures that all rows for indices < n_rows are unmodified.
-  void Resize(size_t n_rows);
+  void Resize(size_t nrows);
 
   size_t row_capacity() const {
     return row_capacity_;
@@ -358,22 +362,6 @@ class RowBlock {
   // Return the number of rows in the row block. Note that this includes
   // rows which were filtered out by the selection vector.
   size_t nrows() const { return nrows_; }
-
-  // Zero the memory pointed to by this row block.
-  // This physically zeros the memory, so is not efficient - mostly useful
-  // from unit tests.
-  void ZeroMemory() {
-    size_t bitmap_size = BitmapSize(row_capacity_);
-    for (size_t i = 0; i < schema_->num_columns(); ++i) {
-      const ColumnSchema& col_schema = schema_->column(i);
-      size_t col_size = col_schema.type_info()->size() * row_capacity_;
-      memset(columns_data_[i], '\0', col_size);
-
-      if (column_non_null_bitmaps_[i] != NULL) {
-        memset(column_non_null_bitmaps_[i], '\0', bitmap_size);
-      }
-    }
-  }
 
   // Return the selection vector which indicates which rows have passed
   // predicates so far during evaluation of this block of rows.
@@ -420,26 +408,44 @@ class RowBlock {
   }
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(RowBlock);
+  friend class tablet::TestDeltaFile;
 
   static size_t RowBlockSize(const Schema& schema, size_t nrows) {
+    const size_t bitmap_size = BitmapSize(nrows);
     size_t block_size = schema.num_columns() * sizeof(size_t);
-    size_t bitmap_size = BitmapSize(nrows);
-    for (size_t col = 0; col < schema.num_columns(); col++) {
-      const ColumnSchema& col_schema = schema.column(col);
+    for (const auto& col_schema : schema.columns()) {
       block_size += nrows * col_schema.type_info()->size();
-      if (col_schema.is_nullable())
+      if (col_schema.is_nullable()) {
         block_size += bitmap_size;
+      }
     }
     return block_size;
   }
 
+  // Zero the memory pointed to by this row block.
+  // This physically zeros the memory, so is not efficient - mostly useful
+  // from unit tests.
+  void ZeroMemory() {
+    const size_t bitmap_size = BitmapSize(row_capacity_);
+    for (size_t i = 0; i < schema_->num_columns(); ++i) {
+      const ColumnSchema& col_schema = schema_->column(i);
+      size_t col_size = col_schema.type_info()->size() * row_capacity_;
+      memset(columns_data_[i], '\0', col_size);
+
+      if (column_non_null_bitmaps_[i] != nullptr) {
+        memset(column_non_null_bitmaps_[i], '\0', bitmap_size);
+      }
+    }
+  }
+
+  // The schema for the rows in this RowBlock.
   const Schema* schema_;
+
+  // The maximum number of rows that can be stored in the allocated buffer.
+  const size_t row_capacity_;
+
   std::vector<uint8_t*> columns_data_;
   std::vector<uint8_t*> column_non_null_bitmaps_;
-
-  // The maximum number of rows that can be stored in our allocated buffer.
-  size_t row_capacity_;
 
   // The number of rows currently being processed in this block.
   // nrows_ <= row_capacity_
@@ -451,15 +457,17 @@ class RowBlock {
   // Deleted rows or rows which have failed to pass predicates will be zeroed
   // in the bitmap, and thus not returned to the end user.
   SelectionVector sel_vec_;
+
+  DISALLOW_COPY_AND_ASSIGN(RowBlock);
 };
 
 // Provides an abstraction to interact with a RowBlock row.
 //  Example usage:
 //    RowBlock row_block(schema, 10, NULL);
 //    RowBlockRow row = row_block.row(5);       // Get row 5
-//    void *cell_data = row.cell_ptr(3);        // Get column 3 of row 5
+//    void* cell_data = row.cell_ptr(3);        // Get column 3 of row 5
 //    ...
-class RowBlockRow {
+class RowBlockRow final {
  public:
   typedef ColumnBlock::Cell Cell;
 
@@ -468,7 +476,7 @@ class RowBlockRow {
   // The 'row_block' object must outlive this RowBlockRow.
   explicit RowBlockRow(const RowBlock* row_block = nullptr,
                        size_t row_index = 0)
-    : row_block_(row_block), row_index_(row_index) {
+      : row_block_(row_block), row_index_(row_index) {
   }
 
   RowBlockRow* Reset(const RowBlock* row_block, size_t row_index) {
@@ -493,12 +501,12 @@ class RowBlockRow {
     return column_block(col_idx).is_null(row_index_);
   }
 
-  uint8_t* mutable_cell_ptr(size_t col_idx) const {
-    return const_cast<uint8_t*>(cell_ptr(col_idx));
-  }
-
   const uint8_t* cell_ptr(size_t col_idx) const {
     return column_block(col_idx).cell_ptr(row_index_);
+  }
+
+  uint8_t* mutable_cell_ptr(size_t col_idx) {
+    return column_block(col_idx).mutable_cell_ptr(row_index_);
   }
 
   const uint8_t* nullable_cell_ptr(size_t col_idx) const {

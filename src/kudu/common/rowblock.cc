@@ -32,11 +32,11 @@ using std::vector;
 namespace kudu {
 
 SelectionVector::SelectionVector(size_t row_capacity)
-  : bytes_capacity_(BitmapSize(row_capacity)),
-    n_rows_(row_capacity),
-    n_bytes_(bytes_capacity_),
-    bitmap_(new uint8_t[n_bytes_]) {
-  CHECK_GT(n_bytes_, 0);
+    : bytes_capacity_(BitmapSize(row_capacity)),
+      n_rows_(row_capacity),
+      n_bytes_(bytes_capacity_),
+      bitmap_(new uint8_t[n_bytes_]) {
+  DCHECK_GT(n_bytes_, 0);
   PadExtraBitsWithZeroes();
 }
 
@@ -45,7 +45,7 @@ void SelectionVector::Resize(size_t n_rows) {
     return;
   }
 
-  size_t new_bytes = BitmapSize(n_rows);
+  const size_t new_bytes = BitmapSize(n_rows);
   CHECK_LE(new_bytes, bytes_capacity_);
   n_rows_ = n_rows;
   n_bytes_ = new_bytes;
@@ -76,7 +76,6 @@ void SelectionVector::ClearToSelectAtMost(size_t max_rows) {
   }
 }
 
-
 template<bool BMI>
 static void GetSelectedRowsInternal(const uint8_t* __restrict__ bitmap,
                                     int n_bytes,
@@ -86,8 +85,6 @@ static void GetSelectedRowsInternal(const uint8_t* __restrict__ bitmap,
                   *dst++ = bit;
                 });
 }
-
-static const bool kHasBmi = base::CPU().has_bmi();
 
 #ifdef __x86_64__
 // Explicit instantiation with the BMI instruction set enabled, which
@@ -100,14 +97,16 @@ void GetSelectedRowsInternal<true>(const uint8_t* __restrict__ bitmap,
 #endif
 
 SelectedRows SelectionVector::GetSelectedRows() const {
-  CHECK_LE(n_rows_, std::numeric_limits<uint16_t>::max());
-  int n_selected = CountSelected();
+  DCHECK_LE(n_rows_, std::numeric_limits<uint16_t>::max());
+
+  size_t n_selected = CountSelected();
   if (n_selected == n_rows_) {
     return SelectedRows(this);
   }
 
   vector<uint16_t> selected(n_selected > 0 ? n_selected : 0);
   if (n_selected > 0) {
+    static const bool kHasBmi = base::CPU().has_bmi();
     if (kHasBmi) {
       GetSelectedRowsInternal<true>(&bitmap_[0], n_bytes_, selected.data());
     } else {
@@ -123,8 +122,7 @@ size_t SelectionVector::CountSelected() const {
 
 bool SelectionVector::AnySelected() const {
   size_t rem = n_bytes_;
-  const uint32_t *p32 = reinterpret_cast<const uint32_t *>(
-    &bitmap_[0]);
+  const uint32_t* p32 = reinterpret_cast<const uint32_t*>(&bitmap_[0]);
   while (rem >= 4) {
     if (*p32 != 0) {
       return true;
@@ -133,7 +131,7 @@ bool SelectionVector::AnySelected() const {
     rem -= 4;
   }
 
-  const uint8_t *p8 = reinterpret_cast<const uint8_t *>(p32);
+  const uint8_t* p8 = reinterpret_cast<const uint8_t*>(p32);
   while (rem > 0) {
     if (*p8 != 0) {
       return true;
@@ -166,18 +164,18 @@ std::vector<uint16_t> SelectedRows::CreateRowIndexes() {
 // RowBlock
 //////////////////////////////
 RowBlock::RowBlock(const Schema* schema,
-                   size_t nrows,
+                   size_t nrows_capacity,
                    RowBlockMemory* memory)
-  : schema_(schema),
-    columns_data_(schema->num_columns()),
-    column_non_null_bitmaps_(schema->num_columns()),
-    row_capacity_(nrows),
-    nrows_(nrows),
-    memory_(memory),
-    sel_vec_(nrows) {
-  CHECK_GT(row_capacity_, 0);
+    : schema_(schema),
+      row_capacity_(nrows_capacity),
+      columns_data_(schema->num_columns()),
+      column_non_null_bitmaps_(schema->num_columns()),
+      nrows_(row_capacity_),
+      memory_(memory),
+      sel_vec_(row_capacity_) {
+  DCHECK_GT(row_capacity_, 0);
 
-  size_t bitmap_size = BitmapSize(row_capacity_);
+  const size_t bitmap_size = BitmapSize(row_capacity_);
   for (size_t i = 0; i < schema->num_columns(); ++i) {
     const ColumnSchema& col_schema = schema->column(i);
     size_t col_size = row_capacity_ * col_schema.type_info()->size();
@@ -198,14 +196,14 @@ RowBlock::~RowBlock() {
   }
 }
 
-void RowBlock::Resize(size_t n_rows) {
-  if (PREDICT_FALSE(n_rows == nrows_)) {
+void RowBlock::Resize(size_t nrows) {
+  if (PREDICT_FALSE(nrows == nrows_)) {
     return;
   }
 
-  CHECK_LE(n_rows, row_capacity_);
-  nrows_ = n_rows;
-  sel_vec_.Resize(n_rows);
+  CHECK_LE(nrows, row_capacity_);
+  nrows_ = nrows;
+  sel_vec_.Resize(nrows);
 }
 
 } // namespace kudu
