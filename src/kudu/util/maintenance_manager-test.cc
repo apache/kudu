@@ -631,15 +631,19 @@ TEST_F(MaintenanceManagerTest, RunningInstances) {
   MaintenanceManagerStatusPB status_pb;
   std::array<const MaintenanceManagerStatusPB_OpInstancePB*, 2> instances{ nullptr, nullptr };
   ASSERT_EVENTUALLY([&]() {
-    // Due to scheduler anomalies and other uncontrollable factors, the main
-    // thread might be put off CPU for some time, so at this point one or even
-    // two operations may be completed already.
+    // Clear 'status_pb' if ASSERT_EVENTUALLY() retries:
+    // MaintenanceManager::GetMaintenanceManagerStatusDump() doesn't clear
+    // its output parameter, adding up more data instead.
+    status_pb.Clear();
     manager_->GetMaintenanceManagerStatusDump(&status_pb);
     const auto num_running = status_pb.running_operations_size();
     ASSERT_GE(num_running, 0);
     const auto num_completed = status_pb.completed_operations_size();
     ASSERT_GE(num_completed, 0);
 
+    // Due to scheduler anomalies and other uncontrollable factors, the main
+    // thread might be put off CPU for some time, so one or even two operations
+    // may be completed already.
     ASSERT_EQ(2, num_running + num_completed);
     if (num_running == 2) {
       instances[0] = &status_pb.running_operations(0);
@@ -662,13 +666,28 @@ TEST_F(MaintenanceManagerTest, RunningInstances) {
   // to complete.
   unregistrant.run();
 
-  // Check that running instances are removed from collection after completion.
+  // Check that running instances aren't present in the collection
+  // when the ops are no longer running.
   {
     MaintenanceManagerStatusPB status_pb;
     manager_->GetMaintenanceManagerStatusDump(&status_pb);
     ASSERT_EQ(0, status_pb.running_operations_size());
-    ASSERT_EQ(2, status_pb.completed_operations_size());
   }
+
+  // The information on the completed tasks appears after waiting for each
+  // of them to wrap up and waking up the scheduler. So, there might be a race
+  // between this test thread which calls GetMaintenanceManagerStatusDump()
+  // and the MM worker threads that update the container with the information
+  // on the completed tasks. The ASSERT_EVENTUALLY() macro below helps
+  // to avoid flakiness in case of scheduler anomalies or when running this
+  // test scenario on a busy machine.
+  ASSERT_EVENTUALLY([&]() {
+    MaintenanceManagerStatusPB status_pb;
+    manager_->GetMaintenanceManagerStatusDump(&status_pb);
+    ASSERT_EQ(2, status_pb.completed_operations_size());
+    ASSERT_NE(status_pb.completed_operations(0).thread_id(),
+              status_pb.completed_operations(1).thread_id());
+  });
 }
 
 // Test adding operations and make sure that the history of recently completed
