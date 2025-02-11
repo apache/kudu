@@ -465,13 +465,16 @@ class PeerMessageQueue {
   // response. Sets 'lmp_mismatch' to true if the given response indicates
   // there was a log-matching property mismatch on the remote, otherwise sets
   // it to false.
-  void UpdateExchangeStatus(TrackedPeer* peer, const TrackedPeer& prev_peer_state,
-                            const ConsensusResponsePB& response, bool* lmp_mismatch);
+  void UpdateExchangeStatus(TrackedPeer* peer,
+                            PeerStatus prev_last_exchange_status,
+                            const ConsensusResponsePB& response,
+                            bool* lmp_mismatch);
 
   // Check if the peer is a NON_VOTER candidate ready for promotion. If so,
   // trigger promotion.
-  void PromoteIfNeeded(TrackedPeer* peer, const TrackedPeer& prev_peer_state,
-                       const ConsensusStatusPB& status);
+  void PromoteIfNeeded(const TrackedPeer& peer,
+                       const ConsensusStatusPB& status,
+                       int64_t prev_last_received_index);
 
   // If there is a graceful leadership change underway, notify queue observers
   // to initiate leadership transfer to the specified peer under the following
