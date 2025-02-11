@@ -7,15 +7,6 @@
     <!-- The above 3 meta tags *must* come first in the head; any other head content must come *after* these tags -->
     <meta name="description" content="A new open source Apache Hadoop ecosystem project, Apache Kudu completes Hadoop's storage layer to enable fast analytics on fast data" />
     <meta name="author" content="Cloudera" />
-    <meta http-equiv="Content-Security-Policy" content="
-      default-src 'self';
-      script-src 'self' https://kudu.apache.org https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://maxcdn.bootstrapcdn.com 'unsafe-inline';
-      style-src 'self' https://kudu.apache.org https://fonts.googleapis.com https://maxcdn.bootstrapcdn.com 'unsafe-inline';
-      font-src 'self' https://fonts.gstatic.com https://maxcdn.bootstrapcdn.com data:;
-      img-src 'self' https://kudu.apache.org https://d3dr9sfxru4sde.cloudfront.net https://www.apache.org data:;
-      base-uri 'self';
-      form-action 'self';
-    ">
     <title>Apache Kudu - {{ page.title }}</title>
     <!-- Bootstrap core CSS -->
     <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css"
@@ -54,8 +45,8 @@
               </button>
               {% if page.active_nav != 'home' %}
               <a class="logo" href="{{site.github.url}}/"><img
-                src="//d3dr9sfxru4sde.cloudfront.net/i/k/apachekudu_logo_0716_80px.png"
-                srcset="//d3dr9sfxru4sde.cloudfront.net/i/k/apachekudu_logo_0716_80px.png 1x, //d3dr9sfxru4sde.cloudfront.net/i/k/apachekudu_logo_0716_160px.png 2x"
+                src="/img/apachekudu_logo_0716_80px.png"
+                srcset="/img/apachekudu_logo_0716_80px.png 1x, /img/apachekudu_logo_0716_160px.png 2x"
                 alt="Apache Kudu"/></a>
               {% endif %}
             </div>

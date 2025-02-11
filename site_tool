@@ -122,8 +122,7 @@ def proof(args):
     eprint("Could not build site!")
     return 1
   return subprocess.call(
-    [BUNDLE_PATH, "exec", 'htmlproof',
-     '--verbose',
+    [BUNDLE_PATH, "exec", 'htmlproofer',
      # Dont check the javadocs, old doc versions, or the configuration
      # reference files which are extremely large.
      '--file-ignore', '/apidocs|releases|configuration_ref|cpp-client-api/',

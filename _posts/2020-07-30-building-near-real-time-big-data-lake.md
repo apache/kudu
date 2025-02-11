@@ -114,8 +114,8 @@ product you desire and trust. One of these products for us was Apache NiFi, whic
 tremendous value.
 
 After a lot of trials and errors, we decided on this architecture:
-
-<img src="https://boristyukin.com/content/images/pipelinearchitecture.png" width="100%"/>
+<!--Image downloaded from https://boristyukin.com/content/images/pipelinearchitecture.png-->
+<img src="/img/boristyukin.com/pipelinearchitecture.png" width="100%"/>
 
 One of the toughest challenges we faced right away was the fact that most of the Big Data data
 engines were not designed to support mutable data but rather immutable append-only data. All the
@@ -149,7 +149,8 @@ Initial ingest is pretty typical - we use Sqoop to extract data from Cerner Orac
 NiFi helps orchestrate initial load for hundreds of tables. Actually, this NiFi flow below can
 handle initial ingest of hundreds of tables!
 
-<img src="https://boristyukin.com/content/images/nifi_initial.png" width="100%" />
+<!--Image downloaded from https://boristyukin.com/content/images/nifi_initial.png-->
+<img src="/img/boristyukin.com/nifi_initial.png" width="100%" />
 
 Our secret sauce though is [MetaZoo](http://boristyukin.com/how-to-ingest-a-large-number-of-tables-into-a-big-data-lake-or-why-i-built-metazoo/).
 MetaZoo generates optimal parameters for Sqoop (such as a number of mappers, split-by column, and so
@@ -198,7 +199,8 @@ without much impact.
 Below is the NiFi flow than handles real-time streaming from Oracle/GoldenGate/Kafka and persists
 data into Kudu:
 
-<img src="https://boristyukin.com/content/images/nifi_rt.png" width="100%"/>
+<!--Image downloaded from https://boristyukin.com/content/images/nifi_rt.png-->
+<img src="/img/boristyukin.com/nifi_rt.png" width="100%"/>
 
 1. NiFi flow consumes Kafka messages, produced by GoldenGate. Every table from every domain has
 its own Kafka topic. Topics have only one partition to preserve the original order of messages.
@@ -231,18 +233,21 @@ scalability of Big Data technology.
 Here, I run a query in Impala to count patients, admitted to our hospitals within the last 7 days,
 who are still in the hospitals (not discharged yet):
 
-![query 1](https://boristyukin.com/content/images/query1.png)
+<!--Image downloaded from https://boristyukin.com/content/images/query1.png-->
+![query 1](/img/boristyukin.com/query1.png)
 
 Then 5 seconds later I run the same query again to see numbers changed - more patients got admitted
 and discharged:
 
-![query 2](https://boristyukin.com/content/images/query2.png)]
+<!--Image downloaded from https://boristyukin.com/content/images/query2.png-->
+![query 2](/img/boristyukin.com/query2.png)]
 
 This query below counts certain clinical events in the 20B row Kudu table (which is updated in near
 real-time). While it takes 28 seconds to finish, this query would never even finish I ran it against
 our Oracle database. It found 13.7B events:
 
-![query 3](https://boristyukin.com/content/images/query3.png)
+<!--Image downloaded from https://boristyukin.com/content/images/query3.png-->
+![query 3](/img/boristyukin.com/query3.png)
 
 ## Credits
 Apache Impala, Apache Kudu and Apache NiFi were the pillars of our real-time pipeline. Back in 2017,
