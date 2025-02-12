@@ -201,8 +201,8 @@ Cache* BlockCache::CreateCache(int64_t capacity) {
 }
 
 Cache* BlockCache::CreateCache(int64_t probationary_segment_capacity,
-                   int64_t protected_segment_capacity,
-                   uint32_t lookups) {
+                               int64_t protected_segment_capacity,
+                               uint32_t lookups) {
   const auto& mem_type = BlockCache::GetConfiguredCacheMemoryTypeOrDie();
   switch (mem_type) {
     case Cache::MemoryType::DRAM:
@@ -244,16 +244,17 @@ Cache::EvictionPolicy BlockCache::GetCacheEvictionPolicyOrDie() {
 
 BlockCache::BlockCache() {
   const auto& eviction_policy = GetCacheEvictionPolicyOrDie();
+  int64_t capacity = FLAGS_block_cache_capacity_mb * 1024 * 1024;
   if (eviction_policy == Cache::EvictionPolicy::LRU) {
-    unique_ptr<Cache> lru_cache(CreateCache(FLAGS_block_cache_capacity_mb * 1024 * 1024));
+    unique_ptr<Cache> lru_cache(CreateCache(capacity));
     cache_ = std::move(lru_cache);
   } else {
     DCHECK(eviction_policy == Cache::EvictionPolicy::SLRU);
-    int64_t probationary_capacity =
-        static_cast<int>(std::round((1.0 - FLAGS_block_cache_protected_segment_percentage)
-        * 1024 * 1024));
-    int64_t protected_capacity =
-        static_cast<int>(std::round(FLAGS_block_cache_protected_segment_percentage * 1024 * 1024));
+    int64_t probationary_capacity = static_cast<int64_t>(
+        std::round((1.0 - FLAGS_block_cache_protected_segment_percentage) * capacity));
+    int64_t protected_capacity = static_cast<int64_t>(
+        std::round(FLAGS_block_cache_protected_segment_percentage * capacity));
+    DCHECK_EQ(capacity, probationary_capacity + protected_capacity);
     unique_ptr<Cache> slru_cache(CreateCache(probationary_capacity, protected_capacity,
                                              FLAGS_block_cache_lookups_before_upgrade));
     cache_ = std::move(slru_cache);
