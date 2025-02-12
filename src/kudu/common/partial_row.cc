@@ -142,7 +142,9 @@ Status KuduPartialRow::Set(int col_idx,
   ContiguousRow row(schema_, row_data_);
 
   // If we're replacing an existing STRING/BINARY value, deallocate the old value.
-  if (T::physical_type == BINARY) DeallocateStringIfSet(col_idx, col);
+  if constexpr (T::physical_type == BINARY) {
+    DeallocateStringIfSet(col_idx, col);
+  }
 
   // Mark the column as set.
   BitmapSet(isset_bitmap_, col_idx);
@@ -422,7 +424,7 @@ Status KuduPartialRow::SetVarcharNoCopyUnsafe(const Slice& col_name, const Slice
 
 Status KuduPartialRow::SetVarcharNoCopyUnsafe(int col_idx, const Slice& val) {
   const auto& col = schema_->column(col_idx);
-  if (val.size() > col.type_attributes().length * 4) {
+  if (PREDICT_FALSE(val.size() > col.type_attributes().length * 4)) {
     return Status::InvalidArgument(
         Substitute("Value too long, limit is $0 characters",
                    col.type_attributes().length));
@@ -439,21 +441,21 @@ Status KuduPartialRow::SetSliceCopy(const Slice& col_name, const Slice& val) {
 
 template<typename T>
 Status KuduPartialRow::SetSliceCopy(int col_idx, const Slice& val) {
+  static_assert(T::type == STRING || T::type == BINARY || T::type == VARCHAR,
+                "incompatible type for SetSliceCopy");
   const auto& col = schema_->column(col_idx);
   Slice relocated_val;
-  switch (T::type) {
-    case VARCHAR:
-      relocated_val = UTF8Truncate(val, col.type_attributes().length);
-      break;
-    case STRING:
-    case BINARY:
-      auto relocated = new uint8_t[val.size()];
+  if constexpr (T::type == VARCHAR) {
+    relocated_val = UTF8Truncate(val, col.type_attributes().length);
+  } else {
+    if constexpr (T::type == STRING || T::type == BINARY) {
+      auto* relocated = new uint8_t[val.size()];
       memcpy(relocated, val.data(), val.size());
       relocated_val = Slice(relocated, val.size());
-      break;
+    }
   }
-  Status s = Set<T>(col_idx, relocated_val, true);
-  if (!s.ok()) {
+  Status s = Set<T>(col_idx, relocated_val, /*owned=*/true);
+  if (PREDICT_FALSE(!s.ok())) {
     delete [] relocated_val.data();
   }
   return s;
@@ -471,7 +473,9 @@ Status KuduPartialRow::SetNull(int col_idx) {
     return Status::InvalidArgument("column not nullable", col.ToString());
   }
 
-  if (col.type_info()->physical_type() == BINARY) DeallocateStringIfSet(col_idx, col);
+  if (col.type_info()->physical_type() == BINARY) {
+    DeallocateStringIfSet(col_idx, col);
+  }
 
   ContiguousRow row(schema_, row_data_);
   row.set_null(col_idx, true);
@@ -489,7 +493,9 @@ Status KuduPartialRow::Unset(const Slice& col_name) {
 
 Status KuduPartialRow::Unset(int col_idx) {
   const ColumnSchema& col = schema_->column(col_idx);
-  if (col.type_info()->physical_type() == BINARY) DeallocateStringIfSet(col_idx, col);
+  if (col.type_info()->physical_type() == BINARY) {
+    DeallocateStringIfSet(col_idx, col);
+  }
   BitmapClear(isset_bitmap_, col_idx);
   return Status::OK();
 }
