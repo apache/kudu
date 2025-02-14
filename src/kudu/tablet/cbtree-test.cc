@@ -195,7 +195,7 @@ struct SmallFanoutTraits : public BTreeTraits {
 // implementation to ensure that we are still correct even
 // with adversarial scheduling.
 struct RacyTraits : public SmallFanoutTraits {
-  static const size_t kDebugRaciness = 100;
+  static constexpr const size_t kDebugRaciness = 100;
 };
 
 void MakeKey(char *kbuf, size_t len, int i) {

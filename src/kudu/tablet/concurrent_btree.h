@@ -66,7 +66,8 @@
 // to see how much of the node was actually being used.
 // #define DEBUG_DUMP_SPLIT_STATS
 
-namespace kudu { namespace tablet {
+namespace kudu {
+namespace tablet {
 namespace btree {
 
 // All CBTree implementation classes are templatized on a traits
@@ -95,7 +96,7 @@ inline void PrefetchMemory(const T *addr) {
   // prefetch() call with an if statement fixed the errors. In the end, it was decided to add a
   // DCHECK() here, and wrap all uses of PrefetchMemory() with the null pointer guard.
   DCHECK(addr);
-  int size = std::min<int>(sizeof(T), 4 * CACHELINE_SIZE);
+  constexpr const int size = std::min<int>(sizeof(T), 4 * CACHELINE_SIZE);
 
   for (int i = 0; i < size; i += CACHELINE_SIZE) {
     prefetch(reinterpret_cast<const char *>(addr) + i, PREFETCH_HINT_T0);
@@ -109,7 +110,7 @@ inline void PrefetchMemory(const T *addr) {
 // will compile away in production code.
 template<class Traits>
 void DebugRacyPoint() {
-  if (Traits::kDebugRaciness > 0) {
+  if constexpr (Traits::kDebugRaciness > 0) {
     boost::detail::yield(Traits::kDebugRaciness);
   }
 }
@@ -270,8 +271,8 @@ struct VersionField {
   static AtomicVersionValue SetLockBit(AtomicVersionValue v, int lock) {
     DCHECK(lock == 0 || lock == 1);
     v = v & ~BTREE_LOCK_MASK;
-    COMPILE_ASSERT(sizeof(AtomicVersion) == 8, must_use_64bit_version);
-    v |= (uint64_t)lock << BTREE_LOCK_BIT;
+    static_assert(sizeof(AtomicVersion) == 8, "must use 64bit version");
+    v |= static_cast<uint64_t>(lock) << BTREE_LOCK_BIT;
     return v;
   }
 };
@@ -418,8 +419,8 @@ class NodeBase {
   InternalNode<Traits> *GetLockedParent() {
     while (true) {
       InternalNode<Traits> *ret = parent_;
-      if (ret == NULL) {
-        return NULL;
+      if (ret == nullptr) {
+        return nullptr;
       }
 
       ret->Lock();
@@ -437,7 +438,7 @@ class NodeBase {
  protected:
   friend class CBTree<Traits>;
 
-  NodeBase() : versionPlaceholder_(0), parent_(NULL)
+  NodeBase() : versionPlaceholder_(0), parent_(nullptr)
   {}
 
  public:
@@ -479,7 +480,7 @@ struct NodePtr {
   };
 
 
-  NodePtr() : p_(NULL) {}
+  NodePtr() : p_(nullptr) {}
 
   NodePtr(InternalNode<T> *p) { // NOLINT(runtime/explicit)
     uintptr_t p_int = reinterpret_cast<uintptr_t>(p);
@@ -493,17 +494,16 @@ struct NodePtr {
     p_ = reinterpret_cast<void *>(p_int | kDiscriminatorBit);
   }
 
-  NodeType type() {
-    DCHECK(p_ != NULL);
+  NodeType type() const {
+    DCHECK(p_);
     if (reinterpret_cast<uintptr_t>(p_) & kDiscriminatorBit) {
       return LEAF_NODE;
-    } else {
-      return INTERNAL_NODE;
     }
+    return INTERNAL_NODE;
   }
 
-  bool is_null() {
-    return p_ == NULL;
+  bool is_null() const {
+    return p_ == nullptr;
   }
 
   InternalNode<T> *internal_node_ptr() {
@@ -616,7 +616,7 @@ class PACKED InternalNode : public NodeBase<Traits> {
   // Return the node index responsible for the given key.
   // For example, if the key is less than the first discriminating
   // node, returns 0. If it is between 0 and 1, returns 1, etc.
-  size_t Find(const Slice &key, bool *exact) {
+  size_t Find(const Slice &key, bool *exact) const {
     return FindInSliceArray(keys_, key_count(), key, exact);
   }
 
@@ -675,7 +675,7 @@ class PACKED InternalNode : public NodeBase<Traits> {
     return ret;
   }
 
-  private:
+ private:
   friend class CBTree<Traits>;
 
   void ReassignParent(NodePtr<Traits> child) {
@@ -715,7 +715,7 @@ class LeafNode : public NodeBase<Traits> {
   // If initially_locked is true, then the new node is created
   // with LOCKED and INSERTING set.
   explicit LeafNode(bool initially_locked)
-    : next_(NULL),
+    : next_(nullptr),
       num_entries_(0) {
     if (initially_locked) {
       // Just assign the version, instead of using the proper ->Lock()
@@ -877,7 +877,7 @@ class PreparedMutation {
   // The data referred to by the 'key' Slice passed in themust remain
   // valid for the lifetime of the PreparedMutation object.
   explicit PreparedMutation(Slice key)
-      : key_(key), tree_(NULL), leaf_(NULL), needs_unlock_(false) {}
+      : key_(key), tree_(nullptr), leaf_(nullptr), needs_unlock_(false) {}
 
   ~PreparedMutation() {
     UnPrepare();
@@ -898,7 +898,7 @@ class PreparedMutation {
   // Insert(), it will be automatically unlocked by its destructor.
   void Prepare(CBTree<Traits> *tree) {
     debug::ScopedTSANIgnoreReadsAndWrites ignore_tsan;
-    CHECK(!prepared());
+    DCHECK(!prepared());
     this->tree_ = tree;
     this->arena_ = tree->arena_.get();
     tree->PrepareMutation(this);
@@ -906,7 +906,7 @@ class PreparedMutation {
   }
 
   bool Insert(const Slice &val) {
-    CHECK(prepared());
+    DCHECK(prepared());
     return tree_->Insert(this, val);
   }
 
@@ -916,7 +916,7 @@ class PreparedMutation {
   // This can be used for updating in place if the new data
   // has the same size as the original data.
   Slice current_mutable_value() {
-    CHECK(prepared());
+    DCHECK(prepared());
     Slice k;
     ValueSlice v;
     leaf_->Get(idx_, &k, &v);
@@ -927,17 +927,17 @@ class PreparedMutation {
   // Accessors
 
   bool prepared() const {
-    return tree_ != NULL;
+    return tree_ != nullptr;
   }
 
   // Return the key that was prepared.
   const Slice &key() const { return key_; }
 
-  CBTree<Traits> *tree() const {
+  CBTree<Traits> *tree() {
     return tree_;
   }
 
-  LeafNode<Traits> *leaf() const {
+  LeafNode<Traits> *leaf() {
     return CHECK_NOTNULL(leaf_);
   }
 
@@ -946,7 +946,7 @@ class PreparedMutation {
     return exists_;
   }
 
-  const size_t idx() const {
+  size_t idx() const {
     return idx_;
   }
 
@@ -962,17 +962,17 @@ class PreparedMutation {
   DISALLOW_COPY_AND_ASSIGN(PreparedMutation);
 
   void mark_done() {
-    // set leaf_ back to NULL without unlocking it,
+    // set leaf_ back to nullptr without unlocking it,
     // since the caller will unlock it.
     needs_unlock_ = false;
   }
 
   void UnPrepare() {
-    if (leaf_ != NULL && needs_unlock_) {
+    if (leaf_ != nullptr && needs_unlock_) {
       leaf_->Unlock();
       needs_unlock_ = false;
     }
-    tree_ = NULL;
+    tree_ = nullptr;
   }
 
   Slice key_;
@@ -1019,8 +1019,8 @@ class CBTree {
 
   void DebugPrint() const {
     AtomicVersionValue v;
-    DebugPrint(StableRoot(&v), NULL, 0);
-    CHECK_EQ(root_.base_ptr()->AcquireVersion2WayBarrier(), v)
+    DebugPrint(StableRoot(&v), nullptr, 0);
+    DCHECK_EQ(root_.base_ptr()->AcquireVersion2WayBarrier(), v)
       << "Concurrent modification during DebugPrint not allowed";
   }
 
@@ -1138,7 +1138,7 @@ class CBTree {
   size_t count() const {
     CBTreeIterator<Traits> iter(this, frozen_);
     bool exact;
-    iter.SeekAtOrAfter(Slice(""), &exact);
+    iter.SeekAtOrAfter(Slice(), &exact);
     size_t count = 0;
     while (iter.IsValid()) {
       ++count;
@@ -1190,10 +1190,9 @@ class CBTree {
       if (PREDICT_TRUE(node_base->parent_ == NULL)) {
         // Found a good root
         return node;
-      } else {
-        // root has been swapped out
-        root_ = node_base->parent_;
       }
+      // root has been swapped out
+      root_ = node_base->parent_;
     }
   }
 
@@ -1213,7 +1212,7 @@ class CBTree {
       retry_in_node:
       int num_children = node.internal_node_ptr()->num_children_;
       NodePtr<Traits> child = node.internal_node_ptr()->FindChild(key);
-      NodeBase<Traits> *child_base = NULL;
+      NodeBase<Traits> *child_base = nullptr;
 
       AtomicVersionValue child_version = -1;
 
@@ -1347,8 +1346,8 @@ class CBTree {
   bool Insert(PreparedMutation<Traits> *mutation,
               const Slice &val) {
     debug::ScopedTSANIgnoreReadsAndWrites ignore_tsan;
-    CHECK(!frozen_);
-    CHECK_NOTNULL(mutation);
+    DCHECK(!frozen_);
+    DCHECK_NOTNULL(mutation);
     DCHECK_EQ(mutation->tree(), this);
 
     LeafNode<Traits> *node = mutation->leaf();
@@ -1566,7 +1565,7 @@ class CBTree {
     DCHECK(right->IsLockedUnsafe());
 
     InternalNode<Traits> *parent = left->GetLockedParent();
-    if (parent == NULL) {
+    if (parent == nullptr) {
       // Node is the root - make new parent node
       parent = NewInternalNode(split_key, left_ptr, right_ptr);
       // Constructor also reassigns parents.
@@ -1683,9 +1682,8 @@ class CBTreeIterator {
     idx_in_leaf_++;
     if (idx_in_leaf_ < leaf_to_scan_->num_entries()) {
       return true;
-    } else {
-      return SeekNextLeaf();
     }
+    return SeekNextLeaf();
   }
 
   void GetCurrentEntry(Slice *key, Slice *val) const {
@@ -1855,7 +1853,7 @@ class CBTreeIterator {
     debug::ScopedTSANIgnoreReadsAndWrites ignore_tsan;
     DCHECK(seeked_);
     LeafNode<Traits> *next = leaf_to_scan_->next_;
-    if (PREDICT_FALSE(next == NULL)) {
+    if (PREDICT_FALSE(next == nullptr)) {
       seeked_ = false;
       return false;
     }
