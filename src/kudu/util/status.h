@@ -126,6 +126,24 @@
     } \
   } while (0)
 
+// Introduce [[nodiscard]] attribute if compiling with the C++17 or newer.
+#if __cplusplus >= 201703L
+  // This works as intended with KUDU_EXPORT and other attributes for LLVM/CLANG
+  // (at least starting version 11.0.0 that's current version in thirdparty),
+  // but GCC prior to version 13.0 is touchy if mixing attributes of different
+  // types/styles, see [1] for details. So, enable this only if compiling with
+  // CLANG or GCC version 13 and newer.
+  //
+  // [1] https://gcc.gnu.org/bugzilla/show_bug.cgi?id=69585 for details).
+  #if defined(__clang__) || (defined(__GNUC__) && __GNUC__ >= 13)
+    #define KUDU_ATTR_NODISCARD [[nodiscard]] // NOLINT(whitespace/braces)
+  #else
+    #define KUDU_ATTR_NODISCARD
+  #endif
+#else   // #if __cplusplus >= 201703L ...
+  #define KUDU_ATTR_NODISCARD
+#endif  // #if __cplusplus >= 201703L ... #else ...
+
 /// @file status.h
 ///
 /// This header is used in both the Kudu build as well as in builds of
@@ -162,7 +180,7 @@
 namespace kudu {
 
 /// @brief A representation of an operation's outcome.
-class KUDU_EXPORT Status {
+class KUDU_EXPORT KUDU_ATTR_NODISCARD Status {
  public:
   /// Create an object representing success status.
   Status() : state_(NULL) { }
