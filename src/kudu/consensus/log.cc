@@ -872,7 +872,9 @@ Status Log::AsyncAppendReplicates(vector<ReplicateRefPtr> replicates,
       CreateBatchFromPB(REPLICATE, batch_pb, std::move(callback));
 
   for (LogEntryPB& entry : *batch_pb.mutable_entry()) {
-    entry.release_replicate();
+    // Release the ownership of ReplicateMsg in every entry since it's managed
+    // at the upper level where the 'replicates' parameter is passed from.
+    entry.unsafe_arena_release_replicate();
   }
 
   return AsyncAppend(std::move(batch));
