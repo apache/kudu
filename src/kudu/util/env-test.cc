@@ -884,8 +884,8 @@ TEST_F(TestEnv, TestGetFileModifiedTime) {
   // HFS has 1 second mtime granularity.
   AssertEventually([&] {
     int64_t after_time;
-    writer->Append(" ");
-    writer->Sync();
+    ASSERT_OK(writer->Append(" "));
+    ASSERT_OK(writer->Sync());
     ASSERT_OK(env_->GetFileModifiedTime(writer->filename(), &after_time));
     ASSERT_LT(initial_time, after_time);
   }, MonoDelta::FromSeconds(5));

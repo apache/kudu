@@ -19,8 +19,8 @@
 
 #include <cstdint>
 #include <memory>
+#include <string>
 
-#include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/util/debug/sanitizer_scopes.h"
@@ -29,7 +29,7 @@
 #include "kudu/util/init.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/slice.h"
-#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 using std::unique_ptr;
@@ -44,14 +44,15 @@ class CharUtilTest : public KuduTest {
   void SetUp() override {
     // UTF8Truncate uses SSE4.1 instructions so we need to make sure the CPU
     // running the test has these opcodes.
-    CHECK_OK(CheckCPUFlags());
-    ReadFileToString(env_, JoinPathSegments(GetTestExecutableDirectory(),
-                                           "testdata/char_truncate_utf8.txt"),
-                     &string_utf8_);
+    ASSERT_OK(CheckCPUFlags());
+    ASSERT_OK(ReadFileToString(env_, JoinPathSegments(GetTestExecutableDirectory(),
+                                                      "testdata/char_truncate_utf8.txt"),
+                               &string_utf8_));
     data_utf8_ = Slice(string_utf8_);
-    ReadFileToString(env_, JoinPathSegments(GetTestExecutableDirectory(),
-                                           "testdata/char_truncate_ascii.txt"),
-                     &string_ascii_);
+    ASSERT_OK(ReadFileToString(env_,
+                               JoinPathSegments(GetTestExecutableDirectory(),
+                                                "testdata/char_truncate_ascii.txt"),
+                               &string_ascii_));
     data_ascii_ = Slice(string_ascii_);
   }
 

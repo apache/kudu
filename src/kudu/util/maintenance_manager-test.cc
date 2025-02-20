@@ -48,6 +48,7 @@
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
 #include "kudu/util/scoped_cleanup.h"
+#include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"
@@ -151,9 +152,11 @@ class TestMaintenanceOp : public MaintenanceOp {
     if (register_self_) {
       scoped_refptr<kudu::Thread> thread;
       // Re-register itself after 50ms.
-      kudu::Thread::Create("maintenance-test", "self-register", [this]() {
-        this->set_remaining_runs(1);
-      }, &thread);
+      CHECK_OK(kudu::Thread::Create("maintenance-test",
+                                    "self-register",
+                                    [this]() {
+                                      this->set_remaining_runs(1);
+                                    }, &thread));
     }
   }
 

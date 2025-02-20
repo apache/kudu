@@ -1673,15 +1673,21 @@ class PosixEnv : public Env {
                    const string& fname,
                    unique_ptr<RWFile>* result) override {
     TRACE_EVENT1("io", "PosixEnv::NewRWFile", "path", fname);
-    int fd = 0;
-    bool encrypt = opts.is_sensitive && IsEncryptionEnabled();
+    const bool encrypt = opts.is_sensitive && IsEncryptionEnabled();
     uint64_t size = 0;
     if (opts.mode == MUST_EXIST) {
       RETURN_NOT_OK(GetFileSize(fname, &size));
     } else if (encrypt) {
-      GetFileSize(fname, &size);
+      const auto s = GetFileSize(fname, &size);
+      if (PREDICT_FALSE(!s.ok() && !s.IsNotFound())) {
+        // The only expected non-OK status is Status::NotFound() if no file
+        // exists at the specified path: the use case of creating a new
+        // encrypted file.
+        return s;
+      }
     }
 
+    int fd = 0;
     RETURN_NOT_OK(DoOpen(fname, opts.mode, &fd));
     EncryptionHeader eh;
     if (encrypt) {
@@ -1692,6 +1698,7 @@ class PosixEnv : public Env {
       if (size >= kEncryptionHeaderSize) {
         RETURN_NOT_OK(ReadEncryptionHeader(fd, fname, *encryption_key_, &eh));
       } else {
+        DCHECK_EQ(0, size); // overwriting non-encrypted file with encrypted one?
         RETURN_NOT_OK(GenerateHeader(&eh));
         RETURN_NOT_OK(WriteEncryptionHeader(fd, fname, *encryption_key_, eh));
       }

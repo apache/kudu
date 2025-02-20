@@ -182,7 +182,7 @@ public:
   Status Start();
 
   // Shutdown the thread and clear the pending tasks.
-  Status Shutdown();
+  void Shutdown();
 
   class SchedulerTask {
    public:

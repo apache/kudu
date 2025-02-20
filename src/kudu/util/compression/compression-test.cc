@@ -33,6 +33,7 @@
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
 #include "kudu/util/slice.h"
+#include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -79,7 +80,7 @@ static void TestCompressionCodec(CompressionType compression) {
   ASSERT_EQ(0, memcmp(ibuffer, ubuffer, kInputSize));
 }
 
-static void Benchmark(Random random, CompressionType compression) {
+static Status Benchmark(Random random, CompressionType compression) {
   constexpr int kMaterialCount = 16;
   constexpr int kInputSize = 8;
   constexpr int kSliceCount = 1024;
@@ -100,7 +101,7 @@ static void Benchmark(Random random, CompressionType compression) {
 
   // Get the specified compression codec.
   const CompressionCodec* codec;
-  GetCompressionCodec(compression, &codec);
+  RETURN_NOT_OK(GetCompressionCodec(compression, &codec));
 
   // Allocate the compression buffer.
   size_t max_compressed = codec->MaxCompressedLength(kSliceCount * kInputSize);
@@ -114,7 +115,7 @@ static void Benchmark(Random random, CompressionType compression) {
     Stopwatch sw;
     sw.start();
     while (sw.elapsed().wall_seconds() < 3) {
-      codec->Compress(islices, cbuffer.get(), &compressed);
+      RETURN_NOT_OK(codec->Compress(islices, cbuffer.get(), &compressed));
       total_len += kSliceCount * kInputSize;
       compressed_len += compressed;
     }
@@ -131,7 +132,9 @@ static void Benchmark(Random random, CompressionType compression) {
     Stopwatch sw;
     sw.start();
     while (sw.elapsed().wall_seconds() < 3) {
-      codec->Uncompress(Slice(cbuffer.get(), compressed), ubuffer, kSliceCount * kInputSize);
+      RETURN_NOT_OK(codec->Uncompress(Slice(cbuffer.get(), compressed),
+                                      ubuffer,
+                                      kSliceCount * kInputSize));
       total_len += kSliceCount * kInputSize;
     }
     sw.stop();
@@ -139,6 +142,7 @@ static void Benchmark(Random random, CompressionType compression) {
     LOG(INFO) << CompressionType_Name(compression) << " uncompress throughput: "
               << mbps << " MB/sec";
   }
+  return Status::OK();
 }
 
 TEST_F(TestCompression, TestNoCompressionCodec) {
@@ -156,7 +160,7 @@ TEST_F(TestCompression, TestSnappyCompressionCodec) {
 TEST_F(TestCompression, TestSimpleBenchmark) {
   Random r(SeedRandom());
   for (auto type : { SNAPPY, LZ4, ZLIB }) {
-    NO_FATALS(Benchmark(r, type));
+    ASSERT_OK(Benchmark(r, type));
   }
 }
 
