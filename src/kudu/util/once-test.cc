@@ -15,14 +15,16 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/util/once.h"
+
 #include <ostream>
+#include <string>
 #include <thread>
 #include <vector>
 
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/util/once.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -70,7 +72,7 @@ template<class KuduOnceType>
 static void InitOrGetInitted(Thing<KuduOnceType>* t, int i) {
   if (i % 2 == 0) {
     LOG(INFO) << "Thread " << i << " initting";
-    t->Init();
+    CHECK_OK(t->Init());
   } else {
     LOG(INFO) << "Thread " << i << " value: " << t->once_.init_succeeded();
   }

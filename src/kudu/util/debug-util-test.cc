@@ -262,7 +262,7 @@ TEST_F(DebugUtilTest, Benchmark) {
     volatile int prevent_optimize = 0;
     while (MonoTime::Now() < end_time) {
       StackTrace trace;
-      GetThreadStack(t->tid(), &trace);
+      ASSERT_OK(GetThreadStack(t->tid(), &trace));
       if (symbolize) {
         prevent_optimize += trace.Symbolize().size();
       }
@@ -384,7 +384,7 @@ TEST_P(RaceTest, TestStackTraceRaces) {
   MonoTime end_time = MonoTime::Now() + MonoDelta::FromSeconds(1);
   while (MonoTime::Now() < end_time) {
     StackTrace trace;
-    GetThreadStack(t->tid(), &trace);
+    ASSERT_OK(GetThreadStack(t->tid(), &trace));
   }
 }
 

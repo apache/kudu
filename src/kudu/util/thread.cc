@@ -574,6 +574,11 @@ Thread::~Thread() {
   }
 }
 
+void Thread::Join() {
+  WARN_NOT_OK(ThreadJoiner(this).Join(),
+              Substitute("$0 failed joining", ToString()));
+}
+
 string Thread::ToString() const {
   return Substitute("Thread $0 (name: \"$1\", category: \"$2\")", tid(), name_, category_);
 }

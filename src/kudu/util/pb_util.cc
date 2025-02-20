@@ -894,7 +894,7 @@ ReadablePBContainerFile::ReadablePBContainerFile(shared_ptr<RandomAccessFile> re
 }
 
 ReadablePBContainerFile::~ReadablePBContainerFile() {
-  Close();
+  WARN_NOT_OK(Close(), "Close() failed when destroying file");
 }
 
 Status ReadablePBContainerFile::Open() {

@@ -267,7 +267,7 @@ TYPED_TEST(FileCacheTest, TestInvalidation) {
   // If we invalidate it from the cache and try again, it should crash because
   // the existing descriptor was invalidated.
   this->cache_->Invalidate(kFile1);
-  ASSERT_DEATH({ f->Size(&size); }, "invalidated");
+  ASSERT_DEATH({ ASSERT_OK(f->Size(&size)); }, "invalidated");
 
   // But if we re-open the path again, the new descriptor should read the
   // new data.
@@ -488,10 +488,12 @@ TEST_P(MixedFileCacheTest, TestBothFileTypes) {
   shared_ptr<RandomAccessFile> raf2;
   ASSERT_OK(cache.OpenFile<Env::MUST_EXIST>(kFile2, &raf2));
 #ifndef NDEBUG
-  ASSERT_DEATH({ cache.OpenFile<Env::MUST_EXIST>(kFile1, &raf); },
-               "!FindDescriptorUnlocked");
-  ASSERT_DEATH({ cache.OpenFile<Env::MUST_EXIST>(kFile2, &rwf); },
-               "!FindDescriptorUnlocked");
+  ASSERT_DEATH(
+      { ASSERT_OK(cache.OpenFile<Env::MUST_EXIST>(kFile1, &raf)); },
+      "!FindDescriptorUnlocked");
+  ASSERT_DEATH(
+      { ASSERT_OK(cache.OpenFile<Env::MUST_EXIST>(kFile2, &rwf)); },
+      "!FindDescriptorUnlocked");
 #endif
 }
 

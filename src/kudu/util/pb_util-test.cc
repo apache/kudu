@@ -132,7 +132,7 @@ Status TestPBUtil::NewPBCWriter(int version, RWFileOptions opts,
   RETURN_NOT_OK(env_->NewRWFile(opts, path_, &writer));
   pb_writer->reset(new WritablePBContainerFile(std::move(writer)));
   if (version != kUseDefaultVersion) {
-    (*pb_writer)->SetVersionForTests(version);
+    RETURN_NOT_OK((*pb_writer)->SetVersionForTests(version));
   }
   return Status::OK();
 }

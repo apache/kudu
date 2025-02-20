@@ -103,12 +103,10 @@ class EasyCurl {
     dns_servers_ = std::move(dns_servers);
   }
 
-  Status set_auth(CurlAuthType auth_type, std::string username = "", std::string password = "") {
-    auth_type_ = std::move(auth_type);
+  void set_auth(CurlAuthType auth_type, std::string username = "", std::string password = "") {
+    auth_type_ = auth_type;
     username_ = std::move(username);
     password_ = std::move(password);
-
-    return Status::OK();
   }
 
   // Enable verbose mode for curl. This dumps debugging output to stderr, so

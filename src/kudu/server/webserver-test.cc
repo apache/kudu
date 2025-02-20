@@ -195,8 +195,9 @@ TEST_F(PasswdWebserverTest, TestPasswdPresent) {
   if (fips_mode) {
     GTEST_SKIP();
   }
-  ASSERT_OK(curl_.set_auth(CurlAuthType::DIGEST, security::kTestAuthUsername,
-                           security::kTestAuthPassword));
+  curl_.set_auth(CurlAuthType::DIGEST,
+                 security::kTestAuthUsername,
+                 security::kTestAuthPassword);
   ASSERT_OK(curl_.FetchURL(addr_.ToString(), &buf_));
 }
 

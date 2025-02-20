@@ -152,7 +152,7 @@ class Thread : public RefCountedThreadSafe<Thread> {
 
   // Blocks until this thread finishes execution. Once this method returns, the thread
   // will be unregistered with the ThreadMgr and will not appear in the debug UI.
-  void Join() { ThreadJoiner(this).Join(); }
+  void Join();
 
   // A thread's OS-specific TID is assigned after it start running. However,
   // in order to improve the performance of thread creation, the parent

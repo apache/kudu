@@ -130,12 +130,11 @@ Status SchedulerThread::Start() {
       thread_pool_name_, "scheduler", [this]() { this->RunLoop(); }, &thread_);
 }
 
-Status SchedulerThread::Shutdown() {
+void SchedulerThread::Shutdown() {
   if (thread_) {
     shutdown_.CountDown();
     thread_->Join();
   }
-  return Status::OK();
 }
 
 void SchedulerThread::RunLoop() {

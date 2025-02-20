@@ -36,7 +36,7 @@
 #include <utility>
 #include <vector>
 
-#include <boost/container_hash/extensions.hpp>
+#include <boost/container_hash/hash.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -570,7 +570,7 @@ Status HostPortsFromAddrs(const vector<Sockaddr>& addrs, vector<HostPort>* hps) 
 
 Status GetRandomPort(const string& address, uint16_t* port) {
   Sockaddr sockaddr;
-  sockaddr.ParseString(address, 0);
+  RETURN_NOT_OK(sockaddr.ParseString(address, 0));
   Socket listener;
   RETURN_NOT_OK(listener.Init(sockaddr.family(), 0));
   RETURN_NOT_OK(listener.Bind(sockaddr));

@@ -19,6 +19,7 @@
 
 #include <functional>
 #include <memory>
+#include <string>
 
 #include <gtest/gtest.h>
 
@@ -44,10 +45,10 @@ TEST(CurlUtilTest, TestTimeout) {
 TEST(CurlUtilTest, NonSharedObjectsBetweenThreads) {
   const int kThreadCount = 8;
   std::unique_ptr<ThreadPool> pool;
-  ThreadPoolBuilder("curl-util-test")
-      .set_min_threads(kThreadCount)
-      .set_max_threads(kThreadCount)
-      .Build(&pool);
+  ASSERT_OK(ThreadPoolBuilder("curl-util-test")
+                .set_min_threads(kThreadCount)
+                .set_max_threads(kThreadCount)
+                .Build(&pool));
 
   for (int i = 0; i < kThreadCount; i++) {
     ASSERT_OK(pool->Submit([&]() {

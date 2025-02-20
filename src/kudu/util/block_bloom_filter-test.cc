@@ -127,7 +127,7 @@ TEST_F(BlockBloomFilterTest, ArenaAligned) {
   Arena a(64);
   auto* allocator = a.NewObject<ArenaBlockBloomFilterBufferAllocator>(&a);
   auto* bf = a.NewObject<BlockBloomFilter>(allocator);
-  bf->Init(6, FAST_HASH, 0);
+  ASSERT_OK(bf->Init(6, FAST_HASH, 0));
   bool key = true;
   Slice s(reinterpret_cast<const uint8_t*>(&key), sizeof(key));
   bf->Insert(s);
