@@ -36,6 +36,7 @@
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/strings/split.h"
 #include "kudu/util/hdr_histogram.h"
 #include "kudu/util/jsonreader.h"
 #include "kudu/util/jsonwriter.h"
@@ -150,46 +151,66 @@ TEST_F(MetricsTest, ResetCounter) {
 
 TEST_F(MetricsTest, TableAndTabletPrometheusTest) {
   // Simulate two tablets in the metric registry. Write out their metric data.
-  auto tablet_metric_entity =
-      METRIC_ENTITY_tablet.Instantiate(&registry_, "00000000000000000000000000000000");
-  scoped_refptr<Counter> tablet_counter =
-      METRIC_tablet_test_counter.Instantiate(tablet_metric_entity);
+  auto tablet_metric_entity = METRIC_ENTITY_tablet.Instantiate(&registry_, "000000");
+  auto tablet_counter = METRIC_tablet_test_counter.Instantiate(tablet_metric_entity);
+  tablet_counter->IncrementBy(11);
 
-  auto tablet_metric_entity2 =
-      METRIC_ENTITY_tablet.Instantiate(&registry_, "11111111111111111111111111111111");
-  scoped_refptr<Counter> tablet_counter2 =
-      METRIC_tablet_test_counter.Instantiate(tablet_metric_entity2);
+  auto tablet_metric_entity2 = METRIC_ENTITY_tablet.Instantiate(&registry_, "1111111111");
+  auto tablet_counter2 = METRIC_tablet_test_counter.Instantiate(tablet_metric_entity2);
+  tablet_counter2->IncrementBy(2);
 
-  auto table_metric_entity = METRIC_ENTITY_table.Instantiate(&registry_, "table_name1");
-  scoped_refptr<Counter> table_counter = METRIC_table_test_counter.Instantiate(table_metric_entity);
+  auto table_metric_entity = METRIC_ENTITY_table.Instantiate(&registry_, "table1");
+  auto table1_counter = METRIC_table_test_counter.Instantiate(table_metric_entity);
+  table1_counter->IncrementBy(888);
 
-  auto table_metric_entity2 = METRIC_ENTITY_table.Instantiate(&registry_, "table_name2");
-  scoped_refptr<Counter> table_counter2 =
-      METRIC_table_test_counter.Instantiate(table_metric_entity2);
+  auto table_metric_entity2 = METRIC_ENTITY_table.Instantiate(&registry_, "table2");
+  auto table2_counter = METRIC_table_test_counter.Instantiate(table_metric_entity2);
+  table2_counter->Increment();
+
+  auto table_metric_entity3 = METRIC_ENTITY_table.Instantiate(
+      &registry_, "55555555555555555555555555555555");
+  auto table3_counter = METRIC_table_test_counter.Instantiate(table_metric_entity3);
+  table3_counter->IncrementBy(5);
 
   ostringstream output;
   PrometheusWriter writer(&output);
   ASSERT_OK(registry_.WriteAsPrometheus(&writer));
-  ASSERT_EQ(
-      "# HELP kudu_table_table_name2_table_test_counter Table-wise test counter "
-      "description.\n"
-      "# TYPE kudu_table_table_name2_table_test_counter counter\n"
-      "kudu_table_table_name2_table_test_counter{unit_type=\"bytes\"} 0\n"
-      "# HELP kudu_tablet_00000000000000000000000000000000_tablet_test_counter Tablet-wise "
-      "test counter description.\n"
-      "# TYPE kudu_tablet_00000000000000000000000000000000_tablet_test_counter counter\n"
-      "kudu_tablet_00000000000000000000000000000000_tablet_test_counter{unit_type=\"bytes\"}"
-      " 0\n"
-      "# HELP kudu_tablet_11111111111111111111111111111111_tablet_test_counter Tablet-wise "
-      "test counter description.\n"
-      "# TYPE kudu_tablet_11111111111111111111111111111111_tablet_test_counter counter\n"
-      "kudu_tablet_11111111111111111111111111111111_tablet_test_counter{unit_type=\"bytes\"}"
-      " 0\n"
-      "# HELP kudu_table_table_name1_table_test_counter Table-wise test counter "
-      "description.\n"
-      "# TYPE kudu_table_table_name1_table_test_counter counter\n"
-      "kudu_table_table_name1_table_test_counter{unit_type=\"bytes\"} 0\n",
-      output.str());
+
+  // The order of elements in the output depends on the ordering in hash-map
+  // of metric entities and might be different in different STL implementations.
+  const auto& out = output.str();
+  ASSERT_STR_CONTAINS(out,
+      "# HELP kudu_tablet_000000_tablet_test_counter Tablet-wise test counter description.\n"
+      "# TYPE kudu_tablet_000000_tablet_test_counter counter\n"
+       "kudu_tablet_000000_tablet_test_counter{unit_type=\"bytes\"} 11\n"
+  );
+  ASSERT_STR_CONTAINS(out,
+      "# HELP kudu_tablet_1111111111_tablet_test_counter Tablet-wise test counter description.\n"
+      "# TYPE kudu_tablet_1111111111_tablet_test_counter counter\n"
+      "kudu_tablet_1111111111_tablet_test_counter{unit_type=\"bytes\"} 2\n"
+  );
+  ASSERT_STR_CONTAINS(out,
+      "# HELP kudu_table_table1_table_test_counter Table-wise test counter description.\n"
+      "# TYPE kudu_table_table1_table_test_counter counter\n"
+      "kudu_table_table1_table_test_counter{unit_type=\"bytes\"} 888\n"
+  );
+  ASSERT_STR_CONTAINS(out,
+      "# HELP kudu_table_table2_table_test_counter Table-wise test counter description.\n"
+      "# TYPE kudu_table_table2_table_test_counter counter\n"
+      "kudu_table_table2_table_test_counter{unit_type=\"bytes\"} 1\n"
+  );
+  ASSERT_STR_CONTAINS(out,
+      "# HELP kudu_table_55555555555555555555555555555555_table_test_counter "
+          "Table-wise test counter description.\n"
+      "# TYPE kudu_table_55555555555555555555555555555555_table_test_counter "
+          "counter\n"
+      "kudu_table_55555555555555555555555555555555_table_test_counter{unit_type=\"bytes\"} 5\n"
+  );
+
+  // The lines above and one trailing empty line is the only output expected.
+  const vector<string> lines = strings::Split(out, "\n");
+  ASSERT_EQ(3 + 3 + 3 + 3 + 3 + 1, lines.size());
+  ASSERT_TRUE(lines.back().empty());
 }
 
 TEST_F(MetricsTest, CounterPrometheusTest) {
