@@ -76,9 +76,8 @@ TEST(TestPstackWatcher, TestPstackWatcherRunning) {
     FILE* out_fp = RedirectStdout(&stdout_file);
     PCHECK(out_fp != nullptr);
     SCOPED_CLEANUP({
-        int err;
-        RETRY_ON_EINTR(err, fclose(out_fp));
-      });
+      fclose(out_fp);
+    });
     PstackWatcher watcher(MonoDelta::FromMilliseconds(500));
     while (watcher.IsRunning()) {
       SleepFor(MonoDelta::FromMilliseconds(1));

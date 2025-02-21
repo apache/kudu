@@ -84,17 +84,18 @@ Status DiagnosticSocket::Init() {
 }
 
 Status DiagnosticSocket::Close() {
-  if (fd_ < 0) {
+  if (PREDICT_FALSE(fd_ < 0)) {
     return Status::OK();
   }
-  int ret;
-  RETRY_ON_EINTR(ret, ::close(fd_));
-  if (ret < 0) {
-    int err = errno;
-    return Status::IOError("close error", ErrnoToString(err), err);
-  }
+  const int fd = fd_;
   fd_ = -1;
-  return Status::OK();
+
+  Status s;
+  if (PREDICT_FALSE(::close(fd) != 0)) {
+    const int err = errno;
+    s = Status::IOError("error closing diagnostic socket", ErrnoToString(err), err);
+  }
+  return s;
 }
 
 Status DiagnosticSocket::Query(const Sockaddr& socket_src_addr,

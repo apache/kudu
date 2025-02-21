@@ -138,13 +138,14 @@ void CloseNonStandardFDs(DIR* fd_dir) {
   // dir->lock, so seems not worth the added complexity in lifecycle & plumbing.
   while ((ent = READDIR(fd_dir)) != nullptr) {
     uint32_t fd;
-    if (!safe_strtou32(ent->d_name, &fd)) continue;
+    if (!safe_strtou32(ent->d_name, &fd)) {
+      continue;
+    }
     if (!(fd == STDIN_FILENO  ||
           fd == STDOUT_FILENO ||
           fd == STDERR_FILENO ||
           fd == dir_fd))  {
-      int ret;
-      RETRY_ON_EINTR(ret, close(fd));
+      close(fd);
     }
   }
 }
@@ -284,8 +285,11 @@ Subprocess::~Subprocess() {
 
   for (int i = 0; i < 3; ++i) {
     if (fd_state_[i] == PIPED && child_fds_[i] >= 0) {
-      int ret;
-      RETRY_ON_EINTR(ret, close(child_fds_[i]));
+      if (PREDICT_FALSE(close(child_fds_[i]) != 0)) {
+        const int err = errno;
+        LOG(WARNING) << Substitute(
+            "error closing fd $0: $1", child_fds_[i], ErrnoToString(err));
+      }
     }
   }
 }
@@ -299,15 +303,13 @@ static int pipe2(int pipefd[2], int flags) {
     return -1;
   }
   if (fcntl(new_fds[0], F_SETFD, O_CLOEXEC) == -1) {
-    int ret;
-    RETRY_ON_EINTR(ret, close(new_fds[0]));
-    RETRY_ON_EINTR(ret, close(new_fds[1]));
+    close(new_fds[0]);
+    close(new_fds[1]);
     return -1;
   }
   if (fcntl(new_fds[1], F_SETFD, O_CLOEXEC) == -1) {
-    int ret;
-    RETRY_ON_EINTR(ret, close(new_fds[0]));
-    RETRY_ON_EINTR(ret, close(new_fds[1]));
+    close(new_fds[0]);
+    close(new_fds[1]);
     return -1;
   }
   pipefd[0] = new_fds[0];
@@ -452,9 +454,7 @@ Status Subprocess::Start() {
 
     // Close the read side of the sync pipe;
     // the write side should be closed upon execvp().
-    int close_ret;
-    RETRY_ON_EINTR(close_ret, close(sync_pipe[0]));
-    if (close_ret == -1) {
+    if (PREDICT_FALSE(close(sync_pipe[0]) != 0)) {
       int err = errno;
       RAW_LOG(FATAL, "close() on the read side of sync pipe failed: [%d]", err);
     }
@@ -491,10 +491,24 @@ Status Subprocess::Start() {
     // We are the parent
     child_pid_ = ret;
     // Close child's side of the pipes
-    int close_ret;
-    if (fd_state_[STDIN_FILENO]  == PIPED) RETRY_ON_EINTR(close_ret, close(child_stdin[0]));
-    if (fd_state_[STDOUT_FILENO] == PIPED) RETRY_ON_EINTR(close_ret, close(child_stdout[1]));
-    if (fd_state_[STDERR_FILENO] == PIPED) RETRY_ON_EINTR(close_ret, close(child_stderr[1]));
+    if (fd_state_[STDIN_FILENO]  == PIPED) {
+      if (PREDICT_FALSE(close(child_stdin[0]) != 0)) {
+        const int err = errno;
+        RAW_LOG(WARNING, "could not close child's STDIN: [%d]", err);
+      }
+    }
+    if (fd_state_[STDOUT_FILENO] == PIPED) {
+      if (PREDICT_FALSE(close(child_stdout[1]) != 0)) {
+        const int err = errno;
+        RAW_LOG(WARNING, "could not close child's STDOUT: [%d]", err);
+      }
+    }
+    if (fd_state_[STDERR_FILENO] == PIPED) {
+      if (PREDICT_FALSE(close(child_stderr[1]) != 0)) {
+        const int err = errno;
+        RAW_LOG(WARNING, "could not close child's STDERR: [%d]", err);
+      }
+    }
     // Keep parent's side of the pipes
     child_fds_[STDIN_FILENO]  = child_stdin[1];
     child_fds_[STDOUT_FILENO] = child_stdout[0];
@@ -510,28 +524,31 @@ Status Subprocess::Start() {
       // Close the write side of the sync pipe. It's crucial to make sure
       // it succeeds otherwise the blocking read() below might wait forever
       // even if the child process has closed the pipe.
-      RETRY_ON_EINTR(close_ret, close(sync_pipe[1]));
+      const int close_ret = close(sync_pipe[1]);
       PCHECK(close_ret == 0);
       while (true) {
         uint8_t buf;
-        int err = 0;
+        int read_errno = 0;
         int rc;
         RETRY_ON_EINTR(rc, read(sync_pipe[0], &buf, 1));
         if (rc == -1) {
-          err = errno;
+          read_errno = errno;
         }
-        RETRY_ON_EINTR(close_ret, close(sync_pipe[0]));
-        PCHECK(close_ret == 0);
+        if (PREDICT_FALSE(close(sync_pipe[0]) != 0)) {
+          const int err = errno;
+          RAW_LOG(FATAL, "could not close the read side of the sync pipe: [%d]", err);
+        }
         if (rc == 0) {
           // That's OK -- expecting EOF from the other side of the pipe.
           break;
-        } else if (rc == -1) {
+        }
+        if (rc == -1) {
           // Other errors besides EINTR are not expected.
           return Status::RuntimeError("Unexpected error from the sync pipe",
-                                      ErrnoToString(err), err);
+                                      ErrnoToString(read_errno), read_errno);
         }
         // No data is expected from the sync pipe.
-        LOG(FATAL) << Substitute("$0: unexpected data from the sync pipe", rc);
+        RAW_LOG(FATAL, "%d: unexpected data from the sync pipe", rc);
       }
     }
   }
@@ -756,10 +773,13 @@ Status Subprocess::Call(const vector<string>& argv,
     }
   }
 
-  int err;
-  RETRY_ON_EINTR(err, close(p.ReleaseChildStdinFd()));
-  if (PREDICT_FALSE(err != 0)) {
-    return Status::IOError("Unable to close child process stdin", ErrnoToString(errno), errno);
+  {
+    const int fd = p.ReleaseChildStdinFd();
+    if (PREDICT_FALSE(close(fd) != 0)) {
+      const int err = errno;
+      return Status::IOError(
+          "Unable to close child process stdin", ErrnoToString(err), err);
+    }
   }
 
   vector<int> fds;
