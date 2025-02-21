@@ -130,7 +130,9 @@ static bool SlurpSmallTextFile(const char* file, char* buf, int buflen) {
   bool ret = false;
   int fd;
   RETRY_ON_EINTR(fd, open(file, O_RDONLY));
-  if (fd == -1) return ret;
+  if (fd == -1) {
+    return ret;
+  }
 
   memset(buf, '\0', buflen);
   int n;
@@ -141,10 +143,8 @@ static bool SlurpSmallTextFile(const char* file, char* buf, int buflen) {
     ret = true;
   }
 
-  int close_ret;
-  RETRY_ON_EINTR(close_ret, close(fd));
-  if (PREDICT_FALSE(close_ret != 0)) {
-    PLOG(WARNING) << "Failed to close fd " << fd;
+  if (PREDICT_FALSE(close(fd) != 0)) {
+    PLOG(WARNING) << "error closing " << file;
   }
 
   return ret;
@@ -348,10 +348,9 @@ static void InitializeSystemInfo() {
       num_cpus++;  // count up every time we see an "processor :" entry
     }
   } while (chars_read > 0);
-  int ret;
-  RETRY_ON_EINTR(ret, close(fd));
-  if (PREDICT_FALSE(ret != 0)) {
-    PLOG(WARNING) << "Failed to close fd " << fd;
+
+  if (PREDICT_FALSE(close(fd) != 0)) {
+    PLOG(WARNING) << "error closing " << pname;
   }
 
   if (!saw_mhz) {

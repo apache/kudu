@@ -264,18 +264,18 @@ Socket::~Socket() {
 }
 
 Status Socket::Close() {
-  if (fd_ < 0) {
+  if (PREDICT_FALSE(fd_ < 0)) {
     return Status::OK();
   }
-  int fd = fd_;
-  int ret;
-  RETRY_ON_EINTR(ret, ::close(fd));
-  if (ret < 0) {
-    int err = errno;
-    return Status::NetworkError("close error", ErrnoToString(err), err);
-  }
+  const int fd = fd_;
   fd_ = -1;
-  return Status::OK();
+
+  Status s;
+  if (PREDICT_FALSE(::close(fd) != 0)) {
+    const int err = errno;
+    s = Status::NetworkError("close error", ErrnoToString(err), err);
+  }
+  return s;
 }
 
 Status Socket::Shutdown(bool shut_read, bool shut_write) {
