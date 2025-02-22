@@ -1469,6 +1469,7 @@ TEST_P(TestRpc, TimedOutOnResponseMetricServiceQueue) {
   // processed by the only thread in the RPC service thread pool.  Eventually,
   // it should time out.
   SleepRequestPB req1;
+  req1.set_sleep_micros(0);
   req1.set_return_app_error(true);
   SleepResponsePB resp1;
   RpcController ctl1;
