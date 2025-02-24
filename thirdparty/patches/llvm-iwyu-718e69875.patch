@@ -1,0 +1,34 @@
+commit 718e6987556d765425df63cc114cbd3fb021c917
+Author: Kim Gräsman <kim.grasman@gmail.com>
+Date:   Sat Jul 24 14:27:03 2021 +0200
+
+    Link with all target libraries
+    
+    In the parent commit, I forgot to update the build so that include-what-you-use
+    links with all targets, which led to link failures for builds against LLVM build
+    trees (as opposed to the Debian packages).
+    
+    While troubleshooting this, I found a patch by @Romain-Geissler-1A that I had
+    previously misunderstood/overlooked:
+    https://github.com/include-what-you-use/include-what-you-use/pull/854#issuecomment-732487734
+    
+    Borrowing the link dependencies from that patch to complete my accidental
+    plagiarism fixes the build again.
+
+diff --git a/tools/clang/tools/include-what-you-use/CMakeLists.txt b/tools/clang/tools/include-what-you-use/CMakeLists.txt
+index e1b03f3..0a0d683 100644
+--- a/tools/clang/tools/include-what-you-use/CMakeLists.txt
++++ b/tools/clang/tools/include-what-you-use/CMakeLists.txt
+@@ -68,9 +68,9 @@ endif()
+ set(LLVM_LINK_COMPONENTS
+   Option
+   Support
+-  X86AsmParser
+-  X86Desc
+-  X86Info
++  AllTargetsAsmParsers
++  AllTargetsDescs
++  AllTargetsInfos
+   )
+ 
+ add_llvm_executable(include-what-you-use
