@@ -65,7 +65,6 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <google/protobuf/arena.h>
-#include <google/protobuf/stubs/common.h>
 
 #include "kudu/cfile/type_encodings.h"
 #include "kudu/common/common.pb.h"
@@ -439,6 +438,8 @@ TAG_FLAG(default_deleted_table_reserve_seconds, advanced);
 TAG_FLAG(default_deleted_table_reserve_seconds, runtime);
 
 DECLARE_string(hive_metastore_uris);
+
+DECLARE_int32(hive_metastore_notification_log_listener_catch_up_deadline_ms);
 
 bool ValidateDeletedTableReserveSeconds()  {
   if (FLAGS_default_deleted_table_reserve_seconds > 0 &&
@@ -1899,14 +1900,16 @@ Status ValidateClientSchema(const optional<string>& name,
 
 Status CatalogManager::CreateTableHelper(const CreateTableRequestPB* orig_req,
                                          CreateTableResponsePB* resp,
-                                         optional<rpc::RpcContext*> rpc,
+                                         rpc::RpcContext* rpc,
                                          const optional<string>& username) {
-  // Copy the request so we can fill in some defaults.
+  leader_lock_.AssertAcquiredForReading();
+
+  // Copy the request, so we can fill in some defaults.
   CreateTableRequestPB req = *orig_req;
   optional<string> user;
 
-  if (rpc && rpc.value() != nullptr) {
-    user.emplace(rpc.value()->remote_user().username());
+  if (rpc) {
+    user.emplace(rpc->remote_user().username());
   } else {
     user = username;
   }
@@ -1929,7 +1932,7 @@ Status CatalogManager::CreateTableHelper(const CreateTableRequestPB* orig_req,
   const string& normalized_table_name = NormalizeTableName(req.name());
   if (is_user_table) {
     // a. Validate the user request.
-    if ((rpc && rpc.value() != nullptr) || username) {
+    if (rpc) {
       DCHECK(user.has_value());
       RETURN_NOT_OK(SetupError(
           authz_provider_->AuthorizeCreateTable(normalized_table_name, *user, req.owner()),
@@ -2228,7 +2231,6 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
                                    rpc::RpcContext* rpc) {
   LOG(INFO) << Substitute("Servicing CreateTable request from $0:\n$1",
                           RequestorString(rpc), SecureDebugString(*orig_req));
-  leader_lock_.AssertAcquiredForReading();
   return CreateTableHelper(orig_req, resp, rpc, std::nullopt);
 }
 
@@ -2239,7 +2241,6 @@ Status CatalogManager::CreateTableWithUser(const CreateTableRequestPB* orig_req,
   LOG(INFO) << Substitute("Servicing CreateTable request from $0:\n$1",
                           user ? *user : "<default>",
                           SecureDebugString(*orig_req));
-  leader_lock_.AssertAcquiredForReading();
   return CreateTableHelper(orig_req, resp, nullptr, user);
 }
 
@@ -2661,11 +2662,13 @@ Status CatalogManager::EnableCompactionforRecalledTable(const RecallDeletedTable
 
 Status CatalogManager::DeleteTableHelper(const DeleteTableRequestPB& req,
                                          DeleteTableResponsePB* resp,
-                                         optional<rpc::RpcContext*> rpc,
+                                         rpc::RpcContext* rpc,
                                          const optional<string>& username) {
+  leader_lock_.AssertAcquiredForReading();
+
   optional<string> user;
-  if (rpc && rpc.value() != nullptr) {
-    user.emplace(rpc.value()->remote_user().username());
+  if (rpc) {
+    user.emplace(rpc->remote_user().username());
   } else {
     user = username;
   }
@@ -2727,7 +2730,6 @@ Status CatalogManager::DeleteTableRpc(const DeleteTableRequestPB& req,
   LOG(INFO) << Substitute("Servicing DeleteTable request from $0:\n$1",
                           RequestorString(rpc),
                           SecureShortDebugString(req));
-  leader_lock_.AssertAcquiredForReading();
   return DeleteTableHelper(req, resp, rpc, /*username=*/nullopt);
 }
 
@@ -2736,7 +2738,6 @@ Status CatalogManager::DeleteTableWithUser(const DeleteTableRequestPB& req,
                                            const optional<string>& user) {
   LOG(INFO) << Substitute("Servicing DeleteTable request from $0:\n$1",
                           user ? *user : "<default>", SecureShortDebugString(req));
-  leader_lock_.AssertAcquiredForReading();
   return DeleteTableHelper(req, resp, /*rpc=*/nullptr, user);
 }
 
@@ -3375,7 +3376,7 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
 
 Status CatalogManager::AlterTableHelper(const AlterTableRequestPB& req,
                                         AlterTableResponsePB* resp,
-                                        optional<rpc::RpcContext*> rpc,
+                                        rpc::RpcContext* rpc,
                                         const optional<string>& username,
                                         AlterType alter_type) {
   Status s;
@@ -3393,6 +3394,8 @@ Status CatalogManager::AlterTableHelper(const AlterTableRequestPB& req,
     }
   }
 
+  leader_lock_.AssertAcquiredForReading();
+
   if (req.modify_external_catalogs()) {
     // If the HMS integration is enabled, wait for the notification log listener
     // to catch up. This reduces the likelihood of attempting to apply an
@@ -3401,8 +3404,8 @@ Status CatalogManager::AlterTableHelper(const AlterTableRequestPB& req,
   }
 
   optional<const string> user;
-  if (rpc && rpc.value() != nullptr) {
-    user.emplace(rpc.value()->remote_user().username());
+  if (rpc) {
+    user.emplace(rpc->remote_user().username());
   } else if (username) {
     user.emplace(*username);
   }
@@ -3497,8 +3500,6 @@ Status CatalogManager::AlterTableRpc(const AlterTableRequestPB& req,
                                      AlterType alter_type) {
   LOG(INFO) << Substitute("Servicing AlterTable request from $0:\n$1",
                           RequestorString(rpc), SecureShortDebugString(req));
-
-  leader_lock_.AssertAcquiredForReading();
   return AlterTableHelper(req, resp, rpc, nullopt, alter_type);
 }
 
@@ -3508,7 +3509,6 @@ Status CatalogManager::AlterTableWithUser(const AlterTableRequestPB& req,
                                          AlterType alter_type) {
   LOG(INFO) << Substitute("Servicing AlterTable request from $0:\n$1",
                           user ? *user : "<default>", SecureShortDebugString(req));
-  leader_lock_.AssertAcquiredForReading();
   return AlterTableHelper(req, resp, nullptr, user, alter_type);
 }
 
@@ -6845,13 +6845,14 @@ void CatalogManager::AbortAndWaitForAllTasks(
 }
 
 template<typename RespClass>
-Status CatalogManager::WaitForNotificationLogListenerCatchUp(
-    RespClass* resp, const std::optional<rpc::RpcContext*>& rpc_opt) {
+Status CatalogManager::WaitForNotificationLogListenerCatchUp(RespClass* resp,
+                                                             rpc::RpcContext* rpc) {
   if (hms_catalog_) {
-    // If an RPC context is provided, use its deadline; otherwise, use MonoTime::Max().
-    MonoTime deadline = (rpc_opt && rpc_opt.value() != nullptr)
-                            ? rpc_opt.value()->GetClientDeadline()
-                            : MonoTime::Max();
+    MonoTime deadline =
+        rpc ? rpc->GetClientDeadline()
+            : MonoTime::Now() +
+                  MonoDelta::FromMilliseconds(
+                      FLAGS_hive_metastore_notification_log_listener_catch_up_deadline_ms);
     Status s = hms_notification_log_listener_->WaitForCatchUp(deadline);
     // ServiceUnavailable indicates the master has lost leadership.
     MasterErrorPB::Code code = s.IsServiceUnavailable() ? MasterErrorPB::NOT_THE_LEADER

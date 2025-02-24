@@ -66,6 +66,13 @@ TAG_FLAG(hive_metastore_notification_log_poll_inject_latency_ms, hidden);
 TAG_FLAG(hive_metastore_notification_log_poll_inject_latency_ms, unsafe);
 TAG_FLAG(hive_metastore_notification_log_poll_inject_latency_ms, runtime);
 
+DEFINE_int32(hive_metastore_notification_log_listener_catch_up_deadline_ms, 30000,
+  "The deadline in milliseconds for the HMS log listener to catch up with the "
+  "latest log entry.");
+TAG_FLAG(hive_metastore_notification_log_listener_catch_up_deadline_ms, advanced);
+TAG_FLAG(hive_metastore_notification_log_listener_catch_up_deadline_ms, experimental);
+TAG_FLAG(hive_metastore_notification_log_listener_catch_up_deadline_ms, runtime);
+
 using rapidjson::Document;
 using rapidjson::Value;
 using std::optional;

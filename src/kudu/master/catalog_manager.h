@@ -1057,7 +1057,7 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // an explicitly provided username for authentication.
   Status CreateTableHelper(const CreateTableRequestPB* req,
                           CreateTableResponsePB* resp,
-                          std::optional<rpc::RpcContext*> rpc,
+                          rpc::RpcContext* rpc,
                           const std::optional<std::string>& username);
 
   // Common logic for DeleteTableRpc and DeleteTableWithUser.
@@ -1067,7 +1067,7 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // an explicitly provided username for authentication.
   Status DeleteTableHelper(const DeleteTableRequestPB& req,
                            DeleteTableResponsePB* resp,
-                           std::optional<rpc::RpcContext*> rpc,
+                           rpc::RpcContext* rpc,
                            const std::optional<std::string>& username);
 
   // Delete the specified table in the catalog. If 'user' is provided,
@@ -1089,7 +1089,7 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // an explicitly provided username for authentication.
   Status AlterTableHelper(const AlterTableRequestPB& req,
                           AlterTableResponsePB* resp,
-                          std::optional<rpc::RpcContext*> rpc,
+                          rpc::RpcContext* rpc,
                           const std::optional<std::string>& username,
                           AlterType alter_type = AlterType::kNormal);
 
@@ -1386,9 +1386,9 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // Wait for the Hive Metastore notification log listener to process the latest
   // events, if the HMS integration is enabled. Handles setting the correct
   // response code in the case of an error.
-  template<typename RespClass>
-  Status WaitForNotificationLogListenerCatchUp(
-      RespClass* resp, const std::optional<rpc::RpcContext*>& rpc_opt) WARN_UNUSED_RESULT;
+  template <typename RespClass>
+  Status WaitForNotificationLogListenerCatchUp(RespClass* resp,
+                                               rpc::RpcContext* rpc) WARN_UNUSED_RESULT;
 
   enum class ValidateType {
     kCreateTable = 0,

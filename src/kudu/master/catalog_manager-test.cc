@@ -294,22 +294,21 @@ class CatalogManagerRpcAndUserFunctionsTest : public KuduTest {
     KuduSchemaBuilder b;
     b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
     b.AddColumn("int_val")->Type(KuduColumnSchema::INT32)->NotNull();
-    KUDU_CHECK_OK(b.Build(&schema));
+    RETURN_NOT_OK(b.Build(&schema));
     vector<string> columnNames;
     columnNames.emplace_back("key");
 
-    KuduTableCreator* tableCreator = client_->NewTableCreator();
+    std::unique_ptr<KuduTableCreator> tableCreator(client_->NewTableCreator());
     tableCreator->table_name(kTableName).schema(&schema).set_range_partition_columns(columnNames);
 
     int32_t increment = 1000 / 10;
     for (int32_t i = 1; i < 10; i++) {
       KuduPartialRow* row = schema.NewRow();
-      KUDU_CHECK_OK(row->SetInt32(0, i * increment));
+      RETURN_NOT_OK(row->SetInt32(0, i * increment));
       tableCreator->add_range_partition_split(row);
     }
     tableCreator->num_replicas(1);
     Status s = tableCreator->Create();
-    delete tableCreator;
     return s;
   }
 
@@ -333,7 +332,7 @@ class CatalogManagerRpcAndUserFunctionsTest : public KuduTest {
 };
 
 TEST_F(CatalogManagerRpcAndUserFunctionsTest, TestDeleteTable) {
-  CreateTestTable();
+  ASSERT_OK(CreateTestTable());
   DeleteTableRequestPB req;
   DeleteTableResponsePB resp;
   req.mutable_table()->set_table_name("test_table");
@@ -342,7 +341,7 @@ TEST_F(CatalogManagerRpcAndUserFunctionsTest, TestDeleteTable) {
 }
 
 TEST_F(CatalogManagerRpcAndUserFunctionsTest, TestDeleteTableWithUser) {
-  CreateTestTable();
+  ASSERT_OK(CreateTestTable());
   DeleteTableRequestPB req;
   DeleteTableResponsePB resp;
   req.mutable_table()->set_table_name("test_table");
@@ -369,7 +368,7 @@ TEST_F(CatalogManagerRpcAndUserFunctionsTest, TestCreateTableWithUser) {
 }
 
 TEST_F(CatalogManagerRpcAndUserFunctionsTest, TestAlterTableRpc) {
-  CreateTestTable();
+  ASSERT_OK(CreateTestTable());
   AlterTableRequestPB req;
   AlterTableResponsePB resp;
 
@@ -383,7 +382,7 @@ TEST_F(CatalogManagerRpcAndUserFunctionsTest, TestAlterTableRpc) {
 }
 
 TEST_F(CatalogManagerRpcAndUserFunctionsTest, TestAlterTableWithUser) {
-  CreateTestTable();
+  ASSERT_OK(CreateTestTable());
   AlterTableRequestPB req;
   AlterTableResponsePB resp;
 
