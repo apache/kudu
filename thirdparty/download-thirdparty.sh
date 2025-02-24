@@ -332,12 +332,13 @@ fetch_and_patch \
  $PYTHON_SOURCE \
  $PYTHON_PATCHLEVEL
 
-LLVM_PATCHLEVEL=6
+LLVM_PATCHLEVEL=7
 fetch_and_patch \
  llvm-${LLVM_VERSION}-iwyu-${IWYU_VERSION}.src.tar.gz \
  $LLVM_SOURCE \
  $LLVM_PATCHLEVEL \
  "patch -p1 < $TP_DIR/patches/llvm-add-iwyu.patch" \
+ "patch -p1 < $TP_DIR/patches/llvm-iwyu-718e69875.patch" \
  "patch -d projects -p1 < $TP_DIR/patches/llvm-remove-cyclades-inclusion-in-sanitizer.patch" \
  "patch -p2 < $TP_DIR/patches/llvm-fix-missing-include.patch" \
  "patch -d projects -p1 < $TP_DIR/patches/llvm-Sanitizer-built-against-glibc-2_34-doesnt-work.patch" \
