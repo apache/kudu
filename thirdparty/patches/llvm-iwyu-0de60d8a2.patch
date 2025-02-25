@@ -1,0 +1,49 @@
+commit 0de60d8a276fa4cfff885cc332e41bf690517e51
+Author: Kim Gräsman <kim.grasman@gmail.com>
+Date:   Wed Jul 14 12:30:10 2021 +0200
+
+    Initialize all LLVM targets on startup
+    
+    It used to be the case that the MS inline assembly parser in Clang crashed if an
+    X86 target was not registered and initialized.
+    
+    The error handling there has been improved, so now Clang complains and says it
+    needs X86 target support to continue, and raises an error.
+    
+    That's good news for IWYU, as the majority of code we analyze has no MS inline
+    assembly (fingers crossed!). So instead of requiring an X86 target to be
+    included, initialize _all_ registered LLVM targets and assume that X86 is
+    available in any configuration intended for use with MS inline assembly.
+    
+    This makes it possible to build a fully non-X86 toolchain including IWYU.
+
+diff --git a/tools/clang/tools/include-what-you-use/iwyu.cc b/tools/clang/tools/include-what-you-use/iwyu.cc
+index bbf532f..df1a439 100644
+--- a/tools/clang/tools/include-what-you-use/iwyu.cc
++++ b/tools/clang/tools/include-what-you-use/iwyu.cc
+@@ -4171,7 +4171,6 @@ class IwyuAction : public ASTFrontendAction {
+ 
+ #include "iwyu_driver.h"
+ #include "clang/Frontend/FrontendAction.h"
+-#include "llvm/Support/ManagedStatic.h"
+ #include "llvm/Support/TargetSelect.h"
+ 
+ using include_what_you_use::OptionsParser;
+@@ -4179,12 +4178,11 @@ using include_what_you_use::IwyuAction;
+ using include_what_you_use::CreateCompilerInstance;
+ 
+ int main(int argc, char **argv) {
+-  // Must initialize X86 target to be able to parse Microsoft inline
+-  // assembly. We do this unconditionally, because it allows an IWYU
+-  // built for non-X86 targets to parse MS inline asm without choking.
+-  LLVMInitializeX86TargetInfo();
+-  LLVMInitializeX86TargetMC();
+-  LLVMInitializeX86AsmParser();
++  // X86 target is required to parse Microsoft inline assembly, so we hope it's
++  // part of all targets. Clang parser will complain otherwise.
++  llvm::InitializeAllTargetInfos();
++  llvm::InitializeAllTargetMCs();
++  llvm::InitializeAllAsmParsers();
+ 
+   // The command line should look like
+   //   path/to/iwyu -Xiwyu --verbose=4 [-Xiwyu --other_iwyu_flag]... CLANG_FLAGS... foo.cc
