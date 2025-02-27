@@ -41,7 +41,7 @@ Kudu's design sets it apart. Some of Kudu's benefits include:
 - Strong performance for running sequential and random workloads simultaneously.
 - Tight integration with Apache Impala, making it a good, mutable alternative to
   using HDFS with Apache Parquet.
-- Integration with Apache NiFi and Apache Spark.
+- Integration with Apache Spark, Apache Flink, and Apache NiFi.
 - Integration with Hive Metastore (HMS) and Apache Ranger to provide
   fine-grain authorization and access control.
 - Authenticated and encrypted RPC communication.
@@ -61,6 +61,8 @@ Kudu's design sets it apart. Some of Kudu's benefits include:
 - Logical backup (full and incremental) and restore.
 - Multi-row transactions (only for INSERT/INSERT_IGNORE operations as of
   Kudu 1.15 release).
+- Native data-at-rest encryption supporting AES-128-CTR, AES-192-CTR, and
+  AES-256-CTR ciphers, integrated with Apache Ranger KMS and Apache Hadoop KMS.
 - Easy to administer and manage.
 
 By combining all of these properties, Kudu targets support for families of
