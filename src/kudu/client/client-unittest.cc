@@ -564,7 +564,7 @@ TEST(ClientUnitTest, TestKuduSchemaToStringWithColumnIds) {
   // Build a KuduSchema from a Schema, so that the KuduSchema's internal Schema
   // has column ids.
   SchemaBuilder builder;
-  builder.AddKeyColumn("key", DataType::INT32);
+  ASSERT_OK(builder.AddKeyColumn("key", DataType::INT32));
   const auto schema = builder.Build();
   const auto kudu_schema = KuduSchema::FromSchema(schema);
 

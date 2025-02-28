@@ -466,7 +466,7 @@ class ClientTest : public KuduTest {
 
         unique_ptr<KuduScanner> scanner(scanner_ptr);
         // Try to avoid flakiness when running at busy nodes.
-        scanner->SetTimeoutMillis(60 * 1000);
+        THR_RET_NOT_OK(scanner->SetTimeoutMillis(60 * 1000), thread_status);
         // Make sure to read the most recent data if the test table has
         // multiple replicas.
         THR_RET_NOT_OK(scanner->SetSelection(KuduClient::LEADER_ONLY), thread_status);
@@ -771,7 +771,7 @@ class ClientTest : public KuduTest {
                   client_table_->NewComparisonPredicate("string_val", KuduPredicate::LESS_EQUAL,
                                                         KuduValue::CopyString("hello 3"))));
     if (!query_id.empty()) {
-      scanner.SetQueryId(query_id);
+      ASSERT_OK(scanner.SetQueryId(query_id));
     }
     LOG_TIMING(INFO, "Scanning with string predicate") {
       ASSERT_OK(scanner.Open());
@@ -2014,7 +2014,7 @@ TEST_F(ClientTest, TestNonCoveringRangePartitions) {
   ASSERT_OK(split->SetInt32("key", 50));
   splits.push_back(std::move(split));
 
-  CreateTable(kTableName, 1, std::move(splits), std::move(bounds), &table);
+  ASSERT_OK(CreateTable(kTableName, 1, std::move(splits), std::move(bounds), &table));
 
   // Aggresively clear the meta cache between insert batches so that the meta
   // cache will execute GetTableLocation RPCs at different partition keys.
@@ -2146,7 +2146,7 @@ TEST_F(ClientTest, TestOpenTableClearsNonCoveringRangePartitions) {
   ASSERT_OK(upper_bound->SetInt32("key", 1));
   bounds.emplace_back(std::move(lower_bound), std::move(upper_bound));
 
-  CreateTable(kTableName, 1, {}, std::move(bounds), &table);
+  ASSERT_OK(CreateTable(kTableName, 1, {}, std::move(bounds), &table));
 
   // Attempt to insert into the non-covered range, priming the meta cache.
   shared_ptr<KuduSession> session = client_->NewSession();
@@ -3023,7 +3023,7 @@ class KeepAlivePeriodicallyTest :
     InternalMiniClusterOptions options;
     options.num_tablet_servers = 3;
     cluster_->Shutdown();
-    env_->DeleteRecursively(test_dir_);
+    ASSERT_OK(env_->DeleteRecursively(test_dir_));
     cluster_.reset(new InternalMiniCluster(env_, options));
     ASSERT_OK(cluster_->Start());
     ASSERT_OK(KuduClientBuilder()
@@ -3120,14 +3120,14 @@ TEST_P(KeepAlivePeriodicallyTest, TestScannerKeepAlivePeriodicallyScannerTolerat
   // Do a first scan.
   ASSERT_TRUE(scanner.HasMoreRows());
   KuduScanBatch batch;
-  scanner.NextBatch(&batch);
+  ASSERT_OK(scanner.NextBatch(&batch));
   ASSERT_TRUE(scanner.HasMoreRows());
 
   // Stop the current tablet server.
   KuduTabletServer* kts_ptr;
   ASSERT_OK(scanner.GetCurrentServer(&kts_ptr));
   unique_ptr<KuduTabletServer> kts(kts_ptr);
-  RestartTServerAndWait(kts->uuid());
+  ASSERT_OK(RestartTServerAndWait(kts->uuid()));
 
   bool has_expired_scan = false;
   while (scanner.HasMoreRows()) {
@@ -5401,7 +5401,7 @@ TEST_F(ClientTest, TestSoftDeleteAndReserveTable) {
   // Insert a few rows, and scan them back. This is to populate the MetaCache.
   NO_FATALS(InsertTestRows(client_.get(), client_table_.get(), 10));
   vector<string> rows;
-  ScanTableToStrings(client_table_.get(), &rows);
+  ASSERT_OK(ScanTableToStrings(client_table_.get(), &rows));
   ASSERT_EQ(10, rows.size());
 
   // Remove the table.
@@ -5477,7 +5477,7 @@ TEST_F(ClientTest, TestSoftDeleteAndReserveTable) {
   {
     // Read and write are allowed for soft_deleted table.
     NO_FATALS(InsertTestRows(client_.get(), client_table_.get(), 20, 10));
-    ScanTableToStrings(client_table_.get(), &rows);
+    ASSERT_OK(ScanTableToStrings(client_table_.get(), &rows));
     ASSERT_EQ(30, rows.size());
   }
 
@@ -5515,7 +5515,7 @@ TEST_F(ClientTest, TestSoftDeleteAndRecallTable) {
   // Insert a few rows, and scan them back. This is to populate the MetaCache.
   NO_FATALS(InsertTestRows(client_.get(), client_table_.get(), 10));
   vector<string> rows;
-  ScanTableToStrings(client_table_.get(), &rows);
+  ASSERT_OK(ScanTableToStrings(client_table_.get(), &rows));
   ASSERT_EQ(10, rows.size());
 
   // Remove the table
@@ -5530,7 +5530,7 @@ TEST_F(ClientTest, TestSoftDeleteAndRecallTable) {
   ASSERT_OK(client_->RecallTable(client_table_->id()));
 
   // Check the data in the table.
-  ScanTableToStrings(client_table_.get(), &rows);
+  ASSERT_OK(ScanTableToStrings(client_table_.get(), &rows));
   ASSERT_EQ(10, rows.size());
 }
 
@@ -5542,7 +5542,7 @@ TEST_F(ClientTest, TestSoftDeleteAndRecallTableWithNewTableName) {
   // Insert a few rows, and scan them back. This is to populate the MetaCache.
   NO_FATALS(InsertTestRows(client_.get(), client_table_.get(), 10));
   vector<string> rows;
-  ScanTableToStrings(client_table_.get(), &rows);
+  ASSERT_OK(ScanTableToStrings(client_table_.get(), &rows));
   ASSERT_EQ(10, rows.size());
 
   // Remove the table
@@ -5561,7 +5561,7 @@ TEST_F(ClientTest, TestSoftDeleteAndRecallTableWithNewTableName) {
   ASSERT_EQ(old_table_id, client_table_->id());
 
   // Check the data in the table.
-  ScanTableToStrings(client_table_.get(), &rows);
+  ASSERT_OK(ScanTableToStrings(client_table_.get(), &rows));
   ASSERT_EQ(10, rows.size());
 }
 
@@ -5572,7 +5572,7 @@ TEST_F(ClientTest, TestSoftDeleteAndRecallAfterReserveTimeTable) {
   // Insert a few rows, and scan them back. This is to populate the MetaCache.
   NO_FATALS(InsertTestRows(client_.get(), client_table_.get(), 10));
   vector<string> rows;
-  ScanTableToStrings(client_table_.get(), &rows);
+  ASSERT_OK(ScanTableToStrings(client_table_.get(), &rows));
   ASSERT_EQ(10, rows.size());
 
   // Remove the table
@@ -5665,7 +5665,7 @@ TEST_F(ClientTest, TestDeleteWithDeletedTableReserveSeconds) {
   // Insert a few rows, and scan them back. This is to populate the MetaCache.
   NO_FATALS(InsertTestRows(client_.get(), client_table_.get(), 10));
   vector<string> rows;
-  ScanTableToStrings(client_table_.get(), &rows);
+  ASSERT_OK(ScanTableToStrings(client_table_.get(), &rows));
   ASSERT_EQ(10, rows.size());
 
   ASSERT_EQ(0, FLAGS_default_deleted_table_reserve_seconds);
@@ -5695,7 +5695,7 @@ TEST_F(ClientTest, TestDeleteWithDeletedTableReserveSeconds) {
   ASSERT_OK(client_->RecallTable(client_table_->id()));
 
   // Check the data in the table.
-  ScanTableToStrings(client_table_.get(), &rows);
+  ASSERT_OK(ScanTableToStrings(client_table_.get(), &rows));
   ASSERT_EQ(10, rows.size());
 
   // Force to delete the table with FLAGS_default_deleted_table_reserve_seconds set to 0.
@@ -5931,7 +5931,7 @@ TEST_F(ClientTest, TestReplicatedTabletWritesWithLeaderElection) {
 namespace {
 
 void CheckCorrectness(KuduScanner* scanner, int expected[], int nrows) {
-  scanner->Open();
+  ASSERT_OK(scanner->Open());
   int readrows = 0;
   KuduScanBatch batch;
   if (nrows) {
@@ -6115,7 +6115,7 @@ class DLSCallback : public KuduStatusCallback {
 int32_t ReadFirstRowKeyFirstCol(const shared_ptr<KuduTable>& tbl) {
   KuduScanner scanner(tbl.get());
 
-  scanner.Open();
+  CHECK_OK(scanner.Open());
   KuduScanBatch batch;
   CHECK(scanner.HasMoreRows());
   CHECK_OK(scanner.NextBatch(&batch));
@@ -6128,7 +6128,7 @@ int32_t ReadFirstRowKeyFirstCol(const shared_ptr<KuduTable>& tbl) {
 // Checks that all rows have value equal to expected, return number of rows.
 int CheckRowsEqual(const shared_ptr<KuduTable>& tbl, int32_t expected) {
   KuduScanner scanner(tbl.get());
-  scanner.Open();
+  CHECK_OK(scanner.Open());
   KuduScanBatch batch;
   int cnt = 0;
   while (scanner.HasMoreRows()) {
@@ -6899,7 +6899,7 @@ TEST_F(ClientTest, TestAlterTableChangeOwner) {
       .set_owner(kOriginalOwner).Create());
   {
     shared_ptr<KuduTable> table;
-    client_->OpenTable(kTableName, &table);
+    ASSERT_OK(client_->OpenTable(kTableName, &table));
     ASSERT_EQ(kOriginalOwner, table->owner());
   }
 
@@ -6908,7 +6908,7 @@ TEST_F(ClientTest, TestAlterTableChangeOwner) {
   ASSERT_OK(table_alterer->Alter());
   {
     shared_ptr<KuduTable> table;
-    client_->OpenTable(kTableName, &table);
+    ASSERT_OK(client_->OpenTable(kTableName, &table));
     ASSERT_EQ(kNewOwner, table->owner());
   }
 }
@@ -7924,7 +7924,8 @@ TEST_F(ClientTest, TestRetrieveAuthzTokenInParallel) {
     });
   }
   for (int i = 0 ; i < kThreads; i++) {
-    syncs[i].Wait();
+    SCOPED_TRACE(Substitute("thread idx $0", i));
+    ASSERT_OK(syncs[i].Wait());
     threads[i].join();
   }
   SignedTokenPB token;

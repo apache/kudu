@@ -320,7 +320,7 @@ class ScanTokenTest : public KuduTest {
       Synchronizer sync;
       client_->data_->meta_cache_->LookupTabletById(
           client_.get(), tablet_id, MonoTime::Max(), &rt, sync.AsStatusCallback());
-      sync.Wait();
+      ASSERT_OK(sync.Wait());
       vector<internal::RemoteTabletServer*> tservers;
       rt->GetRemoteTabletServers(&tservers);
       ASSERT_EQ(3, tservers.size());
@@ -955,7 +955,7 @@ TEST_F(ScanTokenTest, ScanTokensWithCustomHashSchemasPerRange) {
       ASSERT_OK(upper_bound->SetInt64("col", 100));
       unique_ptr<KuduRangePartition> range_partition(
           new KuduRangePartition(lower_bound.release(), upper_bound.release()));
-      range_partition->add_hash_partitions({ "col" }, 4);
+      ASSERT_OK(range_partition->add_hash_partitions({ "col" }, 4));
       table_creator->add_custom_range_partition(range_partition.release());
     }
 
@@ -966,7 +966,7 @@ TEST_F(ScanTokenTest, ScanTokensWithCustomHashSchemasPerRange) {
       ASSERT_OK(upper_bound->SetInt64("col", 200));
       unique_ptr<KuduRangePartition> range_partition(
           new KuduRangePartition(lower_bound.release(), upper_bound.release()));
-      range_partition->add_hash_partitions({ "col" }, 2);
+      ASSERT_OK(range_partition->add_hash_partitions({ "col" }, 2));
       table_creator->add_custom_range_partition(range_partition.release());
     }
 
@@ -988,7 +988,7 @@ TEST_F(ScanTokenTest, ScanTokensWithCustomHashSchemasPerRange) {
   ASSERT_OK(session->Flush());
 
   uint64_t expected_count = 0;
-  CheckLiveRowCount("table", &expected_count);
+  ASSERT_OK(CheckLiveRowCount("table", &expected_count));
   ASSERT_EQ(expected_count, 200);
 
   { // no predicates
@@ -1101,7 +1101,7 @@ TEST_F(ScanTokenTest, TestScanTokensWithCustomHashSchemasPerNonCoveringRange) {
       ASSERT_OK(upper_bound->SetInt64("col", 100));
       unique_ptr<KuduRangePartition> range_partition(
           new KuduRangePartition(lower_bound.release(), upper_bound.release()));
-      range_partition->add_hash_partitions({ "col" }, 4);
+      ASSERT_OK(range_partition->add_hash_partitions({ "col" }, 4));
       table_creator->add_custom_range_partition(range_partition.release());
     }
 
@@ -1112,7 +1112,7 @@ TEST_F(ScanTokenTest, TestScanTokensWithCustomHashSchemasPerNonCoveringRange) {
       ASSERT_OK(upper_bound->SetInt64("col", 300));
       unique_ptr<KuduRangePartition> range_partition(
           new KuduRangePartition(lower_bound.release(), upper_bound.release()));
-      range_partition->add_hash_partitions({ "col" }, 2);
+      ASSERT_OK(range_partition->add_hash_partitions({ "col" }, 2));
       table_creator->add_custom_range_partition(range_partition.release());
     }
 
@@ -1139,7 +1139,7 @@ TEST_F(ScanTokenTest, TestScanTokensWithCustomHashSchemasPerNonCoveringRange) {
   ASSERT_OK(session->Flush());
 
   uint64_t expected_count = 0;
-  CheckLiveRowCount("table", &expected_count);
+  ASSERT_OK(CheckLiveRowCount("table", &expected_count));
   ASSERT_EQ(expected_count, 200);
 
   { // no predicates
@@ -2021,7 +2021,7 @@ TEST_P(ReplicaSelectionTest, ReplicaSelection) {
   // Launch scan requests.
   ASSERT_OK(KuduScanTokenBuilder(table.get()).Build(&tokens));
   int64_t row_count = 0;
-  CountRowsSeq(client_.get(), tokens, &row_count, replica_selection);
+  ASSERT_OK(CountRowsSeq(client_.get(), tokens, &row_count, replica_selection));
 
   int result = 0;
   map<string, int32_t> now_scanner_count_by_ts_uuid;
