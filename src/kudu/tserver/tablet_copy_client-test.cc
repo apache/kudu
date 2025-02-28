@@ -256,8 +256,8 @@ Status TabletCopyClientTest::ResetRemoteTabletCopyClient(
   scoped_refptr<ConsensusMetadataManager> cmeta_manager(
       new ConsensusMetadataManager(fs_manager_.get()));
 
-  tablet_replica_->WaitUntilConsensusRunning(MonoDelta::FromSeconds(10.0));
-  rpc::MessengerBuilder(CURRENT_TEST_NAME()).Build(&messenger_);
+  RETURN_NOT_OK(tablet_replica_->WaitUntilConsensusRunning(MonoDelta::FromSeconds(10.0)));
+  RETURN_NOT_OK(rpc::MessengerBuilder(CURRENT_TEST_NAME()).Build(&messenger_));
   client_.reset(new RemoteTabletCopyClient(GetTabletId(),
                                            fs_manager_.get(),
                                            cmeta_manager,
@@ -281,7 +281,7 @@ Status TabletCopyClientTest::ResetLocalTabletCopyClient() {
     tablet_id_ = tablet_replica_->tablet_id();
 
     // Prepare parameters to create source FsManager.
-    rpc::MessengerBuilder(CURRENT_TEST_NAME()).Build(&messenger_);
+    RETURN_NOT_OK(rpc::MessengerBuilder(CURRENT_TEST_NAME()).Build(&messenger_));
 
     FsManagerOpts opts;
     string wal = mini_server_->server()->fs_manager()->GetWalsRootDir();
@@ -617,7 +617,7 @@ TEST_P(TabletCopyClientBasicTest, TestFailedDiskStopsClient) {
   // metadata directory).
   while (true) {
     if (rand() % 10 == 0) {
-      dd_manager->MarkDirFailed(1, "injected failure in non-client thread");
+      ASSERT_OK(dd_manager->MarkDirFailed(1, "injected failure in non-client thread"));
       LOG(INFO) << "INJECTING FAILURE";
       break;
     }
@@ -686,7 +686,7 @@ void TabletCopyClientAbortTest::CreateTestBlocks(int num_blocks) {
   for (int i = 0; i < num_blocks; i++) {
     unique_ptr<fs::WritableBlock> block;
     ASSERT_OK(fs_manager_->CreateNewBlock({}, &block));
-    block->Append("Test");
+    ASSERT_OK(block->Append("Test"));
     ASSERT_OK(block->Close());
   }
 }
@@ -765,7 +765,7 @@ TEST_P(TabletCopyClientAbortTest, TestAbort) {
     ASSERT_EQ(tablet::TABLET_DATA_TOMBSTONED, meta->tablet_data_state());
     ASSERT_FALSE(fs_manager_->Exists(wal_path));
     vector<BlockId> latest_blocks;
-    fs_manager_->block_manager()->GetAllBlockIds(&latest_blocks);
+    ASSERT_OK(fs_manager_->block_manager()->GetAllBlockIds(&latest_blocks));
     ASSERT_EQ(local_block_ids.size(), latest_blocks.size());
   }
   for (const auto& block_id : local_block_ids) {

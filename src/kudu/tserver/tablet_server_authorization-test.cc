@@ -504,13 +504,13 @@ class ScanPrivilegeAuthzTest : public AuthzTabletServerTestBase,
     SchemaBuilder schema_builder;
     for (int i = 0; i < kNumKeys; i++) {
       const string key = Substitute("key$0", i);
-      schema_builder.AddKeyColumn(key, DataType::INT32);
+      ASSERT_OK(schema_builder.AddKeyColumn(key, DataType::INT32));
       col_names_.emplace_back(key);
     }
     for (int i = 0; i < kNumVals; i++) {
       const string val = Substitute("val$0", kNumKeys + i);
-      schema_builder.AddColumn(ColumnSchema(val, DataType::INT32),
-                               /*is_key=*/false);
+      ASSERT_OK(schema_builder.AddColumn(ColumnSchema(val, DataType::INT32),
+                                         /*is_key=*/false));
       col_names_.emplace_back(val);
     }
     schema_ = schema_builder.Build();

@@ -108,6 +108,7 @@ class TabletServerTestBase : public KuduTest {
 
   void ShutdownTablet();
 
+  Status ShutdownAndRebuildDataDirs(int num_data_dirs);
   Status ShutdownAndRebuildTablet(int num_data_dirs = 1);
 
   // Verifies that a set of expected rows (key, value) is present in the tablet.
