@@ -686,7 +686,7 @@ void BuiltInNtp::Shutdown() {
   if (socket_.GetFd() >= 0) {
     // Shutting down the socket without closing it ensures that any attempt
     // to call sendmsg() will get EPIPE.
-    socket_.Shutdown(true, true);
+    WARN_NOT_OK(socket_.Shutdown(true, true), "coult not shutdown socket");
   }
   if (thread_) {
     thread_->Join();
