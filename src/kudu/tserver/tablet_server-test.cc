@@ -785,7 +785,7 @@ TEST_P(TabletServerDiskSpaceTest, TestFullGroupAddsDir) {
   // Otherwise the 'mini_server_' will fail starting later because of the failure to acquire
   // the RocksDB LOCK file.  Reset it in any case, there is no side effect.
   dd_manager.reset();
-  NO_FATALS(ShutdownAndRebuildTablet(kNumDirs));
+  ASSERT_OK(ShutdownAndRebuildTablet(kNumDirs));
   dd_manager = mini_server_->server()->fs_manager()->dd_manager();
   ASSERT_OK(dd_manager->FindDataDirsByTabletId(kTabletId, &dir_group));
   ASSERT_EQ(kNumDirs, dir_group.size());
@@ -872,7 +872,7 @@ TEST_F(TabletServerStartupWebPageTest, TestStartupWebPage) {
   const string url = Substitute("http://$0/startup", mini_server_->bound_http_addr().ToString());
 
   // Verify if the startup status is complete.
-  mini_server_->WaitStarted();
+  ASSERT_OK(mini_server_->WaitStarted());
 
   EasyCurl c;
   faststring buf;
@@ -905,8 +905,11 @@ TEST_F(TabletServerStartupWebPageTest, TestStartupWebPage) {
     status_reader.join();
   });
 
-  mini_server_->Start();
-  mini_server_->WaitStarted();
+  ASSERT_OK(mini_server_->Start());
+  const auto s = mini_server_->WaitStarted();
+  ASSERT_TRUE(s.IsIOError()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "some tablet data is in a failed directory");
+
   run_status_reader = false;
 
   // After the server has startup up, ensure every startup step has 100 percent status.
@@ -920,7 +923,7 @@ TEST_F(TabletServerStartupWebPageTest, TestAggregateStartupMetrics) {
   string addr = mini_server_->bound_http_addr().ToString();
 
   // Verify the startup steps remaining are zero once the server is started up.
-  mini_server_->WaitStarted();
+  ASSERT_OK(mini_server_->WaitStarted());
   ASSERT_OK(c.FetchURL(Substitute("http://$0/metrics?metrics=startup_progress_steps_remaining",
                                   addr),
                        &buf));
@@ -936,7 +939,7 @@ TEST_F(TabletServerStartupWebPageTest, TestTabletsMetrics) {
   EasyCurl c;
   faststring buf;
   // Verify if the startup status is complete.
-  mini_server_->WaitStarted();
+  ASSERT_OK(mini_server_->WaitStarted());
   const string url = Substitute("http://$0/metrics", mini_server_->bound_http_addr().ToString());
   // Validate populated metrics in case of zero tablets during startup.
   ASSERT_OK(c.FetchURL(url, &buf));
@@ -966,7 +969,7 @@ TEST_F(TabletServerStartupWebPageTest, TestLogBlockContainerMetrics) {
 
   EasyCurl c;
   faststring buf;
-  mini_server_->WaitStarted();
+  ASSERT_OK(mini_server_->WaitStarted());
   string addr = mini_server_->bound_http_addr().ToString();
   // Validate populated metrics in case of zero containers during startup.
   ASSERT_OK(c.FetchURL(Substitute("http://$0/metrics", addr), &buf));
@@ -1021,7 +1024,7 @@ class TabletServerMaintenanceManagerWebPageTest: public TabletServerStartupWebPa
 };
 
 TEST_F(TabletServerMaintenanceManagerWebPageTest, OpDataRetainedStats) {
-  mini_server_->WaitStarted();
+  ASSERT_OK(mini_server_->WaitStarted());
 
   faststring buf;
   ASSERT_OK(EasyCurl().FetchURL(Substitute("http://$0/maintenance-manager",
@@ -1196,7 +1199,7 @@ TEST_F(TabletServerTest, TestAddRemoveDirectory) {
   }
   // Start with multiple data dirs so the dirs are suffixed with numbers, and
   // so when we remove a data dirs, we'll be using the same set of dirs.
-  NO_FATALS(ShutdownAndRebuildTablet(/*num_data_dirs*/2));
+  ASSERT_OK(ShutdownAndRebuildDataDirs(/*num_data_dirs*/2));
   const char* kFooTablet1 = "fffffffffffffffffffffffffffffff1";
   ASSERT_OK(mini_server_->AddTestTablet("footable", kFooTablet1, schema_));
   ASSERT_OK(WaitForTabletRunning(kFooTablet1));
@@ -1204,7 +1207,7 @@ TEST_F(TabletServerTest, TestAddRemoveDirectory) {
   // Shut down and restart with a new directory. This is allowed, and the
   // tablet server will be able to use the new directory if we create a new
   // tablet.
-  NO_FATALS(ShutdownAndRebuildTablet(/*num_data_dirs*/3));
+  ASSERT_OK(ShutdownAndRebuildDataDirs(/*num_data_dirs*/3));
   const char* kFooTablet2 = "fffffffffffffffffffffffffffffff2";
   ASSERT_OK(mini_server_->AddTestTablet("footable", kFooTablet2, schema_));
   ASSERT_OK(WaitForTabletRunning(kFooTablet2));
@@ -1212,7 +1215,12 @@ TEST_F(TabletServerTest, TestAddRemoveDirectory) {
   // Now open up again with a our original two directories. The second tablet
   // should fail because it should have been striped across the third
   // directory. The first tablet should be unaffected.
-  NO_FATALS(ShutdownAndRebuildTablet(/*num_data_dirs*/2));
+  const auto s = ShutdownAndRebuildDataDirs(/*num_data_dirs*/2);
+  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(),
+      "error retrieving tablet data dir group (one or more data dirs "
+      "may have been removed): could not find data dir group for tablet "
+      "fffffffffffffffffffffffffffffff2");
   ASSERT_EVENTUALLY([&] {
     scoped_refptr<TabletReplica> replica1;
     ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kFooTablet1, &replica1));
@@ -1429,7 +1437,7 @@ TEST_F(TabletServerTest, TestInsert) {
   Timestamp now_before = mini_server_->server()->clock()->Now();
 
   rows_inserted = nullptr;
-  NO_FATALS(ShutdownAndRebuildTablet());
+  ASSERT_OK(ShutdownAndRebuildTablet());
   VerifyRows(schema_, { KeyValue(1, 1), KeyValue(2, 1), KeyValue(1234, 5678) });
 
   // get the clock's timestamp after replay
@@ -1718,7 +1726,7 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
 
   rows_inserted = nullptr;
   rows_updated = nullptr;
-  NO_FATALS(ShutdownAndRebuildTablet());
+  ASSERT_OK(ShutdownAndRebuildTablet());
   VerifyRows(schema_, { KeyValue(2, 3), KeyValue(3, 4), KeyValue(4, 4), KeyValue(6, 6) });
 
   // get the clock's timestamp after replay
@@ -1919,7 +1927,7 @@ TEST_F(TabletServerTest, TestRecoveryWithMutationsWhileFlushing) {
   // Shutdown the tserver and try and rebuild the tablet from the log
   // produced on recovery (recovery flushed no state, but produced a new
   // log).
-  NO_FATALS(ShutdownAndRebuildTablet());
+  ASSERT_OK(ShutdownAndRebuildTablet());
   VerifyRows(schema_, { KeyValue(1, 10),
                         KeyValue(2, 20),
                         KeyValue(3, 30),
@@ -1932,7 +1940,7 @@ TEST_F(TabletServerTest, TestRecoveryWithMutationsWhileFlushing) {
 
   // Shutdown and rebuild again to test that the log generated during
   // the previous recovery allows to perform recovery again.
-  NO_FATALS(ShutdownAndRebuildTablet());
+  ASSERT_OK(ShutdownAndRebuildTablet());
   VerifyRows(schema_, { KeyValue(1, 10),
                         KeyValue(2, 20),
                         KeyValue(3, 30),
@@ -1957,7 +1965,7 @@ TEST_F(TabletServerTest, TestRecoveryWithMutationsWhileFlushingAndCompacting) {
   // flush the first time
   ASSERT_OK(tablet_replica_->tablet()->Flush());
 
-  NO_FATALS(ShutdownAndRebuildTablet());
+  ASSERT_OK(ShutdownAndRebuildTablet());
   VerifyRows(schema_, { KeyValue(1, 10),
                         KeyValue(2, 20),
                         KeyValue(3, 30),
@@ -1997,7 +2005,7 @@ TEST_F(TabletServerTest, TestRecoveryWithMutationsWhileFlushingAndCompacting) {
   // Shutdown the tserver and try and rebuild the tablet from the log
   // produced on recovery (recovery flushed no state, but produced a new
   // log).
-  NO_FATALS(ShutdownAndRebuildTablet());
+  ASSERT_OK(ShutdownAndRebuildTablet());
   VerifyRows(schema_, { KeyValue(1, 11),
                         KeyValue(2, 22),
                         KeyValue(3, 32),
@@ -2129,7 +2137,7 @@ TEST_F(TabletServerTest, TestExactlyOnceForErrorsAcrossRestart) {
   req.clear_row_operations();
   for (int i = 1; i <= 5; i++) {
     SCOPED_TRACE(Substitute("restart attempt #$0", i));
-    NO_FATALS(ShutdownAndRebuildTablet());
+    ASSERT_OK(ShutdownAndRebuildTablet());
     rpc.Reset();
     req_id.set_attempt_no(req_id.attempt_no() + 1);
     rpc.SetRequestIdPB(unique_ptr<rpc::RequestIdPB>(new rpc::RequestIdPB(req_id)));
@@ -2374,7 +2382,7 @@ TEST_F(ScannerScansTest, TestScanMetricsAffectedOnOrderedScan) {
 
   SchemaBuilder sb;
   for (int i = schema_.num_key_columns(); i < schema_.num_columns(); i++) {
-    sb.AddColumn(schema_.column(i), false);
+    ASSERT_OK(sb.AddColumn(schema_.column(i), false));
   }
   const Schema& projection = sb.BuildWithoutIds();
   DoOrderedScanTest(projection, R"((int32 int_val=$1, string string_val="hello $0"))");
@@ -2535,7 +2543,7 @@ TEST_P(ScanCorruptedDeltasParamTest, Test) {
 
   // Fudge with some delta blocks.
   TabletSuperBlockPB superblock_pb;
-  tablet_replica_->tablet()->metadata()->ToSuperBlock(&superblock_pb);
+  ASSERT_OK(tablet_replica_->tablet()->metadata()->ToSuperBlock(&superblock_pb));
   FsManager* fs_manager = mini_server_->server()->fs_manager();
   for (int rowset_no = 0; rowset_no < superblock_pb.rowsets_size(); rowset_no++) {
     RowSetDataPB* rowset_pb = superblock_pb.mutable_rowsets(rowset_no);
@@ -2813,7 +2821,7 @@ TEST_F(ScannerScansTest, TestSnapshotScan_LastRow) {
   // to the client.
   SchemaBuilder sb(schema_);
   for (int i = 0; i < schema_.num_key_columns(); i++) {
-    sb.RemoveColumn(schema_.column(i).name());
+    ASSERT_OK(sb.RemoveColumn(schema_.column(i).name()));
   }
   const Schema& projection = sb.BuildWithoutIds();
 
@@ -3425,7 +3433,7 @@ TEST_F(ScannerScansTest, TestScanWithSimplifiablePredicates) {
   // Set up a projection without the key columns or the column after the last key column
   SchemaBuilder sb(schema_);
   for (int i = 0; i <= schema_.num_key_columns(); i++) {
-    sb.RemoveColumn(schema_.column(i).name());
+    ASSERT_OK(sb.RemoveColumn(schema_.column(i).name()));
   }
   const Schema& projection = sb.BuildWithoutIds();
   ASSERT_OK(SchemaToColumnPBs(projection, scan->mutable_projected_columns()));
@@ -3975,7 +3983,7 @@ TEST_F(ScannerScansTest, TestOrderedScan_ProjectionWithKeyColumnsInOrder) {
   // Build a projection with all the columns, but don't mark the key columns as such.
   SchemaBuilder sb;
   for (int i = 0; i < schema_.num_columns(); i++) {
-    sb.AddColumn(schema_.column(i), false);
+    ASSERT_OK(sb.AddColumn(schema_.column(i), false));
   }
   const Schema& projection = sb.BuildWithoutIds();
   DoOrderedScanTest(projection,
@@ -3987,7 +3995,7 @@ TEST_F(ScannerScansTest, TestOrderedScan_ProjectionWithoutKeyColumns) {
   // Build a projection without the key columns.
   SchemaBuilder sb;
   for (int i = schema_.num_key_columns(); i < schema_.num_columns(); i++) {
-    sb.AddColumn(schema_.column(i), false);
+    ASSERT_OK(sb.AddColumn(schema_.column(i), false));
   }
   const Schema& projection = sb.BuildWithoutIds();
   DoOrderedScanTest(projection, R"((int32 int_val=$1, string string_val="hello $0"))");
@@ -3998,7 +4006,7 @@ TEST_F(ScannerScansTest, TestOrderedScan_ProjectionWithKeyColumnsOutOfOrder) {
   // Build a projection with the order of the columns reversed.
   SchemaBuilder sb;
   for (int i = schema_.num_columns() - 1; i >= 0; i--) {
-    sb.AddColumn(schema_.column(i), false);
+    ASSERT_OK(sb.AddColumn(schema_.column(i), false));
   }
   const Schema& projection = sb.BuildWithoutIds();
   DoOrderedScanTest(projection,
@@ -4068,14 +4076,14 @@ TEST_F(TabletServerTest, TestAlterSchema) {
   const Schema projection({ ColumnSchema("key", INT32), (ColumnSchema("c2", INT32)) }, 1);
 
   // Try recovering from the original log
-  NO_FATALS(ShutdownAndRebuildTablet());
+  ASSERT_OK(ShutdownAndRebuildTablet());
   VerifyRows(projection, { KeyValue(0, 7),
                            KeyValue(1, 7),
                            KeyValue(2, 5),
                            KeyValue(3, 5) });
 
   // Try recovering from the log generated on recovery
-  NO_FATALS(ShutdownAndRebuildTablet());
+  ASSERT_OK(ShutdownAndRebuildTablet());
   VerifyRows(projection, { KeyValue(0, 7),
                            KeyValue(1, 7),
                            KeyValue(2, 5),
@@ -4119,11 +4127,11 @@ TEST_F(TabletServerTest, TestAlterSchema_AddColWithoutWriteDefault) {
   VerifyRows(projection, { KeyValue(0, 7), KeyValue(1, 7) });
 
   // Try recovering from the original log
-  NO_FATALS(ShutdownAndRebuildTablet());
+  ASSERT_OK(ShutdownAndRebuildTablet());
   VerifyRows(projection, { KeyValue(0, 7), KeyValue(1, 7) });
 
   // Try recovering from the log generated on recovery
-  NO_FATALS(ShutdownAndRebuildTablet());
+  ASSERT_OK(ShutdownAndRebuildTablet());
   VerifyRows(projection, { KeyValue(0, 7), KeyValue(1, 7) });
 }
 
@@ -4684,7 +4692,7 @@ TEST_F(TabletServerTest, TestFailedDnsResolution) {
 TEST_F(TabletServerTest, TestDataDirGroupsCreated) {
   // Get the original superblock.
   TabletSuperBlockPB superblock;
-  tablet_replica_->tablet()->metadata()->ToSuperBlock(&superblock);
+  ASSERT_OK(tablet_replica_->tablet()->metadata()->ToSuperBlock(&superblock));
   DataDirGroupPB orig_group = superblock.data_dir_group();
 
   // Remove the DataDirGroupPB on-disk.
@@ -4703,7 +4711,7 @@ TEST_F(TabletServerTest, TestDataDirGroupsCreated) {
   // group will be created with all data directories and should be identical to
   // the original one.
   ASSERT_OK(ShutdownAndRebuildTablet());
-  tablet_replica_->tablet()->metadata()->ToSuperBlock(&superblock);
+  ASSERT_OK(tablet_replica_->tablet()->metadata()->ToSuperBlock(&superblock));
   DataDirGroupPB new_group = superblock.data_dir_group();
   MessageDifferencer md;
   ASSERT_TRUE(md.Compare(orig_group, new_group));
@@ -4827,7 +4835,7 @@ TEST_F(TabletServerTest, SetEncodedKeysWhenStartingUp) {
   // maintenance operations when we restart.
   FLAGS_enable_maintenance_manager = false;
   TabletSuperBlockPB superblock_pb;
-  tablet_replica_->tablet()->metadata()->ToSuperBlock(&superblock_pb);
+  ASSERT_OK(tablet_replica_->tablet()->metadata()->ToSuperBlock(&superblock_pb));
   // Make sure the min/max key do not exist in the rowset metadata.
   for (int rowset_no = 0; rowset_no < superblock_pb.rowsets_size(); rowset_no++) {
     RowSetDataPB* rowset_pb = superblock_pb.mutable_rowsets(rowset_no);
@@ -4881,7 +4889,7 @@ TEST_F(TabletServerTest, SetEncodedKeysWhenStartingUp) {
     }
 
     TabletSuperBlockPB superblock_pb;
-    tablet_replica_->tablet()->metadata()->ToSuperBlock(&superblock_pb);
+    ASSERT_OK(tablet_replica_->tablet()->metadata()->ToSuperBlock(&superblock_pb));
     for (int rowset_no = 0; rowset_no < superblock_pb.rowsets_size(); rowset_no++) {
       RowSetDataPB* rowset_pb = superblock_pb.mutable_rowsets(rowset_no);
       if (set_keys_during_restart) {
@@ -4990,7 +4998,7 @@ TEST_F(TabletServerTest, TestScannerCheckMatchingUser) {
 TEST_F(TabletServerTest, TestTimeBasedFlushDMS) {
   SKIP_IF_SLOW_NOT_ALLOWED();
   FLAGS_enable_maintenance_manager = false;
-  NO_FATALS(ShutdownAndRebuildTablet());
+  ASSERT_OK(ShutdownAndRebuildTablet());
   // We're going to generate a bunch of DMSs, and for that, we need multiple
   // rowsets, so disable merge compactions.
   FLAGS_enable_rowset_compaction = false;
@@ -5011,7 +5019,7 @@ TEST_F(TabletServerTest, TestTimeBasedFlushDMS) {
   FLAGS_enable_maintenance_manager = true;
   FLAGS_maintenance_manager_polling_interval_ms = 1;
   FLAGS_flush_threshold_secs = 1;
-  NO_FATALS(ShutdownAndRebuildTablet());
+  ASSERT_OK(ShutdownAndRebuildTablet());
   // We should be able to wait for the flush threshold and very quickly see all
   // DMSs get flushed. We'll wait 5x the flush threshold, which should be ample
   // time given how little we're writing.
@@ -5025,7 +5033,7 @@ TEST_F(TabletServerTest, TestTimeBasedFlushDMS) {
 TEST_F(TabletServerTest, StartupWithConcurrentOpsBenchmark) {
   SKIP_IF_SLOW_NOT_ALLOWED();
   FLAGS_enable_maintenance_manager = false;
-  NO_FATALS(ShutdownAndRebuildTablet());
+  ASSERT_OK(ShutdownAndRebuildTablet());
 
   // Create a bunch of tablets with a bunch of rowsets.
   ObjectIdGenerator oid;
@@ -5060,7 +5068,7 @@ TEST_F(TabletServerTest, StartupWithConcurrentOpsBenchmark) {
 TEST_F(TabletServerTest, TestStarvePerfImprovementOpsInColdTablet) {
   SKIP_IF_SLOW_NOT_ALLOWED();
   FLAGS_enable_maintenance_manager = true;
-  NO_FATALS(ShutdownAndRebuildTablet());
+  ASSERT_OK(ShutdownAndRebuildTablet());
 
   // Disable flushing and compactions to create overlapping rowsets.
   FLAGS_enable_flush_memrowset = false;

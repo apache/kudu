@@ -1969,7 +1969,8 @@ void TSTabletManager::FailTabletsInDataDir(const string& uuid,
     return;
   }
   // Fail the directory to prevent other tablets from being placed in it.
-  dd_manager->MarkDirFailed(uuid_idx);
+  WARN_NOT_OK(dd_manager->MarkDirFailed(uuid_idx),
+              "error marking data directory as failed");
   set<string> tablets = dd_manager->FindTabletsByDirUuidIdx(uuid_idx);
   LOG(INFO) << Substitute("Data dir $0 has $1 tablets", uuid, tablets.size());
   for (const string& tablet_id : dd_manager->FindTabletsByDirUuidIdx(uuid_idx)) {

@@ -34,8 +34,6 @@
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
-#include <google/protobuf/stubs/common.h>
-#include <google/protobuf/stubs/port.h>
 
 #include "kudu/common/common.pb.h"
 #include "kudu/common/wire_protocol.h"
@@ -255,7 +253,7 @@ Status Heartbeater::Start() {
       for (int j = 0; j < i; j++) {
         // Ignore failures; we should try to stop every thread, and
         // 'first_failure' is the most interesting status anyway.
-        threads_[j]->Stop();
+        WARN_NOT_OK(threads_[j]->Stop(), "Unable to stop heartbeater thread");
       }
       return first_failure;
     }

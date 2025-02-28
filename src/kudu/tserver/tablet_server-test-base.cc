@@ -23,6 +23,7 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include <gflags/gflags.h>
@@ -384,6 +385,24 @@ void TabletServerTestBase::ShutdownTablet() {
   }
 }
 
+Status TabletServerTestBase::ShutdownAndRebuildDataDirs(int num_data_dirs) {
+  ShutdownTablet();
+
+  // Start server.
+  mini_server_.reset(new MiniTabletServer(GetTestPath("TabletServerTest-fsroot"),
+                                          HostPort("127.0.0.1", 0), num_data_dirs));
+  mini_server_->options()->master_addresses.clear();
+  mini_server_->options()->master_addresses.emplace_back("255.255.255.255", 1);
+  // this should open the tablet created on StartTabletServer()
+  RETURN_NOT_OK(mini_server_->Start());
+
+  RETURN_NOT_OK(mini_server_->WaitStarted());
+
+  // Connect to the server.
+  ResetClientProxies();
+  return Status::OK();
+}
+
 Status TabletServerTestBase::ShutdownAndRebuildTablet(int num_data_dirs) {
   ShutdownTablet();
 
@@ -405,7 +424,7 @@ Status TabletServerTestBase::ShutdownAndRebuildTablet(int num_data_dirs) {
     return Status::NotFound("Tablet was not found");
   }
 
-  // Connect to it.
+  // Connect to the server.
   ResetClientProxies();
 
   // Opening a tablet is async, we wait here instead of having to handle errors later.

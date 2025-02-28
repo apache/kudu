@@ -23,6 +23,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -54,7 +55,6 @@
 #include "kudu/tablet/ops/op.h"
 #include "kudu/tablet/ops/write_op.h"
 #include "kudu/tablet/tablet-test-util.h"
-#include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/tablet_copy.pb.h"
@@ -176,7 +176,7 @@ class TabletCopyTest : public KuduTabletTest,
 
     shared_ptr<Messenger> messenger;
     MessengerBuilder mbuilder(CURRENT_TEST_NAME());
-    mbuilder.Build(&messenger);
+    ASSERT_OK(mbuilder.Build(&messenger));
 
     log_anchor_registry_.reset(new LogAnchorRegistry());
     tablet_replica_->SetBootstrapping();
