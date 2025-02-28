@@ -245,7 +245,7 @@ Status IndexBlockReader::ReadEntry(size_t idx,
 
   const uint8_t* ptr = nullptr;
   const uint8_t* limit = nullptr;
-  GetKeyPointer(idx, &ptr, &limit);
+  RETURN_NOT_OK(GetKeyPointer(idx, &ptr, &limit));
 
   ptr = SliceDecode(ptr, limit, key);
   if (PREDICT_FALSE(!ptr)) {

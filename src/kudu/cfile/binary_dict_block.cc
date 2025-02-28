@@ -299,7 +299,7 @@ Status BinaryDictBlockDecoder::CopyNextAndEval(size_t* n,
   // Load the rows' codeword values into a buffer for scanning.
   BShufBlockDecoder<UINT32>* d_bptr = down_cast<BShufBlockDecoder<UINT32>*>(data_decoder_.get());
   codeword_buf_.resize(*n * sizeof(uint32_t));
-  d_bptr->CopyNextValuesToArray(n, codeword_buf_.data());
+  RETURN_NOT_OK(d_bptr->CopyNextValuesToArray(n, codeword_buf_.data()));
   Slice* out = reinterpret_cast<Slice*>(dst->data());
   for (size_t i = 0; i < *n; i++, out++) {
     // Check with the SelectionVectorView to see whether the data has already
