@@ -436,7 +436,8 @@ TEST_F(RangerClientTestExtraJVMArgs, SmokeTest) {
 
 TEST_F(RangerClientTestExtraJVMArgs, TestCrashOnInvalidArguments) {
   FLAGS_ranger_java_extra_args = "-XX:+InvalidArgumentHopeTheyWontChooseThisNameForAFLag";
-  ASSERT_DEATH(InitializeRanger(), "The subprocess has exited with status 1");
+  ASSERT_DEATH({ ASSERT_OK(InitializeRanger()); },
+               "The subprocess has exited with status 1");
 }
 
 namespace {

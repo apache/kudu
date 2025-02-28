@@ -431,7 +431,7 @@ TEST_F(HmsClientTest, TestHmsConnect) {
   Socket listening_socket;
   ASSERT_OK(listening_socket.Init(loopback.family(), 0));
   ASSERT_OK(listening_socket.BindAndListen(loopback, 1));
-  listening_socket.GetSocketAddress(&listening);
+  ASSERT_OK(listening_socket.GetSocketAddress(&listening));
   ASSERT_TRUE(start_client(listening).IsTimedOut());
 
   // Bound, but not listening socket.
@@ -439,7 +439,7 @@ TEST_F(HmsClientTest, TestHmsConnect) {
   Socket bound_socket;
   ASSERT_OK(bound_socket.Init(loopback.family(), 0));
   ASSERT_OK(bound_socket.Bind(loopback));
-  bound_socket.GetSocketAddress(&bound);
+  ASSERT_OK(bound_socket.GetSocketAddress(&bound));
   ASSERT_TRUE(start_client(bound).IsNetworkError());
 
   // Unbound socket.
@@ -447,7 +447,7 @@ TEST_F(HmsClientTest, TestHmsConnect) {
   Socket unbound_socket;
   ASSERT_OK(unbound_socket.Init(loopback.family(), 0));
   ASSERT_OK(unbound_socket.Bind(loopback));
-  unbound_socket.GetSocketAddress(&unbound);
+  ASSERT_OK(unbound_socket.GetSocketAddress(&unbound));
   ASSERT_OK(unbound_socket.Close());
   ASSERT_TRUE(start_client(unbound).IsNetworkError());
 }
