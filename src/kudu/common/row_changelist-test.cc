@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/common/row_changelist.h"
+
 #include <cstdint>
 #include <ostream>
 #include <string>
@@ -24,17 +26,19 @@
 
 #include "kudu/common/common.pb.h"
 #include "kudu/common/row.h"
-#include "kudu/common/row_changelist.h"
 #include "kudu/common/rowblock.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/hexdump.h"
-#include "kudu/util/memory/arena.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
+
+namespace kudu {
+class Arena;
+}  // namespace kudu
 
 using std::string;
 using strings::Substitute;
@@ -175,11 +179,11 @@ TEST_F(TestRowChangeList, TestReinserts) {
     rb.AddString(Slice("mundo"));
     rb.AddUint32(54321);
     rb.AddUint32(1);
-    CopyRow(rb.row(), &dst_row, static_cast<Arena*>(nullptr));
+    ASSERT_OK(CopyRow(rb.row(), &dst_row, static_cast<Arena*>(nullptr)));
     reinsert_2_enc.SetToReinsert();
-    CHECK_OK(reinsert_1_dec.MutateRowAndCaptureChanges(&dst_row,
-                                                       static_cast<Arena*>(nullptr),
-                                                       &reinsert_2_enc));
+    ASSERT_OK(reinsert_1_dec.MutateRowAndCaptureChanges(&dst_row,
+                                                        static_cast<Arena*>(nullptr),
+                                                        &reinsert_2_enc));
     // The row should now match reinsert 1
     ASSERT_STR_CONTAINS(schema_.DebugRow(dst_row),
         R"((string col1="hello", string col2="world", uint32 col3=12345, uint32 col4=NULL))");

@@ -336,32 +336,32 @@ TEST_F(RowOperationsTest, SchemaFuzz) {
 // One case from SchemaFuzz which failed previously.
 TEST_F(RowOperationsTest, TestFuzz1) {
   SchemaBuilder client_schema_builder;
-  client_schema_builder.AddColumn("c1", INT32, false, nullptr, nullptr);
-  client_schema_builder.AddColumn("c2", STRING, false, nullptr, nullptr);
+  ASSERT_OK(client_schema_builder.AddColumn("c1", INT32, false, nullptr, nullptr));
+  ASSERT_OK(client_schema_builder.AddColumn("c2", STRING, false, nullptr, nullptr));
   Schema client_schema = client_schema_builder.BuildWithoutIds();
   SchemaBuilder server_schema_builder;
-  server_schema_builder.AddColumn("c1", INT32, false, nullptr, nullptr);
-  server_schema_builder.AddColumn("c2", STRING, false, nullptr, nullptr);
+  ASSERT_OK(server_schema_builder.AddColumn("c1", INT32, false, nullptr, nullptr));
+  ASSERT_OK(server_schema_builder.AddColumn("c2", STRING, false, nullptr, nullptr));
   Schema server_schema = server_schema_builder.Build();
   KuduPartialRow row(&client_schema);
-  CHECK_OK(row.SetInt32(0, 12345));
-  CHECK_OK(row.SetStringCopy(1, "hello"));
+  ASSERT_OK(row.SetInt32(0, 12345));
+  ASSERT_OK(row.SetStringCopy(1, "hello"));
   DoFuzzTest(server_schema, row, 100);
 }
 
 // Another case from SchemaFuzz which failed previously.
 TEST_F(RowOperationsTest, TestFuzz2) {
   SchemaBuilder client_schema_builder;
-  client_schema_builder.AddColumn("c1", STRING, true, nullptr, nullptr);
-  client_schema_builder.AddColumn("c2", STRING, false, nullptr, nullptr);
+  ASSERT_OK(client_schema_builder.AddColumn("c1", STRING, true, nullptr, nullptr));
+  ASSERT_OK(client_schema_builder.AddColumn("c2", STRING, false, nullptr, nullptr));
   Schema client_schema = client_schema_builder.BuildWithoutIds();
   SchemaBuilder server_schema_builder;
-  server_schema_builder.AddColumn("c1", STRING, true, nullptr, nullptr);
-  server_schema_builder.AddColumn("c2", STRING, false, nullptr, nullptr);
+  ASSERT_OK(server_schema_builder.AddColumn("c1", STRING, true, nullptr, nullptr));
+  ASSERT_OK(server_schema_builder.AddColumn("c2", STRING, false, nullptr, nullptr));
   Schema server_schema = server_schema_builder.Build();
   KuduPartialRow row(&client_schema);
-  CHECK_OK(row.SetNull(0));
-  CHECK_OK(row.SetStringCopy(1, "hello"));
+  ASSERT_OK(row.SetNull(0));
+  ASSERT_OK(row.SetStringCopy(1, "hello"));
   DoFuzzTest(server_schema, row, 100);
 }
 

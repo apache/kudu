@@ -996,11 +996,11 @@ TEST_P(PartitionPrunerTestWithMaxInListLength, TestMultiColumnInListHashPruningM
   SchemaBuilder builder;
   int i = 0;
   for (; i < kKeyColumnSize; i++) {
-    builder.AddKeyColumn(Substitute("key_$0", i), DataType::INT32);
+    ASSERT_OK(builder.AddKeyColumn(Substitute("key_$0", i), DataType::INT32));
     key_column_names.push_back(Substitute("key_$0", i));
   }
   for (; i < kColumnSize; i++) {
-    builder.AddColumn(Substitute("column_$0", i), DataType::INT32);
+    ASSERT_OK(builder.AddColumn(Substitute("column_$0", i), DataType::INT32));
   }
   Schema schema = builder.Build();
 
