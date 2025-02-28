@@ -19,6 +19,7 @@
 
 #include <sys/stat.h>
 #include <unistd.h>
+// IWYU pragma: no_include <bits/struct_stat.h>
 
 #include <cstdint>
 #include <functional>
@@ -281,8 +282,12 @@ TEST_P(FsManagerTestBase, TestTenantAccountOperation) {
     ASSERT_FALSE(fs_manager()->is_tenants_exist());
 
     // Add tenant is not allowed.
-    ASSERT_DEATH(fs_manager()->AddTenant(non_exist_tenant_name, non_exist_tenant,
-                                         nullopt, nullopt, nullopt), "");
+    ASSERT_DEATH({ ASSERT_OK(fs_manager()->AddTenant(
+                       non_exist_tenant_name,
+                       non_exist_tenant,
+                       nullopt,
+                       nullopt,
+                       nullopt)); }, "");
     ASSERT_FALSE(fs_manager()->VertifyTenant(non_exist_tenant));
     ASSERT_TRUE(fs_manager()->VertifyTenant(default_tenant_id));
     ASSERT_EQ(0, fs_manager()->GetDataRootDirs(non_exist_tenant).size());
@@ -621,7 +626,7 @@ TEST_P(FsManagerTestBase, TestCreateWithFailedDirs) {
   // Create some top-level paths to place roots in.
   vector<string> data_paths = { GetTestPath("data1"), GetTestPath("data2"), GetTestPath("data3") };
   for (const string& path : data_paths) {
-    GetEnv()->CreateDir(path);
+    ASSERT_OK(GetEnv()->CreateDir(path));
   }
   // Initialize the FS layout with roots in subdirectories of data_paths. When
   // we canonicalize paths, we canonicalize the dirname of each path (e.g.
