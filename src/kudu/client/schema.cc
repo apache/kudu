@@ -674,7 +674,7 @@ Status KuduSchemaBuilder::Build(KuduSchema* schema) {
 
     num_key_cols = 1;
     if (!data_->specs[single_key_col_idx]->data_->primary_key_unique) {
-      data_->AddAutoIncrementingColumn(&num_key_cols, &cols);
+      RETURN_NOT_OK(data_->AddAutoIncrementingColumn(&num_key_cols, &cols));
     }
   } else {
     // Build a map from name to index of all of the columns.
@@ -723,7 +723,7 @@ Status KuduSchemaBuilder::Build(KuduSchema* schema) {
     num_key_cols = key_col_indexes.size();
 
     if (!data_->key_cols_unique) {
-      data_->AddAutoIncrementingColumn(&num_key_cols, &cols);
+      RETURN_NOT_OK(data_->AddAutoIncrementingColumn(&num_key_cols, &cols));
     }
   }
 
@@ -902,19 +902,20 @@ KuduColumnTypeAttributes KuduColumnSchema::type_attributes() const {
 }
 
 KuduColumnStorageAttributes KuduColumnSchema::storage_attributes() const {
-  ColumnStorageAttributes storage_attributes = DCHECK_NOTNULL(col_)->attributes();
+  const ColumnStorageAttributes sa = DCHECK_NOTNULL(col_)->attributes();
+  // The code below is to convert from the values of PB-based EncodingType and
+  // and CompressionType enums to the corresponding values of enums publicly
+  // exposed via Kudu client API.
   KuduColumnStorageAttributes::EncodingType encoding_type;
-  KuduColumnStorageAttributes::StringToEncodingType(
-      kudu::EncodingType_Name(storage_attributes.encoding),
-      &encoding_type);
+  DCHECK_OK(KuduColumnStorageAttributes::StringToEncodingType(
+      kudu::EncodingType_Name(sa.encoding), &encoding_type));
   KuduColumnStorageAttributes::CompressionType compression_type;
-  KuduColumnStorageAttributes::StringToCompressionType(
-      kudu::CompressionType_Name(storage_attributes.compression),
-      &compression_type);
+  DCHECK_OK(KuduColumnStorageAttributes::StringToCompressionType(
+      kudu::CompressionType_Name(sa.compression), &compression_type));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-  return KuduColumnStorageAttributes(encoding_type, compression_type,
-                                     storage_attributes.cfile_block_size);
+  return KuduColumnStorageAttributes(
+      encoding_type, compression_type, sa.cfile_block_size);
 #pragma GCC diagnostic pop
 }
 

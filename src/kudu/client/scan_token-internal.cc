@@ -28,8 +28,6 @@
 #include <vector>
 
 #include <glog/logging.h>
-#include <google/protobuf/stubs/common.h>
-#include <google/protobuf/stubs/port.h>
 
 #include "kudu/client/client-internal.h"
 #include "kudu/client/client.h"
@@ -189,8 +187,8 @@ Status KuduScanToken::Data::PBIntoScanner(KuduClient* client,
         *mock_resp.add_ts_infos() = std::move(server_pb);
       }
 
-      client->data_->meta_cache_->ProcessGetTableLocationsResponse(
-          table.get(), partition.begin(), true, mock_resp, &entry, 1);
+      RETURN_NOT_OK(client->data_->meta_cache_->ProcessGetTableLocationsResponse(
+          table.get(), partition.begin(), true, mock_resp, &entry, 1));
     }
   }
 
@@ -327,11 +325,11 @@ Status KuduScanToken::Data::PBIntoScanner(KuduClient* client,
   }
 
   if (message.has_scan_request_timeout_ms()) {
-    scan_builder->SetTimeoutMillis(message.scan_request_timeout_ms());
+    RETURN_NOT_OK(scan_builder->SetTimeoutMillis(message.scan_request_timeout_ms()));
   }
 
-  if (message.has_query_id()) {
-    scan_builder->SetQueryId(message.query_id());
+  if (message.has_query_id() && !message.query_id().empty()) {
+    RETURN_NOT_OK(scan_builder->SetQueryId(message.query_id()));
   }
 
   *scanner = scan_builder.release();
@@ -391,7 +389,7 @@ Status KuduScanTokenBuilder::Data::Build(vector<KuduScanToken*>* tokens) {
   if (include_table_metadata_) {
     for (const ColumnSchema& col : configuration_.projection()->columns()) {
       int column_idx;
-      table->schema().schema_->FindColumn(col.name(), &column_idx);
+      RETURN_NOT_OK(table->schema().schema_->FindColumn(col.name(), &column_idx));
       pb.mutable_projected_column_idx()->Add(column_idx);
     }
   } else {
