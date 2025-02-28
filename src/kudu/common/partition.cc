@@ -860,7 +860,7 @@ Status PartitionSchema::DecodeRangeKey(Slice* encoded_key,
     if (column.type_info()->physical_type() == BINARY) {
       // Copy cell value into the 'partial_row', because in the decoding process above, we just make
       // row data a pointer to the memory allocated by arena.
-      partial_row->Set(column_idx, cont_row.cell_ptr(column_idx));
+      RETURN_NOT_OK(partial_row->Set(column_idx, cont_row.cell_ptr(column_idx)));
     }
   }
   if (!encoded_key->empty()) {

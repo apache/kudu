@@ -135,7 +135,7 @@ TEST_F(TestSchema, TestSchema) {
 
 TEST_F(TestSchema, TestSchemaToStringMode) {
   SchemaBuilder builder;
-  builder.AddKeyColumn("key", DataType::INT32);
+  ASSERT_OK(builder.AddKeyColumn("key", DataType::INT32));
   const auto schema = builder.Build();
   EXPECT_EQ(
       Substitute("(\n"
