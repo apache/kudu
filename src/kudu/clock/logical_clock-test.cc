@@ -15,9 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/clock/logical_clock.h"
+
+#include <string>
+
 #include <gtest/gtest.h>
 
-#include "kudu/clock/logical_clock.h"
 #include "kudu/common/timestamp.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
@@ -48,7 +51,7 @@ TEST_F(LogicalClockTest, NowValuesIncreaseMonotonically) {
 TEST_F(LogicalClockTest, UpdateLogicalValueIncreasesByAmount) {
   Timestamp initial = clock_.Now();
   Timestamp future(initial.value() + 10);
-  clock_.Update(future);
+  ASSERT_OK(clock_.Update(future));
   Timestamp now = clock_.Now();
   // now should be 1 after future
   ASSERT_EQ(initial.value() + 11, now.value());
@@ -58,7 +61,7 @@ TEST_F(LogicalClockTest, UpdateLogicalValueIncreasesByAmount) {
 TEST_F(LogicalClockTest, UpdateLogicalValueDoesNotIncrease) {
   Timestamp ts(1);
   // update the clock to 1, the initial value, should do nothing
-  clock_.Update(ts);
+  ASSERT_OK(clock_.Update(ts));
   Timestamp now = clock_.Now();
   ASSERT_EQ(2, now.value());
 }

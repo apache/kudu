@@ -224,7 +224,7 @@ void RpcLineItemDAO::OpenScannerImpl(const vector<string>& columns,
                                      unique_ptr<Scanner>* out_scanner) {
   unique_ptr<Scanner> ret(new Scanner);
   ret->scanner_.reset(new KuduScanner(client_table_.get()));
-  ret->scanner_->SetCacheBlocks(FLAGS_tpch_cache_blocks_when_scanning);
+  CHECK_OK(ret->scanner_->SetCacheBlocks(FLAGS_tpch_cache_blocks_when_scanning));
   CHECK_OK(ret->scanner_->SetProjectedColumnNames(columns));
   for (KuduPredicate* pred : preds) {
     CHECK_OK(ret->scanner_->AddConjunctPredicate(pred));
