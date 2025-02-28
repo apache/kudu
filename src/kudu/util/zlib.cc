@@ -19,20 +19,21 @@
 
 #include <cstdint>
 #include <cstring>
-#include <memory>
 #include <string>
 
+#include <glog/logging.h>
 #include <zconf.h>
 #include <zlib.h>
 
-#include "kudu/gutil/macros.h"
+#include "kudu/gutil/basictypes.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
+using std::ios;
 using std::ostream;
 using std::string;
-using std::unique_ptr;
 
 #define ZRETURN_NOT_OK(call) \
   RETURN_NOT_OK(ZlibResultToStatus(call))
@@ -74,6 +75,12 @@ Status Compress(Slice input, ostream* out) {
 
 // See https://zlib.net/zlib_how.html for context on using zlib.
 Status CompressLevel(Slice input, int level, ostream* out) {
+  DCHECK(out);
+  // Output stream exceptions aren't handled in this function, so the stream
+  // isn't supposed to throw on errors, but just set bad/failure bits instead.
+  DCHECK_EQ(ios::goodbit, out->exceptions());
+  DCHECK(level >= Z_DEFAULT_COMPRESSION && level <= Z_BEST_COMPRESSION);
+
   z_stream zs;
   memset(&zs, 0, sizeof(zs));
   ZRETURN_NOT_OK(deflateInit2(&zs, level, Z_DEFLATED,
@@ -83,55 +90,79 @@ Status CompressLevel(Slice input, int level, ostream* out) {
 
   zs.avail_in = input.size();
   zs.next_in = const_cast<uint8_t*>(input.data());
-  const int kChunkSize = 256 * 1024;
-  unique_ptr<unsigned char[]> chunk(new unsigned char[kChunkSize]);
-  int flush;
+  constexpr const size_t kChunkSize = 16 * 1024;
+  unsigned char buf[kChunkSize];
+  int rc;
   do {
     zs.avail_out = kChunkSize;
-    zs.next_out = chunk.get();
-    flush = (zs.avail_in == 0) ? Z_FINISH : Z_NO_FLUSH;
-    Status s = ZlibResultToStatus(deflate(&zs, flush));
-    if (!s.ok() && !s.IsEndOfFile()) {
-      return s;
+    zs.next_out = buf;
+    const int flush = (zs.avail_in == 0) ? Z_FINISH : Z_NO_FLUSH;
+    rc = deflate(&zs, flush);
+    if (PREDICT_FALSE(rc != Z_OK && rc != Z_STREAM_END)) {
+      ignore_result(deflateEnd(&zs));
+      return ZlibResultToStatus(rc);
     }
-    int out_size = zs.next_out - chunk.get();
-    if (out_size > 0) {
-      out->write(reinterpret_cast<char *>(chunk.get()), out_size);
+    DCHECK_GT(zs.next_out - buf, 0);
+    out->write(reinterpret_cast<char*>(buf), zs.next_out - buf);
+    if (PREDICT_FALSE(out->fail())) {
+      ignore_result(deflateEnd(&zs));
+      return Status::IOError("error writing to output stream");
     }
-  } while (flush != Z_FINISH);
-  ZRETURN_NOT_OK(deflateEnd(&zs));
-  return Status::OK();
+  } while (rc != Z_STREAM_END);
+
+  return ZlibResultToStatus(deflateEnd(&zs));
 }
 
 // See https://zlib.net/zlib_how.html for context on using zlib.
-Status Uncompress(Slice compressed, std::ostream* out) {
+Status Uncompress(Slice input, ostream* out) {
+  DCHECK(out);
+  // Output stream exceptions aren't handled in this function, so the stream
+  // isn't supposed to throw on errors, but just set bad/failure bits instead.
+  DCHECK_EQ(ios::goodbit, out->exceptions());
+
   // Initialize the z_stream at the start of the data with the
   // data size as the available input.
   z_stream zs;
   memset(&zs, 0, sizeof(zs));
-  zs.next_in = const_cast<uint8_t*>(compressed.data());
-  zs.avail_in = compressed.size();
+  zs.next_in = const_cast<uint8_t*>(input.data());
+  zs.avail_in = input.size();
   // Initialize inflation with the windowBits set to be GZIP compatible.
   // The documentation (https://www.zlib.net/manual.html#Advanced) describes that
   // Adding 16 configures inflate to decode the gzip format.
   ZRETURN_NOT_OK(inflateInit2(&zs, MAX_WBITS + 16 /* enable gzip */));
-  // Continue calling inflate, decompressing data into the buffer in `zs.next_out` and writing
-  // the buffer content to `out`, until an error is received or there is no more data
-  // to decompress.
-  Status s;
+  // Continue calling inflate, decompressing data into the buffer in
+  // `zs.next_out` and writing the buffer content to `out`, until an error
+  // condition is encountered or there is no more data to decompress.
+  constexpr const size_t kChunkSize = 16 * 1024;
+  unsigned char buf[kChunkSize];
+  int rc;
   do {
-    unsigned char buf[4096];
     zs.next_out = buf;
-    zs.avail_out = arraysize(buf);
-    s = ZlibResultToStatus(inflate(&zs, Z_NO_FLUSH));
-    if (!s.ok() && !s.IsEndOfFile()) {
-      return s;
+    zs.avail_out = kChunkSize;
+    rc = inflate(&zs, Z_NO_FLUSH);
+    if (PREDICT_FALSE(rc != Z_OK && rc != Z_STREAM_END)) {
+      ignore_result(inflateEnd(&zs));
+      // Special handling for Z_BUF_ERROR in certain conditions to produce
+      // Status::Corruption() instead of Status::RuntimeError().
+      if (rc == Z_BUF_ERROR && zs.avail_in == 0) {
+        // This means the input was most likely incomplete/truncated. Because
+        // the input isn't a stream in this function, all the input data is
+        // available at once as Slice, so no more available bytes on input
+        // are ever expected at this point.
+        return Status::Corruption("truncated gzip data");
+      }
+      return ZlibResultToStatus(rc);
     }
-    out->write(reinterpret_cast<char *>(buf), zs.next_out - buf);
-  } while (zs.avail_out == 0);
+    DCHECK_GT(zs.next_out - buf, 0);
+    out->write(reinterpret_cast<char*>(buf), zs.next_out - buf);
+    if (PREDICT_FALSE(out->fail())) {
+      ignore_result(inflateEnd(&zs));
+      return Status::IOError("error writing to output stream");
+    }
+  } while (rc != Z_STREAM_END);
+
   // If we haven't returned early with a bad status, finalize inflation.
-  ZRETURN_NOT_OK(inflateEnd(&zs));
-  return Status::OK();
+  return ZlibResultToStatus(inflateEnd(&zs));
 }
 
 } // namespace zlib

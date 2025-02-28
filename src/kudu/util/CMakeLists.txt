@@ -707,3 +707,12 @@ if(NOT NO_TESTS)
   target_link_libraries(instance_detector-test
     kudu_cloud_util)
 endif()
+
+#######################################
+# zlib-test
+#######################################
+ADD_KUDU_TEST(zlib-test)
+if(NOT NO_TESTS)
+  target_link_libraries(zlib-test
+    zlib)
+endif()
