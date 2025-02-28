@@ -89,14 +89,19 @@ void PeerManager::UpdateRaftConfig(const RaftConfigPB& config) {
 void PeerManager::SignalRequest(bool force_if_queue_empty) {
   std::lock_guard lock(lock_);
   for (auto iter = peers_.begin(); iter != peers_.end();) {
-    Status s = (*iter).second->SignalRequest(force_if_queue_empty);
-    if (PREDICT_FALSE(!s.ok())) {
-      LOG(WARNING) << GetLogPrefix()
-                   << "Peer was closed, removing from peers. Peer: "
-                   << SecureShortDebugString((*iter).second->peer_pb());
-      peers_.erase(iter++);
-    } else {
+    const auto s = iter->second->SignalRequest(force_if_queue_empty);
+    if (PREDICT_TRUE(s.ok())) {
       ++iter;
+      continue;
+    }
+    const auto& peer_info = SecureShortDebugString(iter->second->peer_pb());
+    if (!s.IsIllegalState()) {
+      WARN_NOT_OK(s, Substitute("$0: SignalRequest failed at peer $1",
+                                GetLogPrefix(), peer_info));
+    } else {
+      WARN_NOT_OK(s, Substitute("$0: SignalRequest failed, removing peer $1",
+                                GetLogPrefix(), peer_info));
+      peers_.erase(iter++);
     }
   }
 }

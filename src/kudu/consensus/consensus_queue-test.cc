@@ -131,7 +131,7 @@ class ConsensusQueueTest : public KuduTest {
   }
 
   void TearDown() override {
-    log_->WaitUntilAllFlushed();
+    ASSERT_OK(log_->WaitUntilAllFlushed());
     queue_->Close();
   }
 
@@ -910,7 +910,7 @@ TEST_F(ConsensusQueueTest, TestQueueMovesWatermarksBackward) {
   // Append a bunch of messages and update as if they were also appeneded to the leader.
   queue_->UpdateLastIndexAppendedToLeader(10);
   AppendReplicateMessagesToQueue(queue_.get(), clock_.get(), 1, 10);
-  log_->WaitUntilAllFlushed();
+  ASSERT_OK(log_->WaitUntilAllFlushed());
 
   // Now rewrite some of the operations and wait for the log to append.
   Synchronizer synch;
@@ -995,14 +995,14 @@ TEST_F(ConsensusQueueTest, TestOnlyAdvancesWatermarkWhenPeerHasAPrefixOfOurLog) 
 
   for (int i = 31; i <= 53; i++) {
     if (i <= 45) {
-      AppendReplicateMsg(72, i, 1024);
+      ASSERT_OK(AppendReplicateMsg(72, i, 1024));
       continue;
     }
     if (i <= 51) {
-      AppendReplicateMsg(73, i, 1024);
+      ASSERT_OK(AppendReplicateMsg(73, i, 1024));
       continue;
     }
-    AppendReplicateMsg(76, i, 1024);
+    ASSERT_OK(AppendReplicateMsg(76, i, 1024));
   }
 
   WaitForLocalPeerToAckIndex(53);

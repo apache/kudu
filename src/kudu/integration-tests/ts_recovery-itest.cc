@@ -571,7 +571,13 @@ INSTANTIATE_TEST_SUITE_P(BlockManagerType, TsRecoveryITestDeathTest,
 TEST_P(TsRecoveryITestDeathTest, RecoverFromOpIdOverflow) {
   // Create the initial tablet files on disk, then shut down the cluster so we
   // can meddle with the WAL.
-  NO_FATALS(StartClusterOneTs());
+  NO_FATALS(StartClusterOneTs(
+      // To simplify test scaffolding, this scenario relies on lenient handling
+      // of operation indices read from the tablet's WAL upon bootstrapping.
+      // With regular guards in place, an inconsistency would be detected when
+      // setting committed OpId for PendingRounds by RaftConsensus::Start().
+      { "--raft_allow_committed_pending_index_gap" }
+  ));
   TestWorkload workload(cluster_.get());
   workload.set_num_replicas(1);
   workload.Setup();

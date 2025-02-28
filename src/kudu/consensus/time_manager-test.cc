@@ -171,8 +171,8 @@ TEST_F(TimeManagerTest, TestTimeManagerLeaderMode) {
 
   // In leader mode calling MessageReceivedFromLeader() should cause a CHECK failure.
   EXPECT_DEATH({
-     time_manager_->MessageReceivedFromLeader(message);
-    }, "Cannot receive messages from a leader in leader mode.");
+    ASSERT_OK(time_manager_->MessageReceivedFromLeader(message));
+  }, "Cannot receive messages from a leader in leader mode.");
 
   // .. as should AdvanceSafeTime()
   EXPECT_DEATH({

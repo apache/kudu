@@ -21,6 +21,7 @@
 #include <ostream>
 #include <utility>
 
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 
 #include "kudu/consensus/consensus.pb.h"
@@ -31,10 +32,17 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/debug-util.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/thread_restrictions.h"
+
+DEFINE_bool(raft_allow_committed_pending_index_gap, false,
+            "Allow a gap between last committed and first pending operation "
+            "in the queue when starting Raft consensus. For testing only!");
+TAG_FLAG(raft_allow_committed_pending_index_gap, runtime);
+TAG_FLAG(raft_allow_committed_pending_index_gap, unsafe);
 
 using kudu::pb_util::SecureShortDebugString;
 using std::string;
@@ -195,7 +203,8 @@ Status PendingRounds::SetInitialCommittedOpId(const OpId& committed_op) {
   if (!pending_ops_.empty()) {
     int64_t first_pending_index = pending_ops_.begin()->first;
     if (committed_op.index() < first_pending_index) {
-      if (committed_op.index() != first_pending_index - 1) {
+      if (PREDICT_TRUE(!FLAGS_raft_allow_committed_pending_index_gap) &&
+          committed_op.index() != first_pending_index - 1) {
         return Status::Corruption(Substitute(
             "pending operations should start at first operation "
             "after the committed operation (committed=$0, first pending=$1)",

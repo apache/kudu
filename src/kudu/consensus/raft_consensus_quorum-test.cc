@@ -422,7 +422,7 @@ class RaftConsensusQuorumTest : public KuduTest {
       ASSERT_OK(WaitForReplicate(round.get()));
       last_op_id->CopyFrom(round->id());
       if (commit_mode == COMMIT_ONE_BY_ONE) {
-        CommitDummyMessage(leader_idx, round.get(), commit_sync);
+        ASSERT_OK(CommitDummyMessage(leader_idx, round.get(), commit_sync));
       }
       rounds->push_back(round);
     }
@@ -445,7 +445,7 @@ class RaftConsensusQuorumTest : public KuduTest {
   void GatherLogEntries(int idx, const scoped_refptr<Log>& log,
                         LogEntries* entries) {
     ASSERT_OK(log->WaitUntilAllFlushed());
-    log->Close();
+    ASSERT_OK(log->Close());
     shared_ptr<LogReader> log_reader;
     ASSERT_OK(log::LogReader::Open(fs_managers_[idx].get(),
                                    /*index*/nullptr,
@@ -757,7 +757,7 @@ TEST_F(RaftConsensusQuorumTest, TestConsensusStopsIfAMajorityFallsBehind) {
   // After we release the locks the operation should replicate to all replicas
   // and we commit.
   ASSERT_OK(WaitForReplicate(round.get()));
-  CommitDummyMessage(kLeaderIdx, round.get());
+  ASSERT_OK(CommitDummyMessage(kLeaderIdx, round.get()));
 
   // Assert that everything was ok
   WaitForReplicateIfNotAlreadyPresent(last_op_id, kFollower0Idx);
