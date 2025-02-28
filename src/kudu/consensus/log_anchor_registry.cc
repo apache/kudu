@@ -155,13 +155,14 @@ MinLogIndexAnchorer::~MinLogIndexAnchorer() {
   CHECK_OK(ReleaseAnchor());
 }
 
-void MinLogIndexAnchorer::AnchorIfMinimum(int64_t log_index) {
+Status MinLogIndexAnchorer::AnchorIfMinimum(int64_t log_index) {
   std::lock_guard l(lock_);
   if (log_index < minimum_log_index_ ||
       PREDICT_FALSE(minimum_log_index_ == kInvalidOpIdIndex)) {
     minimum_log_index_ = log_index;
-    registry_->RegisterOrUpdate(minimum_log_index_, owner_, &anchor_);
+    return registry_->RegisterOrUpdate(minimum_log_index_, owner_, &anchor_);
   }
+  return Status::OK();
 }
 
 Status MinLogIndexAnchorer::ReleaseAnchor() {

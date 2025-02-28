@@ -346,7 +346,7 @@ class PeerMessageQueue {
 
   void RegisterObserver(PeerMessageQueueObserver* observer);
 
-  Status UnRegisterObserver(PeerMessageQueueObserver* observer);
+  void UnRegisterObserver(PeerMessageQueueObserver* observer);
 
   struct Metrics {
     // Keeps track of the number of ops. that are completed by a majority but still need

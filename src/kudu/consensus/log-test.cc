@@ -137,7 +137,7 @@ class LogTest : public LogTestBase {
     LogSegmentHeaderPB header;
     header.set_sequence_number(sequence_number);
     header.set_tablet_id(kTestTablet);
-    SchemaToPB(GetSimpleTestSchema(), header.mutable_schema());
+    RETURN_NOT_OK(SchemaToPB(GetSimpleTestSchema(), header.mutable_schema()));
 
     LogSegmentFooterPB footer;
     footer.set_num_entries(10);
@@ -189,7 +189,7 @@ TEST_P(LogTestOptionalCompression, TestMultipleEntriesInABatch) {
   opid.set_term(1);
   opid.set_index(1);
 
-  AppendNoOpsToLogSync(clock_.get(), log_.get(), &opid, 2);
+  ASSERT_OK(AppendNoOpsToLogSync(clock_.get(), log_.get(), &opid, 2));
 
   // RollOver() the batch so that we have a properly formed footer.
   ASSERT_OK(log_->AllocateSegmentAndRollOverForTests());
@@ -245,7 +245,7 @@ TEST_P(LogTestOptionalCompression, TestFsync) {
   opid.set_term(0);
   opid.set_index(1);
 
-  AppendNoOp(&opid);
+  ASSERT_OK(AppendNoOp(&opid));
 
   ASSERT_OK(log_->Close());
 }
@@ -258,14 +258,14 @@ TEST_P(LogTestOptionalCompression, TestSizeIsMaintained) {
   ASSERT_OK(BuildLog());
 
   OpId opid = MakeOpId(0, 1);
-  AppendNoOp(&opid);
+  ASSERT_OK(AppendNoOp(&opid));
 
   SegmentSequence segments;
   log_->reader()->GetSegmentsSnapshot(&segments);
   int64_t orig_size = segments[0]->file_size();
   ASSERT_GT(orig_size, 0);
 
-  AppendNoOp(&opid);
+  ASSERT_OK(AppendNoOp(&opid));
 
   log_->reader()->GetSegmentsSnapshot(&segments);
   int64_t new_size = segments[0]->file_size();
@@ -283,7 +283,7 @@ TEST_P(LogTestOptionalCompression, TestLogNotTrimmed) {
   opid.set_term(0);
   opid.set_index(1);
 
-  AppendNoOp(&opid);
+  ASSERT_OK(AppendNoOp(&opid));
 
   SegmentSequence segments;
   log_->reader()->GetSegmentsSnapshot(&segments);
@@ -1153,12 +1153,12 @@ TEST_F(LogTest, TestAutoStopIdleAppendThread) {
   // after the append long enough for the append thread to shut itself down
   // again.
   ASSERT_EVENTUALLY([&]() {
-      AppendNoOpsToLogSync(clock_.get(), log_.get(), &opid, 2);
-      ASSERT_TRUE(log_->append_thread_active_for_tests());
-      debug::ScopedTSANIgnoreReadsAndWrites ignore_tsan;
-      ASSERT_GT(log_->segment_allocator_.active_segment_->compress_buf_.capacity(),
-                faststring::kInitialCapacity);
-    });
+    ASSERT_OK(AppendNoOpsToLogSync(clock_.get(), log_.get(), &opid, 2));
+    ASSERT_TRUE(log_->append_thread_active_for_tests());
+    debug::ScopedTSANIgnoreReadsAndWrites ignore_tsan;
+    ASSERT_GT(log_->segment_allocator_.active_segment_->compress_buf_.capacity(),
+              faststring::kInitialCapacity);
+  });
   // After some time, the append thread should shut itself down.
   ASSERT_EVENTUALLY([&]() {
       ASSERT_FALSE(log_->append_thread_active_for_tests());

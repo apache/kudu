@@ -1467,14 +1467,13 @@ void PeerMessageQueue::RegisterObserver(PeerMessageQueueObserver* observer) {
   }
 }
 
-Status PeerMessageQueue::UnRegisterObserver(PeerMessageQueueObserver* observer) {
+void PeerMessageQueue::UnRegisterObserver(PeerMessageQueueObserver* observer) {
   std::lock_guard lock(queue_lock_);
   auto iter = std::find(observers_.begin(), observers_.end(), observer);
   if (iter == observers_.end()) {
-    return Status::NotFound("Can't find observer.");
+    return;
   }
   observers_.erase(iter);
-  return Status::OK();
 }
 
 bool PeerMessageQueue::IsOpInLog(const OpId& desired_op) const {

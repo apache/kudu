@@ -892,8 +892,7 @@ Status Log::AsyncAppendCommit(const consensus::CommitMsg& commit_msg,
   unique_ptr<LogEntryBatch> entry_batch = CreateBatchFromPB(
       COMMIT, batch_pb, std::move(callback));
   entry->unsafe_arena_release_commit();
-  AsyncAppend(std::move(entry_batch));
-  return Status::OK();
+  return AsyncAppend(std::move(entry_batch));
 }
 
 Status Log::WriteBatch(LogEntryBatch* entry_batch) {
@@ -1037,7 +1036,7 @@ Status Log::WaitUntilAllFlushed() {
   Synchronizer s;
   unique_ptr<LogEntryBatch> reserved_entry_batch =
       CreateBatchFromPB(FLUSH_MARKER, entry_batch, s.AsStatusCallback());
-  AsyncAppend(std::move(reserved_entry_batch));
+  RETURN_NOT_OK(AsyncAppend(std::move(reserved_entry_batch)));
   return s.Wait();
 }
 

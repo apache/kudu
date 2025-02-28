@@ -151,12 +151,12 @@ void Peer::Init() {
 
   // Capture a weak_ptr reference into the functor so it can safely handle
   // outliving the peer.
-  weak_ptr<Peer> w = shared_from_this();
+  weak_ptr<Peer> w_this = shared_from_this();
   heartbeater_ = PeriodicTimer::Create(
       messenger_,
-      [w]() {
-        if (auto p = w.lock()) {
-          p->SignalRequest(true);
+      [w_this = std::move(w_this)]() {
+        if (auto p = w_this.lock()) {
+          WARN_NOT_OK(p->SignalRequest(true), "SignalRequest failed");
         }
       },
       MonoDelta::FromMilliseconds(FLAGS_raft_heartbeat_interval_ms));
@@ -170,7 +170,7 @@ Status Peer::SignalRequest(bool even_if_queue_empty) {
   // the implementation of SendNextRequest() checks for 'closed_' and
   // 'request_pending_' on its own.
   if (PREDICT_FALSE(closed_)) {
-    return Status::IllegalState("Peer was closed.");
+    return Status::IllegalState("peer closed");
   }
 
   // Only allow one request at a time. No sense waking up the
@@ -181,8 +181,8 @@ Status Peer::SignalRequest(bool even_if_queue_empty) {
 
   // Capture a weak_ptr reference into the submitted functor so that we can
   // safely handle the functor outliving its peer.
-  weak_ptr<Peer> w_this = shared_from_this();
-  return raft_pool_token_->Submit([even_if_queue_empty, w_this]() {
+  weak_ptr<Peer> w_this(shared_from_this());
+  return raft_pool_token_->Submit([even_if_queue_empty, w_this = std::move(w_this)]() {
     if (auto p = w_this.lock()) {
       p->SendNextRequest(even_if_queue_empty);
     }

@@ -135,7 +135,7 @@ class MinLogIndexAnchorer {
 
   // If op_id is less than the minimum index registered so far, or if no indexes
   // are currently registered, anchor on 'log_index'.
-  void AnchorIfMinimum(int64_t log_index);
+  Status AnchorIfMinimum(int64_t log_index);
 
   // Un-anchors the earliest index (which is the only one tracked).
   // If no minimum is known (no anchor registered), returns OK.

@@ -365,7 +365,7 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info,
 
     // Set the initial committed opid for the PendingRounds only after
     // appending any uncommitted replicate messages to the queue.
-    pending_->SetInitialCommittedOpId(info.last_committed_id);
+    RETURN_NOT_OK(pending_->SetInitialCommittedOpId(info.last_committed_id));
 
     // If this is the first term expire the FD immediately so that we have a
     // fast first election, otherwise we just let the timer expire normally.
@@ -748,8 +748,11 @@ Status RaftConsensus::BecomeReplicaUnlocked(optional<MonoDelta> fd_delta) {
 
   // Deregister ourselves from the queue. We no longer need to track what gets
   // replicated since we're stepping down.
+  //
+  // NOTE: if observer isn't registered at this point yet, that's OK because
+  //       in one of use cases Start() also invokes BecomeReplicaUnlocked()
   queue_->UnRegisterObserver(this);
-  bool was_leader = queue_->IsInLeaderMode();
+  const bool was_leader = queue_->IsInLeaderMode();
   queue_->SetNonLeaderMode(cmeta_->ActiveConfig());
   if (was_leader && server_ctx_.num_leaders) {
     server_ctx_.num_leaders->IncrementBy(-1);
@@ -908,7 +911,7 @@ void RaftConsensus::NotifyCommitIndex(int64_t commit_index) {
     return;
   }
 
-  pending_->AdvanceCommittedIndex(commit_index);
+  CHECK_OK(pending_->AdvanceCommittedIndex(commit_index));
 
   if (cmeta_->active_role() == RaftPeerPB::LEADER) {
     peer_manager_->SignalRequest(false);
@@ -2737,7 +2740,8 @@ void RaftConsensus::DoElectionCallback(ElectionReason reason, const ElectionResu
     // will bump to term 2 when it gets the vote rejection, such that its
     // next pre-election (for term 3) would succeed.
     if (result.highest_voter_term > CurrentTermUnlocked()) {
-      HandleTermAdvanceUnlocked(result.highest_voter_term);
+      WARN_NOT_OK(HandleTermAdvanceUnlocked(result.highest_voter_term),
+                  "error while handling term advanced beyond the current one");
     }
 
     LOG_WITH_PREFIX_UNLOCKED(INFO)
