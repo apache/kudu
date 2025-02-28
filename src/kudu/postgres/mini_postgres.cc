@@ -134,7 +134,7 @@ Status MiniPostgres::CreateConfigs() {
   // append the port to it.
   string config_file = JoinPathSegments(pg_root(), "postgresql.conf");
   faststring config;
-  ReadFileToString(env, config_file, &config);
+  RETURN_NOT_OK(ReadFileToString(env, config_file, &config));
   config.append(Substitute("\nlisten_addresses = '$0'\nport = $1\n", host_, port_));
   unique_ptr<WritableFile> file;
   WritableFileOptions opts;

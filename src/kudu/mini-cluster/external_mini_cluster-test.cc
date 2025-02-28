@@ -325,7 +325,7 @@ TEST_P(ExternalMiniClusterTest, TestAddMaster) {
   ASSERT_OK(cluster->Start());
 
   // Add a master and wait for it to start up and get reported to.
-  cluster->AddMaster();
+  ASSERT_OK(cluster->AddMaster());
   ASSERT_OK(cluster->master(opts.num_masters)->WaitForCatalogManager());
   cluster->tablet_server(0)->Shutdown();
   ASSERT_OK(cluster->tablet_server(0)->Restart());

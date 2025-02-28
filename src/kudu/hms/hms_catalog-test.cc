@@ -26,6 +26,7 @@
 #include <vector>
 
 #include <gflags/gflags_declare.h>
+#include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/common/common.pb.h"
@@ -197,22 +198,22 @@ class HmsCatalogTest : public KuduTest {
 
   Schema AllTypesSchema() {
     SchemaBuilder b;
-    b.AddKeyColumn("key", DataType::INT32);
-    b.AddColumn("int8_val", DataType::INT8);
-    b.AddColumn("int16_val", DataType::INT16);
-    b.AddColumn("int32_val", DataType::INT32);
-    b.AddColumn("int64_val", DataType::INT64);
-    b.AddColumn("timestamp_val", DataType::UNIXTIME_MICROS);
-    b.AddColumn("date_val", DataType::DATE);
-    b.AddColumn("string_val", DataType::STRING);
-    b.AddColumn("bool_val", DataType::BOOL);
-    b.AddColumn("float_val", DataType::FLOAT);
-    b.AddColumn("double_val", DataType::DOUBLE);
-    b.AddColumn("binary_val", DataType::BINARY);
-    b.AddColumn("decimal32_val", DataType::DECIMAL32);
-    b.AddColumn("decimal64_val", DataType::DECIMAL64);
-    b.AddColumn("decimal128_val", DataType::DECIMAL128);
-    b.AddColumn("varchar_val", DataType::VARCHAR);
+    CHECK_OK(b.AddKeyColumn("key", DataType::INT32));
+    CHECK_OK(b.AddColumn("int8_val", DataType::INT8));
+    CHECK_OK(b.AddColumn("int16_val", DataType::INT16));
+    CHECK_OK(b.AddColumn("int32_val", DataType::INT32));
+    CHECK_OK(b.AddColumn("int64_val", DataType::INT64));
+    CHECK_OK(b.AddColumn("timestamp_val", DataType::UNIXTIME_MICROS));
+    CHECK_OK(b.AddColumn("date_val", DataType::DATE));
+    CHECK_OK(b.AddColumn("string_val", DataType::STRING));
+    CHECK_OK(b.AddColumn("bool_val", DataType::BOOL));
+    CHECK_OK(b.AddColumn("float_val", DataType::FLOAT));
+    CHECK_OK(b.AddColumn("double_val", DataType::DOUBLE));
+    CHECK_OK(b.AddColumn("binary_val", DataType::BINARY));
+    CHECK_OK(b.AddColumn("decimal32_val", DataType::DECIMAL32));
+    CHECK_OK(b.AddColumn("decimal64_val", DataType::DECIMAL64));
+    CHECK_OK(b.AddColumn("decimal128_val", DataType::DECIMAL128));
+    CHECK_OK(b.AddColumn("varchar_val", DataType::VARCHAR));
     return b.Build();
   }
 
@@ -330,7 +331,7 @@ TEST_P(HmsCatalogTestParameterized, TestTableLifecycle) {
 
   // Alter the table.
   SchemaBuilder b(schema);
-  b.AddColumn("new_column", DataType::INT32);
+  ASSERT_OK(b.AddColumn("new_column", DataType::INT32));
   Schema altered_schema = b.Build();
   ASSERT_OK(hms_catalog_->AlterTable(kTableId, kTableName, kAlteredTableName,
       kClusterId, kOwner, altered_schema, kComment));

@@ -33,7 +33,7 @@ class PostgresTest : public KuduTest {
     : postgres_("127.0.0.1") {}
 
   void SetUp() override {
-    postgres_.Start();
+    ASSERT_OK(postgres_.Start());
   }
 
  protected:
