@@ -475,7 +475,7 @@ TEST_P(LogBlockManagerTest, MetricsTest) {
       for (int j = 0; j < sizeof(data); j += sizeof(uint32_t)) {
         data[j] = rand.Next();
       }
-      b->Append(Slice(data, sizeof(data)));
+      ASSERT_OK(b->Append(Slice(data, sizeof(data))));
       ASSERT_OK(b->Finalize());
       transaction->AddCreatedBlock(std::move(b));
     }
@@ -550,7 +550,7 @@ TEST_P(LogBlockManagerTest, MetricsTest) {
       unique_ptr<WritableBlock> b;
       ASSERT_OK(bm_->CreateBlock(test_block_opts_, &b));
       blocks.emplace_back(b->id());
-      b->Append("test data");
+      ASSERT_OK(b->Append("test data"));
       ASSERT_OK(b->Finalize());
       transaction->AddCreatedBlock(std::move(b));
     }
@@ -2062,7 +2062,7 @@ TEST_P(LogBlockManagerTest, TestLIFOContainerSelection) {
   for (int i = 0; i < 4; i++) {
     unique_ptr<WritableBlock> writer;
     ASSERT_OK(bm_->CreateBlock(test_block_opts_, &writer));
-    writer->Append("test data");
+    ASSERT_OK(writer->Append("test data"));
     blocks.emplace_back(std::move(writer));
   }
   for (const auto& block : blocks) {
@@ -2078,7 +2078,7 @@ TEST_P(LogBlockManagerTest, TestLIFOContainerSelection) {
   for (int i = 0; i < 4; i++) {
     unique_ptr<WritableBlock> writer;
     ASSERT_OK(bm_->CreateBlock(test_block_opts_, &writer));
-    writer->Append("test data");
+    ASSERT_OK(writer->Append("test data"));
     ASSERT_OK(writer->Finalize());
     // After finalizing the written block, the used container will be
     // available again and can be reused for the following created block.
@@ -2207,7 +2207,7 @@ TEST_P(LogBlockManagerTest, TestDeleteDeadContainersByDeletionTransaction) {
           {0, &METRIC_log_block_manager_dead_containers_deleted} }));
 
     // After the reader is closed, the container is actually deleted.
-    reader->Close();
+    ASSERT_OK(reader->Close());
     NO_FATALS(CheckLogMetrics(entity,
         { {0, &METRIC_log_block_manager_bytes_under_management},
           {0, &METRIC_log_block_manager_blocks_under_management},
@@ -2322,7 +2322,7 @@ TEST_P(LogBlockManagerNativeMetaTest, TestHalfPresentContainer) {
     opts.is_sensitive = true;
     ASSERT_OK(env_->NewWritableFile(opts, metadata_file_name, &metadata_file_writer));
     ASSERT_OK(metadata_file_writer->Append(Slice("a")));
-    metadata_file_writer->Close();
+    ASSERT_OK(metadata_file_writer->Close());
   };
 
   const auto CreateDataFile = [&] () {
@@ -2334,7 +2334,7 @@ TEST_P(LogBlockManagerNativeMetaTest, TestHalfPresentContainer) {
     WritableFileOptions opts;
     opts.is_sensitive = true;
     ASSERT_OK(env_->NewWritableFile(opts, data_file_name, &data_file_writer));
-    data_file_writer->Close();
+    ASSERT_OK(data_file_writer->Close());
   };
 
   const auto DeleteBlock = [&] () {
@@ -2597,7 +2597,7 @@ TEST_P(LogBlockManagerRdbMetaTest, TestHalfPresentContainer) {
     WritableFileOptions opts;
     opts.is_sensitive = true;
     ASSERT_OK(env_->NewWritableFile(opts, data_file_name, &data_file_writer));
-    data_file_writer->Close();
+    ASSERT_OK(data_file_writer->Close());
   };
 
   const auto DeleteBlock = [&] () {

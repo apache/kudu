@@ -63,7 +63,7 @@ public:
     OPENSSL_RET_NOT_OK(RAND_bytes(iv_bytes, num_bytes),
                        "Failed to generate random key");
     strings::b2a_hex(iv_bytes, iv, num_bytes);
-    DecryptEncryptionKey(dek, *iv, *key_version, encryption_key);
+    RETURN_NOT_OK(DecryptEncryptionKey(dek, *iv, *key_version, encryption_key));
     *key_version = "encryptionkey@0";
     return Status::OK();
   }

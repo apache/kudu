@@ -372,7 +372,7 @@ Status FileWritableBlock::Finalize() {
   VLOG(3) << "Finalizing block " << id();
   if (state_ == DIRTY &&
       FLAGS_block_manager_preflush_control == "finalize") {
-    FlushDataAsync();
+    RETURN_NOT_OK(FlushDataAsync());
   }
   state_ = FINALIZED;
   return Status::OK();
