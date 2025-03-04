@@ -520,24 +520,55 @@ if [ "$ENABLE_DIST_TEST" == "1" ]; then
   EXTRA_TEST_FLAGS="$EXTRA_TEST_FLAGS -L no_dist_test"
 fi
 
+# If we are running coverage, we are running all the tests with ctest on the build host.
+# We can decrease coverage variance caused by flaky test failures by retrying failed tests.
+if [ "$DO_COVERAGE" == "1" ]; then
+  EXTRA_TEST_FLAGS="$EXTRA_TEST_FLAGS --repeat until-pass:3"
+fi
+
 if ! $THIRDPARTY_BIN/ctest -j$PARALLEL_TESTS $EXTRA_TEST_FLAGS ; then
   TESTS_FAILED=1
   FAILURES="$FAILURES"$'C++ tests failed\n'
 fi
 
 if [ "$DO_COVERAGE" == "1" ]; then
+
+  # Create a directory for the coverage report files.
+  COVERAGE_REPORT_DIR=$BUILD_ROOT/coverage_report
+  mkdir -p $COVERAGE_REPORT_DIR
+  # gcovr requires us to be in the source root.
+  pushd $SOURCE_ROOT
   echo
   echo Generating coverage report...
   echo ------------------------------------------------------------
-  if ! $THIRDPARTY_DIR/installed/common/bin/gcovr \
+  if $THIRDPARTY_DIR/installed/common/bin/gcovr \
       -r $SOURCE_ROOT \
-      --gcov-filter='.*src#kudu.*' \
+      --gcov-filter='.*#src#kudu#.*' \
+      --exclude='.*\.pb\.(h|cc)$' \
+      --exclude='.*test\.cc$' \
+      --exclude='.*test-base\.(h|cc)$' \
+      --exclude='.*/src/kudu/test-util/.*' \
+      --exclude='.*/src/kudu/benchmarks/.*' \
+      --exclude='.*/src/kudu/gutil/.*' \
+      --exclude='.*/src/kudu/integration-tests/.*' \
       --gcov-executable=$SOURCE_ROOT/build-support/llvm-gcov-wrapper \
-      --xml \
-      > $BUILD_ROOT/coverage.xml ; then
+      -o $COVERAGE_REPORT_DIR/report.html \
+      --html --html-details --verbose; then
+    virtualenv -p python3 $BUILD_ROOT/py_env
+    source $BUILD_ROOT/py_env/bin/activate
+    pip install bs4
+    if ! python $SOURCE_ROOT/build-support/process_gcovr_report.py $COVERAGE_REPORT_DIR; then
+      EXIT_STATUS=1
+      FAILURES="$FAILURES"$'gcovr report processing failed\n'
+    fi
+    deactivate
+    rm -Rf $BUILD_ROOT/py_env
+  else
     EXIT_STATUS=1
     FAILURES="$FAILURES"$'Coverage report failed\n'
   fi
+
+  popd
 fi
 
 if [ "$BUILD_JAVA" == "1" ]; then
