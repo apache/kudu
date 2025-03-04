@@ -52,6 +52,11 @@ void Base64Encode(const std::string& in, std::ostringstream* out);
 // Utility method to decode base64 encoded strings.  Also not extremely
 // performant.
 // Returns true unless the string could not be correctly decoded.
+//
+// NOTE: current implementation doesn't handle concatenation of base64-encoded
+//       sequences in a consistent manner, converting all padding '=' symbols
+//       in the beginning and in the middle of the input into zero/null bytes;
+//       only single base64-encoded sequence is expected in the input
 bool Base64Decode(const std::string& in, std::string* out);
 
 // Replaces &, < and > with &amp;, &lt; and &gt; respectively. This is

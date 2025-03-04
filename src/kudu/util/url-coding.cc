@@ -38,6 +38,10 @@ using boost::archive::iterators::transform_width;
 using std::string;
 using std::vector;
 
+// TODO(aserbin): consider replacing boost-based implementation of base64
+//                encoding/decoding with https://github.com/tplgy/cppcodec
+//                per list at https://en.cppreference.com/w/cpp/links/libs
+
 namespace kudu {
 
 // Hive selectively encodes characters. This is the whitelist of
@@ -165,23 +169,67 @@ void Base64Encode(const string& in, std::ostringstream* out) {
 
 bool Base64Decode(const string& in, string* out) {
   typedef transform_width<binary_from_base64<string::const_iterator>, 8, 6> base64_decode;
-  string tmp = in;
-  // Replace padding with base64 encoded NULL
-  replace(tmp.begin(), tmp.end(), '=', 'A');
-  try {
-    *out = string(base64_decode(tmp.begin()), base64_decode(tmp.end()));
-  } catch(std::exception& e) {
-    return false;
+
+  if (in.empty()) {
+    *out = "";
+    return true;
   }
 
-  // Remove trailing '\0' that were added as padding.  Since \0 is special,
-  // the boost functions get confused so do this manually.
-  int num_padded_chars = 0;
-  for (int i = out->size() - 1; i >= 0; --i) {
-    if ((*out)[i] != '\0') break;
-    ++num_padded_chars;
+  // Boost's binary_from_base64 translates '=' symbols into null/zero bytes [1],
+  // so the corresponding trailing null/zero extra bytes must be removed after
+  // the transformation.
+  //
+  // [1] https://www.boost.org/doc/libs/1_87_0/boost/archive/iterators/binary_from_base64.hpp
+  size_t padded_num = 0;
+  auto padding_it = in.crbegin();
+  for (; padding_it != in.crend(); ++padding_it) {
+    if (*padding_it != '=') {
+      break;
+    }
+    ++padded_num;
   }
-  out->resize(out->size() - num_padded_chars);
+  if (padded_num > 0) {
+    // If padding is present, be strict on the length of the input
+    // because of the following reasons, at least:
+    //  * padding is to provide proper 'alignment' for 6-to-8 bit transcoding,
+    //    and any length mismatch means corruption of the input data
+    //  * trailing extra zero bytes are removed below with an assumption
+    //    of proper 8-to-6 'alignment' to guarantee the consistency of output
+    if (in.size() % 4 != 0) {
+      return false;
+    }
+    if (padded_num > 2) {
+      // Invalid base64-encoded sequence.
+      return false;
+    }
+  }
+
+  // It's not enforced in release builds for backward compatibility reasons,
+  // but '=' symbols are expected to be present only in the end of the input
+  // string. This implementation doesn't provide functionality to handle
+  // a concatenation of base64-encoded sequences in a consistent manner.
+  DCHECK(!std::any_of(padding_it, in.crend(), [](char c) { return c == '='; }))
+      << "non-trailing '='";
+
+  string tmp;
+  try {
+    tmp = string(base64_decode(in.begin()), base64_decode(in.end()));
+  } catch (std::exception&) {
+    return false;
+  }
+  DCHECK_GT(tmp.size(), padded_num);
+#if DCHECK_IS_ON()
+  for (auto it = tmp.crbegin(); it != tmp.crbegin() + padded_num; ++it) {
+    // Make sure only null/zero bytes are removed when binary_from_base64 adds
+    // those for the padding '=' symbols in the input.
+    DCHECK_EQ('\0', *it);
+  }
+#endif
+  // Remove trailing zero bytes produced by binary_from_base64 for the padding.
+  tmp.erase(tmp.end() - padded_num, tmp.end());
+
+  DCHECK(padded_num == 0 || (tmp.size() % 3 == 3 - padded_num));
+  *out = std::move(tmp);
   return true;
 }
 
