@@ -1,0 +1,1377 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml" style="height:100%;">
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+      <link rel="canonical" href="https://www.slideshare.net/slideshow/a-brave-new-world-in-mutable-big-data-relational-storage-strata-nyc-2017/80298191" />
+
+    <meta name="robots" content="noindex">
+
+    <link rel="stylesheet" href="https://public.slidesharecdn.com/v2/stylesheets/app.10d489608a34b3c77437.css" media="screen" />
+    <link rel="stylesheet" href="https://public.slidesharecdn.com/v2/stylesheets/app_critical.f69afafd88ea7eff9597.css" media="screen" />
+    <link rel="stylesheet" href="https://public.slidesharecdn.com/v2/stylesheets/slideview_critical.48e8d13c09994269bba9.css" media="screen" />
+    <link rel="stylesheet" href="https://public.slidesharecdn.com/v2/stylesheets/player/base.d5bf85955b9c01e839bc.css" media="screen" />
+    <link rel="stylesheet" href="https://public.slidesharecdn.com/v2/stylesheets/player_toolbar.20224c694a9b9749f9c4.css" media="screen" />
+    <link rel="stylesheet" href="https://public.slidesharecdn.com/v2/stylesheets/slideshare-icons.e77d3ecb961eec18390b.css" media="screen" />
+
+    <!-- SL:begin:notranslate -->
+    <title>A brave new world in mutable big data  relational storage (Strata N...</title>
+    <!-- SL:end:notranslate -->
+    <!--[if IE]><style>.slidesContainer img { border: none } </style><![endif]-->
+    <script src="https://public.slidesharecdn.com/v2/assets/javascripts/packs/runtime.f32b776fa440a3f79000.js"></script>
+    <script src="https://public.slidesharecdn.com/v2/javascripts/packs/combined_jquery.736a17b882646622e5cb.js"></script>
+
+    <script type="text/javascript">
+      var slideshare_object = {
+        flagging: {"update_url":"https://www.slideshare.net/main/flag?slideshow_id=80298191","is_flagged":false},
+        user: {"userGroup":"non-member","login":"guest","id":null,"loggedin":false,"name":null,"is_valid_fbuser":false,"fb_userid":null,"is_pro":"false","su":false,"is_test_user":false,"has_uploads":null,"is_li_connected":false,"is_li_auto_created_user":false,"show_li_connect_cta":false,"has_privacy_enabled":null,"scribd_subscriber":false,"connected_with_scribd":false,"trial_eligible":false},
+        timer: { start: (new Date()).getTime(), end: '', execTime: '' },
+        top_nav: { get_url: "/top_nav"},
+        dev: false,
+        init: [],
+        feature_flag: [],
+        is_ssl: true,
+        rum_pagekey: "desktop_slideview_embed_code_loggedout",
+        page_key: "slideshow/embed_code",
+        slideshow: {
+          id: 80298191,
+          is_clickgen_enabled: '',
+          clickgen_url: '',
+          ss_url: '/slideshow/a-brave-new-world-in-mutable-big-data-relational-storage-strata-nyc-2017/80298191',
+          total_slides: 52
+        }
+      };
+      slideshare_object.slideshow_config = {};
+      $.extend(true, slideshare_object.slideshow_config, {"id":80298191,"is_private":false,"is_only_private":false,"stripped_title":"a-brave-new-world-in-mutable-big-data-relational-storage-strata-nyc-2017","slide_count":52,"image_ready":true,"has_video":false,"video_slides_count":0,"page":null,"image_bucket_location":"https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817","ppt_location":"abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817","timestamp":1667498442,"html_ttffont_url_suffix":".js","html_eotfont_url_suffix":"-eot.js","mode":"image","player_type":"presentation","fullscreen_bgcolor":"jsplBgColorBlack","player_bgcolor":"jsplBgColorBigfoot","spinner_url":"https://public.slidesharecdn.com/v2/images/ssplayer/loading.gif","spinner_url_fullscreen":"https://public.slidesharecdn.com/v2/images/ssplayer/loading_black.gif","disable_eagerload":true,"fullscreen_url":"/fullscreen/ToddLipcon/a-brave-new-world-in-mutable-big-data-relational-storage-strata-nyc-2017","author_id":85562883,"slideview_url":"/ToddLipcon/a-brave-new-world-in-mutable-big-data-relational-storage-strata-nyc-2017?ref=","embed_code":"\u003ciframe src=\"https://www.slideshare.net/slideshow/embed_code/key/loQpO2vzlwGGgz\" width=\"597\" height=\"486\" frameborder=\"0\" marginwidth=\"0\" marginheight=\"0\" scrolling=\"no\" style=\"border:1px solid #CCC; border-width:1px; margin-bottom:5px; max-width: 100%;\" allowfullscreen\u003e \u003c/iframe\u003e \u003cdiv style=\"margin-bottom:5px\"\u003e \u003cstrong\u003e \u003ca href=\"https://www.slideshare.net/slideshow/a-brave-new-world-in-mutable-big-data-relational-storage-strata-nyc-2017/80298191\" title=\"A brave new world in mutable big data relational storage (Strata NYC 2017)\" target=\"_blank\"\u003eA brave new world in mutable big data relational storage (Strata NYC 2017)\u003c/a\u003e \u003c/strong\u003e from \u003cstrong\u003e\u003ca href=\"https://www.slideshare.net/ToddLipcon\" target=\"_blank\"\u003eTodd Lipcon\u003c/a\u003e\u003c/strong\u003e \u003c/div\u003e","embed_sizes":{"config":{"defaultPreset":"preset4"},"presets":{"preset1":{"size":{"width":340,"height":290},"displaySize":{"width":40,"height":30}},"preset2":{"size":{"width":425,"height":355},"displaySize":{"width":50,"height":38}},"preset3":{"size":{"width":510,"height":420},"displaySize":{"width":60,"height":45}},"preset4":{"size":{"width":595,"height":485},"displaySize":{"width":70,"height":53}}}},"iframe_url":"//www.slideshare.net/slideshow/embed_code/key/loQpO2vzlwGGgz","iframe_code":"\u003ciframe src=\"{iframe_url}\" width=\"{width}\" height=\"{height}\" frameborder=\"0\" marginwidth=\"0\" marginheight=\"0\" scrolling=\"no\" style=\"border:1px solid #CCC; border-width:1px; margin-bottom:5px; max-width: 100%;\" allowfullscreen\u003e \u003c/iframe\u003e \u003cdiv style=\"margin-bottom:5px\"\u003e \u003cstrong\u003e \u003ca href=\"https://www.slideshare.net/slideshow/a-brave-new-world-in-mutable-big-data-relational-storage-strata-nyc-2017/80298191\" title=\"A brave new world in mutable big data relational storage (Strata NYC 2017)\" target=\"_blank\"\u003eA brave new world in mutable big data relational storage (Strata NYC 2017)\u003c/a\u003e \u003c/strong\u003e from \u003cstrong\u003e\u003ca href=\"https://www.slideshare.net/ToddLipcon\" target=\"_blank\"\u003eTodd Lipcon\u003c/a\u003e\u003c/strong\u003e \u003c/div\u003e","wp_code":"[slideshare id=80298191\u0026doc=abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817]","show_related_content":"1","sharescreen":{"url":"https://www.slideshare.net/slideshow/a-brave-new-world-in-mutable-big-data-relational-storage-strata-nyc-2017/80298191","title":"A brave new world in mutable ...","slideshow_id":80298191,"html":"\u003cdiv class=\"shareScreen\"\u003e\n  \u003ca href=\"#\" class=\"close\"\u003e\u0026times;\u003c/a\u003e\n  \u003cul class=\"shareMethods\"\u003e\n    \u003cli class=\"embed\"\u003e\n      \u003clabel for=\"embed-code\"\u003eEmbed\u003c/label\u003e\n      \u003cinput type='text' class=\"shareScreenEmbedCode\" value=\"code\" name=\"embed-code\" /\u003e\n    \u003c/li\u003e\n    \u003cli class=\"url last\"\u003e\n      \u003clabel for=\"embed-url\"\u003eURL\u003c/label\u003e\n      \u003cinput type='text' class=\"shareScreenSSUrl\" value=\"code\" name=\"embed-url\" /\u003e\n    \u003c/li\u003e\n  \u003c/ul\u003e\n  \u003cform class=\"emailShare\"\u003e\n    \u003cfieldset\u003e\n      \u003clegend\u003eEmail this\u003c/legend\u003e\n      \u003cinput type=\"hidden\" class=\"shareDefaultMessage\" value=\"I think you will find this useful.\" /\u003e\n      \u003cul\u003e\n        \u003cli\u003e\n          \u003clabel for=\"name\"\u003eYour name\u003c/label\u003e\n          \u003cinput class='shareScreenFromName' type=\"text\" value=\"\" /\u003e\n        \u003c/li\u003e\n        \u003cli\u003e\n          \u003clabel for=\"mailID\"\u003eEmail to\u003c/label\u003e\n          \u003cinput class=\"shareScreenMailID\" type=\"text\" value=\"\" /\u003e\n        \u003c/li\u003e\n        \u003cli class=\"submit\"\u003e\n          \u003clabel\u003e\u0026nbsp;\u003c/label\u003e\n          \u003cinput class=\"shareSprite\" type=\"submit\" value=\"\" /\u003e\n        \u003c/li\u003e\n      \u003c/ul\u003e\n      \u003c/fieldset\u003e\n  \u003c/form\u003e\n\u003c/div\u003e\u003c!-- shareScreen ends here --\u003e","user_name":""},"track_slide_enable":1,"render_links":"default","twitter_recommended_users":"@tlipcon","twitter_share_text":"A brave new world in mutable big data relational storage (Strata NYC 2017) by @tlipcon #database #kudu","share_text":"A brave new world in mutable big data  relational storage (Strata NYC 2017) by Todd Lipcon via slideshare","pin_image_url":"https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-1-638.jpg?cb=1667498442","autoplayOnEmbed":false,"lastscreen":{"url":"https://www.slideshare.net/slideshow/a-brave-new-world-in-mutable-big-data-relational-storage-strata-nyc-2017/80298191","related":[{"url":"/slideshow/the-impala-cookbook-42530186/42530186","title":"The Impala Cookbook","author":"Cloudera, Inc.","author_login":"cloudera","views":91418,"thumbnail":"https://cdn.slidesharecdn.com/ss_thumbnails/impala-cookbook-141209115356-conversion-gate01-thumbnail.jpg?width=320\u0026height=320\u0026fit=bounds"}]},"container":"player","enable_viewSS":true,"disable_lastscreen":false,"disable_share":false,"start_slide":1,"hosted_in":"embed","slideshow_slideshow_type":0,"video_hash":{},"show_image_player":true,"video_slides":[],"slideshow_real_total_slides_count":52,"is_ssl":true,"flagging":{"update_url":"https://www.slideshare.net/main/flag?slideshow_id=80298191","is_flagged":false},"slideshow":{"slideshow":{"id":80298191,"ppt_location":"abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817","title":"A brave new world in mutable big data  relational storage (Strata NYC 2017)","created_at":"2017-09-29T17:48:17.000Z","user_id":85562883,"tag_text":"spanner,kudu,nosql,database","converted":2,"retries":0,"total_slides":52,"featured":0,"description":"The ever-increasing interest in running fast analytic scans on constantly updating data is stretching the capabilities of HDFS and NoSQL storage. Users want the fast online updates and serving of real-time data that NoSQL offers, as well as the fast scans, analytics, and processing of HDFS. Additionally, users are demanding that big data storage systems integrate natively with their existing BI and analytic technology investments, which typically use SQL as the standard query language of choice. This demand has led big data back to a familiar friend: relationally structured data storage systems.\r\n\r\nTodd Lipcon explores the advantages of relational storage and reviews new developments, including Google Cloud Spanner and Apache Kudu, which provide a scalable relational solution for users who have too much data for a legacy high-performance analytic system. Todd explains how to address use cases that fall between HDFS and NoSQL with technologies like Apache Kudu or Google Cloud Spanner and how the combination of relational data models, SQL query support, and native API-based access enables the next generation of big data applications. Along the way, he also covers suggested architectures, the performance characteristics of Kudu and Spanner, and the deployment flexibility each option provides.","stripped_title":"a-brave-new-world-in-mutable-big-data-relational-storage-strata-nyc-2017","converted_time":"2017-09-29T17:48:28.000Z","created_by":"phpapp02","license":0,"converted_by":"54.237.241.91","extension":"pptx","featured_on":null,"language":"en","contestflag":false,"api":false,"api_accounts_id":0,"privacy_level":0,"src_file_share":"ALL","inter_file_share":"None","src_dwnld":true,"inter_dwnld":false,"flag_visible":1,"web_based":false,"from_web":false,"embeds":0,"secret_url":"loQpO2vzlwGGgz","uploadtype":28,"slideshow_type":0,"available":0,"updated_at":"2022-11-03T18:00:42.000Z","app_userid":null,"app_name":"ss","categorized":2,"show_on_ss":true,"app_imported_at":null,"upload_key":"abravenewworldinmutablebigdata-relationalstoragestratanyc2017-u-1506707249103-b-u.pptx","spam":"ham","public_status":"public","dont_show_ads":false}},"slideshow_title":"A brave new world in mutable big data  relational storage (Strata NYC 2017)","slideshow-transcript-blocks":["1\u0026#xA9; Cloudera, Inc. All rights reserved.\nA brave new world in mutable big data:\nRelational storage\nTodd Lipcon\nSoftware Engineer at Cloudera\nApache Kudu founder and PMC chair\n ","2\u0026#xA9; Cloudera, Inc. All rights reserved.\nIntroduction\n ","3\u0026#xA9; Cloudera, Inc. All rights reserved.\nAbout me\n\u0026#x2022; Engineer at Cloudera since 2009\n\u0026#x2022; Hadoop core (HDFS, MR1)\n\u0026#x2022; HBase stability and performance\n\u0026#x2022; Started Kudu project in 2012 (bias alert!)\n\u0026#x2022; My 9th Strata NYC!\nFeel free to tweet questions @tlipcon or find me on the Kudu Slack\n ","4\u0026#xA9; Cloudera, Inc. All rights reserved.\nA brief history of databases\nIncomplete,distilled, and semi-accurate\n ","5\u0026#xA9; Cloudera, Inc. All rights reserved.\n1960s, 1970s\n ","6\u0026#xA9; Cloudera, Inc. All rights reserved.\n\u0026#x201C;A database system where an application developer directly uses an\napplication programming interface to search indexes in order to locate\nrecords in data files.\u0026#x201D; - Wikipedia \u0026#x201C;ISAM\u0026#x201D;\n\u0026#x2022; Files contain records (originally fixed-length, later variable-length)\n\u0026#x2022; Files stored on disks and applications directly access them (file-system locking)\n\u0026#x2022; Later added networked access (client-server model), hierarchical records\n\u0026#x2022; Still a simple API:\n\u0026#x2022; Seek by key, Read, Write, Insert, Delete\n1960s, 1970s: ISAM / VSAM\n ","7\u0026#xA9; Cloudera, Inc. All rights reserved.\nProbably the only slide at Strata with COBOL on it\nSource: http://www.mainframes360.com/2010/03/ksds-files-random-processing.html\n ","8\u0026#xA9; Cloudera, Inc. All rights reserved.\nFailings of ISAM/VSAM\nA Relational Model of Data for Large Shared Data Banks (Codd, 1972)\n\u0026#x2022; Applications and physical data layout are too tightly coupled\n\u0026#x2022; e.g a database of parts might be originally ordered by part number and\nlater changed\n\u0026#x2022; inventory app inadvertently depends on order (unexpected breaks)\n\u0026#x2022; Hard to make general-purpose programs that run against ISAM/VSAM\ndatasets\n\u0026#x2022; Proposed a new model: relational databases\n\u0026#x2022; All entities modeled by peer tables with relationships between them\n\u0026#x2022; Programs use declarative access (DB decides physical operations necessary)\n ","9\u0026#xA9; Cloudera, Inc. All rights reserved.\nOrigins of SQL (1974)\n\u0026#x2022; Originally SEQUEL (Structured English QUEry Language)\n\u0026#x2022; Renamed to SQL due to trademark issues\n\u0026#x2022; Designed to be easy to write, read, and maintain\n\u0026#x2022; \u0026#x201C;is intended for users who are more comfortable with an English-keyword\nformat than with the terse mathematical notation of SQUARE.\u0026#x201D;\n\u0026#x2022; Solves the coupling issue:\n\u0026#x2022; Application: specify what should be returned\n\u0026#x2022; Database: figure out how to return it\n ","10\u0026#xA9; Cloudera, Inc. All rights reserved.\nExplosion of SQL Popularity\n\u0026#x2022; IBM, Oracle, Microsoft, Informix, and others joined the party\n\u0026#x2022; ANSI standard in 1986\n\u0026#x2022; Ecosystem growth:\n\u0026#x2022; Business Intelligence tools\n\u0026#x2022; Object-Relational Mappers\n\u0026#x2022; Extract-Transform-Load tools (ETL)\n\u0026#x2022; Open source SQL databases\n\u0026#x2022; mSQL, MySQL, PostgreSQL, etc\n\u0026#x2022; LAMP stack\n ","11\u0026#xA9; Cloudera, Inc. All rights reserved.\nORCL\n ","12\u0026#xA9; Cloudera, Inc. All rights reserved.\n ","13\u0026#xA9; Cloudera, Inc. All rights reserved.\nAll good things must come to an end?\n ","14\u0026#xA9; Cloudera, Inc. All rights reserved.\n ","15\u0026#xA9; Cloudera, Inc. All rights reserved.\nThe beginnings of the NoSQL \u0026#x201C;movement\u0026#x201D;\n ","16\u0026#xA9; Cloudera, Inc. All rights reserved.\n ","17\u0026#xA9; Cloudera, Inc. All rights reserved.\nFirst ever NoSQL meetup (2009)\n ","18\u0026#xA9; Cloudera, Inc. All rights reserved.\nJay Kreps (Confluent)\nMe!\n ","19\u0026#xA9; Cloudera, Inc. All rights reserved.\nI wasn\u0026#x2019;t keen on the\nNoSQL buzzword!\n ","20\u0026#xA9; Cloudera, Inc. All rights reserved.\nNoSQL search interest over time\nWhat happened in\nJan 2012???\n ","21\u0026#xA9; Cloudera, Inc. All rights reserved.\nNoSQL complaints\n\u0026#x2022; Tool compatibility? BI? ETL? ORMs?\n\u0026#x2022; Consistency\n\u0026#x2022; denormalization is tough\n\u0026#x2022; hard to program against weak semantics\n\u0026#x2022; Access path sensitivity\n\u0026#x2022; Have to tightly couple applications with\nphysical data model\n\u0026#x2022; No ad-hoc access\n\u0026#x2022; Complex application code to perform\nsimple aggregations\nSome of these\ncritiques sound\nawfully familiar...\n1970s Database People\n ","22\u0026#xA9; Cloudera, Inc. All rights reserved.\ncredit @jrecursive (2010)\nf***\n ","23\u0026#xA9; Cloudera, Inc. All rights reserved.\nNot-Only SQL\nPeople wanted their SQL back, and NoSQL\ndevelopers gave it!\n\u0026#x2022; Cassandra - CQL (late 2011)\n\u0026#x2022; HBase - Phoenix (Jan 2013)\n\u0026#x2022; HDFS - Hive (2009), Impala (2012), Drill (2012),\nSpark SQL (2014), Presto (2013)\n ","24\u0026#xA9; Cloudera, Inc. All rights reserved.\nMeanwhile in RDBMS land\nOriginal complaints still relevant?\nMost OLTP apps fit in 1TB\nof RAM and flash!\nShared-nothing OLAP available\nand works well now\nMaybe NoSQL and SQL have\nconverged?\n ","25\u0026#xA9; Cloudera, Inc. All rights reserved.\n\u0026#x201C;It is perhaps fair to say that from the perspective of many\nengineers working on the Google infrastructure, the SQL vs.\nNoSQL dichotomy may no longer be relevant.\u0026#x201D;\nSource: \u0026#x201C;Spanner: Becoming a SQL System\u0026#x201D;\n ","26\u0026#xA9; Cloudera, Inc. All rights reserved.\nPart 2:\nEvaluating a Not-Only SQL Database\n ","27\u0026#xA9; Cloudera, Inc. All rights reserved.\nWhat kind of application?\n\u0026#x2022; OLTP? OLAP? HTAP (Hybrid Transactional/Analytic Processing)\n\u0026#x2022; Next-gen data apps are all hybrid (streaming ingest, constant analytics)\n\u0026#x2022; \u0026#x201C;Combining OLTP, OLAP, and full-text search capabilities in a single system\nremains at the top of customer priorities.\u0026#x201D; - Spanner: Becoming a SQL System\n ","28\u0026#xA9; Cloudera, Inc. All rights reserved.\nHTAP Application Architecture\n\u0026#x2022; Realtime ingest (high performance writes)\n\u0026#x2022; Throughput and latency both important\n\u0026#x2022; Concurrent SQL reads\n\u0026#x2022; BI apps demand interactive performance\n\u0026#x2022; Often a time-series component\n\u0026#x2022; IoT, transaction data, click logs, etc.\n\u0026#x2022; High Availability/Geo-redundancy\nBrowser tracing Web logs\nKafka\nKudu\nImpala\nJDBC access\nMarketing Dept.\nDevelopers\nWeb-app\n ","29\u0026#xA9; Cloudera, Inc. All rights reserved.\nEvaluating an HTAP Data Store\n\u0026#x2022; SQL support\n\u0026#x2022; Semantics (eventual vs strict consistency, transactional support, features)\n\u0026#x2022; Performance (ingest with concurrent analytics)\n\u0026#x2022; Availability (multi-datacenter)\n\u0026#x2022; Deployment Model\n\u0026#x2022; Cost\n ","30\u0026#xA9; Cloudera, Inc. All rights reserved.\nOriginal usecase Deployment Semantics\nHBase Web indexing Anywhere single-row ACID\nCassandra OLTP (web serving) Anywhere eventual\nCloud Spanner OLTP SaaS-only (GCE) full ACID\nHDFS OLAP Physical HW bulk access only\nKudu HTAP Anywhere single-row ACID\nNarrowing the options\nSimilar storage\nimplementations (SSTable,\nLog-Structured-Merge)\nLet\u0026#x2019;s compare with\nSpanner since it\u0026#x2019;s shiny,\nnew, and similar to Kudu!\nOnly store originally\ndesigned for HTAP\n ","31\u0026#xA9; Cloudera, Inc. All rights reserved.\nNot-Only-SQL in Depth:\nComparing Cloud Spanner and Kudu+Impala\n ","32\u0026#xA9; Cloudera, Inc. All rights reserved.\nApache Kudu: Scalable and fast tabular storage\nScalable\n\u0026#x2022; Tested up to 275 nodes (~3PB cluster)\n\u0026#x2022; Designed to scale to 1000s of nodes and tens of PBs\nFast\n\u0026#x2022; Millions of read/write operations per second across cluster\n\u0026#x2022; Multiple GB/second read throughput per node\nTabular\n\u0026#x2022; Represents data in structured tables like a relational database\n\u0026#x2022;Strict schema, finite column count, no BLOBs\n\u0026#x2022; Individual record-level access to 100+ billion row tables\n ","33\u0026#xA9; Cloudera, Inc. All rights reserved.\nCloud Spanner at a glance\n ","34\u0026#xA9; Cloudera, Inc. All rights reserved.\nKudu vs Spanner: Consistency and Availability\nKudu Spanner Winner?\nConcurrency\ncontrol\nMVCC (with\nHybridTime)\nMVCC (with\nTrueTime)\nSpanner (but\nneeds atomic\nclock hardware!)\nRead-only\n(analytic)\nqueries\nConsistent\nSnapshot\nIsolation\nConsistent\nSnapshot\nIsolation\nTie\nTransactions Single-row ACID Multi-row ACID\n(small sets of\nrows only)\nSpanner\nAvailability/\nReplication\nReplicated log\n(Raft, 3 replicas)\nReplicated log\n(Multi-Paxos, 3\nreplicas)\nTie\n ","35\u0026#xA9; Cloudera, Inc. All rights reserved.\nKudu vs Spanner: Data Access\nKudu Spanner Winner?\nProgrammatic\nAPIs\nJava, C++,\nPython\nC#, Go, Java,\nNode, PHP,\nPython, Ruby\nSpanner\nSecondary\nIndexes\nno supported Spanner\nSQL via Impala or\nSpark (SQL 2003\nw/ Analytic\nextensions)\nBuilt-in (simple\nANSI99 queries\nonly, no write\nsupport)\nKudu\nEcosystem\nIntegrations\nSpark, Impala,\nFlume, Apex,\nStreamSets, et al.\n?? (very limited) Kudu\n ","36\u0026#xA9; Cloudera, Inc. All rights reserved.\nKudu Spanner Winner?\nPartitioning Hash or range,\nexplicit\nRange only\n(automatic)\n\u0026lt;it depends\u0026gt;\nLoad balancing manual automatic Spanner\nDeployment\nEnvironment\non-prem or cloud SaaS only (lock-\nin)\nKudu\nOps model operate yourself SaaS (no ops) Spanner\nLicensing Apache License closed source Kudu\nKudu vs Spanner: operational factors\n ","37\u0026#xA9; Cloudera, Inc. All rights reserved.\nCheckpoint so far\n\u0026#x2022; Systems are really pretty similar\n\u0026#x2022; No accident - Kudu\u0026#x2019;s replication, partitioning, and data model inherit a lot\nfrom Spanner\n\u0026#x2022; Current feature gaps\n\u0026#x2022; Spanner ahead on transactional feature set (OLTP focus)\n\u0026#x2022; Kudu ahead on analytic feature set (OLAP focus)\nWhat about underlying storage and performance?\n ","38\u0026#xA9; Cloudera, Inc. All rights reserved.\nSpanner Storage - SSTable / Log-Structured Merge\n\u0026#x2022; SSTable (sorted-string table)\n\u0026#x2022; same storage format as BigTable (inherited code)\n\u0026#x2022; row-oriented design\n\u0026#x2022; Each row \u0026lt;cola, colb, colc, ...\u0026gt; stored on disk in that format\n\u0026#x2022; Optimal for OLTP (read 1 row = 1 disk seek)\n\u0026#x2022; Inefficient for OLAP (high CPU on scans)\n\u0026#x2022; not schema-aware\n\u0026#x2022; little opportunity for type-specific compression techniques, etc.\n\u0026#x201C;SSTables have proven to be remarkably robust even when used for schematized\ndata consisting largely of small values, often traversed by column. But they are\nultimately a poor fit and leave a lot of performance on the table.\u0026#x201D;\n ","39\u0026#xA9; Cloudera, Inc. All rights reserved.\nbase columnar data\nKudu Storage - Columnar + Deltas\n\u0026#x2022; Stores most of its data in an internal columnar format\n\u0026#x2022; Each column stored, encoded, and compressed separately, in small chunks\n\u0026#x2022; Similar to Parquet, with enhancements:\n\u0026#x2022; Indexes allow fast seeking by key or by position (for low-latency read)\n\u0026#x2022; Delta Stores allow tracking of updated and deleted rows\nc1 c2 c3 c4 +\ndeltas (recently changed rows)\nd1 d2\nc1 c2 c3 c4\n1 hi 0.1 N\n3 bye 0.2 N\n2 cat 0.1 N\n1 dog 0.5 Y\nread-time\n ","40\u0026#xA9; Cloudera, Inc. All rights reserved.\nSo how much does it really\nmatter?\nAnalytics benchmarks\n ","41\u0026#xA9; Cloudera, Inc. All rights reserved.\nBenchmark setup\nCloud Spanner\n5 \u0026#x201C;nodes\u0026#x201D; (unknown specs)\nus-central1 region (multi-zone)\nPrice:\n$0.90/node/hr * 5 nodes\n= $3240/month\nKudu on GCE\n5 n1-standard-16 (16vCPU, 60G RAM)\nus-central1 region (multi-zone)\n500G Persistent SSD disk each\nPrice:\n$0.54/node/hr * 5 +\n500GB * $0.17/GB/mo * 5\n= $2366.80/month\n*drops to $1009 if preemptible is used!\n* factoring in sustained-use discount\n30%\nLower!\n ","42\u0026#xA9; Cloudera, Inc. All rights reserved.\nTest 1: TPCH Data Loading\n\u0026#x2022; Used a separate node to load the TPC-H \u0026#x201C;LINEITEM\u0026#x201D; table\n\u0026#x2022; 600M rows, 75GB in CSV format\n\u0026#x2022; Multi-threaded Java program* to load, followed best practices\n*Loader available at https://github.com/toddlipcon/spanner-kudu-comparison\n ","43\u0026#xA9; Cloudera, Inc. All rights reserved.\nTest 2: TPCH Queries\n\u0026#x2022; SELECT COUNT(*)\n\u0026#x2022; TPCH Q1, Q6: simple GROUP BY/SUM/COUNT which scan the whole table\n ","44\u0026#xA9; Cloudera, Inc. All rights reserved.\nTest 3: YCSB Loading\n\u0026#x2022; Standard YCSB benchmark\n\u0026#x2022; Configured as recommended in the\ncloudspanner/README file\n\u0026#x2022; Experienced many errors, timeouts,\nand multi-minute stalls loading\nspanner\n\u0026#x2022; eventually succeeded on third try\n\u0026#x2022; so take these results with a grain\nof salt!\n ","45\u0026#xA9; Cloudera, Inc. All rights reserved.\nYCSB Throughput (Load and random-read)\n ","46\u0026#xA9; Cloudera, Inc. All rights reserved.\nYCSB Latencies (for read workload)\n ","47\u0026#xA9; Cloudera, Inc. All rights reserved.\nYCSB Workload A (50/50 read/write mix)\nKudu is not optimized for high update-rate scenarios. See KUDU-749\n ","48\u0026#xA9; Cloudera, Inc. All rights reserved.\nBenchmark summary\n\u0026#x2022; Kudu ingests data at least 4x faster\n\u0026#x2022; Stability issues with Cloud Spanner ingestion (cause unknown)\n\u0026#x2022; Kudu performs simple analytic queries 10-100x faster\n\u0026#x2022; Spanner wins on high-percentile tail latencies\n\u0026#x2022; Kudu performance degrades significantly in 50/50 R/W mix workload\n\u0026#x2022; Reminders:\n\u0026#x2022; Kudu cluster has 30% lower cost, and can be run on any provider!\n\u0026#x2022; Kudu doesn\u0026#x2019;t have the same rich OLTP feature set as Spanner (indexes,\nmulti-row transactions, etc)\n ","49\u0026#xA9; Cloudera, Inc. All rights reserved.\nConclusions\n ","50\u0026#xA9; Cloudera, Inc. All rights reserved.\nConclusions\n\u0026#x2022; NoSQL and SQL are converging again\n\u0026#x2022; We now get \u0026#x201C;best of both worlds\u0026#x201D; from both communities!\n\u0026#x2022; Many different excellent choices are now available for building hybrid\ntransactional/analytic applications\n\u0026#x2022; Understand the trade-offs before settling on an architecture\n\u0026#x2022; Seemingly small details can make orders-of-magnitude difference\n\u0026#x2022; Consider non-functional differences as well (licensing, deployment, lock-in,\netc)\n ","51\u0026#xA9; Cloudera, Inc. All rights reserved.\nAcknowledgements\n\u0026#x2022; Spanner team for publishing papers, especially SIGMOD 2017 (\u0026#x201C;Spanner:\nBecoming a SQL System\u0026#x201D;)\n\u0026#x2022; Cloud Spanner team and developer advocates (Deepti Srivastava, Robert\nKubis)\n\u0026#x2022; Siamak Tazari (YCSB binding for Cloud Spanner)\n\u0026#x2022; Cloudera (paying my GCE bill)\n ","52\u0026#xA9; Cloudera, Inc. All rights reserved.\nkudu.apache.org\n@tlipcon | @ApacheKudu\n "],"ss-url-for-slideshow":"slideshow/a-brave-new-world-in-mutable-big-data-relational-storage-strata-nyc-2017/80298191","slideshow_type_as_string":"presentation","twitter_share_text":"A brave new world in mutable big data relational storage (Strata NYC 2017) by @tlipcon #database #kudu","pin-image-url":"https://cdn.slidesharecdn.com/ss_thumbnails/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817-thumbnail.jpg?width=640\u0026height=640\u0026fit=bounds"});
+    </script>
+
+    <script src="https://public.slidesharecdn.com/v2/javascripts/assets/ss_foundation/core-utils.b571b5a192d22fef883d.js"></script>
+
+    
+
+    <script src="https://public.slidesharecdn.com/v2/javascripts/assets/ss_foundation/global.b4d7eea62e5fe7052170.js"></script>
+
+    
+
+    
+
+    <link rel="stylesheet" href="https://public.slidesharecdn.com/v2/stylesheets/bigboot/modal_share.4f420759c85553a9472b.css" media="screen" />
+<link rel="stylesheet" href="https://public.slidesharecdn.com/v2/stylesheets/share-clipboard-modal.a9abc0e857ee432d7819.css" media="screen" />
+<link rel="stylesheet" href="https://public.slidesharecdn.com/v2/stylesheets/bigboot/mobile_list_items.855daa4963cf55d9a7f2.css" media="screen" />
+  </head>
+
+  <body id="pagekey-slideshare_desktop_slideview_embed_code_loggedout" style="border:0;margin:0;padding:0;width:100%;height:100%;overflow:hidden;" class="">
+    
+<div
+  id="new-player"
+  data-slideshow-id=""
+  class="presentation-player embed "
+>
+  <div id="stage">
+    
+
+      <div class="inbetween-overlay" id="inbetween-overlay-1">
+    <div class="ad-inner">
+      
+<div class="ad-container  interstitial" id="interstitial-ad-1-container" data-index="0">
+  <div class="ad-inner-wrapper">
+    <div id="interstitial-ad-1" style="min-width: 200px; min-height: 50px;" class="google-ad">
+    </div>
+      <a 
+        class="fallback-ad-container"
+        target="_blank"
+        aria-label="Ad for Scribd subscription"
+        rel="noopener noreferrer"
+        alt="Ad for Scribd subscription"
+        href="https://www.scribd.com/slideshare">
+          <div class="fallback-ad en"></div>
+      </a>
+  </div>
+</div>
+      <button type="button" class="skip-ad-button waiting-to-skip" disabled="disabled">
+        <span class="ad-skip-message">Skip to next slide</span>
+        <span class="ad-skip-countdown-message">You can skip to the next slide in</span>
+        <span class="ad-countdown">3</span></button>
+    </div>
+    <div class="ad-label-wrapper">
+      <div class="ad-label-container">
+        <span>Ad</span>
+      </div>
+    </div>
+  </div>
+  <div class="inbetween-overlay" id="inbetween-overlay-2">
+    <div class="ad-inner">
+      
+<div class="ad-container  interstitial" id="interstitial-ad-2-container" data-index="0">
+  <div class="ad-inner-wrapper">
+    <div id="interstitial-ad-2" style="min-width: 200px; min-height: 50px;" class="google-ad">
+    </div>
+      <a 
+        class="fallback-ad-container"
+        target="_blank"
+        aria-label="Ad for Scribd subscription"
+        rel="noopener noreferrer"
+        alt="Ad for Scribd subscription"
+        href="https://www.scribd.com/slideshare">
+          <div class="fallback-ad en"></div>
+      </a>
+  </div>
+</div>
+      <button type="button" class="skip-ad-button waiting-to-skip" disabled="disabled">
+        <span class="ad-skip-message">Skip to next slide</span>
+        <span class="ad-skip-countdown-message">You can skip to the next slide in</span>
+        <span class="ad-countdown">3</span></button>
+    </div>
+    <div class="ad-label-wrapper">
+      <div class="ad-label-container">
+        <span>Ad</span>
+      </div>
+    </div>
+  </div>
+  <div class="inbetween-overlay" id="inbetween-overlay-3">
+    <div class="ad-inner">
+      
+<div class="ad-container  interstitial" id="interstitial-ad-3-container" data-index="0">
+  <div class="ad-inner-wrapper">
+    <div id="interstitial-ad-3" style="min-width: 200px; min-height: 50px;" class="google-ad">
+    </div>
+      <a 
+        class="fallback-ad-container"
+        target="_blank"
+        aria-label="Ad for Scribd subscription"
+        rel="noopener noreferrer"
+        alt="Ad for Scribd subscription"
+        href="https://www.scribd.com/slideshare">
+          <div class="fallback-ad en"></div>
+      </a>
+  </div>
+</div>
+      <button type="button" class="skip-ad-button waiting-to-skip" disabled="disabled">
+        <span class="ad-skip-message">Skip to next slide</span>
+        <span class="ad-skip-countdown-message">You can skip to the next slide in</span>
+        <span class="ad-countdown">3</span></button>
+    </div>
+    <div class="ad-label-wrapper">
+      <div class="ad-label-container">
+        <span>Ad</span>
+      </div>
+    </div>
+  </div>
+  <div class="inbetween-overlay" id="inbetween-overlay-4">
+    <div class="ad-inner">
+      
+<div class="ad-container  interstitial" id="interstitial-ad-4-container" data-index="0">
+  <div class="ad-inner-wrapper">
+    <div id="interstitial-ad-4" style="min-width: 200px; min-height: 50px;" class="google-ad">
+    </div>
+      <a 
+        class="fallback-ad-container"
+        target="_blank"
+        aria-label="Ad for Scribd subscription"
+        rel="noopener noreferrer"
+        alt="Ad for Scribd subscription"
+        href="https://www.scribd.com/slideshare">
+          <div class="fallback-ad en"></div>
+      </a>
+  </div>
+</div>
+      <button type="button" class="skip-ad-button waiting-to-skip" disabled="disabled">
+        <span class="ad-skip-message">Skip to next slide</span>
+        <span class="ad-skip-countdown-message">You can skip to the next slide in</span>
+        <span class="ad-countdown">3</span></button>
+    </div>
+    <div class="ad-label-wrapper">
+      <div class="ad-label-container">
+        <span>Ad</span>
+      </div>
+    </div>
+  </div>
+  <div class="inbetween-overlay" id="inbetween-overlay-5">
+    <div class="ad-inner">
+      
+<div class="ad-container  interstitial" id="interstitial-ad-5-container" data-index="0">
+  <div class="ad-inner-wrapper">
+    <div id="interstitial-ad-5" style="min-width: 200px; min-height: 50px;" class="google-ad">
+    </div>
+      <a 
+        class="fallback-ad-container"
+        target="_blank"
+        aria-label="Ad for Scribd subscription"
+        rel="noopener noreferrer"
+        alt="Ad for Scribd subscription"
+        href="https://www.scribd.com/slideshare">
+          <div class="fallback-ad en"></div>
+      </a>
+  </div>
+</div>
+      <button type="button" class="skip-ad-button waiting-to-skip" disabled="disabled">
+        <span class="ad-skip-message">Skip to next slide</span>
+        <span class="ad-skip-countdown-message">You can skip to the next slide in</span>
+        <span class="ad-countdown">3</span></button>
+    </div>
+    <div class="ad-label-wrapper">
+      <div class="ad-label-container">
+        <span>Ad</span>
+      </div>
+    </div>
+  </div>
+  <div class="inbetween-overlay" id="inbetween-overlay-6">
+    <div class="ad-inner">
+      
+<div class="ad-container  interstitial" id="interstitial-ad-6-container" data-index="0">
+  <div class="ad-inner-wrapper">
+    <div id="interstitial-ad-6" style="min-width: 200px; min-height: 50px;" class="google-ad">
+    </div>
+      <a 
+        class="fallback-ad-container"
+        target="_blank"
+        aria-label="Ad for Scribd subscription"
+        rel="noopener noreferrer"
+        alt="Ad for Scribd subscription"
+        href="https://www.scribd.com/slideshare">
+          <div class="fallback-ad en"></div>
+      </a>
+  </div>
+</div>
+      <button type="button" class="skip-ad-button waiting-to-skip" disabled="disabled">
+        <span class="ad-skip-message">Skip to next slide</span>
+        <span class="ad-skip-countdown-message">You can skip to the next slide in</span>
+        <span class="ad-countdown">3</span></button>
+    </div>
+    <div class="ad-label-wrapper">
+      <div class="ad-label-container">
+        <span>Ad</span>
+      </div>
+    </div>
+  </div>
+  <div class="inbetween-overlay" id="inbetween-overlay-7">
+    <div class="ad-inner">
+      
+<div class="ad-container  interstitial" id="interstitial-ad-7-container" data-index="0">
+  <div class="ad-inner-wrapper">
+    <div id="interstitial-ad-7" style="min-width: 200px; min-height: 50px;" class="google-ad">
+    </div>
+      <a 
+        class="fallback-ad-container"
+        target="_blank"
+        aria-label="Ad for Scribd subscription"
+        rel="noopener noreferrer"
+        alt="Ad for Scribd subscription"
+        href="https://www.scribd.com/slideshare">
+          <div class="fallback-ad en"></div>
+      </a>
+  </div>
+</div>
+      <button type="button" class="skip-ad-button waiting-to-skip" disabled="disabled">
+        <span class="ad-skip-message">Skip to next slide</span>
+        <span class="ad-skip-countdown-message">You can skip to the next slide in</span>
+        <span class="ad-countdown">3</span></button>
+    </div>
+    <div class="ad-label-wrapper">
+      <div class="ad-label-container">
+        <span>Ad</span>
+      </div>
+    </div>
+  </div>
+  <div class="inbetween-overlay" id="inbetween-overlay-8">
+    <div class="ad-inner">
+      
+<div class="ad-container  interstitial" id="interstitial-ad-8-container" data-index="0">
+  <div class="ad-inner-wrapper">
+    <div id="interstitial-ad-8" style="min-width: 200px; min-height: 50px;" class="google-ad">
+    </div>
+      <a 
+        class="fallback-ad-container"
+        target="_blank"
+        aria-label="Ad for Scribd subscription"
+        rel="noopener noreferrer"
+        alt="Ad for Scribd subscription"
+        href="https://www.scribd.com/slideshare">
+          <div class="fallback-ad en"></div>
+      </a>
+  </div>
+</div>
+      <button type="button" class="skip-ad-button waiting-to-skip" disabled="disabled">
+        <span class="ad-skip-message">Skip to next slide</span>
+        <span class="ad-skip-countdown-message">You can skip to the next slide in</span>
+        <span class="ad-countdown">3</span></button>
+    </div>
+    <div class="ad-label-wrapper">
+      <div class="ad-label-container">
+        <span>Ad</span>
+      </div>
+    </div>
+  </div>
+  <div class="inbetween-overlay" id="inbetween-overlay-9">
+    <div class="ad-inner">
+      
+<div class="ad-container  interstitial" id="interstitial-ad-9-container" data-index="0">
+  <div class="ad-inner-wrapper">
+    <div id="interstitial-ad-9" style="min-width: 200px; min-height: 50px;" class="google-ad">
+    </div>
+      <a 
+        class="fallback-ad-container"
+        target="_blank"
+        aria-label="Ad for Scribd subscription"
+        rel="noopener noreferrer"
+        alt="Ad for Scribd subscription"
+        href="https://www.scribd.com/slideshare">
+          <div class="fallback-ad en"></div>
+      </a>
+  </div>
+</div>
+      <button type="button" class="skip-ad-button waiting-to-skip" disabled="disabled">
+        <span class="ad-skip-message">Skip to next slide</span>
+        <span class="ad-skip-countdown-message">You can skip to the next slide in</span>
+        <span class="ad-countdown">3</span></button>
+    </div>
+    <div class="ad-label-wrapper">
+      <div class="ad-label-container">
+        <span>Ad</span>
+      </div>
+    </div>
+  </div>
+  <div class="inbetween-overlay" id="inbetween-overlay-10">
+    <div class="ad-inner">
+      
+<div class="ad-container  interstitial" id="interstitial-ad-10-container" data-index="0">
+  <div class="ad-inner-wrapper">
+    <div id="interstitial-ad-10" style="min-width: 200px; min-height: 50px;" class="google-ad">
+    </div>
+      <a 
+        class="fallback-ad-container"
+        target="_blank"
+        aria-label="Ad for Scribd subscription"
+        rel="noopener noreferrer"
+        alt="Ad for Scribd subscription"
+        href="https://www.scribd.com/slideshare">
+          <div class="fallback-ad en"></div>
+      </a>
+  </div>
+</div>
+      <button type="button" class="skip-ad-button waiting-to-skip" disabled="disabled">
+        <span class="ad-skip-message">Skip to next slide</span>
+        <span class="ad-skip-countdown-message">You can skip to the next slide in</span>
+        <span class="ad-countdown">3</span></button>
+    </div>
+    <div class="ad-label-wrapper">
+      <div class="ad-label-container">
+        <span>Ad</span>
+      </div>
+    </div>
+  </div>
+
+<div class="inbetween-overlay" id="inbetween-overlay-video">
+  <div class="ad-inner">
+    
+<div class="ad-container  interstitial" id="interstitial-ad-video-container" data-index="0">
+  <div class="ad-inner-wrapper">
+    <div id="interstitial-ad-video" style="min-width: 200px; min-height: 50px;" class="google-ad">
+    </div>
+      <a 
+        class="fallback-ad-container"
+        target="_blank"
+        aria-label="Ad for Scribd subscription"
+        rel="noopener noreferrer"
+        alt="Ad for Scribd subscription"
+        href="https://www.scribd.com/slideshare">
+          <div class="fallback-ad en"></div>
+      </a>
+  </div>
+</div>
+    <div class="video-ad-loading-indicator"><div></div><div></div><div></div><div></div></div>
+    <button type="button" class="skip-ad-button waiting-to-skip" disabled="disabled">
+      <span class="ad-skip-message">Skip to next slide</span>
+      <span class="ad-skip-countdown-message">You can skip to the next slide in</span>
+      <span class="ad-countdown">3</span>
+    </button>
+    <button type="button" aria-label="Change Volume" class="volume-control"><i class="icon-low-volume"></i></button>
+  </div>
+  <div class="ad-label-wrapper">
+    <div class="ad-label-container">
+      <span>Ad</span>
+    </div>
+  </div>
+  <button class="close-sticky-video" type="button" aria-label="Close ad">&#215;</button>  
+</div>
+
+<div class="inbetween-overlay" id="inbetween-overlay-default-video">
+  <div id="video-container">
+    <a 
+      target="_blank"
+      aria-label="Ad for Scribd subscription"
+      rel="noopener noreferrer"
+      alt="Ad for Scribd subscription"
+      href="https://www.scribd.com/slideshare">
+      <video id="inbetween-video" webkit-playsinline playsinline type="video/mp4">
+        Your browser does not support the video tag.
+        <track
+          label="English"
+          kind="subtitles"
+          srclang="en"
+          src="/videos/ads/video_reading_translations/english.vtt"
+          default />
+        <track
+          label="Deutsch"
+          kind="subtitles"
+          srclang="de"
+          src="/videos/ads/video_reading_translations/german.vtt"
+           />
+        <track
+          label="Español"
+          kind="subtitles"
+          srclang="es"
+          src="/videos/ads/video_reading_translations/spanish.vtt"
+           />
+        <track
+          label="Francais"
+          kind="subtitles"
+          srclang="fr"
+          src="/videos/ads/video_reading_translations/french.vtt"
+           />
+        <track
+          label="Portugese"
+          kind="subtitles"
+          srclang="pt"
+          src="/videos/ads/video_reading_translations/portugese.vtt"
+           />
+      </video>
+    </a>
+    <button type="button" aria-label="Change Volume" class="volume-control"><i class="icon-low-volume"></i></button>
+  </div>
+  <button type="button" class="skip-ad-button">
+    <span class="ad-skip-message">Skip to next slide</span>
+  </button>
+  <div class="ad-label-wrapper">
+    <div class="ad-label-container">
+      <span>Ad</span>
+    </div>
+  </div>
+  <button class="close-sticky-video" type="button" aria-label="Close ad">&#215;</button>  
+</div>
+    <div id="slide-container" data-cy="slide-container" tabindex="0">
+        <div class="slide current" id="slide-0" data-index="0">
+              <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-1-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-1-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-1-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="1© Cloudera, Inc. All rights reserved.
+A brave new world in mutable big data:
+Relational storage
+Todd Lipcon
+Software Engi..." data-index="1" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-1-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-1-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-1-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-0"></picture>
+          
+</div>        <div class="slide" id="slide-1" data-index="1">
+              <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-2-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-2-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-2-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="2© Cloudera, Inc. All rights reserved.
+Introduction
+ " data-index="2" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-2-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-2-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-2-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-1"></picture>
+          
+</div>        <div class="slide" id="slide-2" data-index="2">
+              <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-3-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-3-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-3-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="3© Cloudera, Inc. All rights reserved.
+About me
+• Engineer at Cloudera since 2009
+• Hadoop core (HDFS, MR1)
+• HBase stabil..." data-index="3" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-3-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-3-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-3-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-2"></picture>
+          
+</div>        <div class="slide" id="slide-3" data-index="3">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-4-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-4-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-4-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="4© Cloudera, Inc. All rights reserved.
+A brief history of databases
+Incomplete,distilled, and semi-accurate
+ " data-index="4" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-4-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-4-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-4-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-3"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-4" data-index="4">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-5-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-5-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-5-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="5© Cloudera, Inc. All rights reserved.
+1960s, 1970s
+ " data-index="5" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-5-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-5-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-5-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-4"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-5" data-index="5">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-6-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-6-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-6-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="6© Cloudera, Inc. All rights reserved.
+“A database system where an application developer directly uses an
+application prog..." data-index="6" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-6-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-6-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-6-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-5"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-6" data-index="6">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-7-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-7-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-7-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="7© Cloudera, Inc. All rights reserved.
+Probably the only slide at Strata with COBOL on it
+Source: http://www.mainframes360..." data-index="7" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-7-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-7-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-7-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-6"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-7" data-index="7">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-8-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-8-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-8-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="8© Cloudera, Inc. All rights reserved.
+Failings of ISAM/VSAM
+A Relational Model of Data for Large Shared Data Banks (Codd,..." data-index="8" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-8-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-8-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-8-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-7"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-8" data-index="8">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-9-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-9-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-9-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="9© Cloudera, Inc. All rights reserved.
+Origins of SQL (1974)
+• Originally SEQUEL (Structured English QUEry Language)
+• Ren..." data-index="9" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-9-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-9-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-9-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-8"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-9" data-index="9">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-10-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-10-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-10-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="10© Cloudera, Inc. All rights reserved.
+Explosion of SQL Popularity
+• IBM, Oracle, Microsoft, Informix, and others joined ..." data-index="10" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-10-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-10-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-10-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-9"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-10" data-index="10">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-11-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-11-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-11-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="11© Cloudera, Inc. All rights reserved.
+ORCL
+ " data-index="11" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-11-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-11-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-11-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-10"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-11" data-index="11">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-12-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-12-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-12-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="12© Cloudera, Inc. All rights reserved.
+ " data-index="12" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-12-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-12-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-12-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-11"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-12" data-index="12">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-13-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-13-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-13-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="13© Cloudera, Inc. All rights reserved.
+All good things must come to an end?
+ " data-index="13" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-13-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-13-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-13-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-12"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-13" data-index="13">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-14-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-14-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-14-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="14© Cloudera, Inc. All rights reserved.
+ " data-index="14" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-14-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-14-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-14-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-13"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-14" data-index="14">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-15-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-15-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-15-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="15© Cloudera, Inc. All rights reserved.
+The beginnings of the NoSQL “movement”
+ " data-index="15" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-15-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-15-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-15-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-14"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-15" data-index="15">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-16-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-16-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-16-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="16© Cloudera, Inc. All rights reserved.
+ " data-index="16" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-16-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-16-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-16-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-15"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-16" data-index="16">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-17-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-17-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-17-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="17© Cloudera, Inc. All rights reserved.
+First ever NoSQL meetup (2009)
+ " data-index="17" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-17-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-17-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-17-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-16"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-17" data-index="17">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-18-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-18-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-18-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="18© Cloudera, Inc. All rights reserved.
+Jay Kreps (Confluent)
+Me!
+ " data-index="18" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-18-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-18-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-18-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-17"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-18" data-index="18">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-19-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-19-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-19-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="19© Cloudera, Inc. All rights reserved.
+I wasn’t keen on the
+NoSQL buzzword!
+ " data-index="19" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-19-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-19-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-19-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-18"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-19" data-index="19">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-20-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-20-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-20-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="20© Cloudera, Inc. All rights reserved.
+NoSQL search interest over time
+What happened in
+Jan 2012???
+ " data-index="20" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-20-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-20-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-20-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-19"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-20" data-index="20">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-21-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-21-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-21-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="21© Cloudera, Inc. All rights reserved.
+NoSQL complaints
+• Tool compatibility? BI? ETL? ORMs?
+• Consistency
+• denormalizat..." data-index="21" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-21-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-21-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-21-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-20"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-21" data-index="21">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-22-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-22-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-22-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="22© Cloudera, Inc. All rights reserved.
+credit @jrecursive (2010)
+f***
+ " data-index="22" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-22-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-22-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-22-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-21"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-22" data-index="22">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-23-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-23-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-23-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="23© Cloudera, Inc. All rights reserved.
+Not-Only SQL
+People wanted their SQL back, and NoSQL
+developers gave it!
+• Cassand..." data-index="23" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-23-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-23-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-23-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-22"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-23" data-index="23">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-24-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-24-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-24-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="24© Cloudera, Inc. All rights reserved.
+Meanwhile in RDBMS land
+Original complaints still relevant?
+Most OLTP apps fit in ..." data-index="24" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-24-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-24-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-24-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-23"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-24" data-index="24">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-25-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-25-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-25-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="25© Cloudera, Inc. All rights reserved.
+“It is perhaps fair to say that from the perspective of many
+engineers working on ..." data-index="25" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-25-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-25-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-25-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-24"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-25" data-index="25">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-26-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-26-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-26-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="26© Cloudera, Inc. All rights reserved.
+Part 2:
+Evaluating a Not-Only SQL Database
+ " data-index="26" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-26-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-26-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-26-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-25"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-26" data-index="26">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-27-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-27-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-27-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="27© Cloudera, Inc. All rights reserved.
+What kind of application?
+• OLTP? OLAP? HTAP (Hybrid Transactional/Analytic Proces..." data-index="27" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-27-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-27-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-27-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-26"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-27" data-index="27">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-28-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-28-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-28-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="28© Cloudera, Inc. All rights reserved.
+HTAP Application Architecture
+• Realtime ingest (high performance writes)
+• Throug..." data-index="28" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-28-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-28-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-28-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-27"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-28" data-index="28">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-29-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-29-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-29-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="29© Cloudera, Inc. All rights reserved.
+Evaluating an HTAP Data Store
+• SQL support
+• Semantics (eventual vs strict consis..." data-index="29" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-29-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-29-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-29-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-28"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-29" data-index="29">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-30-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-30-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-30-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="30© Cloudera, Inc. All rights reserved.
+Original usecase Deployment Semantics
+HBase Web indexing Anywhere single-row ACID
+..." data-index="30" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-30-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-30-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-30-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-29"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-30" data-index="30">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-31-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-31-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-31-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="31© Cloudera, Inc. All rights reserved.
+Not-Only-SQL in Depth:
+Comparing Cloud Spanner and Kudu+Impala
+ " data-index="31" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-31-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-31-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-31-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-30"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-31" data-index="31">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-32-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-32-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-32-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="32© Cloudera, Inc. All rights reserved.
+Apache Kudu: Scalable and fast tabular storage
+Scalable
+• Tested up to 275 nodes (..." data-index="32" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-32-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-32-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-32-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-31"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-32" data-index="32">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-33-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-33-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-33-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="33© Cloudera, Inc. All rights reserved.
+Cloud Spanner at a glance
+ " data-index="33" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-33-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-33-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-33-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-32"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-33" data-index="33">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-34-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-34-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-34-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="34© Cloudera, Inc. All rights reserved.
+Kudu vs Spanner: Consistency and Availability
+Kudu Spanner Winner?
+Concurrency
+con..." data-index="34" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-34-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-34-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-34-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-33"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-34" data-index="34">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-35-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-35-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-35-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="35© Cloudera, Inc. All rights reserved.
+Kudu vs Spanner: Data Access
+Kudu Spanner Winner?
+Programmatic
+APIs
+Java, C++,
+Pyt..." data-index="35" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-35-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-35-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-35-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-34"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-35" data-index="35">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-36-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-36-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-36-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="36© Cloudera, Inc. All rights reserved.
+Kudu Spanner Winner?
+Partitioning Hash or range,
+explicit
+Range only
+(automatic)
+&lt;..." data-index="36" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-36-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-36-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-36-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-35"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-36" data-index="36">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-37-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-37-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-37-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="37© Cloudera, Inc. All rights reserved.
+Checkpoint so far
+• Systems are really pretty similar
+• No accident - Kudu’s repli..." data-index="37" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-37-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-37-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-37-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-36"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-37" data-index="37">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-38-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-38-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-38-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="38© Cloudera, Inc. All rights reserved.
+Spanner Storage - SSTable / Log-Structured Merge
+• SSTable (sorted-string table)
+•..." data-index="38" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-38-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-38-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-38-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-37"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-38" data-index="38">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-39-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-39-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-39-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="39© Cloudera, Inc. All rights reserved.
+base columnar data
+Kudu Storage - Columnar + Deltas
+• Stores most of its data in a..." data-index="39" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-39-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-39-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-39-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-38"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-39" data-index="39">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-40-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-40-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-40-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="40© Cloudera, Inc. All rights reserved.
+So how much does it really
+matter?
+Analytics benchmarks
+ " data-index="40" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-40-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-40-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-40-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-39"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-40" data-index="40">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-41-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-41-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-41-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="41© Cloudera, Inc. All rights reserved.
+Benchmark setup
+Cloud Spanner
+5 “nodes” (unknown specs)
+us-central1 region (multi-..." data-index="41" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-41-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-41-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-41-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-40"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-41" data-index="41">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-42-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-42-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-42-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="42© Cloudera, Inc. All rights reserved.
+Test 1: TPCH Data Loading
+• Used a separate node to load the TPC-H “LINEITEM” tabl..." data-index="42" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-42-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-42-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-42-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-41"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-42" data-index="42">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-43-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-43-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-43-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="43© Cloudera, Inc. All rights reserved.
+Test 2: TPCH Queries
+• SELECT COUNT(*)
+• TPCH Q1, Q6: simple GROUP BY/SUM/COUNT wh..." data-index="43" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-43-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-43-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-43-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-42"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-43" data-index="43">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-44-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-44-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-44-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="44© Cloudera, Inc. All rights reserved.
+Test 3: YCSB Loading
+• Standard YCSB benchmark
+• Configured as recommended in the
+..." data-index="44" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-44-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-44-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-44-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-43"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-44" data-index="44">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-45-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-45-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-45-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="45© Cloudera, Inc. All rights reserved.
+YCSB Throughput (Load and random-read)
+ " data-index="45" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-45-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-45-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-45-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-44"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-45" data-index="45">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-46-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-46-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-46-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="46© Cloudera, Inc. All rights reserved.
+YCSB Latencies (for read workload)
+ " data-index="46" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-46-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-46-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-46-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-45"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-46" data-index="46">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-47-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-47-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-47-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="47© Cloudera, Inc. All rights reserved.
+YCSB Workload A (50/50 read/write mix)
+Kudu is not optimized for high update-rate ..." data-index="47" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-47-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-47-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-47-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-46"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-47" data-index="47">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-48-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-48-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-48-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="48© Cloudera, Inc. All rights reserved.
+Benchmark summary
+• Kudu ingests data at least 4x faster
+• Stability issues with C..." data-index="48" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-48-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-48-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-48-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-47"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-48" data-index="48">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-49-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-49-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-49-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="49© Cloudera, Inc. All rights reserved.
+Conclusions
+ " data-index="49" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-49-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-49-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-49-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-48"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-49" data-index="49">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-50-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-50-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-50-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="50© Cloudera, Inc. All rights reserved.
+Conclusions
+• NoSQL and SQL are converging again
+• We now get “best of both worlds..." data-index="50" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-50-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-50-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-50-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-49"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-50" data-index="50">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-51-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-51-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-51-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="51© Cloudera, Inc. All rights reserved.
+Acknowledgements
+• Spanner team for publishing papers, especially SIGMOD 2017 (“Sp..." data-index="51" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-51-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-51-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-51-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-50"></picture>
+              </noscript>
+          
+</div>        <div class="slide" id="slide-51" data-index="51">
+              <noscript class="loading-lazy">
+                <picture><source srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-52-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-52-638.jpg?cb=1667498442 638w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/75/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-52-2048.jpg?cb=1667498442 2048w" sizes="100vw" type="image/webp"><img class="slide-image" alt="52© Cloudera, Inc. All rights reserved.
+kudu.apache.org
+@tlipcon | @ApacheKudu
+ " data-index="52" loading="lazy" src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-52-320.jpg?cb=1667498442" srcset="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-52-320.jpg?cb=1667498442 320w, https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-52-638.jpg?cb=1667498442 638w" sizes="100vw" id="slide-image-51"></picture>
+              </noscript>
+          
+</div>        <div class="slide-end-trap"></div>
+    </div>
+    <div class="rightpoint pointly"></div>
+    <div class="leftpoint pointly"></div>
+  </div>
+
+  
+  
+  <div class="modal-share new-player-share" style="display: none;" id="slideview-modal-share" data-ga-track-category="bigfoot_slideview">
+  <div class="j-modal-popup modal-popup" role="dialog" aria-labelledby="button-share-tab">
+    <div class="modal-content-wrapper">
+      <div class="j-modal-content modal-content" id="share-screen-modal-content" data-slideshowid="">
+        <button type="button" class="j-modal-close modal-close" aria-label="Close"></button>  
+        <header class="j-tabs tabs">
+          <a id="button-share-tab" role="button" class="selected j-button-share-tab">Share SlideShare</a>
+          <hr class="divider"/>
+        </header>
+      
+        <div>
+          <div>
+            <ul class="j-share-social-list share-social-list" data-canonical-url="https://www.slideshare.net/slideshow/a-brave-new-world-in-mutable-big-data-relational-storage-strata-nyc-2017/80298191">
+              <li class="facebook" data-network="facebook">
+                <div class="social-hover">
+                  <a class="share-link" rel="nofollow" data-url="https://www.slideshare.net/slideshow/a-brave-new-world-in-mutable-big-data-relational-storage-strata-nyc-2017/80298191" title="Share on Facebook" href="#">Facebook</a>
+                </div>
+              </li>
+              <li class="twitter" data-network="twitter">
+                <div class="social-hover">
+                  <a class="share-link" rel="nofollow"  data-url="https://www.slideshare.net/slideshow/a-brave-new-world-in-mutable-big-data-relational-storage-strata-nyc-2017/80298191" data-text="A brave new world in mutable big data relational storage (Strata NYC 2017) by @tlipcon #database #kudu" data-related="" data-via="SlideShare" title="Tweet on Twitter" href="#">Twitter</a>
+                </div>
+              </li>
+              <li class="linkedin" data-network="linkedin">
+                <div class="social-hover">
+                  <a class="share-link" rel="nofollow" data-url="https://www.slideshare.net/slideshow/a-brave-new-world-in-mutable-big-data-relational-storage-strata-nyc-2017/80298191" data-text="A brave new world in mutable big data  relational storage (Strata NYC 2017) by Todd Lipcon via slideshare" title="Share on Linkedin" href="#">LinkedIn</a>
+                </div>
+              </li>
+            </ul>
+          </div>
+          <div class="j-share-embed section share-embed">
+            <label class="header" for="share-embed-link">Embed</label>
+            <textarea id="share-embed-link" class="j-share-embed-link j-share-expand-trigger" readonly data-ga="link"></textarea>
+            <div class="share-embed-options j-share-expand">
+              <div class="embed-size">
+                <label class="title" for="embed-size-picker">Size (px)</label>
+                <select class="j-embed-size-picker embed-size-picker j-update-embed" id="embed-size-picker" data-ga="size-picker"></select>
+              </div>
+              <div class="embed-show-related" style="display:none">
+                <input type="checkbox" name="related-content" checked="checked" class="j-embed-related-cbox embed-related-cbox j-update-embed" data-ga="related">
+                <span>Show related SlideShares at end</span>
+              </div>
+            </div>
+          </div>
+          <div class="wordpress-container section">
+            <label class="header" for="share-embed-wp">WordPress Shortcode</label>
+            <input type="text" name="embed-code" id="share-embed-wp" value="" readonly="readonly" class="j-share-embed-wp text quiet h-wpembedcode j-share-expand-trigger" data-ga="wp-link">
+          </div>
+          <div class="share-link-container section">
+            <label class="header" for="share-link-url">Link</label>
+            <input type="text" class="j-share-link-url j-share-expand-trigger" id="share-link-url" data-ga="link" readonly>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div><!-- share modal -->
+
+  <div id="lastScreen" style="display: none;">
+    <div class="lastScreen">
+  <div class="jsplLastScreenOverlay j-last-screen-overlay"></div>
+  <div class="pro-overlay j-lastscreen">
+      <ul class="lastActions j-last-screen-actions">
+        <li class="share-cta j-share-cta lastscreen-share-cta"><a class="share-btn"><span class="lastScreen-sprite"></span>Share</a></li>
+        <li class="email-cta j-email-cta"><a class="email-btn"><span class="lastScreen-sprite"></span>Email</a></li>
+        <li class="replay last">
+          <a class="replay-btn lastScreenReplay j-tooltip j-last-screen-replay" data-original-title="View again" title="View again">
+            <span class="lastScreen-sprite">&nbsp;</span>
+          </a>
+        </li>
+        <li class="close-btn lastScreen-sprite j-lastscreen-close">
+          <a>&nbsp;</a>
+        </li>
+      </ul>
+      <div class="related-presentations j-lastscreen-related">
+        <ul class="presentation-list">
+          <li>
+          <a href="/slideshow/the-impala-cookbook-42530186/42530186" title="The Impala Cookbook" target="_blank">
+            <img class="j-thumbnail" data-original="https://cdn.slidesharecdn.com/ss_thumbnails/impala-cookbook-141209115356-conversion-gate01-thumbnail.jpg?width=320&amp;height=320&amp;fit=bounds" alt="The Impala Cookbook" />
+            <span class="presentation-meta">
+              <span class="title">The Impala Cookbook</span>
+              <span class="author">by&nbsp;Cloudera, Inc.</span>
+              <span class="view-count">91418&nbsp;views</span>
+            </span>
+          </a>
+          </li>
+        </ul>
+      </div>
+  </div> <!-- end of div class pro-overlay -->
+</div><!-- last screen ends here -->
+
+  </div>
+
+  <div id="filmstrip" style="display: none;">
+  <div class="filmstrip-lens">
+    <img
+      src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+      class="filmstrip-lens-image"
+      alt="">
+    <span class="top-clip-label">Top clipped slide</span>
+  </div>
+  <ul id="filmstrip-list">
+      <li id="thumbnail-0" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-1-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-1" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-2-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-2" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-3-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-3" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-4-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-4" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-5-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-5" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-6-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-6" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-7-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-7" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-8-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-8" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-9-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-9" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-10-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-10" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-11-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-11" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-12-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-12" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-13-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-13" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-14-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-14" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-15-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-15" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-16-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-16" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-17-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-17" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-18-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-18" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-19-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-19" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-20-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-20" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-21-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-21" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-22-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-22" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-23-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-23" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-24-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-24" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-25-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-25" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-26-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-26" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-27-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-27" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-28-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-28" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-29-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-29" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-30-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-30" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-31-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-31" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-32-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-32" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-33-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-33" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-34-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-34" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-35-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-35" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-36-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-36" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-37-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-37" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-38-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-38" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-39-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-39" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-40-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-40" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-41-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-41" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-42-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-42" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-43-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-43" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-44-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-44" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-45-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-45" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-46-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-46" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-47-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-47" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-48-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-48" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-49-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-49" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-50-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-50" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-51-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+      <li id="thumbnail-51" style="margin: 4px;" class="filmstrip-item">
+        <noscript class="loading-lazy">
+          <img src="https://image.slidesharecdn.com/abravenewworldinmutablebigdata-relationalstoragestratanyc2017-170929174817/85/A-brave-new-world-in-mutable-big-data-relational-storage-Strata-NYC-2017-52-320.jpg?cb=1667498442" class="filmstrip-thumb" loading="lazy" alt="">
+        </noscript>
+      </li>
+  </ul>
+</div>
+
+  <div id="player-toolbar">
+  <div id="player-toolbar-left-actions" class="player-toolbar-item">
+      <a
+        type="button"
+        data-action="share"
+        href=https://www.slideshare.net/slideshow/a-brave-new-world-in-mutable-big-data-relational-storage-strata-nyc-2017/80298191
+        class="link view-on-ss"
+        aria-label="View on SlideShare"
+      >
+        View on SlideShare
+      </a>
+  </div>
+  <div id="player-navigation" class="player-toolbar-item">
+    <button
+      type="button"
+      id="previous-slide" 
+      data-cy="previous-button"
+      aria-label="Previous Slide"
+      disabled
+    >
+      <i class="icon-chevron-left"></i>
+    </button>
+    <span class="slide-index" aria-live="polite" aria-atomic="true">
+      <span data-cy="current-slide-number" class="current-slide-number j-current-slide">1</span> of <span class="total-slides j-total-slides">52</span>
+    </span>
+    <span class="ad-notification">Ad</span>
+    <button
+      type="button"
+      id="next-slide"
+      data-cy="next-button"
+      aria-label="Next Slide"
+      > 
+      <i class="icon-chevron-right"></i>
+    </button>
+  </div>
+  <div id="player-toolbar-right-actions" class="player-toolbar-item">
+    <div class="zoom-slide">
+      <button
+        type="button"
+        class="zoom-in"
+        aria-label="Zoom In">
+        <i class='icon-zoom-in'></i>
+      </button>
+      <button
+        type="button"
+        class="zoom-out"
+        aria-label="Zoom Out">
+        <i class='icon-zoom-out'></i>
+      </button>
+    </div>
+    <button
+      type="button"
+      id="fullscreen"
+      aria-label="View Fullscreen"
+    >
+      <i class="icon-focus fullscreen-icon"></i>
+    </button>
+  </div>
+
+</div>
+  
+<div id="player-fullscreen-overlay">
+  <div id="overlay-player-left">
+    <button
+      type="button"
+      id="overlay-previous-slide"
+      data-cy="overlay-previous-button"
+      aria-label="Previous Slide"
+      disabled
+    >
+      <i class="icon-chevron-left"></i>
+    </button>
+  </div>
+  <div id="overlay-player-top" class="no-download-or-clip">
+    <div class="button-container">
+      
+
+
+    </div>
+  </div>
+  <div id="overlay-player-bottom">
+    <div id="player-fullscreen-navigation" class="player-toolbar-item">
+      <span class="slide-index" aria-live="polite" aria-atomic="true">
+        <span data-cy="current-slide-number" class="current-slide-number j-current-slide">1</span> of <span class="total-slides j-total-slides">52</span>
+      </span>
+      <span class="ad-notification">Ad</span>
+    </div>
+    <div class="content-right">
+      <div class="zoom-slide">
+        <button
+          type="button"
+          class="zoom-in"
+          aria-label="Zoom In">
+          <i class='icon-zoom-in'></i>
+        </button>
+        <button
+          type="button"
+          class="zoom-out"
+          aria-label="Zoom Out">
+          <i class='icon-zoom-out'></i>
+        </button>
+      </div>
+      <button
+        type="button"
+        id="exit-fullscreen"
+        aria-label="Exit Fullscreen"
+      >
+        <i class="icon-compress exit-fullscreen-icon"></i>
+      </button>
+    </div>
+  </div>
+  <div id="overlay-player-right">
+    <button
+      type="button"
+      id="overlay-next-slide"
+      data-cy="overlay-next-button"
+      aria-label="Next Slide"
+      > 
+      <i class="icon-chevron-right"></i>
+    </button>
+  </div>
+</div>
+
+</div>
+
+
+    <script>
+    window.feature_flags = {
+      disable_facebook: true,
+      document_interstitials_flag: true,
+      minimalist_header: false,
+      recommendation_impression_tracking: true,
+      search_results_tracking: true, 
+      view_restriction_without_subscription_after_five: true,
+    };
+</script>
+
+    <script>
+    window.ab_tests = {"excluded_user":{"value":"true","version":0}}
+  window.nway_tests = {"example":"B","fullscreen_view":"C","gallery_view":"B","nextjs_profile":"B","nextjs_profile_v2":"B","reading_modes":"A","recs_placement":"A","recs_placement_v2":"A","single_slide_view_v2":"A"}
+</script>
+
+
+    <script src="https://public.slidesharecdn.com/v2/javascripts/assets/vendor/jquery.scrollTo-1.4.4.min.7cc631ba92c138760915.js"></script>
+    <script src="https://public.slidesharecdn.com/v2/javascripts/packs/combined_analytics.8b90d21d8b1a1135751c.js"></script>
+    <script src="https://public.slidesharecdn.com/v2/javascripts/packs/combined_base.a796147d1c6cac7604d0.js"></script>
+    <script src="https://public.slidesharecdn.com/v2/javascripts/packs/combined_foundation.0e781a4ba4332fa80881.js"></script>
+    <script src="https://public.slidesharecdn.com/v2/javascripts/packs/combined_player.1aa966d69843d108d291.js" defer="defer"></script>
+    <script src="https://public.slidesharecdn.com/v2/javascripts/assets/tracking/page-view.9fd861b8fd38997861ea.js"></script>
+  </body>
+</html>

@@ -24,12 +24,10 @@ including:
 - [Heap sampling](/docs/troubleshooting.html#heap_sampling) support
   which helps us understand unexpected memory usage.
 
-If you're interested in learning about these topics and more, check out the video recording
-below. My talk spans the first 34 minutes.
 
-<iframe width="800" height="500"
-  src="https://www.youtube.com/embed/qBXwKU6Ubjo?end=2058&start=23">
-</iframe>
+If you're interested in learning about these topics and more, check out the 
+[video recording](https://www.youtube.com/embed/qBXwKU6Ubjo?end=2058&start=23).
+My talk spans the first 34 minutes.
 
 If you have any questions about this content or about Kudu in general,
 [join the community](http://kudu.apache.org/community.html)
