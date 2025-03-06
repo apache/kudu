@@ -59,25 +59,34 @@ dependencies {
   // See: https://blog.gradle.org/introducing-compile-only-dependencies
   // Note: compileUnshaded is extended from the compileOnly dependency scope.
   testImplementation libs.scalaLibrary
-  testImplementation libs.sparkAvro
-  testImplementation libs.sparkCore
-  testImplementation libs.sparkSql
+  testImplementation(libs.sparkAvro) {
+    exclude group: "org.apache.logging.log4j"
+  }
+  testImplementation( libs.sparkCore) {
+    exclude group: "org.apache.logging.log4j"
+  }
+  testImplementation(libs.sparkSql) {
+    exclude group: "org.apache.logging.log4j"
+  }
   testImplementation libs.slf4jApi
 }
 
 shadowJar {
   dependencies {
     exclude(dependency(libs.jsr305))
-    exclude(dependency("log4j:log4j:.*"))
+    exclude(dependency("log4j:log4j::.*"))
+    exclude(dependency("com.fasterxml.jackson.core::.*"))
     exclude(dependency("org.apache.arrow::.*"))
     exclude(dependency("org.apache.avro::.*"))
     exclude(dependency("org.apache.curator::.*"))
     exclude(dependency("org.apache.hadoop::.*"))
     exclude(dependency("org.apache.ivy:ivy::.*"))
-    exclude(dependency("org.apache.parquet:.*"))
+    exclude(dependency("org.apache.logging.log4j::.*"))
+    exclude(dependency("org.apache.parquet::.*"))
     exclude(dependency("org.apache.spark::.*"))
     exclude(dependency("org.codehaus.janino::.*"))
     exclude(dependency("org.glassfish.jersey.core::.*"))
+    exclude(dependency("joda-time::.*"))
     exclude(dependency("org.scala-lang::.*"))
     exclude(dependency("org.xerial.snappy::.*"))
   }
@@ -88,9 +97,11 @@ shadowJar {
   exclude '**/*.html'
   exclude '**/*.md'
   exclude 'META-INF/services/**'
-  exclude 'META-INF/versions/11/org/roaringbitmap/**'
   exclude 'codegen/**'
   exclude 'assets/**'
+  exclude 'org/threeten/**'
+  exclude 'org/apache/arrow/**'
+  exclude 'org/apache/orc/**'
   exclude 'javax/**'
   exclude 'org/jetbrains/**'
 

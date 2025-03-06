@@ -68,6 +68,7 @@ shadowJar {
     exclude(dependency("org.apache.spark::.*"))
     exclude(dependency("org.codehaus.janino::.*"))
     exclude(dependency("org.glassfish.jersey.core::.*"))
+    exclude(dependency("joda-time::.*"))
     exclude(dependency("org.scala-lang::.*"))
     exclude(dependency("org.xerial.snappy::.*"))
   }
@@ -78,9 +79,11 @@ shadowJar {
   exclude '**/*.html'
   exclude '**/*.md'
   exclude 'META-INF/services/**'
-  exclude 'META-INF/versions/11/org/roaringbitmap/**'
   exclude 'codegen/**'
   exclude 'javax/**'
+  exclude 'org/threeten/**'
+  exclude 'org/apache/arrow/**'
+  exclude 'org/apache/orc/**'
   exclude 'org/jetbrains/**'
 
   minimize()

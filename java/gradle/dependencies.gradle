@@ -60,7 +60,7 @@ versions += [
     scopt          : "4.1.0",
     slf4j          : "1.7.36",
     spark2         : "2.4.8",
-    spark          : "3.2.4",
+    spark          : "3.5.5",
     spotBugs       : "4.1.1",
     yetus          : "0.13.0"
 ]
