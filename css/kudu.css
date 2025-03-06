@@ -180,22 +180,22 @@ footer {
   padding-left:43px;
 }
 
-.kudu-site .icon.github { background-image:url(//d3dr9sfxru4sde.cloudfront.net/i/k/github_mark_16px.png); }
-.kudu-site .navbar .nav .dropdown .icon.github:hover { background-image:url(//d3dr9sfxru4sde.cloudfront.net/i/k/github_mark_light_16px.png); }
+.kudu-site .icon.github { background-image:url(/img/github_mark_16px.png); }
+.kudu-site .navbar .nav .dropdown .icon.github:hover { background-image:url(/img//github_mark_light_16px.png); }
 
-.kudu-site .icon.slack { background-image:url(//d3dr9sfxru4sde.cloudfront.net/i/k/slack_mark_16px.png); }
-.kudu-site .navbar .nav .dropdown .icon.slack:hover { background-image:url(//d3dr9sfxru4sde.cloudfront.net/i/k/slack_mark_white_16px.png); }
+.kudu-site .icon.slack { background-image:url(/img/slack_mark_16px.png); }
+.kudu-site .navbar .nav .dropdown .icon.slack:hover { background-image:url(/img//slack_mark_white_16px.png); }
 
-.kudu-site .icon.twitter { background-image:url(//d3dr9sfxru4sde.cloudfront.net/i/k/twitter_mark_16px.png); }
-.kudu-site .navbar .nav .dropdown .icon.twitter:hover { background-image:url(//d3dr9sfxru4sde.cloudfront.net/i/k/twitter_mark_white_16px.png); }
+.kudu-site .icon.twitter { background-image:url(/img/twitter_mark_16px.png); }
+.kudu-site .navbar .nav .dropdown .icon.twitter:hover { background-image:url(/img/twitter_mark_white_16px.png); }
 
-.kudu-site .icon.jira { background-image:url(//d3dr9sfxru4sde.cloudfront.net/i/k/jira_mark_16px.png); }
-.kudu-site .navbar .nav .dropdown .icon.jira:hover { background-image:url(//d3dr9sfxru4sde.cloudfront.net/i/k/jira_mark_white_16px.png); }
+.kudu-site .icon.jira { background-image:url(/img/jira_mark_16px.png); }
+.kudu-site .navbar .nav .dropdown .icon.jira:hover { background-image:url(/img/jira_mark_white_16px.png); }
 
-.kudu-site .icon.gerrit { background-image:url(//d3dr9sfxru4sde.cloudfront.net/i/k/gerrit_mark_16px.png); }
+.kudu-site .icon.gerrit { background-image:url(/img/gerrit_mark_16px.png); }
 
 /* From http://www.softicons.com/toolbar-icons/sizicons-icons-by-randomjabber/envelope-icon */
-.kudu-site .navbar .nav .dropdown .icon.email { background-image:url(//d3dr9sfxru4sde.cloudfront.net/i/k/envelope_12px.png); background-position-x:21px; }
+.kudu-site .navbar .nav .dropdown .icon.email { background-image:url(/img/envelope_12px.png); background-position-x:21px; }
 
 .kudu-site .navbar:after {
   display: block;
