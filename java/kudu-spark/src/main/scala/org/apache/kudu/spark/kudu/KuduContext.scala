@@ -29,7 +29,6 @@ import org.apache.hadoop.util.ShutdownHookManager
 import org.apache.spark.Partitioner
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.util.TypeUtils
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.types.DataType
@@ -445,6 +444,19 @@ class KuduContext(
     log.info(s"completed $operation ops: duration histogram: $durationHistogram")
   }
 
+  // This method is copied from Spark code as it's moved from TypeUtils to
+  // ByteArray between Spark 3.2 and 3.3
+  private def compareBinary(x: Array[Byte], y: Array[Byte]): Int = {
+    val limit = if (x.length <= y.length) x.length else y.length
+    var i = 0
+    while (i < limit) {
+      val res = (x(i) & 0xff) - (y(i) & 0xff)
+      if (res != 0) return res
+      i += 1
+    }
+    x.length - y.length
+  }
+
   private[spark] def repartitionRows(
       rdd: RDD[Row],
       tableName: String,
@@ -475,7 +487,7 @@ class KuduContext(
     // to enable rdd sorting functions below.
     implicit val byteArrayOrdering: Ordering[Array[Byte]] = new Ordering[Array[Byte]] {
       def compare(x: Array[Byte], y: Array[Byte]): Int = {
-        TypeUtils.compareBinary(x, y)
+        compareBinary(x, y)
       }
     }
 

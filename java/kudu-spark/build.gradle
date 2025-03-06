@@ -73,10 +73,13 @@ shadowJar {
   exclude '**/*.html'
   exclude '**/*.md'
   exclude 'META-INF/services/**'
-  exclude 'META-INF/versions/11/org/roaringbitmap/**'
   exclude 'codegen/**'
+  exclude 'org/threeten/**'
+  exclude 'org/apache/arrow/**'
+  exclude 'org/apache/orc/**'
   exclude 'javax/**'
   exclude 'org/jetbrains/**'
+  exclude 'org/joda/time/tz/**'
 
   minimize()
 }
