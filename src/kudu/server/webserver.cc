@@ -40,6 +40,7 @@
 #include <unordered_set>
 #include <utility>
 #include <vector>
+// IWYU pragma: no_include <__string>
 
 #include <boost/algorithm/string/case_conv.hpp>
 #include <gflags/gflags.h>
@@ -697,27 +698,28 @@ void Webserver::SendResponse(struct sq_connection* connection,
     DCHECK(req);
     stringstream ss;
     RenderMainTemplate(*req, resp->output.str(), &ss);
-    resp->output.str(ss.str());
+    resp->output.rdbuf()->swap(*ss.rdbuf());
   }
 
   // Check if gzip compression is accepted by the caller. If so, compress the
   // content and replace the prerendered output.
-  const char* accept_encoding_str = sq_get_header(connection, "Accept-Encoding");
+  auto& output = resp->output;
   bool is_compressed = false;
+  const char* accept_encoding_str = sq_get_header(connection, "Accept-Encoding");
   vector<string> encodings = strings::Split(accept_encoding_str, ",");
   for (string& encoding : encodings) {
     StripWhiteSpace(&encoding);
     if (encoding == "gzip") {
       // Don't bother compressing empty content.
-      string uncompressed = resp->output.str();
-      if (uncompressed.empty()) {
+      DCHECK(output.good());
+      if (output.tellp() == 0) {
         break;
       }
 
       ostringstream oss;
-      const auto s = zlib::Compress(uncompressed, &oss);
+      const auto s = zlib::Compress(output.str(), &oss);
       if (PREDICT_TRUE(s.ok())) {
-        resp->output.str(oss.str());
+        output.swap(oss);
         is_compressed = true;
       } else {
         LOG(WARNING) << "Could not compress output: " << s.ToString();
@@ -728,7 +730,7 @@ void Webserver::SendResponse(struct sq_connection* connection,
 
   // We've deferred constructing the content for as long as possible; we must
   // do so now so that we can determine the content length.
-  string body = resp->output.str();
+  string body = output.str();
 
   // Buffers up the headers and content as follows:
   //
@@ -850,7 +852,7 @@ void Webserver::RegisterPathHandler(const string& path, const string& alias,
     if (render_path != "/home" || is_started_) {
       stringstream out;
       Render(render_path, resp.output, style_mode, &out);
-      rendered_resp->output << out.rdbuf();
+      rendered_resp->output.rdbuf()->swap(*out.rdbuf());
     }
   };
   RegisterPrerenderedPathHandler(path, alias, wrapped_cb, style_mode, is_on_nav_bar);
