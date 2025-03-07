@@ -37,3 +37,6 @@ gradle/wrapper/*.jar
 .idea/
 classes
 **/out
+
+# jenv
+.java-version
