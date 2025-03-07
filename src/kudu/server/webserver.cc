@@ -791,7 +791,7 @@ void Webserver::SendResponse(struct sq_connection* connection,
       }
 
       ostringstream oss;
-      Status s = zlib::CompressLevel(uncompressed, 1, &oss);
+      const auto s = zlib::Compress(uncompressed, &oss);
       if (PREDICT_TRUE(s.ok())) {
         resp->output.str(oss.str());
         is_compressed = true;

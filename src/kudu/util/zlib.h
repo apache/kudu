@@ -24,7 +24,9 @@
 namespace kudu {
 namespace zlib {
 
-// Zlib-compress the data in 'input', appending the result to 'out'.
+// Zlib-compress the data in 'input', appending the result to 'out', using
+// Z_BEST_SPEED compression level, i.e. best speed and decent compression
+// ratio (that's level 1 in the context of CompressLevel() below).
 //
 // In case of an error, non-OK status is returned and some data may still
 // be appended to 'out'.

@@ -70,7 +70,7 @@ Status ZlibResultToStatus(int rc) {
 } // anonymous namespace
 
 Status Compress(Slice input, ostream* out) {
-  return CompressLevel(input, Z_DEFAULT_COMPRESSION, out);
+  return CompressLevel(input, Z_BEST_SPEED, out);
 }
 
 // See https://zlib.net/zlib_how.html for context on using zlib.
