@@ -21,7 +21,9 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <iterator>
 #include <limits>
@@ -1009,7 +1011,25 @@ TEST_F(ThreadPoolTest, TestSlowDestructor) {
 
 // For test cases that should run with both kinds of tokens.
 class ThreadPoolTestTokenTypes : public ThreadPoolTest,
-                                 public testing::WithParamInterface<ThreadPool::ExecutionMode> {};
+                                 public testing::WithParamInterface<ThreadPool::ExecutionMode> {
+ protected:
+  static bool IsTokenActive(const ThreadPoolToken& t) {
+    std::lock_guard unique_lock(t.pool_->lock_);
+    return t.IsActive();
+  }
+  static bool IsTokenQueueEmpty(const ThreadPoolToken& t) {
+    std::lock_guard unique_lock(t.pool_->lock_);
+    return t.entries_.empty();
+  }
+  static bool IsTokenClosed(const ThreadPoolToken& t) {
+    std::lock_guard unique_lock(t.pool_->lock_);
+    return t.state() == ThreadPoolToken::State::GRACEFUL_QUIESCING;
+  }
+  static bool IsTokenShutDown(const ThreadPoolToken& t) {
+    std::lock_guard unique_lock(t.pool_->lock_);
+    return t.state() == ThreadPoolToken::State::QUIESCED;
+  }
+};
 
 INSTANTIATE_TEST_SUITE_P(Tokens, ThreadPoolTestTokenTypes,
                          ::testing::Values(ThreadPool::ExecutionMode::SERIAL,
@@ -1131,6 +1151,217 @@ TEST_P(ThreadPoolTestTokenTypes, TestTokenShutdown) {
   // Unblock t2's tasks.
   l2.CountDown();
   t2->Shutdown();
+}
+
+TEST_P(ThreadPoolTestTokenTypes, QueueIsEmptyAfterWaitingOnClosedToken) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+  ASSERT_OK(RebuildPoolWithMinMax(0, 2));
+  for (auto iteration = 0; iteration < 10; ++iteration) {
+    ThreadSafeRandom tsr(SeedRandom());
+
+    unique_ptr<ThreadPoolToken> t(pool_->NewToken(GetParam()));
+    atomic<int32_t> counter{0};
+    constexpr const size_t kTaskNum = 32;
+    for (size_t i = 0; i < kTaskNum; ++i) {
+      ASSERT_OK(t->Submit([&]() {
+        SleepFor(MonoDelta::FromMilliseconds(tsr.Uniform(25)));
+        ++counter;
+      }));
+    }
+
+    // The token should be active now.
+    ASSERT_TRUE(IsTokenActive(*t));
+
+    // Close the token after some random pause. Usually, the Close() request
+    // arrives when the token is RUNNING, but sometimes it may arrive when
+    // the token is IDLE.
+    SleepFor(MonoDelta::FromMilliseconds(tsr.Uniform(100)));
+    t->Close();
+
+    // Wait for the tasks to complete.
+    t->Wait();
+    ASSERT_FALSE(IsTokenActive(*t));
+    ASSERT_TRUE(IsTokenShutDown(*t));
+    ASSERT_TRUE(IsTokenQueueEmpty(*t));
+    ASSERT_EQ(kTaskNum, counter);
+  }
+}
+
+TEST_P(ThreadPoolTestTokenTypes, CloseIdleToken) {
+  unique_ptr<ThreadPoolToken> t(pool_->NewToken(GetParam()));
+  ASSERT_FALSE(IsTokenClosed(*t));
+  t->Close();
+  ASSERT_FALSE(IsTokenActive(*t));
+  ASSERT_TRUE(IsTokenQueueEmpty(*t));
+  ASSERT_TRUE(IsTokenShutDown(*t));
+  // It's not possible to submit new tasks on a closed token.
+  ASSERT_TRUE(t->Submit([](){}).IsServiceUnavailable());
+}
+
+TEST_P(ThreadPoolTestTokenTypes, CloseTokenBasic) {
+  constexpr const size_t kTaskNum = 64;
+
+  CountDownLatch l(1);
+  atomic<int32_t> counter{0};
+  unique_ptr<ThreadPoolToken> t(pool_->NewToken(GetParam()));
+  for (size_t i = 0; i < kTaskNum; ++i) {
+    ASSERT_OK(t->Submit([&]() {
+      l.Wait();
+      ++counter;
+    }));
+  }
+
+  // The token should be active now.
+  ASSERT_TRUE(IsTokenActive(*t));
+  // Close the token.
+  t->Close();
+  // The token should be still active after calling Close().
+  ASSERT_TRUE(IsTokenActive(*t));
+  ASSERT_TRUE(IsTokenClosed(*t));
+  // It's not possible to submit new tasks on a token that's been closed.
+  ASSERT_TRUE(t->Submit([](){}).IsServiceUnavailable());
+
+  // Unblock all of the in-flights tasks.
+  l.CountDown();
+  // Wait for the tasks to complete.
+  t->Wait();
+  // ThreadPoolToken::Close() drains the queue of the token's scheduled tasks.
+  ASSERT_TRUE(IsTokenQueueEmpty(*t));
+  ASSERT_FALSE(IsTokenActive(*t));
+  ASSERT_TRUE(IsTokenShutDown(*t));
+  ASSERT_EQ(kTaskNum, counter);
+
+  // Try submitting a task once more after all the pending tasks are complete.
+  ASSERT_TRUE(t->Submit([](){}).IsServiceUnavailable());
+
+  // Call Close() again: it's a no-op at this point.
+  t->Close();
+  ASSERT_TRUE(t->Submit([](){}).IsServiceUnavailable());
+  // There should be no active tasks at this point.
+  ASSERT_FALSE(IsTokenActive(*t));
+}
+
+TEST_P(ThreadPoolTestTokenTypes, ShutdownClosedToken) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+  ASSERT_OK(RebuildPoolWithMinMax(1, 1));
+  unique_ptr<ThreadPoolToken> t(pool_->NewToken(GetParam()));
+
+  CountDownLatch l(1);
+  atomic<int32_t> counter{0};
+  for (int i = 0; i < 10; i++) {
+    ASSERT_OK(t->Submit([&]() {
+      l.Wait();
+      ++counter;
+    }));
+  }
+
+  // The token should be active now.
+  ASSERT_TRUE(IsTokenActive(*t));
+
+  // Close the token.
+  t->Close();
+  ASSERT_TRUE(IsTokenClosed(*t));
+  // It's not possible to submit new tasks on a token that's been closed.
+  ASSERT_TRUE(t->Submit([](){}).IsServiceUnavailable());
+  // Worker thread(s) should still be busy with the in-flight task(s), if any.
+  ASSERT_TRUE(IsTokenActive(*t));
+
+  // This thread unblocks the in-flight tasks, so t->Shutdown() below eventually
+  // returns.
+  //
+  // NOTE: a relatively long delay is used to avoid flakiness
+  //       if main test thread is scheduled off CPU for a long time
+  //       before it runs t->Shutdown() below
+  thread unblocker([&]{
+    SleepFor(MonoDelta::FromSeconds(3));
+    // Unblock all of the tasks.
+    l.CountDown();
+  });
+  SCOPED_CLEANUP({
+    unblocker.join();
+  });
+
+  // Shutdown the closed token.
+  t->Shutdown();
+  ASSERT_TRUE(IsTokenShutDown(*t));
+  // The token's queue must be empty after it was shut down.
+  ASSERT_TRUE(IsTokenQueueEmpty(*t));
+  // There should be no active tasks after the token is shut down.
+  ASSERT_FALSE(IsTokenActive(*t));
+  // Shutting down the token after closing it should keep the token unavailable
+  // for the submission of new tasks.
+  ASSERT_TRUE(t->Submit([](){}).IsServiceUnavailable());
+
+  // All but maybe the very first task should have been removed from the queue,
+  // so not more than one task might be completed.
+  ASSERT_LE(counter, 1);
+}
+
+TEST_P(ThreadPoolTestTokenTypes, CloseMultipleIndependentTokens) {
+  ASSERT_OK(RebuildPoolWithBuilder(ThreadPoolBuilder(kDefaultPoolName)
+                                   .set_max_threads(4)));
+
+  unique_ptr<ThreadPoolToken> t1(pool_->NewToken(GetParam()));
+  CountDownLatch l1(1);
+  atomic<int32_t> c1{0};
+  for (int i = 0; i < 8; i++) {
+    ASSERT_OK(t1->Submit([&]() {
+      l1.Wait();
+      ++c1;
+    }));
+  }
+  auto l1_unblock = MakeScopedCleanup([&]() {
+    l1.CountDown();
+  });
+  ASSERT_TRUE(IsTokenActive(*t1));
+
+  unique_ptr<ThreadPoolToken> t2(pool_->NewToken(GetParam()));
+  CountDownLatch l2(1);
+  atomic<int32_t> c2{0};
+  for (int i = 0; i < 8; i++) {
+    ASSERT_OK(t2->Submit([&]() {
+      l2.Wait();
+      ++c2;
+    }));
+  }
+  auto l2_unblock = MakeScopedCleanup([&]() {
+    l2.CountDown();
+  });
+  ASSERT_TRUE(IsTokenActive(*t2));
+
+  // Unblock all of t1's tasks, but not t2's tasks.
+  l1_unblock.run();
+
+  // Close the first token.
+  t1->Close();
+
+  // We can no longer submit to t1 but we can still submit to t2.
+  ASSERT_TRUE(t1->Submit([](){}).IsServiceUnavailable());
+  ASSERT_OK(t2->Submit([](){}));
+
+  t1->Wait();
+  ASSERT_FALSE(IsTokenActive(*t1));
+  ASSERT_EQ(8, c1);
+  t1->Shutdown();
+  ASSERT_TRUE(IsTokenShutDown(*t1));
+  ASSERT_FALSE(IsTokenActive(*t1));
+
+  ASSERT_TRUE(IsTokenActive(*t2));
+  ASSERT_EQ(0, c2);
+  t2->Close();
+  ASSERT_TRUE(IsTokenClosed(*t2));
+  ASSERT_TRUE(t2->Submit([](){}).IsServiceUnavailable());
+  ASSERT_TRUE(IsTokenActive(*t2));
+  ASSERT_EQ(0, c2);
+
+  // Unblock t2's tasks.
+  l2_unblock.run();
+  t2->Wait();
+  ASSERT_FALSE(IsTokenActive(*t2));
+  ASSERT_TRUE(IsTokenShutDown(*t2));
+  ASSERT_EQ(8, c2);
 }
 
 TEST_P(ThreadPoolTestTokenTypes, TestTokenWaitForAll) {

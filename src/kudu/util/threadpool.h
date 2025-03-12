@@ -335,6 +335,7 @@ class ThreadPool {
   FRIEND_TEST(ThreadPoolTest, TestVariableSizeThreadPool);
 
   friend class ThreadPoolBuilder;
+  friend class ThreadPoolTestTokenTypes;
   friend class ThreadPoolToken;
 
   // Client-provided task to be executed by this pool.
@@ -632,7 +633,7 @@ class ThreadPool {
 // Entry point for token-based task submission and blocking for a particular
 // thread pool. Tokens can only be created via ThreadPool::NewToken().
 //
-// All functions are thread-safe. Mutable members are protected via the
+// All public methods are thread-safe. Mutable members are protected via the
 // ThreadPool's lock.
 class ThreadPoolToken {
  public:
@@ -647,6 +648,13 @@ class ThreadPoolToken {
 
   // Submit a task, execute the task after delay_ms later.
   Status Schedule(std::function<void()> f, int64_t delay_ms) WARN_UNUSED_RESULT;
+
+  // Marks the token as unusable for future submissions, returning immediately.
+  // This lets all the in-flight and scheduled tasks on this token to complete,
+  // unless Shutdown() is called in the middle of the process.
+  // If some tasks were in-flight or queued upon calling Close(), use Wait()
+  // to wait until all the tasks submitted via this token to complete.
+  void Close();
 
   // Marks the token as unusable for future submissions. Any queued tasks not
   // yet running are destroyed. If tasks are in flight, Shutdown() will wait
@@ -670,16 +678,41 @@ class ThreadPoolToken {
 
  private:
   friend class SchedulerThread;
-  // All possible token states. Legal state transitions:
-  //   IDLE      -> RUNNING: task is submitted via token
-  //   IDLE      -> QUIESCED: token or pool is shut down
-  //   RUNNING   -> IDLE: worker thread finishes executing a task and
-  //                      there are no more tasks queued to the token
-  //   RUNNING   -> QUIESCING: token or pool is shut down while worker thread
-  //                           is executing a task
-  //   RUNNING   -> QUIESCED: token or pool is shut down
-  //   QUIESCING -> QUIESCED:  worker thread finishes executing a task
-  //                           belonging to a shut down token or pool
+  friend class ThreadPoolTestTokenTypes;
+
+  // The 'State' enumerates all possible token states.
+  //
+  // Legal state transitions:
+  //  IDLE               -> RUNNING
+  //    task is submitted via token
+  //
+  //  IDLE               -> QUIESCED
+  //    token or pool is closed or shut down
+  //
+  //  RUNNING            -> IDLE
+  //    worker thread finishes executing a task and there are no more tasks
+  //    queued to the token
+  //
+  //  RUNNING            -> GRACEFUL_QUIESCING
+  //    token is being closed while worker thread is executing a task
+  //
+  //  RUNNING            -> QUIESCING
+  //    token or pool is shut down while worker thread is executing a task
+  //
+  //  RUNNING            -> QUIESCED
+  //    token or pool is shut down
+  //
+  //  GRACEFUL_QUIESCING -> QUIESCING
+  //    token is being shut down while worker thread is running a queued task,
+  //    draining the queue since the token has been closed
+  //
+  //  GRACEFUL_QUIESCING -> QUIESCED
+  //    worker thread finishes executing last queued task belonging
+  //    to a closed token
+  //
+  //  QUIESCING          -> QUIESCED
+  //    worker thread finishes executing a task belonging
+  //    to a shut down token or pool
   enum class State {
     // Token has no queued tasks.
     IDLE,
@@ -688,7 +721,14 @@ class ThreadPoolToken {
     RUNNING,
 
     // No new tasks may be submitted to the token. A worker thread is still
-    // running a previously queued task.
+    // running one of the token's previously queued tasks, and will continue
+    // running all the rest of the scheduled tasks if any are still present
+    // in the queue unless the token is shut down in the process of doing so.
+    GRACEFUL_QUIESCING,
+
+    // No new tasks may be submitted to the token. A worker thread is still
+    // running a previously queued task, but the rest of already queued
+    // but not yet running tasks will be removed from the queue.
     QUIESCING,
 
     // No new tasks may be submitted to the token. There are no active tasks
@@ -718,12 +758,14 @@ class ThreadPoolToken {
   // task belonging to this token is already running.
   bool IsActive() const {
     return state_ == State::RUNNING ||
+           state_ == State::GRACEFUL_QUIESCING ||
            state_ == State::QUIESCING;
   }
 
   // Returns true if new tasks may be submitted to this token.
   bool MaySubmitNewTasks() const {
-    return state_ != State::QUIESCING &&
+    return state_ != State::GRACEFUL_QUIESCING &&
+           state_ != State::QUIESCING &&
            state_ != State::QUIESCED;
   }
 
