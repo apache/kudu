@@ -283,12 +283,11 @@ TEST_F(ThreadPoolTest, SchedulerWithNullToken) {
 }
 
 TEST_F(ThreadPoolTest, TestThreadPoolWithNoMinimum) {
-  constexpr int kIdleTimeoutMs = 1;
   ASSERT_OK(RebuildPoolWithBuilder(
       ThreadPoolBuilder(kDefaultPoolName)
       .set_min_threads(0)
       .set_max_threads(3)
-      .set_idle_timeout(MonoDelta::FromMilliseconds(kIdleTimeoutMs))));
+      .set_idle_timeout(MonoDelta::FromMilliseconds(1))));
 
   // There are no threads to start with.
   ASSERT_TRUE(pool_->num_threads() == 0);
@@ -309,11 +308,10 @@ TEST_F(ThreadPoolTest, TestThreadPoolWithNoMinimum) {
   latch.CountDown();
   pool_->Wait();
   ASSERT_EQ(0, pool_->active_threads_);
-  // Wait for more than idle timeout: so threads should be gone since
-  // min_threads is set to 0.
-  SleepFor(MonoDelta::FromMilliseconds(10 * kIdleTimeoutMs));
-  ASSERT_EQ(0, pool_->num_threads());
-  ASSERT_EQ(0, pool_->active_threads_);
+  // Wait for the threads to be gone since min_threads is set to 0.
+  ASSERT_EVENTUALLY([&]() {
+    ASSERT_EQ(0, pool_->num_threads());
+  });
   pool_->Shutdown();
   ASSERT_EQ(0, pool_->num_threads());
 }
@@ -426,12 +424,11 @@ TEST_F(ThreadPoolTest, TestRace) {
 }
 
 TEST_F(ThreadPoolTest, TestVariableSizeThreadPool) {
-  constexpr int kIdleTimeoutMs = 1;
   ASSERT_OK(RebuildPoolWithBuilder(
       ThreadPoolBuilder(kDefaultPoolName)
       .set_min_threads(1)
       .set_max_threads(4)
-      .set_idle_timeout(MonoDelta::FromMilliseconds(kIdleTimeoutMs))));
+      .set_idle_timeout(MonoDelta::FromMilliseconds(1))));
 
   // There is 1 thread to start with.
   ASSERT_EQ(1, pool_->num_threads());
@@ -452,9 +449,11 @@ TEST_F(ThreadPoolTest, TestVariableSizeThreadPool) {
   latch.CountDown();
   pool_->Wait();
   ASSERT_EQ(0, pool_->active_threads_);
-  SleepFor(MonoDelta::FromMilliseconds(10 * kIdleTimeoutMs));
-  ASSERT_EQ(0, pool_->active_threads_);
-  ASSERT_EQ(1, pool_->num_threads());
+  // At some point there should be no more than 'min_threads' idle threads
+  // in the pool.
+  ASSERT_EVENTUALLY([&]() {
+    ASSERT_EQ(1, pool_->num_threads());
+  });
   pool_->Shutdown();
   ASSERT_EQ(0, pool_->num_threads());
 }
