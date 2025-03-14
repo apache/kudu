@@ -14,11 +14,11 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_UTIL_HIGH_WATER_MARK_H
-#define KUDU_UTIL_HIGH_WATER_MARK_H
+#pragma once
 
-#include "kudu/gutil/macros.h"
-#include "kudu/util/atomic.h"
+#include <cstdint>
+
+#include "kudu/util/atomic-utils.h"
 
 namespace kudu {
 
@@ -29,21 +29,21 @@ namespace kudu {
 class HighWaterMark {
  public:
   explicit HighWaterMark(int64_t initial_value)
-    : current_value_(initial_value),
-      max_value_(initial_value) {
+      : current_value_(initial_value),
+        max_value_(initial_value) {
   }
 
   // Return the current value.
   int64_t current_value() const {
-    return current_value_.Load(kMemOrderNoBarrier);
+    return current_value_.load(std::memory_order_relaxed);
   }
 
   // Return the max value.
   int64_t max_value() const {
-    return max_value_.Load(kMemOrderNoBarrier);
+    return max_value_.load(std::memory_order_relaxed);
   }
 
-  bool CanIncrementBy(int64_t delta, int64_t max) {
+  bool CanIncrementBy(int64_t delta, int64_t max) const {
     return current_value() + delta <= max;
   }
 
@@ -56,9 +56,10 @@ class HighWaterMark {
       if (new_val > max) {
         return false;
       }
-      if (PREDICT_TRUE(current_value_.CompareAndSet(old_val,
-                                                    new_val,
-                                                    kMemOrderNoBarrier))) {
+      if (current_value_.compare_exchange_weak(old_val,
+                                               new_val,
+                                               std::memory_order_release,
+                                               std::memory_order_relaxed)) {
         UpdateMax(new_val);
         return true;
       }
@@ -66,24 +67,21 @@ class HighWaterMark {
   }
 
   void IncrementBy(int64_t amount) {
-    UpdateMax(current_value_.IncrementBy(amount, kMemOrderNoBarrier));
+    UpdateMax(current_value_.fetch_add(amount, std::memory_order_relaxed));
   }
 
   void set_value(int64_t v) {
-    current_value_.Store(v, kMemOrderNoBarrier);
+    current_value_.store(v, std::memory_order_relaxed);
     UpdateMax(v);
   }
 
  private:
   void UpdateMax(int64_t value) {
-    max_value_.StoreMax(value, kMemOrderNoBarrier);
+    AtomicStoreMax(max_value_, value);
   }
 
-  AtomicInt<int64_t> current_value_;
-  AtomicInt<int64_t> max_value_;
+  std::atomic<int64_t> current_value_;
+  std::atomic<int64_t> max_value_;
 };
 
 } // namespace kudu
-#endif /* KUDU_UTIL_HIGH_WATER_MARK_H */
-
-
