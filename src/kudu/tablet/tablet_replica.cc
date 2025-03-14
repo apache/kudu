@@ -344,24 +344,13 @@ void TabletReplica::Stop() {
 
   if (consensus_) consensus_->Stop();
 
-  // First, close the prepare pool token, so no new operations can be accepted
-  // by the replica, and then start waiting for existing in-flight
-  // operations to complete. Otherwise, there would be a race condition
-  // if the token were still active after returning
-  // from op_tracker_.WaitForAllToFinish() call.
-  if (prepare_pool_token_) {
-    prepare_pool_token_->Close();
-  }
-
   // TODO(KUDU-183): Keep track of the pending tasks and send an "abort" message.
   LOG_SLOW_EXECUTION(WARNING, 1000,
       Substitute("TabletReplica: tablet $0: Waiting for Ops to complete", tablet_id())) {
     op_tracker_.WaitForAllToFinish();
   }
+
   if (prepare_pool_token_) {
-    // In debug builds, make sure no queued operations are still pending.
-    DCHECK(prepare_pool_token_->WaitFor(MonoDelta::FromSeconds(0)));
-    // Explicitly shutdown the token.
     prepare_pool_token_->Shutdown();
   }
 
