@@ -714,16 +714,19 @@ class ThreadPoolToken {
   //    worker thread finishes executing a task belonging
   //    to a shut down token or pool
   enum class State {
-    // Token has no queued tasks.
+    // Token has no queued tasks, and there aren't any active worker threads
+    // running the token's tasks.
     IDLE,
 
-    // A worker thread is running one of the token's previously queued tasks.
+    // A worker thread is running one of the token's previously queued tasks,
+    // or there aren't yet any active worker threads running the token's tasks
+    // at this particular moment, but the token's queue isn't empty.
     RUNNING,
 
-    // No new tasks may be submitted to the token. A worker thread is still
-    // running one of the token's previously queued tasks, and will continue
-    // running all the rest of the scheduled tasks if any are still present
-    // in the queue unless the token is shut down in the process of doing so.
+    // No new tasks may be submitted to the token, but otherwise the same
+    // set of conditions apply in RUNNING state. Worker threads will continue
+    // running the scheduled tasks if any are still present in the queue
+    // unless the token is shut down in the process.
     GRACEFUL_QUIESCING,
 
     // No new tasks may be submitted to the token. A worker thread is still

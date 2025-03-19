@@ -203,9 +203,9 @@ void ThreadPoolToken::Close() {
 
   switch (state_) {
     case State::IDLE:
-      // If there aren't any outstanding tasks, quiesce the token immediately.
-      // Otherwise, transition from IDLE into GRACEFUL_QUIESCING state.
-      Transition(entries_.empty() ? State::QUIESCED : State::GRACEFUL_QUIESCING);
+      // There aren't any outstanding tasks and no active worker threads,
+      // so quiesce the token immediately.
+      Transition(State::QUIESCED);
       return;
     case State::RUNNING:
       // Unconditionally transition the token into GRACEFUL_QUIESCING state.
@@ -322,10 +322,8 @@ void ThreadPoolToken::Transition(State new_state) {
   switch (state_) {
     case State::IDLE:
       CHECK(new_state == State::RUNNING ||
-            new_state == State::GRACEFUL_QUIESCING ||
             new_state == State::QUIESCED);
-      if (new_state == State::RUNNING ||
-          new_state == State::GRACEFUL_QUIESCING) {
+      if (new_state == State::RUNNING) {
         CHECK(!entries_.empty());
       } else {
         CHECK(entries_.empty());
@@ -337,19 +335,32 @@ void ThreadPoolToken::Transition(State new_state) {
             new_state == State::GRACEFUL_QUIESCING ||
             new_state == State::QUIESCING ||
             new_state == State::QUIESCED);
-      if (new_state != State::GRACEFUL_QUIESCING) {
+      if (new_state == State::QUIESCING) {
         CHECK(entries_.empty());
-      }
-      if (new_state == State::GRACEFUL_QUIESCING || new_state == State::QUIESCING) {
         CHECK_GT(active_threads_, 0);
+      }
+      if (new_state == State::QUIESCED || new_state == State::IDLE) {
+        CHECK(entries_.empty());
+        CHECK_EQ(active_threads_, 0);
+      }
+      if (new_state == State::GRACEFUL_QUIESCING) {
+        CHECK(active_threads_ > 0 || !entries_.empty());
       }
       break;
     case State::GRACEFUL_QUIESCING:
       CHECK(new_state == State::QUIESCING ||
             new_state == State::QUIESCED);
+      CHECK(entries_.empty());
+      if (new_state == State::QUIESCING) {
+        CHECK_GT(active_threads_, 0);
+      }
+      if (new_state == State::QUIESCED) {
+        CHECK_EQ(active_threads_, 0);
+      }
       break;
     case State::QUIESCING:
       CHECK(new_state == State::QUIESCED);
+      CHECK(entries_.empty());
       CHECK_EQ(active_threads_, 0);
       break;
     case State::QUIESCED:
@@ -498,9 +509,8 @@ void ThreadPool::Shutdown() {
         // (i.e. there are no active threads), the tasks will have been removed
         // above and we can quiesce immediately. Otherwise, we need to wait for
         // the threads to finish.
-        t->Transition(t->active_threads_ > 0 ?
-            ThreadPoolToken::State::QUIESCING :
-            ThreadPoolToken::State::QUIESCED);
+        t->Transition(t->active_threads_ > 0 ? ThreadPoolToken::State::QUIESCING
+                                             : ThreadPoolToken::State::QUIESCED);
         break;
       default:
         break;
@@ -849,8 +859,12 @@ void ThreadPool::DispatchThread() {
 
     // Possible states:
     // 1. The token was shut down while we ran its task. Transition to QUIESCED.
-    // 2. The token has no more queued tasks. Transition back to IDLE.
-    // 3. The token has more tasks. Requeue it and transition back to RUNNABLE.
+    // 2. The token has no more queued tasks. Transition to IDLE.
+    // 3. The token has more tasks. Requeue it and keep the state RUNNING
+    //    or GRACEFUL_QUIESCING.
+    // 4. The token was gracefully quiesced while its task was running, and
+    //    (a) the token's queue has more elements: transition to GRACEFUL_QUIESCING
+    //    (b) the token's queue is empty: transition to QUIESCED
     const ThreadPoolToken::State state = token->state();
     DCHECK(state == ThreadPoolToken::State::RUNNING ||
            state == ThreadPoolToken::State::GRACEFUL_QUIESCING ||
