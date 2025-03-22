@@ -17,8 +17,10 @@
 
 #include "kudu/master/hms_notification_log_listener.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <map>
 #include <optional>
 #include <ostream>
@@ -76,6 +78,7 @@ TAG_FLAG(hive_metastore_notification_log_listener_catch_up_deadline_ms, runtime)
 using rapidjson::Document;
 using rapidjson::Value;
 using std::optional;
+using std::ostringstream;
 using std::string;
 using std::vector;
 using strings::Substitute;
@@ -258,6 +261,33 @@ Status HmsNotificationLogListenerTask::Poll() {
                                  processed_event_id, event_id);
       }
     }
+
+#if DCHECK_IS_ON()
+    {
+      int64_t last_seen_event_id = std::numeric_limits<int64_t>::min();
+      for (size_t idx = 0; idx < events.size(); ++idx) {
+        const auto event_id = events[idx].eventId;
+        DCHECK_GT(event_id, std::numeric_limits<int64_t>::min());
+        if (event_id > last_seen_event_id) {
+          last_seen_event_id = event_id;
+          continue;
+        }
+        // Print out diagnostic information into the logs.
+        DCHECK_GT(idx, 0);
+        string msg = Substitute(
+            "non-monotonous event IDs from HMS: current $0, previous $1; "
+            "dumping first $2 out of $3 received events:",
+            event_id, events[idx - 1].eventId, idx + 1, events.size());
+        ostringstream events_str;
+        for (size_t j = 0; j <= idx; ++j) {
+          events_str << " ";
+          events[j].printTo(events_str);
+          events_str << ";";
+        }
+        LOG(DFATAL) << msg << events_str.str();
+      }
+    }
+#endif // #if DCHECK_IS_ON() ...
 
     for (const auto& event : events) {
       VLOG(1) << "Processing notification log event: " << EventDebugString(event);
