@@ -198,28 +198,31 @@ INSTANTIATE_TEST_SUITE_P(Params, TestCreateAndDeleteMetrics,
                                            TabletDataState::TABLET_DATA_TOMBSTONED));
 
 TEST_P(TestCreateAndDeleteMetrics, TestCreateAndDifferentModeDeleteMetrics) {
-  TabletDataState data_state = GetParam();
-  scoped_refptr<Histogram> create_tablet_run_time =
-    METRIC_create_tablet_run_time.Instantiate(mini_server_->server()->metric_entity());
-  ASSERT_EQ(0, create_tablet_run_time->TotalCount());
-
-  scoped_refptr<Histogram> delete_tablet_run_time =
-    METRIC_delete_tablet_run_time.Instantiate(mini_server_->server()->metric_entity());
-  ASSERT_EQ(0, delete_tablet_run_time->TotalCount());
-
-  string test_tablet = "ffffffffffffffffffffffffffffffff";
+  static const string kTestTablet = "ffffffffffffffffffffffffffffffff";
+  const TabletDataState data_state = GetParam();
   scoped_refptr<TabletReplica> test_replica;
 
+  scoped_refptr<Histogram> create_tablet_run_time =
+      METRIC_create_tablet_run_time.Instantiate(mini_server_->server()->metric_entity());
+  ASSERT_EQ(0, create_tablet_run_time->TotalCount());
   // Create a new tablet.
-  ASSERT_OK(CreateNewTablet(test_tablet, schema_, true, nullopt, nullopt, &test_replica));
-  ASSERT_EQ(test_tablet, test_replica->tablet()->tablet_id());
+  ASSERT_OK(CreateNewTablet(kTestTablet, schema_, true, nullopt, nullopt, &test_replica));
+  ASSERT_EQ(kTestTablet, test_replica->tablet()->tablet_id());
   // Metrics should be incremented.
   ASSERT_EQ(1, create_tablet_run_time->TotalCount());
 
+  // Wait for the tablet state transition to complete, otherwise there will be
+  // an error reported by TSTabletManager::StartTabletStateTransitionUnlocked().
+  ASSERT_EVENTUALLY([&] () {
+    ASSERT_OK(tablet_manager_->WaitForNoTransitionsForTests(
+        MonoDelta::FromSeconds(1)));
+  });
+
+  scoped_refptr<Histogram> delete_tablet_run_time =
+      METRIC_delete_tablet_run_time.Instantiate(mini_server_->server()->metric_entity());
   ASSERT_EQ(0, delete_tablet_run_time->TotalCount());
-  ASSERT_OK(tablet_manager_->DeleteTablet(test_tablet,
-                                          data_state,
-                                          nullopt));
+  // Delete the newly created tablet.
+  ASSERT_OK(tablet_manager_->DeleteTablet(kTestTablet, data_state, nullopt));
   // Metrics should be incremented.
   ASSERT_EQ(1, delete_tablet_run_time->TotalCount());
 }
