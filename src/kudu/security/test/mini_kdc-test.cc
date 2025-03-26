@@ -73,7 +73,7 @@ TEST_F(MiniKdcTest, TestBasicOperation) {
   ASSERT_STR_CONTAINS(klist, "kudu/foo.example.com@KRBTEST.COM");
 
   // Test programmatic keytab login.
-  kdc.SetKrb5Environment();
+  ASSERT_OK(kdc.SetKrb5Environment());
   ASSERT_OK(security::InitKerberosForServer(kSPN, kt_path));
   ASSERT_EQ("kudu/foo.example.com@KRBTEST.COM", *security::GetLoggedInPrincipalFromKeytab());
 

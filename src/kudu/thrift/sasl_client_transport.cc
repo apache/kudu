@@ -121,7 +121,6 @@ SaslClientTransport::SaslClientTransport(string service_principal,
       max_send_buf_size_(64 * 1024),
       service_principal_(std::move(service_principal)) {
   sasl_helper_.set_server_fqdn(server_fqdn);
-  sasl_helper_.EnableGSSAPI();
   ResetWriteBuf();
 }
 
@@ -134,6 +133,17 @@ bool SaslClientTransport::peek() {
 }
 
 void SaslClientTransport::open() {
+  // Ideally, SaslHelper::EnableGSSAPI() should be invoked just once
+  // per instance of this class. However, calling that in the constructor
+  // doesn't provide good options to check for the return status. The process
+  // should not crash if GSS SASL plugin isn't installed, and just logging about
+  // the issue and continuing might have unpredictable results. So, let's handle
+  // it here and throw an exception that is taken care at the higher level.
+  // In fact, in all current use cases SaslClientTransport::open() is invoked
+  // just once in the lifecycle of a SaslClientTransport's instance.
+  if (auto s = sasl_helper_.EnableGSSAPI(); PREDICT_FALSE(!s.ok())) {
+    throw SaslException(std::move(s));
+  }
   transport_->open();
   DCHECK(transport_->isOpen());
   try {

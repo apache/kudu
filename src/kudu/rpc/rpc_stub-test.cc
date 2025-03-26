@@ -429,7 +429,7 @@ TEST_F(RpcStubTest, TestRpcPanic) {
     RpcController controller;
     PanicRequestPB req;
     PanicResponsePB resp;
-    p.Panic(req, &resp, &controller);
+    CHECK_OK(p.Panic(req, &resp, &controller));
   }
 }
 

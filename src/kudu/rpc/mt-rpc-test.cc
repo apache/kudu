@@ -225,7 +225,7 @@ TEST_F(MultiThreadedRpcTest, TestBlowOutServiceQueue) {
                                       server_messenger_->metric_entity(),
                                       kMaxConcurrency);
   ASSERT_OK(service_pool_->Init(n_worker_threads_));
-  server_messenger_->RegisterService(service_name_, service_pool_);
+  ASSERT_OK(server_messenger_->RegisterService(service_name_, service_pool_));
 
   constexpr int kNumThreads = 3;
   thread threads[kNumThreads];

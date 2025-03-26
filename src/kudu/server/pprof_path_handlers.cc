@@ -193,7 +193,11 @@ static void PprofContentionHandler(const Webserver::WebRequest& req,
 #if defined(__linux__)
   // procfs only exists on Linux.
   faststring maps;
-  ReadFileToString(Env::Default(), "/proc/self/maps", &maps);
+  if (const auto s = ReadFileToString(Env::Default(), "/proc/self/maps", &maps);
+      !s.ok()) {
+    WARN_NOT_OK(s, "could not read /proc/self/maps");
+    return;
+  }
   *output << "--- Memory map: ---" << endl;
   *output << maps.ToString();
 #endif // defined(__linux__)

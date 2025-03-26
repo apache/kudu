@@ -211,7 +211,7 @@ class SpnegoWebserverTest : public WebserverTest {
   void MaybeSetupSpnego(WebserverOptions* opts) override {
     kdc_.reset(new MiniKdc(MiniKdcOptions{}));
     ASSERT_OK(kdc_->Start());
-    kdc_->SetKrb5Environment();
+    ASSERT_OK(kdc_->SetKrb5Environment());
     string kt_path;
     ASSERT_OK(kdc_->CreateServiceKeytab("HTTP/127.0.0.1", &kt_path));
     PCHECK(setenv("KRB5_KTNAME", kt_path.c_str(), 1) == 0);
@@ -257,7 +257,7 @@ class SpnegoDedicatedKeytabWebserverTest : public SpnegoWebserverTest {
   void MaybeSetupSpnego(WebserverOptions* opts) override {
     kdc_.reset(new MiniKdc(MiniKdcOptions{}));
     ASSERT_OK(kdc_->Start());
-    kdc_->SetKrb5Environment();
+    ASSERT_OK(kdc_->SetKrb5Environment());
     string kt_path;
     ASSERT_OK(kdc_->CreateServiceKeytabWithName("HTTP/127.0.0.1",
                                                 "spnego.dedicated",

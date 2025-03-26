@@ -431,7 +431,11 @@ class RpcTestBase : public KuduTest {
 
   void TearDown() override {
     if (service_pool_) {
-      server_messenger_->UnregisterService(service_name_);
+      // NOTE: by design, the service might not be registered during this phase
+      //       in a few scenarios, but for the majority of them such outcome
+      //       isn't expected; at least, let's log about error, if any
+      WARN_NOT_OK(server_messenger_->UnregisterService(service_name_),
+                  "error unregistering service");
       service_pool_->Shutdown();
     }
     if (server_messenger_) {
