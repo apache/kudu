@@ -341,7 +341,7 @@ Status TxnStatusTablet::AddNewParticipant(int64_t txn_id, const string& tablet_i
   pb_util::SerializeToString(entry, &metadata_buf);
 
   KuduPartialRow row(&TxnStatusTablet::GetSchemaWithoutIds());
-  PopulateParticipantEntryRow(txn_id, tablet_id, metadata_buf, &row);
+  RETURN_NOT_OK(PopulateParticipantEntryRow(txn_id, tablet_id, metadata_buf, &row));
   RowOperationsPBEncoder enc(req.mutable_row_operations());
   enc.Add(RowOperationsPB::INSERT_IGNORE, row);
   return SyncWrite(req, ts_error);

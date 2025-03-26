@@ -17,8 +17,9 @@
 
 #include "kudu/security/tls_handshake.h"
 
-#include <openssl/crypto.h>
+#include <openssl/crypto.h> // IWYU pragma: keep
 #include <openssl/ssl.h>
+// IWYU pragma: no_include <openssl/prov_ssl.h>
 
 #include <atomic>
 #include <iostream>
@@ -31,6 +32,7 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/gutil/basictypes.h"
 #include "kudu/security/ca/cert_management.h"
 #include "kudu/security/cert.h"
 #include "kudu/security/crypto.h"
@@ -216,7 +218,8 @@ TEST_P(TestTlsHandshakeConcurrent, TestConcurrentAdoptCert) {
   for (int i = 0; i < kNumThreads; i++) {
     handshake_threads.emplace_back([&]() {
         while (!done) {
-          RunHandshake(TlsVerificationMode::VERIFY_NONE, TlsVerificationMode::VERIFY_NONE);
+          ignore_result(RunHandshake(TlsVerificationMode::VERIFY_NONE,
+                                     TlsVerificationMode::VERIFY_NONE));
         }
       });
   }

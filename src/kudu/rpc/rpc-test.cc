@@ -1915,7 +1915,7 @@ TEST_P(TestRpc, TestPerformanceBySocketType) {
     Stopwatch sw(Stopwatch::ALL_THREADS);
     sw.start();
     for (int i = 0; i < kNumMb / kMbPerRpc; i++) {
-      DoTestOutgoingSidecar(&p, sidecars);
+      ASSERT_OK(DoTestOutgoingSidecar(&p, sidecars));
     }
     sw.stop();
     LOG(INFO) << strings::Substitute(

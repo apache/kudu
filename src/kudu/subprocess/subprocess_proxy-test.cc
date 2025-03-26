@@ -86,7 +86,8 @@ class SubprocessProxyTest : public KuduTest {
 
   void TearDown() override {
     if (process_) {
-      process_->KillAndWait(SIGTERM);
+      WARN_NOT_OK(process_->KillAndWait(SIGTERM),
+                  "could not properly terminate subprocess");
     }
     KuduTest::TearDown();
   }

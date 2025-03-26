@@ -24,6 +24,8 @@
 #include <type_traits>
 #include <unordered_map>
 
+#include <glog/logging.h>
+
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/rpc/messenger.h" // IWYU pragma: keep
@@ -31,6 +33,7 @@
 #include "kudu/rpc/rpcz_store.h"
 #include "kudu/server/webserver.h"
 #include "kudu/util/jsonwriter.h"
+#include "kudu/util/status.h"
 #include "kudu/util/web_callback_registry.h"
 
 using kudu::rpc::DumpConnectionsRequestPB;
@@ -49,29 +52,31 @@ namespace {
 void RpczPathHandler(const shared_ptr<Messenger>& messenger,
                      const Webserver::WebRequest& req,
                      Webserver::PrerenderedWebResponse* resp) {
-  DumpConnectionsResponsePB running_rpcs;
-  {
-    DumpConnectionsRequestPB dump_req;
-
-    string arg = FindWithDefault(req.parsed_args, "include_traces", "false");
-    dump_req.set_include_traces(ParseLeadingBoolValue(arg.c_str(), false));
-
-    messenger->DumpConnections(dump_req, &running_rpcs);
-  }
-  DumpRpczStoreResponsePB sampled_rpcs;
-  {
-    DumpRpczStoreRequestPB dump_req;
-    messenger->rpcz_store()->DumpPB(dump_req, &sampled_rpcs);
-  }
-
   JsonWriter writer(&resp->output, JsonWriter::PRETTY);
   writer.StartObject();
-  writer.String("running");
-  writer.Protobuf(running_rpcs);
-  writer.String("sampled");
-  writer.Protobuf(sampled_rpcs);
-  writer.EndObject();
+  {
+    static const string kParamName = "include_traces";
+    static const string kParamVal = "false";
+    const string& arg = FindWithDefault(req.parsed_args, kParamName, kParamVal);
+    DumpConnectionsRequestPB dump_req;
+    dump_req.set_include_traces(ParseLeadingBoolValue(arg.c_str(), false));
 
+    DumpConnectionsResponsePB running_rpcs;
+    const auto& s = messenger->DumpConnections(dump_req, &running_rpcs);
+    if (s.ok()) {
+      writer.String("running");
+      writer.Protobuf(running_rpcs);
+    } else {
+      WARN_NOT_OK(s, "error dumping info on RPC connections");
+    }
+  }
+  {
+    DumpRpczStoreResponsePB sampled_rpcs;
+    messenger->rpcz_store()->DumpPB({}, &sampled_rpcs);
+    writer.String("sampled");
+    writer.Protobuf(sampled_rpcs);
+  }
+  writer.EndObject();
 }
 
 } // anonymous namespace

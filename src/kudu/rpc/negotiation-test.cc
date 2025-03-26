@@ -38,6 +38,7 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -270,7 +271,7 @@ TEST_P(TestNegotiation, TestNegotiation) {
 
   unique_ptr<Socket> client_socket(new Socket());
   ASSERT_OK(client_socket->Init(server_addr.family(), 0));
-  client_socket->Connect(server_addr);
+  ASSERT_OK(client_socket->Connect(server_addr));
 
   unique_ptr<Socket> server_socket(desc.use_test_socket ?
                                    new NegotiationTestSocket() :
@@ -348,7 +349,7 @@ TEST_P(TestNegotiation, TestNegotiation) {
       ADOPT_TRACE(t.get());
       client_status = client_negotiation.Negotiate();
       // Close the socket so that the server will not block forever on error.
-      client_negotiation.socket()->Close();
+      ignore_result(client_negotiation.socket()->Close());
 
       if (FLAGS_rpc_trace_negotiation || !client_status.ok()) {
         string msg = Trace::CurrentTrace()->DumpToString();
@@ -364,7 +365,7 @@ TEST_P(TestNegotiation, TestNegotiation) {
       ADOPT_TRACE(t.get());
       server_status = server_negotiation.Negotiate();
       // Close the socket so that the client will not block forever on error.
-      server_negotiation.socket()->Close();
+      ignore_result(server_negotiation.socket()->Close());
 
       if (FLAGS_rpc_trace_negotiation || !server_status.ok()) {
         string msg = Trace::CurrentTrace()->DumpToString();
