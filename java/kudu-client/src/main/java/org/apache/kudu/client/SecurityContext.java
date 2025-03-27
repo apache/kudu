@@ -18,18 +18,15 @@
 package org.apache.kudu.client;
 
 import java.io.IOException;
-import java.security.AccessControlContext;
-import java.security.AccessController;
 import java.security.GeneralSecurityException;
 import java.security.KeyStore;
-import java.security.PrivilegedActionException;
-import java.security.PrivilegedExceptionAction;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.annotation.Nonnull;
@@ -53,6 +50,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.kudu.client.Client.AuthenticationCredentialsPB;
+import org.apache.kudu.client.internals.SecurityManagerCompatibility;
 import org.apache.kudu.security.Token.JwtRawPB;
 import org.apache.kudu.security.Token.SignedTokenPB;
 import org.apache.kudu.security.Token.TokenPB;
@@ -154,8 +152,7 @@ class SecurityContext {
   }
 
   private static Pair<SubjectType, Subject> setupSubject() {
-    AccessControlContext context = AccessController.getContext();
-    Subject subject = Subject.getSubject(context);
+    Subject subject = SecurityManagerCompatibility.get().current();
     if (subject != null) {
       if (!subject.getPrincipals(KerberosPrincipal.class).isEmpty()) {
         LOG.debug("Using caller-provided subject with Kerberos principal {}. " +
@@ -225,9 +222,9 @@ class SecurityContext {
       LOG.debug("Refreshing Kerberos credentials...");
       Subject newSubject;
       try {
-        newSubject = Subject.doAs(new Subject(),
-            (PrivilegedExceptionAction<Subject>) SecurityUtil::getSubjectFromTicketCacheOrNull);
-      } catch (PrivilegedActionException e) {
+        newSubject = SecurityManagerCompatibility.get().callAs(new Subject(),
+           SecurityUtil::getSubjectFromTicketCacheOrNull);
+      } catch (CompletionException e) {
         throw new RuntimeException(e.getCause());
       }
       if (newSubject == null || SecurityUtil.getKerberosPrincipalOrNull(newSubject) == null) {
