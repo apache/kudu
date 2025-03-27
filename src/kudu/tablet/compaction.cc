@@ -58,7 +58,9 @@
 #include "kudu/util/faststring.h"
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/memory/arena.h"
+#include "kudu/util/process_memory.h"
 
 using kudu::clock::HybridClock;
 using kudu::fault_injection::MaybeTrue;
@@ -213,6 +215,11 @@ class MemRowSetCompactionInput : public CompactionOrFlushInput {
     return 0;
   }
 
+  void UpdateMemTracker(int64_t mem_consumed) override {
+    // TODO(araina): implement this if it's necessary to track memory
+    //               usage for objects of this type during compaction
+  }
+
  private:
   DISALLOW_COPY_AND_ASSIGN(MemRowSetCompactionInput);
   unique_ptr<RowBlock> row_block_;
@@ -234,14 +241,26 @@ class DiskRowSetCompactionInput : public CompactionOrFlushInput {
  public:
   DiskRowSetCompactionInput(unique_ptr<RowwiseIterator> base_iter,
                             unique_ptr<DeltaIterator> redo_delta_iter,
-                            unique_ptr<DeltaIterator> undo_delta_iter)
+                            unique_ptr<DeltaIterator> undo_delta_iter,
+                            const shared_ptr<MemTracker>& parent_tracker,
+                            const shared_ptr<MemTracker>& tracker)
       : base_iter_(std::move(base_iter)),
         redo_delta_iter_(std::move(redo_delta_iter)),
         undo_delta_iter_(std::move(undo_delta_iter)),
         mem_(32 * 1024),
         block_(&base_iter_->schema(), kRowsPerBlock, &mem_),
         redo_mutation_block_(kRowsPerBlock, static_cast<Mutation*>(nullptr)),
-        undo_mutation_block_(kRowsPerBlock, static_cast<Mutation*>(nullptr)) {}
+        undo_mutation_block_(kRowsPerBlock, static_cast<Mutation*>(nullptr)),
+        mem_consumed_(0),
+        parent_tracker_(parent_tracker),
+        tracker_(tracker) {}
+
+  ~DiskRowSetCompactionInput() override {
+    // Memory tracker can be null for unit tests.
+    if (tracker_) {
+      tracker_->Release(mem_consumed_);
+    }
+  }
 
   Status Init() override {
     ScanSpec spec;
@@ -258,18 +277,63 @@ class DiskRowSetCompactionInput : public CompactionOrFlushInput {
     return base_iter_->HasNext();
   }
 
+  void UpdateMemTracker(int64_t mem_consumed) override {
+    if (!tracker_ || !parent_tracker_) {
+      return;
+    }
+
+    mem_consumed_ += mem_consumed;
+    tracker_->Consume(mem_consumed);
+    if (process_memory::OverHardLimitThreshold()) {
+      KLOG_EVERY_N_SECS(WARNING, 1) << Substitute(
+          "beyond hard memory limit of $0 with current consumption "
+          "at $1; Rowset merge compaction ops consumption: "
+          "tablet $2, total $3", process_memory::HardLimit(),
+          process_memory::CurrentConsumption(), tracker_->consumption(),
+          parent_tracker_->consumption()) << THROTTLE_MSG;
+    }
+  }
+
   Status PrepareBlock(vector<CompactionInputRow>* block) override {
     RETURN_NOT_OK(base_iter_->NextBlock(&block_));
     std::fill(redo_mutation_block_.begin(), redo_mutation_block_.end(),
               static_cast<Mutation*>(nullptr));
     std::fill(undo_mutation_block_.begin(), undo_mutation_block_.end(),
                   static_cast<Mutation*>(nullptr));
+    size_t memory_footprint_before = redo_delta_iter_->memory_footprint();
+
     RETURN_NOT_OK(redo_delta_iter_->PrepareBatch(
                       block_.nrows(), DeltaIterator::PREPARE_FOR_COLLECT));
+
+    // Update memory tracker with memory allocated for REDO delta blocks.
+    UpdateMemTracker(
+        static_cast<int64_t>(redo_delta_iter_->memory_footprint()) -
+        static_cast<int64_t>(memory_footprint_before));
+
+    memory_footprint_before = block_.arena()->memory_footprint();
     RETURN_NOT_OK(redo_delta_iter_->CollectMutations(&redo_mutation_block_, block_.arena()));
+
+    // Update memory tracker with memory allocated for REDO mutations.
+    UpdateMemTracker(
+        static_cast<int64_t>(block_.arena()->memory_footprint()) -
+        static_cast<int64_t>(memory_footprint_before));
+
+    memory_footprint_before = undo_delta_iter_->memory_footprint();
     RETURN_NOT_OK(undo_delta_iter_->PrepareBatch(
                       block_.nrows(), DeltaIterator::PREPARE_FOR_COLLECT));
+
+    // Update memory tracker with memory allocated for UNDO delta blocks.
+    UpdateMemTracker(
+        static_cast<int64_t>(undo_delta_iter_->memory_footprint()) -
+        static_cast<int64_t>(memory_footprint_before));
+
+    memory_footprint_before = block_.arena()->memory_footprint();
     RETURN_NOT_OK(undo_delta_iter_->CollectMutations(&undo_mutation_block_, block_.arena()));
+
+    // Update memory tracker with memory allocated for UNDO mutations.
+    UpdateMemTracker(
+        static_cast<int64_t>(block_.arena()->memory_footprint()) -
+        static_cast<int64_t>(memory_footprint_before));
 
     block->resize(block_.nrows());
     for (int i = 0; i < block_.nrows(); i++) {
@@ -315,6 +379,10 @@ class DiskRowSetCompactionInput : public CompactionOrFlushInput {
   enum {
     kRowsPerBlock = 100
   };
+
+  int64_t mem_consumed_;
+  std::shared_ptr<MemTracker> parent_tracker_;
+  std::shared_ptr<MemTracker> tracker_;
 };
 
 // Compares two duplicate rows before compaction (and before the REDO->UNDO
@@ -594,10 +662,14 @@ class MergeCompactionInput : public CompactionOrFlushInput {
 
  public:
   MergeCompactionInput(const vector<shared_ptr<CompactionOrFlushInput>>& inputs,
-                       const Schema* schema)
+                       const Schema* schema,
+                       const shared_ptr<MemTracker>& parent_tracker,
+                       const shared_ptr<MemTracker>& tracker)
       : schema_(schema),
         num_dup_rows_(0),
-        max_memory_usage_(0) {
+        max_memory_usage_(0),
+        parent_tracker_(parent_tracker),
+        tracker_(tracker) {
     for (const auto& input : inputs) {
       unique_ptr<MergeState> state(new MergeState);
       state->input = input;
@@ -607,6 +679,21 @@ class MergeCompactionInput : public CompactionOrFlushInput {
 
   ~MergeCompactionInput() override {
     STLDeleteElements(&states_);
+  }
+
+  void UpdateMemTracker(int64_t mem_consumed) override {
+    if (!tracker_ || !parent_tracker_) {
+      return;
+    }
+
+    tracker_->Consume(mem_consumed);
+    if (process_memory::OverHardLimitThreshold()) {
+      KLOG_EVERY_N_SECS(WARNING, 1) << Substitute(
+          "beyond hard memory limit of $0 with current consumption at $1; "
+          "Rowset merge compaction ops consumption: tablet $2, total $3",
+          process_memory::HardLimit(), process_memory::CurrentConsumption(),
+          tracker_->consumption(), parent_tracker_->consumption()) << THROTTLE_MSG;
+    }
   }
 
   Status Init() override {
@@ -943,6 +1030,8 @@ class MergeCompactionInput : public CompactionOrFlushInput {
     kDuplicatedRowsPerBlock = 10
   };
 
+  std::shared_ptr<MemTracker> parent_tracker_;
+  std::shared_ptr<MemTracker> tracker_;
 };
 
 // Advances 'head' while the timestamp of the 'next' mutation is bigger than or equal to 'ts'
@@ -1101,6 +1190,8 @@ Status CompactionOrFlushInput::Create(const DiskRowSet& rowset,
                                       const Schema* projection,
                                       const MvccSnapshot& snap,
                                       const IOContext* io_context,
+                                      const shared_ptr<MemTracker>& parent_tracker,
+                                      const shared_ptr<MemTracker>& tracker,
                                       shared_ptr<CompactionOrFlushInput>* out) {
   CHECK(projection->has_column_ids());
 
@@ -1126,7 +1217,8 @@ Status CompactionOrFlushInput::Create(const DiskRowSet& rowset,
       undo_opts, DeltaTracker::UNDOS_ONLY, &undo_deltas), "Could not open UNDOs");
 
   *out = make_shared<DiskRowSetCompactionInput>(
-      std::move(base_iter), std::move(redo_deltas), std::move(undo_deltas));
+      std::move(base_iter), std::move(redo_deltas), std::move(undo_deltas),
+      parent_tracker, tracker);
   return Status::OK();
 }
 
@@ -1140,23 +1232,27 @@ shared_ptr<CompactionOrFlushInput> CompactionOrFlushInput::Create(
 
 shared_ptr<CompactionOrFlushInput> CompactionOrFlushInput::Merge(
     const vector<shared_ptr<CompactionOrFlushInput>>& inputs,
-    const Schema* schema) {
+    const Schema* schema,
+    const shared_ptr<MemTracker>& parent_tracker,
+    const shared_ptr<MemTracker>& tracker) {
   CHECK(schema->has_column_ids());
-  return make_shared<MergeCompactionInput>(inputs, schema);
+  return make_shared<MergeCompactionInput>(inputs, schema, parent_tracker, tracker);
 }
-
 
 Status RowSetsInCompactionOrFlush::CreateCompactionOrFlushInput(
     const MvccSnapshot& snap,
     const Schema* schema,
     const IOContext* io_context,
+    const shared_ptr<MemTracker>& parent_tracker,
+    const shared_ptr<MemTracker>& tracker,
     shared_ptr<CompactionOrFlushInput>* out) const {
   CHECK(schema->has_column_ids());
 
   vector<shared_ptr<CompactionOrFlushInput>> inputs;
   for (const auto& rs : rowsets_) {
     shared_ptr<CompactionOrFlushInput> input;
-    RETURN_NOT_OK_PREPEND(rs->NewCompactionInput(schema, snap, io_context, &input),
+    RETURN_NOT_OK_PREPEND(rs->NewCompactionInput(schema, snap, io_context,
+                                                 parent_tracker, tracker, &input),
                           Substitute("Could not create compaction input for rowset $0",
                                      rs->ToString()));
     inputs.emplace_back(std::move(input));
@@ -1165,7 +1261,7 @@ Status RowSetsInCompactionOrFlush::CreateCompactionOrFlushInput(
   if (inputs.size() == 1) {
     *out = std::move(inputs[0]);
   } else {
-    *out = CompactionOrFlushInput::Merge(inputs, schema);
+    *out = CompactionOrFlushInput::Merge(inputs, schema, parent_tracker, tracker);
   }
 
   return Status::OK();
@@ -1544,9 +1640,11 @@ Status FlushCompactionInput(const string& tablet_id,
 
     size_t cur_row_idx = 0;
     int live_row_count = 0;
+    int64_t mem_per_block = 0;
     for (const auto& row : rows) {
       bool is_garbage_collected = false;
 
+      size_t arena_mem_before_mutations = input->PreparedBlockArena()->memory_footprint();
       RETURN_NOT_OK(ApplyMutationsAndMergeDuplicateHistory(snap,
                                                            row,
                                                            cur_row_idx,
@@ -1558,6 +1656,11 @@ Status FlushCompactionInput(const string& tablet_id,
                                                            out,
                                                            &live_row_count,
                                                            &is_garbage_collected));
+      mem_per_block += static_cast<int64_t>(input->PreparedBlockArena()->memory_footprint()) -
+                       static_cast<int64_t>(arena_mem_before_mutations);
+      input->UpdateMemTracker(
+          static_cast<int64_t>(input->PreparedBlockArena()->memory_footprint()) -
+          static_cast<int64_t>(arena_mem_before_mutations));
       // Whether this row was garbage collected
       if (is_garbage_collected) {
         // Don't flush the row.
@@ -1579,6 +1682,7 @@ Status FlushCompactionInput(const string& tablet_id,
       block.Resize(block.row_capacity());
     }
 
+    input->UpdateMemTracker(-static_cast<int64_t>(mem_per_block));
     RETURN_NOT_OK(input->FinishBlock());
   }
   return Status::OK();

@@ -35,6 +35,7 @@
 namespace kudu {
 
 class Arena;
+class MemTracker;
 class Schema;
 
 namespace fs {
@@ -110,6 +111,8 @@ class CompactionOrFlushInput {
                        const Schema* projection,
                        const MvccSnapshot& snap,
                        const fs::IOContext* io_context,
+                       const std::shared_ptr<MemTracker>& parent_tracker,
+                       const std::shared_ptr<MemTracker>& tracker,
                        std::shared_ptr<CompactionOrFlushInput>* out);
 
   // Create an input which reads from the given memrowset, yielding base rows and updates
@@ -123,7 +126,9 @@ class CompactionOrFlushInput {
   // in key-order according to the given schema. All inputs must have matching schemas.
   static std::shared_ptr<CompactionOrFlushInput> Merge(
       const std::vector<std::shared_ptr<CompactionOrFlushInput>>& inputs,
-      const Schema* schema);
+      const Schema* schema,
+      const std::shared_ptr<MemTracker>& parent_tracker,
+      const std::shared_ptr<MemTracker>& tracker);
 
   virtual ~CompactionOrFlushInput() = default;
 
@@ -143,6 +148,9 @@ class CompactionOrFlushInput {
   // Return an estimate on the maximum amount of memory used by the object
   // during its lifecycle while initializing, reading and processing data, etc.
   virtual size_t memory_footprint() const = 0;
+
+  // Updates memory consumption by the object during its lifecycle.
+  virtual void UpdateMemTracker(int64_t mem_consumed) = 0;
 };
 
 // The set of rowsets which are taking part in a given compaction or flush operation.
@@ -164,6 +172,8 @@ class RowSetsInCompactionOrFlush {
   Status CreateCompactionOrFlushInput(const MvccSnapshot& snap,
                                       const Schema* schema,
                                       const fs::IOContext* io_context,
+                                      const std::shared_ptr<MemTracker>& parent_tracker,
+                                      const std::shared_ptr<MemTracker>& tracker,
                                       std::shared_ptr<CompactionOrFlushInput>* out) const;
 
   // Dump a log message indicating the chosen rowsets.

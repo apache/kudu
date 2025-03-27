@@ -128,6 +128,9 @@ class TestHighMemCompaction : public KuduRowSetTest {
   // Tests appropriate logs are printed when major compaction crosses memory threshold.
   void TestMajorCompactionCrossingMemoryThreshold();
 
+  // Tests appropriate logs are printed when rowset compaction crosses memory threshold.
+  void TestRowSetCompactionCrossingMemoryThreshold();
+
   static void SetUpTestSuite() {
     // Keep the memory hard limit as 1GB for deterministic results.
     // The tests in this file have a requirement of memory hard limit to be of
@@ -185,8 +188,20 @@ void TestHighMemCompaction::TestMajorCompactionCrossingMemoryThreshold() {
   StringVectorSink sink;
   ScopedRegisterSink reg(&sink);
   ASSERT_OK(tablet()->CompactWorstDeltas(RowSet::MAJOR_DELTA_COMPACTION));
-  ASSERT_STR_CONTAINS(JoinStrings(sink.logged_msgs(), "\n"),
-                      "beyond hard memory limit of");
+  ASSERT_STR_MATCHES(JoinStrings(sink.logged_msgs(), "\n"),
+                     "beyond hard memory limit of.*MajorDeltaCompaction ops consumption:");
+}
+
+void TestHighMemCompaction::TestRowSetCompactionCrossingMemoryThreshold() {
+  // Size factor as 2 generates ~2MB memory size worth of deltas.
+  NO_FATALS(GenHighMemConsumptionDeltas(2));
+
+  // Run rowset compaction.
+  StringVectorSink sink;
+  ScopedRegisterSink reg(&sink);
+  ASSERT_OK(tablet()->Compact(Tablet::COMPACT_NO_FLAGS));
+  ASSERT_STR_MATCHES(JoinStrings(sink.logged_msgs(), "\n"),
+                     "beyond hard memory limit of.*Rowset merge compaction ops consumption:");
 }
 
 void TestHighMemCompaction::GenHighMemConsumptionDeltas(uint32_t size_factor) {
@@ -246,6 +261,21 @@ TEST_F(TestHighMemCompaction, TestMajorCompactionMemoryPressure) {
       static_cast<double>(compaction_mem_usage_approx * 100) / FLAGS_memory_limit_hard_bytes;
 
   TestMajorCompactionCrossingMemoryThreshold();
+}
+
+TEST_F(TestHighMemCompaction, TestRowSetCompactionMemoryPressure) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+  // Approximate memory consumed by rowset compaction during the course of this test.
+  // Total consumption would always exceed this usage. Since we want to be
+  // certain that warning threshold limit is crossed, this value is kept low.
+  constexpr int64_t compaction_mem_usage_approx = 3 * 1024 * 1024;
+
+  // Set appropriate flags to ensure memory threshold checks fail.
+  FLAGS_memory_limit_compact_usage_warn_threshold_percentage =
+      static_cast<double>(compaction_mem_usage_approx * 100) / FLAGS_memory_limit_hard_bytes;
+
+  TestRowSetCompactionCrossingMemoryThreshold();
 }
 
 } // namespace tablet

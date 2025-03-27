@@ -671,8 +671,16 @@ Status DiskRowSet::NewRowIterator(const RowIteratorOptions& opts,
 Status DiskRowSet::NewCompactionInput(const Schema* projection,
                                       const MvccSnapshot& snap,
                                       const IOContext* io_context,
+                                      const shared_ptr<MemTracker>& parent_tracker,
+                                      const shared_ptr<MemTracker>& tracker,
                                       shared_ptr<CompactionOrFlushInput>* out) const {
-  return CompactionOrFlushInput::Create(*this, projection, snap, io_context, out);
+  return CompactionOrFlushInput::Create(*this,
+                                        projection,
+                                        snap,
+                                        io_context,
+                                        parent_tracker,
+                                        tracker,
+                                        out);
 }
 
 Status DiskRowSet::MutateRow(Timestamp timestamp,
@@ -930,7 +938,7 @@ Status DiskRowSet::DebugDumpImpl(int64_t* rows_left, vector<string>* lines) {
   shared_ptr<CompactionOrFlushInput> input;
   RETURN_NOT_OK(NewCompactionInput(rowset_metadata_->tablet_schema().get(),
                                    MvccSnapshot::CreateSnapshotIncludingAllOps(),
-                                   nullptr, &input));
+                                   nullptr, nullptr, nullptr, &input));
   return DebugDumpCompactionInput(input.get(), rows_left, lines);
 }
 

@@ -354,6 +354,8 @@ Status MemRowSet::NewRowIterator(const RowIteratorOptions& opts,
 Status MemRowSet::NewCompactionInput(const Schema* projection,
                                      const MvccSnapshot& snap,
                                      const IOContext* /*io_context*/,
+                                     const shared_ptr<MemTracker>& /*parent_tracker*/,
+                                     const shared_ptr<MemTracker>& /*tracker*/,
                                      shared_ptr<CompactionOrFlushInput>* out) const  {
   *out = CompactionOrFlushInput::Create(*this, projection, snap);
   return Status::OK();

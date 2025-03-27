@@ -91,6 +91,7 @@
 #include "kudu/util/flag_validators.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/mem_tracker.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
@@ -2036,6 +2037,12 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompactionOrFlush &input,
                           "PostTakeMvccSnapshot hook failed");
   }
 
+  std::shared_ptr<MemTracker> parent_tracker =
+      MemTracker::FindOrCreateGlobalTracker(-1, "rowset_merge_compaction");
+  std::shared_ptr<MemTracker> tracker =
+      MemTracker::CreateTracker(-1, Substitute("rowset_merge_compaction:$0", tid),
+                                parent_tracker);
+
   // Create input of rowsets by iterating through all rowsets and for each rowset:
   //   - For compaction ops, create input that contains initialized base,
   //     relevant REDO and UNDO delta iterators to be used read from persistent storage.
@@ -2044,6 +2051,8 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompactionOrFlush &input,
   RETURN_NOT_OK(input.CreateCompactionOrFlushInput(flush_snap,
                                                    schema_ptr.get(),
                                                    &io_context,
+                                                   parent_tracker,
+                                                   tracker,
                                                    &merge));
 
   // Initializing a DRS writer, to be used later for writing REDO, UNDO deltas, delta stats, etc.
@@ -2204,6 +2213,8 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompactionOrFlush &input,
   RETURN_NOT_OK_PREPEND(input.CreateCompactionOrFlushInput(non_duplicated_ops_snap,
                                                            schema_ptr2.get(),
                                                            &io_context,
+                                                           parent_tracker,
+                                                           tracker,
                                                            &merge),
                         Substitute("Failed to create $0 inputs", op_name).c_str());
 

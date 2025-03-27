@@ -41,6 +41,7 @@
 namespace kudu {
 
 class Arena;
+class MemTracker;
 class MonoTime; // IWYU pragma: keep
 class RowChangeList;
 class RowwiseIterator;
@@ -168,6 +169,8 @@ class RowSet {
   virtual Status NewCompactionInput(const Schema* projection,
                                     const MvccSnapshot &snap,
                                     const fs::IOContext* io_context,
+                                    const std::shared_ptr<MemTracker>& parent_tracker,
+                                    const std::shared_ptr<MemTracker>& tracker,
                                     std::shared_ptr<CompactionOrFlushInput>* out) const = 0;
 
   // Count the number of rows in this rowset.
@@ -423,6 +426,8 @@ class DuplicatingRowSet : public RowSet {
   Status NewCompactionInput(const Schema* projection,
                             const MvccSnapshot &snap,
                             const fs::IOContext* io_context,
+                            const std::shared_ptr<MemTracker>& parent_tracker,
+                            const std::shared_ptr<MemTracker>& tracker,
                             std::shared_ptr<CompactionOrFlushInput>* out) const override;
 
   Status CountRows(const fs::IOContext* io_context, rowid_t *count) const override;
