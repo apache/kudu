@@ -217,7 +217,7 @@ Status MemRowSet::Insert(Timestamp timestamp,
         << "succeeded!";
   }
 
-  anchorer_.AnchorIfMinimum(op_id.index());
+  RETURN_NOT_OK(anchorer_.AnchorIfMinimum(op_id.index()));
 
   debug_insert_count_++;
   live_row_count_.Increment();
@@ -286,7 +286,7 @@ Status MemRowSet::MutateRow(Timestamp timestamp,
 
   stats->mrs_consulted++;
 
-  anchorer_.AnchorIfMinimum(op_id.index());
+  RETURN_NOT_OK(anchorer_.AnchorIfMinimum(op_id.index()));
   debug_update_count_++;
   if (delta.is_delete()) {
     live_row_count_.IncrementBy(-1);

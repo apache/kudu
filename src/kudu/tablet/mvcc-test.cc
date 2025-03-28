@@ -645,7 +645,7 @@ TEST_F(MvccTest, TestOpAbort) {
 // coalesce to the latest timestamp.
 TEST_F(MvccTest, TestAutomaticCleanTimeMoveToSafeTimeOnApply) {
   MvccManager mgr;
-  clock_.Update(Timestamp(20));
+  ASSERT_OK(clock_.Update(Timestamp(20)));
 
   ScopedOp op1(&mgr, Timestamp(10));
   ScopedOp op2(&mgr, Timestamp(15));
@@ -683,7 +683,7 @@ TEST_F(MvccTest, TestIllegalStateTransitionsCrash) {
     "Trying to apply an op with a future timestamp|"
     "Trying to remove timestamp which isn't in the in-flight set: 1");
 
-  clock_.Update(Timestamp(20));
+  ASSERT_OK(clock_.Update(Timestamp(20)));
 
   EXPECT_DEATH({
       mgr.FinishApplyingOp(Timestamp(1));

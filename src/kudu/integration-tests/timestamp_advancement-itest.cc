@@ -21,6 +21,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -60,13 +61,18 @@
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/tserver/tserver.pb.h"
-#include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
+
+namespace kudu {
+namespace tserver {
+class TabletServerServiceProxy;
+}  // namespace tserver
+}  // namespace kudu
 
 DECLARE_bool(enable_maintenance_manager);
 DECLARE_bool(compaction_force_small_rowset_tradeoff);
@@ -251,7 +257,7 @@ class TimestampAdvancementITest : public MiniClusterITestBase {
       int64_t gcable_size;
       ASSERT_OK(replica->GetGCableDataSize(&gcable_size));
       ASSERT_GT(gcable_size, 0);
-      ASSERT_OK(replica->RunLogGC());
+      replica->RunLogGC();
 
       // Ensure that we have no writes in our WALs.
       bool has_write_replicates;

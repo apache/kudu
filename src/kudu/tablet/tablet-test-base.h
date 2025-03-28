@@ -478,7 +478,7 @@ class TabletTestBase : public KuduTabletTest {
     // select the col to update (the third if there is only one key
     // or the fourth if there are two col keys).
     int col_idx = schema_.num_key_columns() == 1 ? 2 : 3;
-    CHECK_OK(row.SetNull(col_idx));
+    RETURN_NOT_OK(row.SetNull(col_idx));
     return writer->Update(row);
   }
 

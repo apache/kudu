@@ -116,7 +116,7 @@ Status DeltaMemStore::Update(Timestamp timestamp,
     return Status::IOError("Unable to insert into tree");
   }
 
-  anchorer_.AnchorIfMinimum(op_id.index());
+  RETURN_NOT_OK(anchorer_.AnchorIfMinimum(op_id.index()));
 
   if (update.is_delete()) {
     deleted_row_count_.Increment();
@@ -140,7 +140,7 @@ Status DeltaMemStore::FlushToFile(DeltaFileWriter *dfw) {
     RETURN_NOT_OK(key.DecodeFrom(&key_slice));
     RowChangeList rcl(val);
     RETURN_NOT_OK_PREPEND(dfw->AppendDelta<REDO>(key, rcl), "Failed to append delta");
-    stats->UpdateStats(key.timestamp(), rcl);
+    RETURN_NOT_OK(stats->UpdateStats(key.timestamp(), rcl));
     iter->Next();
   }
   dfw->WriteDeltaStats(std::move(stats));

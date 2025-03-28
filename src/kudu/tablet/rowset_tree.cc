@@ -141,22 +141,22 @@ Status RowSetTree::Reset(const RowSetVector &rowsets) {
   // Iterate over each of the provided RowSets, fetching their
   // bounds and adding them to the local vectors.
   for (const shared_ptr<RowSet> &rs : rowsets) {
-    unique_ptr<RowSetWithBounds> rsit(new RowSetWithBounds());
+    unique_ptr<RowSetWithBounds> rsit(new RowSetWithBounds);
     rsit->rowset = rs.get();
     string min_key;
     string max_key;
-    Status s = rs->GetBounds(&min_key, &max_key);
-    if (s.IsNotSupported()) {
-      // This rowset is a MemRowSet, for which the bounds change as more
-      // data gets inserted. Therefore we can't put it in the static
-      // interval tree -- instead put it on the list which is consulted
-      // on every access.
-      unbounded.push_back(rs);
-      continue;
-    } else if (!s.ok()) {
-      LOG(WARNING) << "Unable to construct RowSetTree: "
-                   << rs->ToString() << " unable to determine its bounds: "
-                   << s.ToString();
+    if (auto s = rs->GetBounds(&min_key, &max_key); !s.ok()) {
+      if (s.IsNotSupported()) {
+        // This rowset is a MemRowSet, for which the bounds change as more
+        // data gets inserted. Therefore we can't put it in the static
+        // interval tree -- instead put it on the list which is consulted
+        // on every access.
+        unbounded.push_back(rs);
+        continue;
+      }
+      LOG(ERROR) << "Unable to construct RowSetTree: "
+                 << rs->ToString() << " unable to determine its bounds: "
+                 << s.ToString();
       return s;
     }
     DCHECK_LE(min_key.compare(max_key), 0)

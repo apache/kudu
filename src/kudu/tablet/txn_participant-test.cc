@@ -515,7 +515,8 @@ TEST_F(TxnParticipantTest, TestAllOpsRegisterAnchors) {
         if (op == ParticipantOpPB::BEGIN_COMMIT) {
           ASSERT_EQ(1, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
           int64_t log_index = -1;
-          tablet_replica_->log_anchor_registry()->GetEarliestRegisteredLogIndex(&log_index);
+          ASSERT_OK(tablet_replica_->log_anchor_registry()->GetEarliestRegisteredLogIndex(
+              &log_index));
           ASSERT_EQ(expected_index, log_index);
         } else {
           ASSERT_EQ(0, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
@@ -699,7 +700,7 @@ TEST_F(TxnParticipantTest, TestTxnMetadataSurvivesRestart) {
   // We should be able to GC the WALs that have the BEGIN_TXN op.
   ASSERT_OK(tablet_replica_->GetGCableDataSize(&gcable_size));
   ASSERT_GT(gcable_size, 0);
-  ASSERT_OK(tablet_replica_->RunLogGC());
+  tablet_replica_->RunLogGC();
   ASSERT_OK(tablet_replica_->GetGCableDataSize(&gcable_size));
   ASSERT_EQ(0, gcable_size);
 
@@ -718,7 +719,7 @@ TEST_F(TxnParticipantTest, TestTxnMetadataSurvivesRestart) {
   ASSERT_EQ(1, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
   ASSERT_OK(tablet_replica_->GetGCableDataSize(&gcable_size));
   ASSERT_GT(gcable_size, 0);
-  ASSERT_OK(tablet_replica_->RunLogGC());
+  tablet_replica_->RunLogGC();
   ASSERT_OK(tablet_replica_->GetGCableDataSize(&gcable_size));
   ASSERT_EQ(0, gcable_size);
 
@@ -750,7 +751,7 @@ TEST_F(TxnParticipantTest, TestTxnMetadataSurvivesRestart) {
   ASSERT_OK(WriteRolloverAndFlush(current_key++));
   ASSERT_OK(tablet_replica_->GetGCableDataSize(&gcable_size));
   ASSERT_GT(gcable_size, 0);
-  ASSERT_OK(tablet_replica_->RunLogGC());
+  tablet_replica_->RunLogGC();
   ASSERT_OK(tablet_replica_->GetGCableDataSize(&gcable_size));
   ASSERT_EQ(0, gcable_size);
 
@@ -780,7 +781,7 @@ TEST_F(TxnParticipantTest, TestBeginCommitAnchorsOnFlush) {
   ASSERT_NE(nullopt, txn_meta->commit_mvcc_op_timestamp());
   const auto orig_mvcc_op_timestamp = *txn_meta->commit_mvcc_op_timestamp();
   txn_meta.reset();
-  RestartReplica(/*reset_tablet*/true);
+  ASSERT_OK(RestartReplica(/*reset_tablet*/true));
   txn_meta = FindOrDie(tablet_replica_->tablet_metadata()->GetTxnMetadata(), kTxnId);
   ASSERT_NE(nullopt, txn_meta->commit_mvcc_op_timestamp());
   ASSERT_EQ(orig_mvcc_op_timestamp, *txn_meta->commit_mvcc_op_timestamp());
@@ -803,7 +804,7 @@ TEST_F(TxnParticipantTest, TestBeginCommitAnchorsOnFlush) {
   // after restarting.
   ASSERT_NE(nullopt, txn_meta->commit_mvcc_op_timestamp());
   txn_meta.reset();
-  RestartReplica(/*reset_tablet*/true);
+  ASSERT_OK(RestartReplica(/*reset_tablet*/true));
   txn_meta = FindOrDie(tablet_replica_->tablet_metadata()->GetTxnMetadata(), kTxnId);
   ASSERT_NE(nullopt, txn_meta->commit_mvcc_op_timestamp());
   ASSERT_EQ(orig_mvcc_op_timestamp, *txn_meta->commit_mvcc_op_timestamp());
@@ -822,7 +823,7 @@ TEST_F(TxnParticipantTest, TestBeginCommitAnchorsOnFinalize) {
 
   // Restarting shouldn't affect our metadata.
   txn_meta.reset();
-  RestartReplica(/*reset_tablet*/true);
+  ASSERT_OK(RestartReplica(/*reset_tablet*/true));
   txn_meta = FindOrDie(tablet_replica_->tablet_metadata()->GetTxnMetadata(), kTxnId);
   ASSERT_NE(nullopt, txn_meta->commit_mvcc_op_timestamp());
   ASSERT_EQ(orig_mvcc_op_timestamp, *txn_meta->commit_mvcc_op_timestamp());
@@ -835,7 +836,7 @@ TEST_F(TxnParticipantTest, TestBeginCommitAnchorsOnFinalize) {
 
   // Finalizing the commit shouldn't affect our metadata.
   txn_meta.reset();
-  RestartReplica(/*reset_tablet*/true);
+  ASSERT_OK(RestartReplica(/*reset_tablet*/true));
   txn_meta = FindOrDie(tablet_replica_->tablet_metadata()->GetTxnMetadata(), kTxnId);
   ASSERT_NE(nullopt, txn_meta->commit_mvcc_op_timestamp());
   ASSERT_EQ(orig_mvcc_op_timestamp, *txn_meta->commit_mvcc_op_timestamp());
@@ -1040,7 +1041,7 @@ TEST_F(TxnParticipantTest, TestActiveParticipantOpsAnchorWALs) {
 
   // Now that we've completed the op, we can get rid of the WAL segments that
   // had the participant op.
-  ASSERT_OK(tablet_replica_->RunLogGC());
+  tablet_replica_->RunLogGC();
   ASSERT_OK(tablet_replica_->GetGCableDataSize(&gcable_size));
   ASSERT_EQ(0, gcable_size);
 

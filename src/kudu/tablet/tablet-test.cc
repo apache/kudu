@@ -48,6 +48,7 @@
 #include "kudu/fs/block_manager.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/tablet/delta_key.h"
 #include "kudu/tablet/delta_stats.h"
@@ -240,8 +241,9 @@ TYPED_TEST(TestTablet, TestGhostRowsOnDiskRowSets) {
   LocalTabletWriter writer(this->tablet().get(), &this->client_schema_);
 
   for (int i = 0; i < 3; i++) {
-    CHECK_OK(this->InsertTestRow(&writer, 0, 0));
-    this->DeleteTestRow(&writer, 0);
+    SCOPED_TRACE(strings::Substitute("iteration $0", i));
+    ASSERT_OK(this->InsertTestRow(&writer, 0, 0));
+    ASSERT_OK(this->DeleteTestRow(&writer, 0));
     ASSERT_OK(this->tablet()->Flush());
   }
 
@@ -454,16 +456,15 @@ TYPED_TEST(TestTablet, TestReinsertDuringFlush) {
 
     Status PostWriteSnapshot() override {
       LocalTabletWriter writer(test_->tablet().get(), &test_->client_schema());
-      test_->InsertTestRow(&writer, 0, 1);
-      CHECK_OK(test_->DeleteTestRow(&writer, 0));
+      RETURN_NOT_OK(test_->InsertTestRow(&writer, 0, 1));
+      RETURN_NOT_OK(test_->DeleteTestRow(&writer, 0));
       CHECK_EQ(1, writer.last_op_result().mutated_stores_size());
       CHECK_EQ(1L, writer.last_op_result().mutated_stores(0).mrs_id());
-      test_->InsertTestRow(&writer, 0, 2);
-      CHECK_OK(test_->DeleteTestRow(&writer, 0));
+      RETURN_NOT_OK(test_->InsertTestRow(&writer, 0, 2));
+      RETURN_NOT_OK(test_->DeleteTestRow(&writer, 0));
       CHECK_EQ(1, writer.last_op_result().mutated_stores_size());
       CHECK_EQ(1L, writer.last_op_result().mutated_stores(0).mrs_id());
-      test_->InsertTestRow(&writer, 0, 3);
-      return Status::OK();
+      return test_->InsertTestRow(&writer, 0, 3);
     }
 
    private:
@@ -671,7 +672,7 @@ TYPED_TEST(TestTablet, TestRowIteratorComplex) {
 
     bool set_to_null = TestSetupExpectsNulls<TypeParam>(i);
     if (set_to_null) {
-      this->UpdateTestRowToNull(&writer, i);
+      ASSERT_OK(this->UpdateTestRowToNull(&writer, i));
     } else {
       ASSERT_OK_FAST(this->UpdateTestRow(&writer, i, i));
     }
@@ -1346,7 +1347,7 @@ TYPED_TEST(TestTablet, TestMetricsInit) {
     ASSERT_OK(registry->WriteAsJson(&writer, MetricJsonOptions()));
   }
   // Open tablet, should still work
-  this->harness()->Open();
+  ASSERT_OK(this->harness()->Open());
   {
     std::ostringstream out;
     JsonWriter writer(&out, JsonWriter::PRETTY);

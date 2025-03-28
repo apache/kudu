@@ -653,18 +653,15 @@ void TabletReplica::GetTabletStatusPB(TabletStatusPB* status_pb_out) const {
   }
 }
 
-Status TabletReplica::RunLogGC() {
-  if (!CheckRunning().ok()) {
-    return Status::OK();
+void TabletReplica::RunLogGC() {
+  if (PREDICT_FALSE(!CheckRunning().ok())) {
+    return;
   }
   int32_t num_gced;
-  log::RetentionIndexes retention = GetRetentionIndexes();
-  Status s = log_->GC(retention, &num_gced);
-  if (!s.ok()) {
-    s = s.CloneAndPrepend("Unexpected error while running Log GC from TabletReplica");
-    LOG(ERROR) << s.ToString();
+  const auto s = log_->GC(GetRetentionIndexes(), &num_gced);
+  if (PREDICT_FALSE(!s.ok())) {
+    LOG(ERROR) << LogPrefix() << "unexpected error while running log GC: " << s.ToString();
   }
-  return Status::OK();
 }
 
 void TabletReplica::SetBootstrapping() {
@@ -1314,7 +1311,7 @@ void TabletReplica::TxnOpDispatcher::Cancel(const Status& status,
     std::swap(ops, ops_queue_);
   }
 
-  RespondWithStatus(status, code, std::move(ops));
+  ignore_result(RespondWithStatus(status, code, std::move(ops)));
 }
 
 Status TabletReplica::TxnOpDispatcher::MarkUnregistered() {

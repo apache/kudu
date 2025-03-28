@@ -35,6 +35,7 @@
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
+#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/local_tablet_writer.h"
@@ -162,10 +163,10 @@ struct NumTypeRowOps : public RowOpsBase {
         CHECK_OK(row->SetNull(kColC));
       }
     } else {
-      row->Set<TypeTraits<KeyTypeWrapper::kType>>(kColA, value);
-      row->Set<TypeTraits<KeyTypeWrapper::kType>>(kColB, value);
+      CHECK_OK(row->Set<TypeTraits<KeyTypeWrapper::kType>>(kColA, value));
+      CHECK_OK(row->Set<TypeTraits<KeyTypeWrapper::kType>>(kColB, value));
       if (altered) {
-        row->Set<TypeTraits<KeyTypeWrapper::kType>>(kColC, value);
+        CHECK_OK(row->Set<TypeTraits<KeyTypeWrapper::kType>>(kColC, value));
       }
     }
   }
@@ -364,7 +365,7 @@ public:
       default_ptr = rowops_.GenerateElement(read_default);
     }
     SchemaBuilder builder(*tablet()->metadata()->schema());
-    builder.RemoveColumn("val_c");
+    ignore_result(builder.RemoveColumn("val_c"));
     ASSERT_OK(builder.AddColumn("val_c", rowops_.type_, true, default_ptr, nullptr));
     AlterSchema(builder.Build());
     altered_schema_ = Schema({ColumnSchema("key", INT32),

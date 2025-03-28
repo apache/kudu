@@ -430,7 +430,7 @@ Status RollingDiskRowSetWriter::AppendDeltas(rowid_t row_idx_in_block,
   for (const Mutation *mut = delta_head; mut != nullptr; mut = mut->next()) {
     DeltaKey undo_key(*row_idx, mut->timestamp());
     RETURN_NOT_OK(writer->AppendDelta<Type>(undo_key, mut->changelist()));
-    delta_stats->UpdateStats(mut->timestamp(), mut->changelist());
+    RETURN_NOT_OK(delta_stats->UpdateStats(mut->timestamp(), mut->changelist()));
   }
   return Status::OK();
 }

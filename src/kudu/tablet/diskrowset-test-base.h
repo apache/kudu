@@ -293,7 +293,7 @@ class TestRowSet : public KuduRowSetTest {
     CHECK_OK(rs.NewRowIterator(opts, &row_iter));
     CHECK_OK(row_iter->Init(&spec));
     std::vector<std::string> rows;
-    IterateToStringList(row_iter.get(), &rows);
+    ASSERT_OK(IterateToStringList(row_iter.get(), &rows));
     std::string result = JoinStrings(rows, "\n");
     ASSERT_EQ(expected_val, result);
   }

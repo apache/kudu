@@ -263,7 +263,7 @@ TEST_F(TestRowSetTree, TestTreeRandomized) {
         Slice(bound.first), Slice(bound.second), &out);
     for (const auto& e : out) {
       string min, max;
-      e->GetBounds(&min, &max);
+      ASSERT_OK(e->GetBounds(&min, &max));
       if (min < bound.first) {
         ASSERT_GE(max, bound.first);
       } else {

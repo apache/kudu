@@ -1006,8 +1006,6 @@ vector<RowSet*> Tablet::FindRowSetsToCheck(const RowOp* op,
   vector<RowSet*> to_check;
   for (const auto& txn_mrs : comps->txn_memrowsets) {
     to_check.emplace_back(txn_mrs.get());
-    uint64_t rows;
-    txn_mrs->CountLiveRows(&rows);
   }
   if (PREDICT_TRUE(!op->orig_result_from_log)) {
     // TODO(yingchun): could iterate the rowsets in a smart order
@@ -1303,34 +1301,36 @@ Status Tablet::CheckHasNotBeenStopped(State* cur_state) const {
   return Status::OK();
 }
 
-void Tablet::BeginTransaction(Txn* txn,
+Status Tablet::BeginTransaction(Txn* txn,
                               const OpId& op_id) {
   unique_ptr<MinLogIndexAnchorer> anchor(new MinLogIndexAnchorer(log_anchor_registry_.get(),
         Substitute("BEGIN_TXN-$0-$1", txn->txn_id(), txn)));
-  anchor->AnchorIfMinimum(op_id.index());
+  RETURN_NOT_OK(anchor->AnchorIfMinimum(op_id.index()));
   metadata_->AddTxnMetadata(txn->txn_id(), std::move(anchor));
   const auto& txn_id = txn->txn_id();
   CreateTxnRowSets(txn_id, FindOrDie(metadata_->GetTxnMetadata(), txn_id));
   txn->BeginTransaction();
+  return Status::OK();
 }
 
-void Tablet::BeginCommit(Txn* txn, Timestamp mvcc_op_ts, const OpId& op_id) {
+Status Tablet::BeginCommit(Txn* txn, Timestamp mvcc_op_ts, const OpId& op_id) {
   unique_ptr<MinLogIndexAnchorer> anchor(new MinLogIndexAnchorer(log_anchor_registry_.get(),
         Substitute("BEGIN_COMMIT-$0-$1", txn->txn_id(), txn)));
-  anchor->AnchorIfMinimum(op_id.index());
+  RETURN_NOT_OK(anchor->AnchorIfMinimum(op_id.index()));
   metadata_->BeginCommitTransaction(txn->txn_id(), mvcc_op_ts, std::move(anchor));
   txn->BeginCommit(op_id);
+  return Status::OK();
 }
 
-void Tablet::CommitTransaction(Txn* txn, Timestamp commit_ts, const OpId& op_id) {
+Status Tablet::CommitTransaction(Txn* txn, Timestamp commit_ts, const OpId& op_id) {
   unique_ptr<MinLogIndexAnchorer> anchor(new MinLogIndexAnchorer(log_anchor_registry_.get(),
         Substitute("FINALIZE_COMMIT-$0-$1", txn->txn_id(), txn)));
-  anchor->AnchorIfMinimum(op_id.index());
+  RETURN_NOT_OK(anchor->AnchorIfMinimum(op_id.index()));
 
   const auto& txn_id = txn->txn_id();
   metadata_->AddCommitTimestamp(txn_id, commit_ts, std::move(anchor));
   CommitTxnRowSets(txn_id);
-  txn->FinalizeCommit(commit_ts.value());
+  return txn->FinalizeCommit(commit_ts.value());
 }
 
 void Tablet::CommitTxnRowSets(int64_t txn_id) {
@@ -1344,17 +1344,17 @@ void Tablet::CommitTxnRowSets(int64_t txn_id) {
                                      components_->rowsets);
 }
 
-void Tablet::AbortTransaction(Txn* txn,  const OpId& op_id) {
+Status Tablet::AbortTransaction(Txn* txn,  const OpId& op_id) {
   unique_ptr<MinLogIndexAnchorer> anchor(new MinLogIndexAnchorer(log_anchor_registry_.get(),
         Substitute("ABORT_TXN-$0-$1", txn->txn_id(), txn)));
-  anchor->AnchorIfMinimum(op_id.index());
+  RETURN_NOT_OK(anchor->AnchorIfMinimum(op_id.index()));
   const auto& txn_id = txn->txn_id();
   metadata_->AbortTransaction(txn_id, std::move(anchor));
   {
     std::lock_guard lock(component_lock_);
     uncommitted_rowsets_by_txn_id_.erase(txn_id);
   }
-  txn->AbortTransaction();
+  return txn->AbortTransaction();
 }
 
 Status Tablet::ApplyRowOperations(WriteOpState* op_state) {
