@@ -467,7 +467,8 @@ void AddPostInitializedDefaultPathHandlers(Webserver* webserver) {
 }
 
 static bool ParseBool(const Webserver::ArgumentMap& args, const string& key) {
-  string arg = FindWithDefault(args, key, "false");
+  static const string kDefaultValue = "false";
+  const auto& arg = FindWithDefault(args, key, kDefaultValue);
   return ParseLeadingBoolValue(arg.c_str(), false);
 }
 

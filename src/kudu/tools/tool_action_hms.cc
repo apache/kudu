@@ -834,8 +834,9 @@ Status FixHmsMetadata(const RunnerContext& context) {
       // If the HMS table has a table comment and Kudu does not, update the Kudu table comment
       // to match the HMS table comment. Otherwise the metadata step below will ensure the Kudu
       // comment is updated in the HMS.
-      const string hms_table_comment =
-          FindWithDefault(hms_table.parameters, hms::HmsClient::kTableCommentKey, "");
+      static const string kDefaultValue = "";
+      const string& hms_table_comment = FindWithDefault(
+          hms_table.parameters, hms::HmsClient::kTableCommentKey, kDefaultValue);
       if (hms_table_comment != comment && comment.empty()) {
         if (FLAGS_dryrun) {
           LOG(INFO) << "[dryrun] Changing table comment for " << TableIdent(kudu_table)

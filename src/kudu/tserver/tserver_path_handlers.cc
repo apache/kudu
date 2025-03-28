@@ -257,26 +257,26 @@ Status TabletServerPathHandlers::Register(Webserver* server) {
 
 void TabletServerPathHandlers::HandleTransactionsPage(const Webserver::WebRequest& req,
                                                       Webserver::PrerenderedWebResponse* resp) {
-  ostringstream* output = &resp->output;
-  bool as_text = ContainsKey(req.parsed_args, "raw");
+  static const string kKey = "include_traces";
+  static const string kDefaultValue = "false";
+  const auto& arg = FindWithDefault(req.parsed_args, kKey, kDefaultValue);
+  const Op::TraceType trace_type =
+      ParseLeadingBoolValue(arg.c_str(), false) ? Op::TRACE_OPS : Op::NO_TRACE_OPS;
 
-  vector<scoped_refptr<TabletReplica> > replicas;
-  tserver_->tablet_manager()->GetTabletReplicas(&replicas);
-
-  string arg = FindWithDefault(req.parsed_args, "include_traces", "false");
-  Op::TraceType trace_type = ParseLeadingBoolValue(
-      arg.c_str(), false) ? Op::TRACE_OPS : Op::NO_TRACE_OPS;
-
+  ostringstream& output = resp->output;
+  const bool as_text = ContainsKey(req.parsed_args, "raw");
   if (!as_text) {
-    *output << "<h1>Transactions</h1>\n";
-    *output << "<table class='table table-striped'>\n";
-    *output << "   <thead><tr><th>Tablet id</th><th>Op Id</th>"
+    output << "<h1>Transactions</h1>\n";
+    output << "<table class='table table-striped'>\n";
+    output << "   <thead><tr><th>Tablet id</th><th>Op Id</th>"
       "<th>Transaction Type</th><th>"
       "Total time in-flight</th><th>Description</th></tr></thead>\n";
-    *output << "<tbody>\n";
+    output << "<tbody>\n";
   }
 
-  for (const scoped_refptr<TabletReplica>& replica : replicas) {
+  vector<scoped_refptr<TabletReplica>> replicas;
+  tserver_->tablet_manager()->GetTabletReplicas(&replicas);
+  for (const auto& replica : replicas) {
     vector<OpStatusPB> inflight;
 
     if (replica->tablet() == nullptr) {
@@ -285,17 +285,13 @@ void TabletServerPathHandlers::HandleTransactionsPage(const Webserver::WebReques
 
     replica->GetInFlightOps(trace_type, &inflight);
     for (const OpStatusPB& inflight_op : inflight) {
-      string total_time_str = Substitute("$0 us.", inflight_op.running_for_micros());
-      string description;
-      if (trace_type == Op::TRACE_OPS) {
-        description = Substitute("$0, Trace: $1",
-                                 inflight_op.description(), inflight_op.trace_buffer());
-      } else {
-        description = inflight_op.description();
-      }
+      const auto total_time_str = Substitute("$0 us.", inflight_op.running_for_micros());
+      const auto description = (trace_type == Op::TRACE_OPS)
+          ? Substitute("$0, Trace: $1", inflight_op.description(), inflight_op.trace_buffer())
+          : inflight_op.description();
 
       if (!as_text) {
-        *output << Substitute(
+        output << Substitute(
           "<tr><th>$0</th><th>$1</th><th>$2</th><th>$3</th><th>$4</th></tr>\n",
           EscapeForHtmlToString(replica->tablet_id()),
           EscapeForHtmlToString(SecureShortDebugString(inflight_op.op_id())),
@@ -303,18 +299,18 @@ void TabletServerPathHandlers::HandleTransactionsPage(const Webserver::WebReques
           total_time_str,
           EscapeForHtmlToString(description));
       } else {
-        *output << "Tablet: " << replica->tablet_id() << endl;
-        *output << "Op ID: " << SecureShortDebugString(inflight_op.op_id()) << endl;
-        *output << "Type: " << OperationType_Name(inflight_op.op_type()) << endl;
-        *output << "Running: " << total_time_str;
-        *output << description << endl;
-        *output << endl;
+        output << "Tablet: " << replica->tablet_id() << endl;
+        output << "Op ID: " << SecureShortDebugString(inflight_op.op_id()) << endl;
+        output << "Type: " << OperationType_Name(inflight_op.op_type()) << endl;
+        output << "Running: " << total_time_str;
+        output << description << endl;
+        output << endl;
       }
     }
   }
 
   if (!as_text) {
-    *output << "</tbody></table>\n";
+    output << "</tbody></table>\n";
   }
 }
 

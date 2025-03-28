@@ -167,7 +167,9 @@ static void PprofGrowthHandler(const Webserver::WebRequest& /*req*/,
 // Lock contention profiling
 static void PprofContentionHandler(const Webserver::WebRequest& req,
                                    Webserver::PrerenderedWebResponse* resp) {
-  string secs_str = FindWithDefault(req.parsed_args, "seconds", "");
+  static const string kKey = "seconds";
+  static const string kDefaultValue = "";
+  const auto& secs_str = FindWithDefault(req.parsed_args, kKey, kDefaultValue);
   int32_t seconds = ParseLeadingInt32Value(secs_str.c_str(), kPprofDefaultSampleSecs);
   int64_t discarded_samples = 0;
 

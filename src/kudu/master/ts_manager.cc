@@ -256,9 +256,12 @@ Status TSManager::SetTServerState(const string& ts_uuid,
                                   TServerStatePB ts_state,
                                   ChangeTServerStateRequestPB::HandleMissingTS handle_missing_ts,
                                   SysCatalogTable* sys_catalog) {
+  static const typename decltype(ts_state_by_uuid_)::mapped_type
+      kDefaultValue{ TServerStatePB::NONE, -1 };
+
   lock_guard l(ts_state_lock_);
-  auto existing_state = FindWithDefault(
-      ts_state_by_uuid_, ts_uuid, { TServerStatePB::NONE, -1 }).first;
+  const auto existing_state = FindWithDefault(
+      ts_state_by_uuid_, ts_uuid, kDefaultValue).first;
   if (existing_state == ts_state) {
     return Status::OK();
   }
@@ -296,8 +299,10 @@ Status TSManager::SetTServerState(const string& ts_uuid,
 }
 
 TServerStatePB TSManager::GetTServerStateUnlocked(const string& ts_uuid) const {
+  static const typename decltype(ts_state_by_uuid_)::mapped_type
+      kDefaultValue{ TServerStatePB::NONE, -1 };
   ts_state_lock_.AssertAcquired();
-  return FindWithDefault(ts_state_by_uuid_, ts_uuid, { TServerStatePB::NONE, -1 }).first;
+  return FindWithDefault(ts_state_by_uuid_, ts_uuid, kDefaultValue).first;
 }
 
 TServerStatePB TSManager::GetTServerState(const string& ts_uuid) const {

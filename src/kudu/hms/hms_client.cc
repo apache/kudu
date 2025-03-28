@@ -429,8 +429,9 @@ bool HmsClient::IsKuduTable(const hive::Table& table) {
 }
 
 bool HmsClient::IsSynchronized(const hive::Table& table) {
-  const string externalPurge =
-      FindWithDefault(table.parameters, hms::HmsClient::kExternalPurgeKey, "false");
+  static const string kDefaultValue = "false";
+  const auto& externalPurge = FindWithDefault(
+      table.parameters, hms::HmsClient::kExternalPurgeKey, kDefaultValue);
   return table.tableType == hms::HmsClient::kManagedTable ||
          (table.tableType == hms::HmsClient::kExternalTable &&
           iequals(externalPurge, "true"));

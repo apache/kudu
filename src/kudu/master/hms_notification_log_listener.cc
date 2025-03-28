@@ -430,15 +430,17 @@ Status HmsNotificationLogListenerTask::HandleAlterTableEvent(const hive::Notific
     new_table_owner = after_table.owner;
   }
 
+  static const string kDefaultValue = "";
+  const auto& before_table_comment = FindWithDefault(before_table.parameters,
+                                                     hms::HmsClient::kTableCommentKey,
+                                                     kDefaultValue);
+  const auto& after_table_comment = FindWithDefault(after_table.parameters,
+                                                    hms::HmsClient::kTableCommentKey,
+                                                    kDefaultValue);
   optional<string> new_table_comment;
-  const string before_table_comment =
-      FindWithDefault(before_table.parameters, hms::HmsClient::kTableCommentKey, "");
-  const string after_table_comment =
-      FindWithDefault(after_table.parameters, hms::HmsClient::kTableCommentKey, "");
   if (before_table_comment != after_table_comment) {
-    new_table_comment = after_table_comment;
+    new_table_comment.emplace(after_table_comment);
   }
-
   if (!new_table_name && !new_table_owner && !new_table_comment) {
     VLOG(2) << "Ignoring alter table event on table "
             << *table_id << " " << before_table_name;

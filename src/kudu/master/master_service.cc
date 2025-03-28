@@ -764,9 +764,11 @@ void MasterServiceImpl::ListTabletServers(const ListTabletServersRequestPB* req,
       entry->set_location(*desc->location());
     }
 
+    static const typename decltype(states)::mapped_type
+        kDefaultValue{ TServerStatePB::NONE, -1 };
     // If we need to return states, do so.
     const auto& uuid = desc->permanent_uuid();
-    entry->set_state(FindWithDefault(states, uuid, { TServerStatePB::NONE, -1 }).first);
+    entry->set_state(FindWithDefault(states, uuid, kDefaultValue).first);
     states.erase(uuid);
   }
   // If there are any states left (e.g. they don't correspond to a registered
