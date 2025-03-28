@@ -322,7 +322,7 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
                              std::shared_ptr<OpDriver>* driver);
 
   // Tells the tablet's log to garbage collect.
-  Status RunLogGC();
+  void RunLogGC();
 
   // Register the maintenance ops associated with this peer's tablet, also invokes
   // Tablet::RegisterMaintenanceOps().

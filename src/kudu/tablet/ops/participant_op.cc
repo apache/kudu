@@ -222,18 +222,18 @@ Status ParticipantOpState::PerformOp(const consensus::OpId& op_id, Tablet* table
     // metadata. When we begin validating write ops before committing, we'll
     // need to populate the response with errors.
     case ParticipantOpPB::BEGIN_TXN: {
-      tablet->BeginTransaction(txn_.get(), op_id);
+      RETURN_NOT_OK(tablet->BeginTransaction(txn_.get(), op_id));
       break;
     }
     case ParticipantOpPB::BEGIN_COMMIT: {
-      tablet->BeginCommit(txn_.get(), begin_commit_mvcc_op_->timestamp(), op_id);
+      RETURN_NOT_OK(tablet->BeginCommit(txn_.get(), begin_commit_mvcc_op_->timestamp(), op_id));
       ReleaseMvccOpToTxn();
       break;
     }
     case ParticipantOpPB::FINALIZE_COMMIT: {
       DCHECK(op.has_finalized_commit_timestamp());
       const auto& commit_ts = op.finalized_commit_timestamp();
-      tablet->CommitTransaction(txn_.get(), Timestamp(commit_ts), op_id);
+      RETURN_NOT_OK(tablet->CommitTransaction(txn_.get(), Timestamp(commit_ts), op_id));
       // NOTE: we may not have a commit op if we are bootstrapping and we GCed
       // the BEGIN_COMMIT op before flushing the finalized commit timestamp.
       if (txn_->commit_op()) {
@@ -243,7 +243,7 @@ Status ParticipantOpState::PerformOp(const consensus::OpId& op_id, Tablet* table
       break;
     }
     case ParticipantOpPB::ABORT_TXN: {
-      tablet->AbortTransaction(txn_.get(), op_id);
+      RETURN_NOT_OK(tablet->AbortTransaction(txn_.get(), op_id));
       // NOTE: we may not have a commit op if we are aborting before beginning
       // to commit.
       if (txn_->commit_op()) {

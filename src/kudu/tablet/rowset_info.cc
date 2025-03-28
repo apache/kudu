@@ -318,7 +318,7 @@ void RowSetInfo::ComputeCdfAndCollectOrdered(
 
 
   RowSetTree available_rs_tree;
-  available_rs_tree.Reset(available_rowsets);
+  CHECK_OK(available_rs_tree.Reset(available_rowsets));
   for (const auto& rse : available_rs_tree.key_endpoints()) {
     RowSet* rs = rse.rowset_;
     const Slice& next_key = rse.slice_;

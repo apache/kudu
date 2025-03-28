@@ -77,7 +77,7 @@ TEST_F(AutoIncrementingTabletTest, TestInsertOp) {
   ASSERT_OK(tablet()->NewRowIterator(schema_.CopyWithoutColumnIds(), &iter));
   ASSERT_OK(iter->Init(nullptr));
   vector<string> out;
-  IterateToStringList(iter.get(), &out);
+  ASSERT_OK(IterateToStringList(iter.get(), &out));
   for (int i = 0; i < 10; i++) {
     ASSERT_STR_CONTAINS(out[i], Substitute("int64 key=$0", i + 1));
   }
@@ -104,7 +104,7 @@ TEST_F(AutoIncrementingTabletTest, TestUpsertOp) {
     ASSERT_OK(tablet()->NewRowIterator(schema_.CopyWithoutColumnIds(), &iter));
     ASSERT_OK(iter->Init(nullptr));
     vector<string> out;
-    IterateToStringList(iter.get(), &out);
+    ASSERT_OK(IterateToStringList(iter.get(), &out));
     for (int i = 1; i <= 20; i++) {
       ASSERT_STR_MATCHES(out[i - 1], Substitute("(int64 key=$0, int32 val=1337)", i));
     }
@@ -127,7 +127,7 @@ TEST_F(AutoIncrementingTabletTest, TestUpsertOp) {
     ASSERT_OK(tablet()->NewRowIterator(schema_.CopyWithoutColumnIds(), &iter));
     ASSERT_OK(iter->Init(nullptr));
     vector<string> out;
-    IterateToStringList(iter.get(), &out);
+    ASSERT_OK(IterateToStringList(iter.get(), &out));
     for (int i = 1; i <= 20; i++) {
       ASSERT_STR_MATCHES(out[i - 1], Substitute("(int64 key=$0, int32 val=1338)", i));
     }
@@ -145,7 +145,7 @@ TEST_F(AutoIncrementingTabletTest, TestUpsertOp) {
     ASSERT_OK(tablet()->NewRowIterator(schema_.CopyWithoutColumnIds(), &iter));
     ASSERT_OK(iter->Init(nullptr));
     vector<string> out;
-    IterateToStringList(iter.get(), &out);
+    ASSERT_OK(IterateToStringList(iter.get(), &out));
     for (int i = 21; i <= 30; i++) {
       ASSERT_STR_MATCHES(out[i-1], Substitute("int64 key=$0, int32 val=1337", i));
     }

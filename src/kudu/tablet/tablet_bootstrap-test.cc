@@ -57,6 +57,7 @@
 #include "kudu/fs/data_dirs.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/result_tracker.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/rowset.h"
@@ -249,7 +250,8 @@ TEST_F(BootstrapTest, TestBootstrapHighOpIdIndex) {
   ASSERT_OK(BuildLog());
   current_index_ = first_log_index;
   for (int i = 0; i < kNumEntries; i++) {
-    AppendReplicateBatchAndCommitEntryPairsToLog(1);
+    SCOPED_TRACE(Substitute("entry $0", i));
+    ASSERT_OK(AppendReplicateBatchAndCommitEntryPairsToLog(1));
   }
 
   // Kick off tablet bootstrap and ensure everything worked.
@@ -323,7 +325,7 @@ TEST_F(BootstrapTest, TestOrphanCommit) {
     ASSERT_OK(AppendCommit(opid));
     log::SegmentSequence segments;
     log_->reader()->GetSegmentsSnapshot(&segments);
-    fs_manager_->GetEnv()->DeleteFile(segments[0]->path());
+    ASSERT_OK(fs_manager_->GetEnv()->DeleteFile(segments[0]->path()));
 
     // Untrack the tablet in the data dir manager so upon the next call to
     // BootstrapTestTablet, the tablet metadata's data dir group can be loaded.
@@ -391,7 +393,7 @@ TEST_F(BootstrapTest, TestNonOrphansAfterOrphanCommit) {
 
   log::SegmentSequence segments;
   log_->reader()->GetSegmentsSnapshot(&segments);
-  fs_manager_->GetEnv()->DeleteFile(segments[0]->path());
+  ASSERT_OK(fs_manager_->GetEnv()->DeleteFile(segments[0]->path()));
 
   current_index_ += 2;
 

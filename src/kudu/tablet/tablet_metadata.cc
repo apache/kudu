@@ -636,7 +636,7 @@ Status TabletMetadata::Flush() {
     orphaned.assign(orphaned_blocks_.begin(), orphaned_blocks_.end());
     anchors_needing_flush = std::move(anchors_needing_flush_);
   }
-  pre_flush_callback_();
+  RETURN_NOT_OK(pre_flush_callback_());
   RETURN_NOT_OK(ReplaceSuperBlockUnlocked(pb));
   TRACE("Metadata flushed");
   l_flush.unlock();

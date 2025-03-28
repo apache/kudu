@@ -308,7 +308,7 @@ TEST_F(TabletReplicaTest, TestMRSAnchorPreventsLogGC) {
   ASSERT_EQ(0, num_gced) << "earliest needed: " << retention.for_durability;
 
   // Flush MRS as needed to ensure that we don't have OpId anchors in the MRS.
-  tablet_replica_->tablet()->Flush();
+  ASSERT_OK(tablet_replica_->tablet()->Flush());
   ASSERT_EVENTUALLY([&]{ AssertNoLogAnchors(); });
 
   // The first two segments should be deleted.
@@ -421,7 +421,7 @@ TEST_F(TabletReplicaTest, TestActiveOpPreventsLogGC) {
 
   // Flush MRS as needed to ensure that we don't have OpId anchors in the MRS.
   ASSERT_EQ(1, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
-  tablet_replica_->tablet()->Flush();
+  ASSERT_OK(tablet_replica_->tablet()->Flush());
 
   // Verify no anchors after Flush().
   ASSERT_EVENTUALLY([&]{ AssertNoLogAnchors(); });
@@ -519,7 +519,7 @@ TEST_F(TabletReplicaTest, TestGCEmptyLog) {
   ConsensusBootstrapInfo info;
   ASSERT_OK(StartReplica(info));
   // We don't wait on consensus on purpose.
-  ASSERT_OK(tablet_replica_->RunLogGC());
+  tablet_replica_->RunLogGC();
 }
 
 TEST_F(TabletReplicaTest, TestFlushOpsPerfImprovements) {
@@ -593,8 +593,8 @@ TEST_F(TabletReplicaTest, TestRollLogSegmentSchemaOnAlter) {
   NO_FATALS(write());
   ASSERT_OK(RollLog(tablet_replica_.get()));
   NO_FATALS(write());
-  tablet_replica_->tablet()->Flush();
-  ASSERT_OK(tablet_replica_->RunLogGC());
+  ASSERT_OK(tablet_replica_->tablet()->Flush());
+  tablet_replica_->RunLogGC();
 
   // Now write some more and restart. If our segment header schema previously
   // didn't have "new_col", bootstrapping would fail, complaining about a
@@ -634,7 +634,7 @@ TEST_F(TabletReplicaTest, Kudu2690Test) {
     ASSERT_OK(GenerateSequentialInsertRequest(new_client_schema, req.get()));
     ASSERT_OK(ExecuteWrite(tablet_replica_.get(), *req));
   }
-  ASSERT_OK(tablet_replica_->RunLogGC());
+  tablet_replica_->RunLogGC();
 
   // Before KUDU-2960 was fixed, bootstrapping would fail, complaining that the
   // write requests contained a column that was not in the log segment header's

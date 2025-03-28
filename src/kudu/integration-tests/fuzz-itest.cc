@@ -1502,7 +1502,7 @@ void FuzzTest::RunFuzzCase(const vector<TestOp>& test_ops,
         break;
       }
       case TEST_GC_LOG:
-        ASSERT_OK(tablet_replica_->RunLogGC());
+        tablet_replica_->RunLogGC();
         break;
       default:
         LOG(FATAL) << test_op.type;

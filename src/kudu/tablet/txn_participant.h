@@ -235,14 +235,14 @@ class Txn : public RefCountedThreadSafe<Txn> {
         &begin_commit_anchor_));
     SetState(kCommitInProgress);
   }
-  void FinalizeCommit(int64_t finalized_commit_timestamp) {
+  Status FinalizeCommit(int64_t finalized_commit_timestamp) {
     commit_timestamp_ = finalized_commit_timestamp;
     SetState(kCommitted);
-    log_anchor_registry_->UnregisterIfAnchored(&begin_commit_anchor_);
+    return log_anchor_registry_->UnregisterIfAnchored(&begin_commit_anchor_);
   }
-  void AbortTransaction() {
+  Status AbortTransaction() {
     SetState(kAborted);
-    log_anchor_registry_->UnregisterIfAnchored(&begin_commit_anchor_);
+    return log_anchor_registry_->UnregisterIfAnchored(&begin_commit_anchor_);
   }
 
   // Simple accessors for state. No locks are required to call these.

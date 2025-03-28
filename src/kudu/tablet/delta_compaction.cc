@@ -248,7 +248,7 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas(const IOContext* io_context) {
       for (const Mutation *mut = new_undos_head; mut != nullptr; mut = mut->next()) {
         DeltaKey undo_key(nrows + dst_row.row_index(), mut->timestamp());
         RETURN_NOT_OK(new_undo_delta_writer_->AppendDelta<UNDO>(undo_key, mut->changelist()));
-        undo_stats->UpdateStats(mut->timestamp(), mut->changelist());
+        RETURN_NOT_OK(undo_stats->UpdateStats(mut->timestamp(), mut->changelist()));
         undo_delta_mutations_written_++;
       }
     }
@@ -304,7 +304,7 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas(const IOContext* io_context) {
     new_undo_delta_writer_->WriteDeltaStats(std::move(undo_stats));
     RETURN_NOT_OK(new_undo_delta_writer_->FinishAndReleaseBlock(transaction.get()));
   }
-  transaction->CommitCreatedBlocks();
+  RETURN_NOT_OK(transaction->CommitCreatedBlocks());
 
   DVLOG(1) << "Applied all outstanding deltas for columns "
            << partial_schema_.ToString()

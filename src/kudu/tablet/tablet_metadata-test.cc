@@ -178,7 +178,7 @@ TEST_F(TestTabletMetadata, TestOnDiskSize) {
   // Write some data to the tablet and flush.
   unique_ptr<KuduPartialRow> row;
   BuildPartialRow(0, 0, "foo", &row);
-  writer_->Insert(*row);
+  ASSERT_OK(writer_->Insert(*row));
   ASSERT_OK(harness_->tablet()->Flush());
 
   // The tablet metadata grows after flushing a new rowset.
@@ -188,7 +188,7 @@ TEST_F(TestTabletMetadata, TestOnDiskSize) {
   // Create another rowset.
   // The on-disk size shouldn't change until after flush.
   BuildPartialRow(1, 1, "bar", &row);
-  writer_->Insert(*row);
+  ASSERT_OK(writer_->Insert(*row));
   ASSERT_EQ(middle_size, meta->on_disk_size());
   ASSERT_OK(harness_->tablet()->Flush());
   int64_t final_size = meta->on_disk_size();
@@ -218,8 +218,9 @@ TEST_F(TestTabletMetadata, BenchmarkCollectBlockIds) {
     meta->SetColumnDataBlocks(block_by_column);
     rs_metas.emplace_back(shared_ptr<RowSetMetadata>(meta.release()));
   }
-  tablet_meta->UpdateAndFlush(RowSetMetadataIds(), rs_metas, TabletMetadata::kNoMrsFlushed);
-
+  ASSERT_OK(tablet_meta->UpdateAndFlush(RowSetMetadataIds(),
+                                        rs_metas,
+                                        TabletMetadata::kNoMrsFlushed));
   for (int i = 0; i < 10; ++i) {
     BlockIdContainer block_ids;
     LOG_TIMING(INFO, "collecting BlockIds") {

@@ -379,7 +379,7 @@ class TestCompaction : public KuduRowSetTest {
                               const Schema& projection,
                               shared_ptr<DiskRowSet>* result_rs) {
     vector<shared_ptr<DiskRowSet>> result_rowsets;
-    CompactAndReopen(input_rowsets, projection, kLargeRollThreshold, &result_rowsets);
+    ASSERT_OK(CompactAndReopen(input_rowsets, projection, kLargeRollThreshold, &result_rowsets));
     ASSERT_EQ(1, result_rowsets.size());
     *result_rs = result_rowsets[0];
   }
@@ -602,13 +602,13 @@ TEST_F(TestCompaction, TestFlushMRSWithRolling) {
 
   vector<string> rows;
   rows.reserve(30000 / 2);
-  rowsets[0]->DebugDump(&rows);
+  ASSERT_OK(rowsets[0]->DebugDump(&rows));
   EXPECT_EQ("RowIdxInBlock: 0; Base: (string key=\"hello 0000000000\", int64 val=0, "
             "int32 nullable_val=0); Undo Mutations: [@1(DELETE)]; Redo Mutations: [];",
             rows[0]);
 
   rows.clear();
-  rowsets[1]->DebugDump(&rows);
+  ASSERT_OK(rowsets[1]->DebugDump(&rows));
   EXPECT_EQ("RowIdxInBlock: 0; Base: (string key=\"hello 0000017150\", int64 val=1715, "
             "int32 nullable_val=NULL); Undo Mutations: [@1716(DELETE)]; Redo Mutations: [];",
             rows[0]);
@@ -863,13 +863,13 @@ TEST_F(TestCompaction, TestDuplicatedRowsRandomCompaction) {
     row->undo_head = reinsert->next();
     row->row = block.row(i);
     BuildRow(i, i);
-    CopyRow(row_builder_.row(), &row->row, &mem.arena);
+    ASSERT_OK(CopyRow(row_builder_.row(), &row->row, &mem.arena));
     RowChangeListDecoder redo_decoder(reinsert->changelist());
     ASSERT_OK(redo_decoder.Init());
     faststring buf;
     RowChangeListEncoder dummy(&buf);
     dummy.SetToUpdate();
-    redo_decoder.MutateRowAndCaptureChanges(&row->row, &mem.arena, &dummy);
+    ASSERT_OK(redo_decoder.MutateRowAndCaptureChanges(&row->row, &mem.arena, &dummy));
     AddExpectedDelete(&row->redo_head, reinsert->timestamp());
   }
 
