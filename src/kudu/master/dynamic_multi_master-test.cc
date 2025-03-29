@@ -433,7 +433,7 @@ class DynamicMultiMasterTest : public KuduTest {
     if (cluster == nullptr) {
       cluster = cluster_.get();
     }
-    NO_FATALS(VerifyVoterMastersForCluster(num_masters, master_hps, cluster));
+    ASSERT_OK(VerifyVoterMastersForCluster(num_masters, master_hps, cluster));
   }
 
   // Fetch a follower (non-leader) master index from the cluster.

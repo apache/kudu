@@ -1855,8 +1855,8 @@ TEST_P(ListTableCliDetailParamTest, TestListTablesDetail) {
   vector<TServerDetails*> tservers;
   vector<string> tablet_ids;
   AppendValuesFromMap(tablet_servers_, &tservers);
-  ListRunningTabletIds(tservers.front(),
-                       MonoDelta::FromSeconds(30), &tablet_ids);
+  ASSERT_OK(ListRunningTabletIds(
+      tservers.front(), MonoDelta::FromSeconds(30), &tablet_ids));
 
   string stdout;
   string stderr;
@@ -2408,21 +2408,21 @@ TEST_F(AdminCliTest, TestDescribeTableCustomHashSchema) {
   // Create a KuduRangePartition with custom hash schema
   {
     unique_ptr<KuduPartialRow> lower(schema.NewRow());
-    CHECK_OK(lower->SetInt32("key_range", 0));
+    ASSERT_OK(lower->SetInt32("key_range", 0));
     unique_ptr<KuduPartialRow> upper(schema.NewRow());
-    CHECK_OK(upper->SetInt32("key_range", 100));
+    ASSERT_OK(upper->SetInt32("key_range", 100));
     unique_ptr<client::KuduRangePartition> partition(
         new client::KuduRangePartition(lower.release(), upper.release()));
-    partition->add_hash_partitions({"key_hash1"}, 3);
+    ASSERT_OK(partition->add_hash_partitions({"key_hash1"}, 3));
     table_creator->add_custom_range_partition(partition.release());
   }
 
   // Create a partition with table wide hash schema
   {
     unique_ptr<KuduPartialRow> lower(schema.NewRow());
-    CHECK_OK(lower->SetInt32("key_range", 100));
+    ASSERT_OK(lower->SetInt32("key_range", 100));
     unique_ptr<KuduPartialRow> upper(schema.NewRow());
-    CHECK_OK(upper->SetInt32("key_range", 200));
+    ASSERT_OK(upper->SetInt32("key_range", 200));
     table_creator->add_range_partition(lower.release(), upper.release());
   }
 
@@ -2475,7 +2475,7 @@ TEST_P(ListTableCliParamTest, ListTabletWithPartitionInfo) {
   vector<TServerDetails*> tservers;
   vector<string> base_tablet_ids;
   AppendValuesFromMap(tablet_servers_, &tservers);
-  ListRunningTabletIds(tservers.front(), kTimeout, &base_tablet_ids);
+  ASSERT_OK(ListRunningTabletIds(tservers.front(), kTimeout, &base_tablet_ids));
 
   // Test a table with all types in its schema, multiple hash partitioning
   // levels, multiple range partitions, and non-covered ranges.
@@ -2516,7 +2516,7 @@ TEST_P(ListTableCliParamTest, ListTabletWithPartitionInfo) {
   }
 
   vector<string> new_tablet_ids;
-  ListRunningTabletIds(tservers.front(), kTimeout, &new_tablet_ids);
+  ASSERT_OK(ListRunningTabletIds(tservers.front(), kTimeout, &new_tablet_ids));
   vector<string> delta_tablet_ids;
   for (auto& tablet_id : base_tablet_ids) {
     if (std::find(new_tablet_ids.begin(), new_tablet_ids.end(), tablet_id) ==
@@ -2627,9 +2627,8 @@ TEST_F(AdminCliTest, TestLocateRow) {
   vector<TServerDetails*> tservers;
   vector<string> tablet_ids;
   AppendValuesFromMap(tablet_servers_, &tservers);
-  ListRunningTabletIds(tservers.front(),
-                       MonoDelta::FromSeconds(30),
-                       &tablet_ids);
+  ASSERT_OK(ListRunningTabletIds(
+      tservers.front(), MonoDelta::FromSeconds(30), &tablet_ids));
   ASSERT_EQ(1, tablet_ids.size());
   ASSERT_STR_CONTAINS(stdout, tablet_ids[0]);
 
@@ -2699,9 +2698,8 @@ TEST_F(AdminCliTest, TestLocateRowMore) {
   vector<TServerDetails*> tservers;
   vector<string> tablet_ids;
   AppendValuesFromMap(tablet_servers_, &tservers);
-  ListRunningTabletIds(tservers.front(),
-                       MonoDelta::FromSeconds(30),
-                       &tablet_ids);
+  ASSERT_OK(ListRunningTabletIds(
+      tservers.front(), MonoDelta::FromSeconds(30), &tablet_ids));
   std::unordered_set<string> tablet_id_set(tablet_ids.begin(), tablet_ids.end());
 
   // Since there isn't a great alternative way to validate the answer the tool
@@ -2795,9 +2793,8 @@ TEST_F(AdminCliTest, TestLocateRowAndCheckRowPresence) {
   vector<TServerDetails*> tservers;
   vector<string> tablet_ids;
   AppendValuesFromMap(tablet_servers_, &tservers);
-  ListRunningTabletIds(tservers.front(),
-                       MonoDelta::FromSeconds(30),
-                       &tablet_ids);
+  ASSERT_OK(ListRunningTabletIds(
+      tservers.front(), MonoDelta::FromSeconds(30), &tablet_ids));
   ASSERT_EQ(1, tablet_ids.size());
   const string& expected_tablet_id = tablet_ids[0];
 
@@ -2864,9 +2861,8 @@ TEST_F(AdminCliTest, TestDumpMemTrackers) {
   vector<TServerDetails*> tservers;
   vector<string> tablet_ids;
   AppendValuesFromMap(tablet_servers_, &tservers);
-  ListRunningTabletIds(tservers.front(),
-                       MonoDelta::FromSeconds(30),
-                       &tablet_ids);
+  ASSERT_OK(ListRunningTabletIds(
+      tservers.front(), MonoDelta::FromSeconds(30), &tablet_ids));
   ASSERT_EQ(1, tablet_ids.size());
   const string& tablet_id = tablet_ids[0];
 
@@ -3102,7 +3098,7 @@ TEST_F(AdminCliTest, TestAddAndDropUnboundedPartition) {
   // At first, the range partition is unbounded, we can insert any data into it.
   // We insert 100 rows with key range from 0 to 100, now there are 100 rows.
   int num_rows = 100;
-  NO_FATALS(InsertTestRows(client_, kTableId, 0, num_rows));
+  ASSERT_OK(InsertTestRows(client_, kTableId, 0, num_rows));
   ASSERT_OK(client_->OpenTable(kTableId, &table));
   ASSERT_EQ(100, CountTableRows(table.get()));
 
@@ -3140,7 +3136,7 @@ TEST_F(AdminCliTest, TestAddAndDropUnboundedPartition) {
 
   // Insert 100 rows with key range from 0 to 100,
   // now there are 100 rows again.
-  NO_FATALS(InsertTestRows(client_, kTableId, 0, num_rows));
+  ASSERT_OK(InsertTestRows(client_, kTableId, 0, num_rows));
   ASSERT_OK(client_->OpenTable(kTableId, &table));
   ASSERT_EQ(100, CountTableRows(table.get()));
 }
@@ -3266,7 +3262,7 @@ TEST_F(AdminCliTest, TestAddAndDropRangePartition) {
 
     // Drop the range partition added when create table, the range partition is
     // [0,100). Insert 100 rows, data range is 0-99. Now there are 100 rows.
-    NO_FATALS(InsertTestRows(client_, kTestTableName, 0, 100));
+    ASSERT_OK(InsertTestRows(client_, kTestTableName, 0, 100));
     ASSERT_OK(client_->OpenTable(kTestTableName, &table));
     ASSERT_EQ(100, CountTableRows(table.get()));
 
@@ -3822,7 +3818,7 @@ void delete_table_in_syscatalog(const string& wal_dir,
   const auto kLeaderTimeout = MonoDelta::FromSeconds(10);
   ASSERT_OK(sys_catalog.tablet_replica()->consensus()->WaitUntilLeader(kLeaderTimeout));
   TableInfoLoader table_info_loader;
-  sys_catalog.VisitTables(&table_info_loader);
+  ASSERT_OK(sys_catalog.VisitTables(&table_info_loader));
   scoped_refptr<TableInfo> table_info;
   for (const auto& table : table_info_loader.tables) {
     table->metadata().ReadLock();
@@ -3837,7 +3833,7 @@ void delete_table_in_syscatalog(const string& wal_dir,
 
   // Get tablet from sys_catalog.
   TabletInfoLoader tablet_info_loader;
-  sys_catalog.VisitTablets(&tablet_info_loader);
+  ASSERT_OK(sys_catalog.VisitTablets(&tablet_info_loader));
   vector<scoped_refptr<TabletInfo>> tablets;
   for (const auto& tablet : tablet_info_loader.tablets) {
     tablet->metadata().ReadLock();
@@ -3890,7 +3886,7 @@ TEST_F(AdminCliTest, TestRebuildTables) {
     cluster_->tablet_server(i)->Shutdown();
   }
   // Restart the cluster to check cluster healthy.
-  cluster_->Restart();
+  ASSERT_OK(cluster_->Restart());
   ASSERT_OK(WaitForTSAndReplicas());
   ClusterVerifier cv1(cluster_.get());
   NO_FATALS(cv1.CheckCluster());
@@ -3914,7 +3910,7 @@ TEST_F(AdminCliTest, TestRebuildTables) {
     cluster_->tablet_server(i)->Shutdown();
   }
   // Restart the cluster to check cluster healthy.
-  cluster_->Restart();
+  ASSERT_OK(cluster_->Restart());
   ASSERT_OK(WaitForTSAndReplicas());
   ClusterVerifier cv2(cluster_.get());
   NO_FATALS(cv2.CheckCluster());
@@ -4081,7 +4077,7 @@ TEST_F(AdminCliTest, TestAddColumnsAndRebuildMaster) {
     workload.StopAndJoin();
 
     vector<string> rows;
-    ScanTableToStrings(table.get(), &rows);
+    ASSERT_OK(ScanTableToStrings(table.get(), &rows));
     for (const auto& row : rows) {
       ASSERT_STR_MATCHES(row, "old_column_0.*old_column_1.*new_column_0");
     }
@@ -4145,7 +4141,7 @@ TEST_P(SecureClusterAdminCliParamTest, TestRebuildMaster) {
   {
     client::sp::shared_ptr<KuduTable> table;
     ASSERT_OK(client_->OpenTable(kPreRebuildTableName, &table));
-    ScanTableToStrings(table.get(), &rows);
+    ASSERT_OK(ScanTableToStrings(table.get(), &rows));
   }
 
   // Shut down the master and wipe out its data.
@@ -4175,7 +4171,7 @@ TEST_P(SecureClusterAdminCliParamTest, TestRebuildMaster) {
   {
     client::sp::shared_ptr<KuduTable> table;
     ASSERT_OK(client_->OpenTable(kPreRebuildTableName, &table));
-    ScanTableToStrings(table.get(), &postrebuild_rows);
+    ASSERT_OK(ScanTableToStrings(table.get(), &postrebuild_rows));
   }
   ASSERT_EQ(rows.size(), postrebuild_rows.size());
   for (int i = 0; i < rows.size(); i++) {
@@ -4241,7 +4237,7 @@ TEST_P(SecureClusterAdminCliParamTest, TestRebuildMasterAndAddColumns) {
     vector<string> rows;
     client::sp::shared_ptr<KuduTable> table;
     ASSERT_OK(client_->OpenTable(kTableName, &table));
-    ScanTableToStrings(table.get(), &rows);
+    ASSERT_OK(ScanTableToStrings(table.get(), &rows));
   }
 
   // The cluster should still be considered healthy.

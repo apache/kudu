@@ -18,6 +18,7 @@
 #include "kudu/tools/ksck_remote.h"
 
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <optional>
@@ -655,22 +656,57 @@ Status RemoteKsckCluster::RetrieveTablesList() {
 }
 
 Status RemoteKsckCluster::RetrieveAllTablets() {
+  Status txn_result_status;
   if (txn_sys_table_) {
-    RETURN_NOT_OK(pool_->Submit(
-        [this]() { this->RetrieveTabletsList(txn_sys_table_); }));
+    Status s;
+    RETURN_NOT_OK(pool_->Submit([this, &s]() {
+      s = this->RetrieveTabletsList(txn_sys_table_);
+    }));
     pool_->Wait();
-  }
-  if (tables_.empty()) {
-    return Status::OK();
+    if (!s.ok()) {
+      txn_result_status = s;
+      LOG(ERROR) << "failed to retrieve list of tablets for txn system table";
+    }
   }
 
-  for (const auto& table : tables_) {
-    RETURN_NOT_OK(pool_->Submit(
-        [this, table]() { this->RetrieveTabletsList(table); }));
+  if (tables_.empty()) {
+    return txn_result_status;
+  }
+
+  vector<Status> statuses(tables_.size());
+  for (size_t idx = 0; idx < tables_.size(); ++idx) {
+    const auto& table = tables_[idx];
+    auto& s = statuses[idx];
+    RETURN_NOT_OK(pool_->Submit([this, &table, &s]() {
+      s = this->RetrieveTabletsList(table);
+    }));
   }
   pool_->Wait();
 
-  return Status::OK();
+  Status result_status;
+  for (size_t idx = 0; idx < statuses.size(); ++idx) {
+    // Report on all the errors.
+    const auto& s = statuses[idx];
+    if (!s.ok()) {
+      DCHECK_LT(idx, tables_.size());
+      const auto& table = tables_[idx];
+      LOG(ERROR) << Substitute(
+          "error retrieving list of tablets for table $0 (table name '$1'): $2",
+          table->id(), table->name(), s.ToString());
+      if (result_status.ok()) {
+        // Store information only on the very first error status.
+        result_status = s;
+      }
+    }
+  }
+
+  if (!txn_result_status.ok()) {
+    if (!result_status.ok()) {
+      return result_status.CloneAndPrepend(txn_result_status.message());
+    }
+    return txn_result_status;
+  }
+  return result_status;
 }
 
 Status RemoteKsckCluster::RetrieveTabletsList(const shared_ptr<KsckTable>& table) {

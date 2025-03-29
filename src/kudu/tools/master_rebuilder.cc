@@ -456,7 +456,7 @@ Status MasterRebuilder::UpsertSysCatalog() {
   });
   // Get all table in syscatalog.
   TableInfoLoader table_info_loader;
-  sys_catalog.VisitTables(&table_info_loader);
+  RETURN_NOT_OK(sys_catalog.VisitTables(&table_info_loader));
   map<string, scoped_refptr<master::TableInfo>> table_by_name_in_syscatalog;
   for (const auto& table : table_info_loader.tables) {
     table->metadata().ReadLock();
@@ -466,7 +466,7 @@ Status MasterRebuilder::UpsertSysCatalog() {
   }
   // Get all tablets in master.
   TabletInfoLoader tablet_info_loader;
-  sys_catalog.VisitTablets(&tablet_info_loader);
+  RETURN_NOT_OK(sys_catalog.VisitTablets(&tablet_info_loader));
 
   string new_table_name;
   map<string, scoped_refptr<master::TableInfo>> table_by_name_to_delete;

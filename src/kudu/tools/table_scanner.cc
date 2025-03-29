@@ -368,7 +368,7 @@ Status NewInListPredicate(const client::sp::shared_ptr<KuduTable>& table,
         EasyJson::ToString(object)));
   }
   vector<const rapidjson::Value*> values;
-  reader.ExtractObjectArray(&object, nullptr, &values);
+  RETURN_NOT_OK(reader.ExtractObjectArray(&object, nullptr, &values));
   // Using vector of auto-pointers to avoid memory leakage if ParseValue()
   // returns non-OK status.
   vector<unique_ptr<KuduValue>> kudu_values;
@@ -477,7 +477,7 @@ Status AddPredicates(const client::sp::shared_ptr<KuduTable>& table,
           "$0: expected JSON array for predicates", EasyJson::ToString(*obj)));
     }
     vector<const rapidjson::Value*> elements;
-    reader.ExtractObjectArray(obj, nullptr, &elements);
+    RETURN_NOT_OK(reader.ExtractObjectArray(obj, nullptr, &elements));
     if (elements.size() != 2 && elements.size() != 3) {
       return Status::InvalidArgument(
           Substitute("$0: malformed predicate", EasyJson::ToString(*obj)));
@@ -564,8 +564,8 @@ Status CreateDstTableIfNeeded(const client::sp::shared_ptr<KuduTable>& src_table
     if (expect_column_id == actual_column_id) {
       // Construct the destination column schema according to the source column for continuous
       // column id.
-      builder.AddColumn(src_schema_internal.column(idx),
-                        src_schema_internal.is_key_column(idx));
+      RETURN_NOT_OK(builder.AddColumn(src_schema_internal.column(idx),
+                                      src_schema_internal.is_key_column(idx)));
       VLOG(1) << Substitute("Add a real column $0 for column id $1",
                             src_schema_internal.column(idx).ToString(),
                             actual_column_id);
@@ -584,7 +584,7 @@ Status CreateDstTableIfNeeded(const client::sp::shared_ptr<KuduTable>& src_table
       // Fill the hole with dummy columns.
       while (expect_column_id < actual_column_id) {
         auto dummy_column_name = "dummy_" + oid_generator.Next();
-        builder.AddColumn(dummy_column_name, DataType::INT8);
+        RETURN_NOT_OK(builder.AddColumn(dummy_column_name, DataType::INT8));
         VLOG(1) << Substitute("Add a dummy column $0 for column id $1",
                               dummy_column_name, expect_column_id);
         // The dummy columns will be dropped after the table is created.
@@ -960,7 +960,7 @@ Status TableScanner::StartWork(WorkType work_type) {
     client::sp::shared_ptr<KuduTable> dst_table;
     RETURN_NOT_OK(dst_client_->get()->OpenTable(*dst_table_name_, &dst_table));
     if (dst_table->schema() != src_table->schema()) {
-      Status::InvalidArgument("source and destination tables should have the same schema");
+      return Status::InvalidArgument("source and destination tables should have the same schema");
     }
   }
 

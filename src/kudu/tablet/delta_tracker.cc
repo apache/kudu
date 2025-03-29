@@ -879,7 +879,7 @@ Status DeltaTracker::Flush(const IOContext* io_context, MetadataFlushType flush_
     // A failure here leaves a DeltaMemStore permanently in the store list.
     // This isn't allowed, and rolling back the store is difficult, so we leave
     // the delta tracker in an safe, read-only state.
-    CHECK(s.IsDiskFailure()) << LogPrefix() << s.ToString();
+    DCHECK(s.IsDiskFailure()) << LogPrefix() << s.ToString();
     read_only_ = true;
     return s;
   }

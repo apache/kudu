@@ -121,7 +121,7 @@ TEST(DiagLogParserTest, TestParseSymbols) {
   TestSymbolsLogVisitor lv;
   const auto parse_line = [&] (const string& line_str) {
     ParsedLine pl(line_str);
-    pl.Parse();
+    RETURN_NOT_OK(pl.Parse());
     return lv.ParseRecord(pl);
   };
 
@@ -153,7 +153,7 @@ TEST(DiagLogParserTest, TestParseStacks) {
   TestStacksLogVisitor lv;
   const auto parse_line = [&] (const string& line_str) {
     ParsedLine pl(line_str);
-    pl.Parse();
+    RETURN_NOT_OK(pl.Parse());
     return lv.ParseRecord(pl);
   };
 

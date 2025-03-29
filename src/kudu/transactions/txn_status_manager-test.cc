@@ -181,7 +181,7 @@ TEST_F(TxnStatusManagerTest, TestStartTransactions) {
   }
   // Now rebuild the underlying replica and rebuild the TxnStatusManager.
   ASSERT_OK(RestartReplica());
-  NO_FATALS(ResetTxnStatusManager());
+  ASSERT_OK(ResetTxnStatusManager());
   ASSERT_EQ(expected_prts_by_txn_id,
             txn_manager_->GetParticipantsByTxnIdForTests());
   ASSERT_EQ(3, txn_manager_->highest_txn_id());
@@ -536,7 +536,7 @@ TEST_F(TxnStatusManagerTest, GetTransactionStatus) {
 
   // Make the TxnStatusManager start from scratch.
   ASSERT_OK(RestartReplica());
-  NO_FATALS(ResetTxnStatusManager());
+  ASSERT_OK(ResetTxnStatusManager());
 
   // Committed, aborted, and in-flight transactions should be known to the
   // TxnStatusManager even after restarting the underlying replica and
@@ -705,7 +705,7 @@ TEST_F(TxnStatusManagerTest, KeepTransactionAlive) {
 
   // Make the TxnStatusManager start from scratch.
   ASSERT_OK(RestartReplica());
-  NO_FATALS(ResetTxnStatusManager());
+  ASSERT_OK(ResetTxnStatusManager());
 
   // Committed, aborted, and in-flight transactions should be known to the
   // TxnStatusManager even after restarting the underlying replica and

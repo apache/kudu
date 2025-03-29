@@ -169,7 +169,7 @@ Status HmsDowngrade(const RunnerContext& context) {
   shared_ptr<KuduClient> kudu_client;
   unique_ptr<HmsCatalog> hms_catalog;
   string master_addrs;
-  Init(context, &kudu_client, &hms_catalog, &master_addrs);
+  RETURN_NOT_OK(Init(context, &kudu_client, &hms_catalog, &master_addrs));
 
   // 1. Identify all Kudu tables in the HMS entries.
   vector<hive::Table> hms_tables;
@@ -653,9 +653,9 @@ Status FixHmsMetadata(const RunnerContext& context) {
       // Normalize the master addresses to allow for an equality check that ignores
       // missing default ports, duplicate addresses, and address order.
       UnorderedHostPortSet param_set;
-      MasterAddressesToSet(master_addrs_param, &param_set);
+      RETURN_NOT_OK(MasterAddressesToSet(master_addrs_param, &param_set));
       UnorderedHostPortSet cluster_set;
-      MasterAddressesToSet(master_addrs, &cluster_set);
+      RETURN_NOT_OK(MasterAddressesToSet(master_addrs, &cluster_set));
 
       if (param_set != cluster_set && !FLAGS_force) {
         LOG(INFO) << "Skipping drop of orphan HMS table " << table_name

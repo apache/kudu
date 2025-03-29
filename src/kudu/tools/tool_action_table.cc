@@ -1266,8 +1266,8 @@ Status ModifyRangePartition(const RunnerContext& context, PartitionAction action
       for (const auto& column : dimension_pb.columns()) {
         columns.emplace_back(column);
       }
-      p->add_hash_partitions(
-          columns, dimension_pb.num_buckets(), dimension_pb.seed());
+      RETURN_NOT_OK(p->add_hash_partitions(
+          columns, dimension_pb.num_buckets(), dimension_pb.seed()));
     }
     return alterer->AddRangePartition(p.release())->Alter();
   }
@@ -1823,8 +1823,8 @@ Status ParseTablePartition(const PartitionPB& partition,
         hash_columns.emplace_back(c);
       }
       const int32_t seed = hash_dimension.has_seed() ? hash_dimension.seed() : 0;
-      partition->add_hash_partitions(
-          hash_columns, hash_dimension.num_buckets(), seed);
+      RETURN_NOT_OK(partition->add_hash_partitions(
+          hash_columns, hash_dimension.num_buckets(), seed));
     }
 
     table_creator->add_custom_range_partition(partition.release());

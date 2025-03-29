@@ -322,7 +322,7 @@ TEST_F(MasterCertAuthorityTest, MasterLeaderSignsCSR) {
   {
     string ts_cert_str;
     bool has_ts_cert = false;
-    NO_FATALS(SendCertSignRequestHBs(csr_str, &has_ts_cert, &ts_cert_str));
+    ASSERT_OK(SendCertSignRequestHBs(csr_str, &has_ts_cert, &ts_cert_str));
     ASSERT_TRUE(has_ts_cert);
 
     // Try to load the certificate to check that the data is not corrupted.
@@ -343,7 +343,7 @@ TEST_F(MasterCertAuthorityTest, MasterLeaderSignsCSR) {
   {
     string ts_cert_str;
     bool has_ts_cert = false;
-    NO_FATALS(SendCertSignRequestHBs(csr_str, &has_ts_cert, &ts_cert_str));
+    ASSERT_OK(SendCertSignRequestHBs(csr_str, &has_ts_cert, &ts_cert_str));
     ASSERT_TRUE(has_ts_cert);
     // Try to load the certificate to check that the data is not corrupted.
     Cert ts_cert;

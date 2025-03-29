@@ -578,7 +578,7 @@ TEST_F(DeleteTableITest, TestAutoTombstoneAfterCrashDuringTabletCopy) {
   LOG(INFO) << "Test progress: crashed on first attempt to copy";
 
   // The superblock should be in TABLET_DATA_COPYING state on disk.
-  NO_FATALS(inspect_->CheckTabletDataStateOnTS(kTsIndex, replicated_tablet_id,
+  ASSERT_OK(inspect_->CheckTabletDataStateOnTS(kTsIndex, replicated_tablet_id,
                                                { TABLET_DATA_COPYING }));
 
   // Restart and let it crash one more time.
@@ -1328,7 +1328,7 @@ TEST_F(DeleteTableITest, TombstonedTabletsDeletedByReport) {
   // Choose a random tablet replica and set it replaced, and then it will be tombstoned.
   ConsensusStatePB cstate;
   string tablet_id = inspect_->ListTabletsOnTS(0)[0];
-  NO_FATALS(itest::GetConsensusState(ts_map_[cluster_->tablet_server(0)->uuid()],
+  ASSERT_OK(itest::GetConsensusState(ts_map_[cluster_->tablet_server(0)->uuid()],
                                     tablet_id, MonoDelta::FromSeconds(10),
                                     EXCLUDE_HEALTH_REPORT, &cstate));
   RaftPeerPB follower;
@@ -1345,9 +1345,10 @@ TEST_F(DeleteTableITest, TombstonedTabletsDeletedByReport) {
   peer->set_permanent_uuid(follower.permanent_uuid());
   peer->mutable_attrs()->set_replace(true);
   changes_pb.emplace_back(std::move(change_pb));
-  NO_FATALS(BulkChangeConfig(ts_map_[cstate.leader_uuid()], tablet_id, changes_pb,
-                            MonoDelta::FromSeconds(30)));
-
+  ASSERT_OK(BulkChangeConfig(ts_map_[cstate.leader_uuid()],
+                             tablet_id,
+                             changes_pb,
+                             MonoDelta::FromSeconds(30)));
   uint32_t index = cluster_->tablet_server_index_by_uuid(follower.permanent_uuid());
   NO_FATALS(WaitForTabletTombstonedOnTS(index, tablet_id, CMETA_NOT_EXPECTED));
 

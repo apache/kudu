@@ -890,6 +890,8 @@ TEST_P(NotEnoughHealthyTServersTest, TestNotEnoughHealthyTServers) {
 }
 
 TEST_F(CreateTableITest, TestNotAffectedCreatingTables) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
   constexpr int kTimeout = 4000;
   constexpr int kNumTServers = 3;
   constexpr int kHeartbeatIntervalMs = 2000;
@@ -947,17 +949,9 @@ TEST_F(CreateTableITest, TestNotAffectedCreatingTables) {
     ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
     rapidjson::Document doc;
     doc.Parse<0>(out.c_str());
-    // Only contains 2 tables kTwoReplicasTableId and kOneReplicasTableId.
-    ASSERT_EQ(2, doc["table_summaries"].Size());
-    ASSERT_STR_CONTAINS(out, kTwoReplicasTableId);
-    ASSERT_STR_CONTAINS(out, kOneReplicasTableId);
-    const rapidjson::Value& items = doc["table_summaries"];
-    for (int i = 0; i < items.Size(); i++) {
-      if (items[i]["name"].GetString() == kTwoReplicasTableId ||
-          items[i]["name"].GetString() == kOneReplicasTableId) {
-        ASSERT_EQ(string("HEALTHY"), items[i]["health"].GetString());
-      }
-    }
+    ASSERT_FALSE(doc.HasParseError());
+    ASSERT_TRUE(doc.HasMember("errors"));
+    ASSERT_FALSE(doc.HasMember("table_summaries"));
   }
   {
     // Restart the tablet server and check the health of the cluster.
@@ -971,8 +965,10 @@ TEST_F(CreateTableITest, TestNotAffectedCreatingTables) {
       ASSERT_OK(RunKuduTool(Split(cmd, " ", strings::SkipEmpty()), &out));
       rapidjson::Document doc;
       doc.Parse<0>(out.c_str());
+      ASSERT_FALSE(doc.HasParseError());
       // Contains 3 tables kTwoReplicasTableId,
       // kOneReplicasTableId and kNotEnoughTServersTableId.
+      ASSERT_TRUE(doc.HasMember("table_summaries"));
       ASSERT_EQ(3, doc["table_summaries"].Size());
       ASSERT_STR_CONTAINS(out, kTwoReplicasTableId);
       ASSERT_STR_CONTAINS(out, kOneReplicasTableId);
