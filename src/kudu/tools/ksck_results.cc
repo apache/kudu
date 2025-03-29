@@ -315,13 +315,13 @@ Status KsckResults::PrintTo(PrintMode mode, int sections, ostream& out) {
     return PrintTableSummaries(*table_summaries, table_type, out);
   };
   if (sections & PrintSections::SYSTEM_TABLE_SUMMARIES) {
-    sort_and_print_tables(&cluster_status.system_table_summaries, "system table");
+    RETURN_NOT_OK(sort_and_print_tables(&cluster_status.system_table_summaries, "system table"));
     if (!cluster_status.system_table_summaries.empty()) {
       out << endl;
     }
   }
   if (sections & PrintSections::TABLE_SUMMARIES) {
-    sort_and_print_tables(&cluster_status.table_summaries, "table");
+    RETURN_NOT_OK(sort_and_print_tables(&cluster_status.table_summaries, "table"));
     if (!cluster_status.table_summaries.empty()) {
       out << endl;
     }

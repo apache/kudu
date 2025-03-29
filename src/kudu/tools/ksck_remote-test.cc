@@ -654,7 +654,7 @@ TEST_F(RemoteKsckTest, TestClusterWithLocation) {
 
 // Test filtering on a cluster with no table.
 TEST_F(RemoteKsckTest, TestFilterOnNoTableCluster) {
-  client_->DeleteTable(kTableName);
+  ASSERT_OK(client_->DeleteTable(kTableName));
   cluster_->set_table_filters({ "ksck-test-table" });
   FLAGS_checksum_scan = true;
   FLAGS_consensus = false;

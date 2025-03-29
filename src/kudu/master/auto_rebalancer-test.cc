@@ -714,7 +714,7 @@ TEST_F(AutoRebalancerTest, TestHandlingFailedTservers) {
 
   // Bring back the tservers.
   for (int i = 0; i < kNumTservers; ++i) {
-    NO_FATALS(cluster_->mini_tablet_server(i)->Restart());
+    ASSERT_OK(cluster_->mini_tablet_server(i)->Restart());
   }
 
   // Make sure the auto-rebalancer thread schedules replica moves because of the

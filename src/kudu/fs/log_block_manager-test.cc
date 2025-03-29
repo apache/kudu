@@ -1405,7 +1405,7 @@ TEST_P(LogBlockManagerNativeMetaTest, TestContainerBlockLimitingByMetadataSizeWi
   int small_file_count = 0;
   for (const auto& metadata_file : metadata_files) {
     uint64_t file_size;
-    NO_FATALS(env_->GetFileSize(metadata_file, &file_size));
+    ASSERT_OK(env_->GetFileSize(metadata_file, &file_size));
     // When calculate compaction condition, we use metadata_file_->Offset(), it is the encryption
     // header size and real data size. So we need to add the encryption header size here.
     if (FLAGS_log_container_metadata_max_size *
@@ -1431,7 +1431,7 @@ TEST_P(LogBlockManagerNativeMetaTest, TestContainerBlockLimitingByMetadataSizeWi
   small_file_count = 0;
   for (const auto& metadata_file : metadata_files) {
     uint64_t file_size;
-    NO_FATALS(env_->GetFileSize(metadata_file, &file_size));
+    ASSERT_OK(env_->GetFileSize(metadata_file, &file_size));
     if (FLAGS_log_container_metadata_max_size *
             FLAGS_log_container_metadata_size_before_compact_ratio >
         Env::Default()->GetEncryptionHeaderSize() + file_size) {
@@ -1449,7 +1449,7 @@ TEST_P(LogBlockManagerNativeMetaTest, TestContainerBlockLimitingByMetadataSizeWi
   small_file_count = 0;
   for (const auto& metadata_file : metadata_files) {
     uint64_t file_size;
-    NO_FATALS(env_->GetFileSize(metadata_file, &file_size));
+    ASSERT_OK(env_->GetFileSize(metadata_file, &file_size));
     if (FLAGS_log_container_metadata_max_size *
             FLAGS_log_container_metadata_size_before_compact_ratio >
         Env::Default()->GetEncryptionHeaderSize() + file_size) {

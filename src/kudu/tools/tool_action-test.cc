@@ -28,6 +28,7 @@
 
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/util/net/net_util.h"
+#include "kudu/util/test_macros.h"
 
 // gflags for optional action parameters
 DEFINE_bool(opt_bool, false, "obd");
@@ -122,13 +123,13 @@ TEST(ToolActionTest, TestMasterAddressesToSet) {
   // A standard master address string ordered and including the default port.
   string master_addrs_std = "host-1:7051,host-2:7051,host-3:7051";
   UnorderedHostPortSet std_set;
-  MasterAddressesToSet(master_addrs_std, &std_set);
+  ASSERT_OK(MasterAddressesToSet(master_addrs_std, &std_set));
   ASSERT_EQ(3, std_set.size());
 
   // A messy master address string that is unordered, has no port, and includes duplicates.
   string master_addrs_messy = "host-3,host-1,host-2,host-1:7051,host-2";
   UnorderedHostPortSet messy_set;
-  MasterAddressesToSet(master_addrs_messy, &messy_set);
+  ASSERT_OK(MasterAddressesToSet(master_addrs_messy, &messy_set));
   ASSERT_EQ(3, messy_set.size());
 
   ASSERT_EQ(std_set, messy_set);
@@ -136,7 +137,7 @@ TEST(ToolActionTest, TestMasterAddressesToSet) {
   // A master address string that matches all but one port.
   string master_addrs_bad_port = "host-1:7051,host-2:7050,host-3:7051";
   UnorderedHostPortSet bad_port_set;
-  MasterAddressesToSet(master_addrs_bad_port, &bad_port_set);
+  ASSERT_OK(MasterAddressesToSet(master_addrs_bad_port, &bad_port_set));
   ASSERT_EQ(3, bad_port_set.size());
 
   ASSERT_NE(std_set, bad_port_set);
@@ -144,7 +145,7 @@ TEST(ToolActionTest, TestMasterAddressesToSet) {
   // A master address string that matches all but one host.
   string master_addrs_bad_host = "host-1:7051,host-21:7051,host-3:7051";
   UnorderedHostPortSet bad_host_set;
-  MasterAddressesToSet(master_addrs_bad_host, &bad_host_set);
+  ASSERT_OK(MasterAddressesToSet(master_addrs_bad_host, &bad_host_set));
   ASSERT_EQ(3, bad_host_set.size());
 
   ASSERT_NE(std_set, bad_host_set);

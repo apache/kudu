@@ -746,8 +746,7 @@ Status RefreshAuthzCache(const RunnerContext& context) {
 Status RebuildMaster(const RunnerContext& context) {
   MasterRebuilder master_rebuilder(context.variadic_args);
   RETURN_NOT_OK(master_rebuilder.RebuildMaster());
-  PrintRebuildReport(master_rebuilder.GetRebuildReport());
-  return Status::OK();
+  return PrintRebuildReport(master_rebuilder.GetRebuildReport());
 }
 
 } // anonymous namespace

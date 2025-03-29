@@ -323,10 +323,10 @@ class TabletCopier {
 
     // Create a thread pool to copy tablets.
     std::unique_ptr<ThreadPool> copy_pool;
-    ThreadPoolBuilder("tool-tablet-copy-pool")
-        .set_max_threads(FLAGS_num_threads)
-        .set_min_threads(FLAGS_num_threads)
-        .Build(&copy_pool);
+    RETURN_NOT_OK(ThreadPoolBuilder("tool-tablet-copy-pool")
+                      .set_max_threads(FLAGS_num_threads)
+                      .set_min_threads(FLAGS_num_threads)
+                      .Build(&copy_pool));
 
     shared_ptr<Messenger> messenger;
     RETURN_NOT_OK(BuildMessenger("tablet_copy_client", &messenger));

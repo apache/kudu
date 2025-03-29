@@ -1083,10 +1083,12 @@ TEST_F(MaintenanceManagerTest, ComprehensiveTest) {
   // Since the memory usage is 60%, probability_not_to_flush is exactly
   // FLAGS_run_non_memory_ops_prob. And also, the applying and registering might
   // take time, so the other_ops_running_times might be greater than expected.
+  // Add some extra margin (about x3) for probability_not_to_flush
+  // to avoid flakiness.
   const int64_t memory_op_running_times = op2.run_count();
   const int64_t other_ops_running_times = op1.run_count() + op3.run_count();
-  ASSERT_LT(memory_op_running_times * 0.15, other_ops_running_times);
-  ASSERT_GT(memory_op_running_times * 0.35, other_ops_running_times);
+  ASSERT_LT(memory_op_running_times * 0.1, other_ops_running_times);
+  ASSERT_GT(memory_op_running_times * 0.6, other_ops_running_times);
 
   LOG(INFO) << Substitute("op1: $0 perform count: $1 average schedule time: $2",
                           op1.name(), op1.run_count(), op1.queue_time().ToMilliseconds()

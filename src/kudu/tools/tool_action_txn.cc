@@ -23,6 +23,7 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -337,7 +338,7 @@ Status ShowTxn(const RunnerContext& context) {
   RETURN_NOT_OK(ParseMasterAddresses(context, kMasterAddressesArg, &master_addresses));
   for (const auto& m : master_addresses) {
     HostPort hp;
-    hp.ParseString(m, master::Master::kDefaultPort);
+    RETURN_NOT_OK(hp.ParseString(m, master::Master::kDefaultPort));
     master_hps.emplace_back(hp);
   }
   RETURN_NOT_OK(TxnSystemClient::Create(master_hps,

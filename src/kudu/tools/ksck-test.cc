@@ -36,7 +36,6 @@
 
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
-#include <google/protobuf/stubs/common.h>
 #include <gtest/gtest.h>
 #include <rapidjson/document.h>
 
@@ -318,7 +317,7 @@ class KsckTest : public KuduTest {
     table_summary.consensus_mismatch_tablets = consensus_mismatch_tablets;
     table_summary.unavailable_tablets = unavailable_tablets;
     std::ostringstream oss;
-    PrintTableSummaries({ table_summary }, "table", oss);
+    CHECK_OK(PrintTableSummaries({ table_summary }, "table", oss));
     return oss.str();
   }
 
@@ -480,9 +479,8 @@ class KsckTest : public KuduTest {
 
   const string KsckResultsToJsonString(int sections = PrintSections::ALL_SECTIONS) {
     ostringstream json_stream;
-    ksck_->results().PrintJsonTo(PrintMode::JSON_COMPACT,
-                                 sections,
-                                 json_stream);
+    CHECK_OK(ksck_->results().PrintJsonTo(
+        PrintMode::JSON_COMPACT, sections, json_stream));
     return json_stream.str();
   }
 

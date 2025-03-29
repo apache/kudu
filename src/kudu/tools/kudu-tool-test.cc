@@ -403,7 +403,9 @@ class ToolTest : public KuduTest {
     Status expected_status = Status::InvalidArgument(Substitute("$0 $1", message, required_arg));
 
     vector<string> err_lines;
-    RunTool(arg_str, nullptr, nullptr, nullptr, /* stderr_lines = */ &err_lines);
+    const auto s = RunTool(
+        arg_str, nullptr, nullptr, nullptr, /* stderr_lines = */ &err_lines);
+    ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
     ASSERT_GE(err_lines.size(), 3) << err_lines;
     ASSERT_EQ(expected_status.ToString(), err_lines[0]);
     ASSERT_STR_MATCHES(err_lines[2], "Usage: .*kudu.*");
@@ -781,7 +783,7 @@ class ToolTest : public KuduTest {
     }
 
     // Drop dst table.
-    ww.Cleanup();
+    ASSERT_OK(ww.Cleanup());
   }
 
   // Write YAML content to file ${KUDU_CONFIG}/kudurc.
@@ -1811,15 +1813,15 @@ TEST_P(CreateEmptyPartitionTableTest, TestCreateEmptyPartitionTable) {
   bool allow_empty_partition = GetParam();
   shared_ptr<KuduClient> client;
   NO_FATALS(StartExternalMiniCluster());
-  cluster_->CreateClient(nullptr, &client);
+  ASSERT_OK(cluster_->CreateClient(nullptr, &client));
   unique_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
   KuduSchema schema = KuduSchema::FromSchema(GetSimpleTestSchema());
-  table_creator->table_name(kTableName)
-                    .schema(&schema)
-                    .set_range_partition_columns({"key"})
-                    .num_replicas(1)
-                    .set_allow_empty_partition(allow_empty_partition)
-                    .Create();
+  ASSERT_OK(table_creator->table_name(kTableName)
+            .schema(&schema)
+            .set_range_partition_columns({"key"})
+            .num_replicas(1)
+            .set_allow_empty_partition(allow_empty_partition)
+            .Create());
   vector<string> src_schema;
   string stdout;
   NO_FATALS(RunActionStdoutString(
@@ -1927,7 +1929,7 @@ TEST_P(CreateNoRangePartitionTable, TestCreateNoRangePartitionTable) {
   }
 
   // Table copy the source table and create the destination table.
-  NO_FATALS(RunTool(
+  ASSERT_OK(RunTool(
       Substitute("table copy $0 $1 $2 --dst_table=$3 --create_table=true ",
                  master_addr, kSrcTableName,
                  master_addr, kDstTableName
@@ -1963,14 +1965,16 @@ TEST_F(ToolTest, TestFsCheck) {
     LocalTabletWriter writer(harness.tablet().get(), &kSchema);
     KuduPartialRow row(&kSchemaWithIds);
 
-    for (int num_flushes = 0; num_flushes < 10; num_flushes++) {
-      for (int i = 0; i < 10; i++) {
-        ASSERT_OK(row.SetInt32(0, num_flushes * i));
-        ASSERT_OK(row.SetInt32(1, num_flushes * i * 10));
+    constexpr const int kNumFlushes = 10;
+    constexpr const int kNumRows = 10;
+    for (int flush = 0; flush < kNumFlushes; ++flush) {
+      for (int row_idx = 0; row_idx < kNumRows; ++row_idx) {
+        ASSERT_OK(row.SetInt32(0, flush * kNumRows + row_idx));
+        ASSERT_OK(row.SetInt32(1, 10 * (flush * kNumRows + row_idx)));
         ASSERT_OK(row.SetStringCopy(2, "HelloWorld"));
-        writer.Insert(row);
+        ASSERT_OK(writer.Insert(row));
       }
-      harness.tablet()->Flush();
+      ASSERT_OK(harness.tablet()->Flush());
     }
     block_ids = harness.tablet()->metadata()->CollectBlockIds();
     harness.tablet()->Shutdown();
@@ -1996,7 +2000,7 @@ TEST_F(ToolTest, TestFsCheck) {
         deletion_transaction->AddDeletedBlock(block_id);
       }
     }
-    deletion_transaction->CommitDeletedBlocks(&missing_ids);
+    ASSERT_OK(deletion_transaction->CommitDeletedBlocks(&missing_ids));
   }
   NO_FATALS(RunFsCheck(Substitute("fs check --fs_wal_dir=$0", kTestDir),
                        block_ids.size() / 2, kTabletId, missing_ids, 0));
@@ -3211,15 +3215,21 @@ TEST_F(ToolTest, TestLocalReplicaDumpMeta) {
   pair<PartitionSchema, Partition> partition = tablet::CreateDefaultPartition(
         kSchemaWithIds);
   scoped_refptr<TabletMetadata> meta;
-  TabletMetadata::CreateNew(&fs, kTestTablet, kTestTableName, kTestTableId,
-                  kSchemaWithIds, partition.first, partition.second,
-                  tablet::TABLET_DATA_READY,
-                  /*tombstone_last_logged_opid=*/ nullopt,
-                  /*supports_live_row_count=*/ true,
-                  /*extra_config=*/ nullopt,
-                  /*dimension_label=*/ nullopt,
-                  /*table_type=*/ nullopt,
-                  &meta);
+  ASSERT_OK(TabletMetadata::CreateNew(
+      &fs,
+      kTestTablet,
+      kTestTableName,
+      kTestTableId,
+      kSchemaWithIds,
+      partition.first,
+      partition.second,
+      tablet::TABLET_DATA_READY,
+      /*tombstone_last_logged_opid=*/ nullopt,
+      /*supports_live_row_count=*/ true,
+      /*extra_config=*/ nullopt,
+      /*dimension_label=*/ nullopt,
+      /*table_type=*/ nullopt,
+      &meta));
   string stdout;
   NO_FATALS(RunActionStdoutString(Substitute("local_replica dump meta $0 "
                                              "--fs_wal_dir=$1 "
@@ -3243,7 +3253,7 @@ TEST_F(ToolTest, TestLocalReplicaDumpMeta) {
   ASSERT_STR_CONTAINS(stdout, debug_str);
 
   TabletSuperBlockPB pb1;
-  meta->ToSuperBlock(&pb1);
+  ASSERT_OK(meta->ToSuperBlock(&pb1));
   debug_str = pb_util::SecureDebugString(pb1);
   StripWhiteSpace(&debug_str);
   ASSERT_STR_CONTAINS(stdout, "Superblock:");
@@ -3299,9 +3309,9 @@ TEST_F(ToolTest, TestLocalReplicaOps) {
         ASSERT_OK(row.SetInt32(0, num_rowsets * 10 + i));
         ASSERT_OK(row.SetInt32(1, num_rowsets * 10 * 10 + i));
         ASSERT_OK(row.SetStringCopy(2, "HelloWorld"));
-        writer.Insert(row);
+        ASSERT_OK(writer.Insert(row));
       }
-      harness.tablet()->Flush();
+      ASSERT_OK(harness.tablet()->Flush());
     }
     harness.tablet()->Shutdown();
 
@@ -3313,7 +3323,7 @@ TEST_F(ToolTest, TestLocalReplicaOps) {
     table_id = meta->table_id();
     schema_version = meta->schema_version();
     schema_str = meta->schema()->ToString();
-    meta->ToSuperBlock(&pb1);
+    ASSERT_OK(meta->ToSuperBlock(&pb1));
   }
 
   string fs_paths = "--fs_wal_dir=" + kTestDir + " "
@@ -4039,7 +4049,7 @@ TEST_F(ToolTest, TestLoadgenAutoIncrementingColumn) {
 
   // Insert data into the table with perf loadgen tool
   constexpr int kNumRows = 100;
-  NO_FATALS(RunTool(
+  ASSERT_OK(RunTool(
       Substitute("perf loadgen $0 -table_name=$1 -num_threads=1 "
                  "-num_rows_per_thread=$2",
                  cluster_->master()->bound_rpc_addr().ToString(),
@@ -4611,7 +4621,7 @@ TEST_F(ToolTest, TestRemoteReplicaCopy) {
   }
   ASSERT_TRUE(found_tombstoned_tablet);
   // Wait until destination tserver has tombstoned_tablet_id in tombstoned state.
-  NO_FATALS(inspect_->WaitForTabletDataStateOnTS(kDstTsIndex, tombstoned_tablet_id,
+  ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(kDstTsIndex, tombstoned_tablet_id,
                                                  { TabletDataState::TABLET_DATA_TOMBSTONED },
                                                  kTimeout));
   // Copy tombstoned_tablet_id from source to destination.
@@ -5269,11 +5279,11 @@ TEST_F(ToolTest, TestServerSetFlag) {
                    master_addr)));
     // Test invalid unsafe flag.
     string err;
-    RunActionStderrString(
+    const auto s = RunActionStderrString(
         Substitute("master set_flag $0 unlock_unsafe_flags false --force",
                    master_addr), &err);
-    ASSERT_STR_CONTAINS(err,
-        "Detected inconsistency in command-line flags");
+    ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
+    ASSERT_STR_CONTAINS(err, "Detected inconsistency in command-line flags");
     // Flag value will not be changed.
     string out;
     RunActionStdoutString(
@@ -5296,9 +5306,10 @@ TEST_F(ToolTest, TestServerSetFlag) {
                    master_addr)));
     // Test invalid experimental flag.
     string err;
-    RunActionStderrString(
+    const auto s = RunActionStderrString(
         Substitute("master set_flag $0 unlock_experimental_flags false --force",
                    master_addr), &err);
+    ASSERT_TRUE(s.IsRuntimeError());
     ASSERT_STR_CONTAINS(err,
         "Detected inconsistency in command-line flags");
     // Flag value will not be changed.
@@ -5308,6 +5319,7 @@ TEST_F(ToolTest, TestServerSetFlag) {
                    master_addr), &out);
     rapidjson::Document doc;
     doc.Parse<0>(out.c_str());
+    ASSERT_FALSE(doc.HasParseError());
     const string flag_value = "true";
     for (int i = 0; i < doc.Size(); i++) {
       const rapidjson::Value& item = doc[i];
@@ -5326,9 +5338,10 @@ TEST_F(ToolTest, TestServerSetFlag) {
                    master_addr)));
     // Test set flag violating group validator.
     string err;
-    RunActionStderrString(
+    const auto s = RunActionStderrString(
         Substitute("master set_flag $0 raft_prepare_replacement_before_eviction false --force",
                    master_addr), &err);
+    ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
     NO_FATALS(RunActionStdoutNone(
         Substitute("master set_flag $0 auto_rebalancing_enabled true --force",
                    master_addr)));
@@ -6289,7 +6302,7 @@ TEST_F(ToolTest, TableCopyCreateEmptyPartition) {
   ASSERT_STR_CONTAINS(stdout, "RANGE (key) ()");
 
   // Table copy the source table and create the destination table.
-  NO_FATALS(RunTool(
+  ASSERT_OK(RunTool(
       Substitute("table copy $0 $1 $2 --dst_table=$3 "
                  "--create_table=true",
                  master_addr, kSrcTableName,
@@ -6323,7 +6336,7 @@ TEST_F(ToolTest, TableCopyLimitSpeed) {
   const string& master_addr = cluster_->master()->bound_rpc_addr().ToString();
   int64 table_copy_throttler_bytes_per_sec = 10240;
   MonoTime start_time = MonoTime::Now();
-  NO_FATALS(RunTool(
+  ASSERT_OK(RunTool(
       Substitute("table copy $0 $1 $2 --dst_table=$3 --write_type=upsert "
                  "-scan_batch_size=1024 "
                  "--table_copy_throttler_bytes_per_sec=$4 "
@@ -7909,7 +7922,8 @@ TEST_F(ToolTest, TestHmsList) {
 
   // Test the output when HMS integration is disabled.
   string err;
-  RunActionStderrString(Substitute("hms list $0", master_addr), &err);
+  const auto s = RunActionStderrString(Substitute("hms list $0", master_addr), &err);
+  ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
   ASSERT_STR_CONTAINS(err,
       "Configuration error: Could not fetch the Hive Metastore locations from "
       "the Kudu master since it is not configured with the Hive Metastore "
@@ -7963,7 +7977,7 @@ TEST_F(ToolTest, TestHMSAddressLog) {
   ASSERT_OK(hms_catalog.Start());
 
   string err;
-  RunActionStderrString(Substitute("hms list $0 -v 1", master_addr), &err);
+  ASSERT_OK(RunActionStderrString(Substitute("hms list $0 -v 1", master_addr), &err));
   ASSERT_STR_CONTAINS(err,
       Substitute("Attempting to connect to $0", cluster_->hms()->address().ToString()));
 }
@@ -8674,9 +8688,10 @@ TEST_F(ToolTest, TestFsUpgradeEncryptionKeyFromServerKeyInfoAndFromTenantKeyInfo
   mts->Shutdown();
 
   string err;
-  RunActionStderrString(Substitute(
+  const auto s = RunActionStderrString(Substitute(
       "fs upgrade_encryption_key --fs_data_dirs=$0 --fs_wal_dir=$1 --fs_metadata_dir=$2",
        JoinStrings(data_roots, ","), wal_root, metadata_root), &err);
+  ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
   // This upgrade tool only works on the cluster with server key info exist.
   ASSERT_STR_CONTAINS(err, "We should not do server key upgrade on a cluster");
 }
@@ -8703,9 +8718,10 @@ TEST_F(ToolTest, TestFsUpgradeEncryptionKeyFromNoEncryptionKeyInfo) {
 
   // Do the encryption key info upgrade for a tserver without server key with the kudu CLI tool.
   string err;
-  RunActionStderrString(Substitute(
+  const auto s = RunActionStderrString(Substitute(
       "fs upgrade_encryption_key --fs_data_dirs=$0 --fs_wal_dir=$1 --fs_metadata_dir=$2",
        JoinStrings(data_roots, ","), wal_root, metadata_root), &err);
+  ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
   // This upgrade tool only works on the cluster with server key info exist.
   ASSERT_STR_CONTAINS(err, "We should not do server key upgrade on a cluster");
 }
@@ -9031,7 +9047,7 @@ TEST_P(RecreateCMetaTest, TestRecreateCMeta) {
   req.set_dest_uuid(cluster_->tablet_server(0)->uuid());
   RpcController rpc;
   rpc.set_timeout(kTimeout);
-  ts->consensus_proxy->GetLastOpId(req, &resp, &rpc);
+  ASSERT_OK(ts->consensus_proxy->GetLastOpId(req, &resp, &rpc));
   const int opid = resp.opid().index();
   const int term = resp.opid().term();
 
@@ -9051,7 +9067,7 @@ TEST_P(RecreateCMetaTest, TestRecreateCMeta) {
   cluster_->tablet_server(0)->Shutdown();
   const auto wal_dir = cluster_->tablet_server(0)->wal_dir();
   Substitute("$0/consensus-meta/$1", wal_dir, tablet_id);
-  Env::Default()->DeleteFile(Substitute("$0/consensus-meta/$1", wal_dir, tablet_id));
+  ASSERT_OK(Env::Default()->DeleteFile(Substitute("$0/consensus-meta/$1", wal_dir, tablet_id)));
 
   // Set up and run the cmeta unsafe_recreate command.
   const auto flags = Substitute("--fs_wal_dir=$0 --fs_data_dirs=$1",
@@ -9109,7 +9125,7 @@ TEST_F(ToolTest, TestReplaceTablet) {
                                 cluster_->master()->bound_rpc_addr().ToString(),
                                 old_tablet_id);
   string stderr;
-  NO_FATALS(RunActionStderrString(cmd, &stderr));
+  ASSERT_OK(RunActionStderrString(cmd, &stderr));
   ASSERT_STR_CONTAINS(stderr, old_tablet_id);
 
   // Restart the down tablet server.
@@ -9745,7 +9761,7 @@ TEST_P(UnregisterTServerTest, TestUnregisterTServer) {
   }
 
   // Restart the tserver and re-register it on masters.
-  ts->Start();
+  ASSERT_OK(ts->Start());
   {
     string out;
     ASSERT_EVENTUALLY([&]() {
@@ -9992,7 +10008,7 @@ TEST_F(ToolTest, TestLocalReplicaCopyRemote) {
                  source_tserver_rpc_addr,
                  data_dirs,
                  wal_dir)));
-  NO_FATALS(mini_cluster_->mini_tablet_server(1)->Start());
+  ASSERT_OK(mini_cluster_->mini_tablet_server(1)->Start());
   const vector<string>& target_tablet_ids = mini_cluster_->mini_tablet_server(1)->ListTablets();
   ASSERT_EQ(source_tserver_tablet_count + target_tserver_tablet_count_before,
             target_tablet_ids.size());
@@ -10019,7 +10035,7 @@ TEST_F(ToolTest, TestLocalReplicaCopyRemoteWithSpeedLimit) {
   NO_FATALS(target_tablet_server->Shutdown());
   // Copy tablet replicas from tserver0 to tserver1.
   string stderr;
-  NO_FATALS(RunActionStdoutStderrString(
+  ASSERT_OK(RunActionStdoutStderrString(
       Substitute("local_replica copy_from_remote $0 $1 "
                  "-fs_data_dirs=$2 -fs_wal_dir=$3 -num_threads=3 "
                  "-tablet_copy_throttler_bytes_per_sec=$4 "
@@ -10032,7 +10048,7 @@ TEST_F(ToolTest, TestLocalReplicaCopyRemoteWithSpeedLimit) {
   // To prove that throttler works, but it is hard to compute the copying speed to be limited
   // under tablet_copy_throttler_bytes_per_sec.
   ASSERT_STR_CONTAINS(stderr, "Time spent Tablet copy throttler");
-  NO_FATALS(target_tablet_server->Start());
+  ASSERT_OK(target_tablet_server->Start());
   vector<string> tids = target_tablet_server->ListTablets();
   unordered_set<string> target_tablet_ids(tids.begin(), tids.end());
   ASSERT_EQ(source_tserver_tablet_count + target_tserver_tablet_count_before,
@@ -10169,7 +10185,7 @@ TEST_P(DownloadSuperblockInBatchTest, TestDownloadSuperblockInBatch) {
   string stderr;
   {
     ScopedRegisterSink rs(&capture_logs);
-    RunActionStderrString(
+    const auto s = RunActionStderrString(
         Substitute("local_replica copy_from_remote $0 $1 "
                   "-fs_data_dirs=$2 -fs_wal_dir=$3 "
                   "--tablet_copy_support_download_superblock_in_batch=$4 "
@@ -10193,20 +10209,26 @@ TEST_P(DownloadSuperblockInBatchTest, TestDownloadSuperblockInBatch) {
                   (kSuperblockSize / 4),
                   (kSuperblockSize / 8),
                   FLAGS_encrypt_data_at_rest), &stderr);
+    if (FLAGS_tablet_copy_support_download_superblock_in_batch) {
+      ASSERT_OK(s);
+    } else {
+      ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
+    }
   }
-  // The size of superblock is larger than rpc_max_message_size, it will cause a network error.
-  // Downloading superblock will fail.
+  // If the size of the superblock is larger than --rpc_max_message_size,
+  // it causes a network error, and an attempt to download the superblock fails.
   if (!FLAGS_tablet_copy_support_download_superblock_in_batch) {
     ASSERT_STR_CONTAINS(stderr, "recv error: Network error: RPC frame had a length");
     return;
-  } else { // Download superblock piece by piece.
-    ASSERT_STR_CONTAINS(JoinStrings(capture_logs.logged_msgs(), "\n"),
-                        "Superblock is very large, it maybe over the rpc messsage size, "
-                        "which is controlled by flag --rpc_max_message_size. Switch it into "
-                        "downloading superblock piece by piece");
   }
 
-  NO_FATALS(dst_tserver->Start());
+  // Download superblock piece by piece.
+  ASSERT_STR_CONTAINS(JoinStrings(capture_logs.logged_msgs(), "\n"),
+                      "Superblock is very large, it maybe over the rpc messsage size, "
+                      "which is controlled by flag --rpc_max_message_size. Switch it into "
+                      "downloading superblock piece by piece");
+
+  ASSERT_OK(dst_tserver->Start());
   const vector<string>& target_tablet_ids = dst_tserver->ListTablets();
   // Copied tablet will exist in target tablet server.
   ASSERT_TRUE(find(target_tablet_ids.begin(), target_tablet_ids.end(), tablet_id_to_copy)
@@ -10289,7 +10311,7 @@ TEST_F(ToolTest, TestRebuildTserverByLocalReplicaCopy) {
 
   // Start masters only.
   mini_cluster_->opts_.num_tablet_servers = 0;
-  NO_FATALS(mini_cluster_->Start());
+  ASSERT_OK(mini_cluster_->Start());
   // Then start tserver with old host:port.
   ASSERT_OK(mini_cluster_->AddTabletServer(hps[0]));
   ASSERT_OK(mini_cluster_->AddTabletServer(hps[1]));

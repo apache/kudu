@@ -527,19 +527,21 @@ Status Update(const RunnerContext& /*context*/) {
 }
 
 Status UpgradeEncryptionKey(const RunnerContext& /*context*/) {
+  // TODO(aserbin): if set, use TMPDIR from env instead of hardcoded /tmp
+  static const string kLockFilePath =
+      "/tmp/kudu_tserver-metadata-upgrade-instance.lock";
+
   Env* env = Env::Default();
-  const string& filename = "/tmp/kudu_tserver-metadata-upgrade-instance.lock";
   FileLock* file_lock;
-  KUDU_RETURN_NOT_OK_PREPEND(env->LockFile(filename, &file_lock),
+  KUDU_RETURN_NOT_OK_PREPEND(env->LockFile(kLockFilePath, &file_lock),
                              "Could not lock instance file. Make sure that "
                              "this tool is not already running.");
-  auto unlock = MakeScopedCleanup([&]() {
-    env->UnlockFile(file_lock);
+  auto auto_unlock = MakeScopedCleanup([&]() {
+    WARN_NOT_OK(env->UnlockFile(file_lock),
+                Substitute("could not unlock file $0", kLockFilePath));
   });
 
-  RETURN_NOT_OK(UpdateEncryptionKeyInfo(env));
-
-  return Status::OK();
+  return UpdateEncryptionKeyInfo(env);
 }
 
 namespace {
