@@ -471,7 +471,7 @@ TEST_F(SysCatalogTest, LoadClusterID) {
 
   // Restart the master and ensure the generated cluster ID is the same.
   mini_master_->Shutdown();
-  mini_master_->Restart();
+  ASSERT_OK(mini_master_->Restart());
   ASSERT_OK(mini_master_->master()->catalog_manager()->sys_catalog()->
           GetClusterIdEntry(&cluster_id_entry));
   ASSERT_EQ(init_id, cluster_id_entry.cluster_id());
