@@ -20,9 +20,10 @@
 #include <iosfwd>
 #include <string>
 
+#include <glog/logging.h>
+
 #include "kudu/gutil/macros.h"
 #include "kudu/server/webserver.h"
-#include "kudu/util/status.h"
 #include "kudu/util/web_callback_registry.h"
 
 namespace kudu {
@@ -31,13 +32,13 @@ namespace master {
 
 class Master;
 
-class RestCatalogPathHandlers {
+class RestCatalogPathHandlers final {
  public:
-  explicit RestCatalogPathHandlers(Master* master) : master_(master) {}
+  explicit RestCatalogPathHandlers(Master* master) : master_(DCHECK_NOTNULL(master)) {}
 
-  ~RestCatalogPathHandlers();
+  ~RestCatalogPathHandlers() = default;
 
-  Status Register(Webserver* server);
+  void Register(Webserver* server);
 
  private:
   void HandleApiTableEndpoint(const Webserver::WebRequest& req,
@@ -63,7 +64,9 @@ class RestCatalogPathHandlers {
                          HttpStatusCode* status_code);
 
   // Print a JSON object representing a table to 'output'.
-  void PrintTableObject(std::ostringstream* output, const std::string& table_id);
+  void PrintTableObject(std::ostringstream* output,
+                        const std::string& table_id,
+                        HttpStatusCode* status_code);
 
   Master* master_;
   DISALLOW_COPY_AND_ASSIGN(RestCatalogPathHandlers);

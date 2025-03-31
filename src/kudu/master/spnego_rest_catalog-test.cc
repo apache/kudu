@@ -18,6 +18,7 @@
 #include <memory>
 #include <string>
 #include <type_traits>
+#include <utility>
 
 #include <gflags/gflags_declare.h>
 #include <gtest/gtest.h>
@@ -64,15 +65,15 @@ class SpnegoRestCatalogTest : public RestCatalogTestBase {
     ASSERT_OK(kdc_->SetKrb5Environment());
     string kt_path;
     ASSERT_OK(kdc_->CreateServiceKeytabWithName("HTTP/127.0.0.1", "spnego.dedicated", &kt_path));
-    ASSERT_OK(kdc_->CreateUserPrincipal("alice"));
+    ASSERT_OK(kdc_->CreateUserPrincipal(kDefaultPrincipal));
     FLAGS_spnego_keytab_file = kt_path;
     FLAGS_webserver_require_spnego = true;
     FLAGS_enable_rest_api = true;
 
-    auto opts = InternalMiniClusterOptions();
+    InternalMiniClusterOptions opts;
     opts.bind_mode = BindMode::LOOPBACK;
 
-    cluster_.reset(new InternalMiniCluster(env_, opts));
+    cluster_.reset(new InternalMiniCluster(env_, std::move(opts)));
 
     ASSERT_OK(cluster_->Start());
     ASSERT_OK(KuduClientBuilder()
@@ -83,12 +84,13 @@ class SpnegoRestCatalogTest : public RestCatalogTestBase {
  protected:
   unique_ptr<MiniKdc> kdc_;
   unique_ptr<InternalMiniCluster> cluster_;
+  const string kDefaultPrincipal = "alice";
 
   Status CreateTestTableAsAlice() { return CreateTestTable("alice@KRBTEST.COM"); }
 };
 
 TEST_F(SpnegoRestCatalogTest, TestGetTablesOneTable) {
-  ASSERT_OK(kdc_->Kinit("alice"));
+  ASSERT_OK(kdc_->Kinit(kDefaultPrincipal));
   ASSERT_OK(CreateTestTableAsAlice());
   EasyCurl c;
   faststring buf;
@@ -104,7 +106,7 @@ TEST_F(SpnegoRestCatalogTest, TestGetTablesOneTable) {
 }
 
 TEST_F(SpnegoRestCatalogTest, TestGetTableWithUser) {
-  ASSERT_OK(kdc_->Kinit("alice"));
+  ASSERT_OK(kdc_->Kinit(kDefaultPrincipal));
   ASSERT_OK(CreateTestTableAsAlice());
   string table_id;
   ASSERT_OK(GetTableId(kTableName, &table_id));
@@ -121,12 +123,12 @@ TEST_F(SpnegoRestCatalogTest, TestGetTableWithUser) {
 }
 
 TEST_F(SpnegoRestCatalogTest, TestPostTableWithUser) {
-  ASSERT_OK(kdc_->Kinit("alice"));
+  ASSERT_OK(kdc_->Kinit(kDefaultPrincipal));
   EasyCurl c;
   faststring buf;
   c.set_custom_method("POST");
   c.set_auth(CurlAuthType::SPNEGO);
-  Status s = c.PostToURL(
+  ASSERT_OK(c.PostToURL(
       Substitute("http://$0/api/v1/tables", cluster_->mini_master()->bound_http_addr().ToString()),
       R"({
         "name": "test_table",
@@ -143,17 +145,16 @@ TEST_F(SpnegoRestCatalogTest, TestPostTableWithUser) {
         },
         "num_replicas": 1
       })",
-      &buf);
-  ASSERT_STR_CONTAINS(s.ToString(), "OK");
+      &buf));
   string table_id;
   ASSERT_OK(GetTableId(kTableName, &table_id));
   shared_ptr<KuduTable> table;
   ASSERT_OK(client_->OpenTable(kTableName, &table));
-  ASSERT_STR_CONTAINS(table->owner(), "alice");
+  ASSERT_STR_CONTAINS(table->owner(), kDefaultPrincipal);
 }
 
 TEST_F(SpnegoRestCatalogTest, TestDeleteTableWithUser) {
-  ASSERT_OK(kdc_->Kinit("alice"));
+  ASSERT_OK(kdc_->Kinit(kDefaultPrincipal));
   ASSERT_OK(CreateTestTableAsAlice());
   string table_id;
   ASSERT_OK(GetTableId(kTableName, &table_id));
@@ -171,7 +172,7 @@ TEST_F(SpnegoRestCatalogTest, TestDeleteTableWithUser) {
 }
 
 TEST_F(SpnegoRestCatalogTest, TestAlterTableWithUser) {
-  ASSERT_OK(kdc_->Kinit("alice"));
+  ASSERT_OK(kdc_->Kinit(kDefaultPrincipal));
   ASSERT_OK(CreateTestTableAsAlice());
   string table_id;
   ASSERT_OK(GetTableId(kTableName, &table_id));
@@ -203,8 +204,8 @@ TEST_F(SpnegoRestCatalogTest, TestAlterTableWithUser) {
                         &buf));
   shared_ptr<KuduTable> table;
   ASSERT_OK(client_->OpenTable(kTableName, &table));
-  ASSERT_EQ(table->schema().num_columns(), 3);
-  ASSERT_STR_CONTAINS(table->owner(), "alice");
+  ASSERT_EQ(3, table->schema().num_columns());
+  ASSERT_STR_CONTAINS(table->owner(), kDefaultPrincipal);
 }
 
 TEST_F(SpnegoRestCatalogTest, TestInvalidHeaders) {
@@ -226,6 +227,9 @@ TEST_F(SpnegoRestCatalogTest, TestInvalidHeaders) {
   ASSERT_STR_CONTAINS(s.ToString(), "HTTP 401");
 }
 
+// The following tests are skipped on macOS due to inconsistent behavior of SPNEGO.
+// macOS heimdal kerberos caches the KDC port number, which can cause subsequent tests to fail.
+// For more details, refer to KUDU-3533 (https://issues.apache.org/jira/browse/KUDU-3533)
 #ifndef __APPLE__
 
 TEST_F(SpnegoRestCatalogTest, TestNoKinitGetTables) {
@@ -255,7 +259,7 @@ TEST_F(SpnegoRestCatalogTest, TestNoKinitGetTable) {
 }
 
 TEST_F(SpnegoRestCatalogTest, TestUnauthenticatedBadKeytab) {
-  ASSERT_OK(kdc_->Kinit("alice"));
+  ASSERT_OK(kdc_->Kinit(kDefaultPrincipal));
   ASSERT_OK(kdc_->RandomizePrincipalKey("HTTP/127.0.0.1"));
   EasyCurl c;
   faststring buf;

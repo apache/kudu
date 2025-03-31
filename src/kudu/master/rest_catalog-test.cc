@@ -109,30 +109,59 @@ class RestCatalogTest : public RestCatalogTestBase {
       "{\"range_schema\":{\"columns\":[{\"id\":0}]}}";
 };
 
-TEST_F(RestCatalogTest, TestInvalidMethod) {
-  EasyCurl c;
-  c.set_custom_method("DELETE");
-  faststring buf;
-  Status s = c.FetchURL(
-      Substitute("http://$0/api/v1/tables", cluster_->mini_master()->bound_http_addr().ToString()),
-      &buf);
-  ASSERT_STR_CONTAINS(s.ToString(), "HTTP 405");
-  ASSERT_STR_CONTAINS(buf.ToString(), "{\"error\":\"Method not allowed\"}");
+TEST_F(RestCatalogTest, TestInvalidMethods) {
+  const std::vector<std::string> invalid_methods = {"PUT", "DELETE", "CONNECT"};
+
+  for (const auto& method : invalid_methods) {
+    EasyCurl c;
+    c.set_custom_method(method);
+    faststring buf;
+    Status s;
+    if (method == "PUT") {
+      s = c.PostToURL(Substitute("http://$0/api/v1/tables",
+                                 cluster_->mini_master()->bound_http_addr().ToString()),
+                      "{\"name\":\"test_table\"}",
+                      &buf);
+    } else {
+      s = c.FetchURL(Substitute("http://$0/api/v1/tables",
+                                cluster_->mini_master()->bound_http_addr().ToString()),
+                     &buf);
+    }
+    ASSERT_TRUE(!s.ok());
+    ASSERT_STR_CONTAINS(s.ToString(), "HTTP 405") << "Failed for method: " << method;
+    ASSERT_STR_CONTAINS(buf.ToString(), "{\"error\":\"Method not allowed\"}")
+        << "Failed for method: " << method;
+  }
 }
 
 TEST_F(RestCatalogTest, TestInvalidMethodOnTableEndpoint) {
   ASSERT_OK(CreateTestTable());
   string table_id;
   ASSERT_OK(GetTableId(kTableName, &table_id));
-  EasyCurl c;
-  c.set_custom_method("CONNECT");
-  faststring buf;
-  Status s = c.FetchURL(Substitute("http://$0/api/v1/tables/$1",
-                                   cluster_->mini_master()->bound_http_addr().ToString(),
-                                   table_id),
-                        &buf);
-  ASSERT_STR_CONTAINS(s.ToString(), "HTTP 405");
-  ASSERT_STR_CONTAINS(buf.ToString(), "{\"error\":\"Method not allowed\"}");
+  const std::vector<std::string> invalid_methods = {"POST", "CONNECT"};
+
+  for (const auto& method : invalid_methods) {
+    EasyCurl c;
+    c.set_custom_method(method);
+    faststring buf;
+    Status s;
+    if (method == "POST") {
+      s = c.PostToURL(Substitute("http://$0/api/v1/tables/$1",
+                                 cluster_->mini_master()->bound_http_addr().ToString(),
+                                 table_id),
+                      "{\"name\":\"test_table\"}",
+                      &buf);
+    } else {
+      s = c.FetchURL(Substitute("http://$0/api/v1/tables/$1",
+                                cluster_->mini_master()->bound_http_addr().ToString(),
+                                table_id),
+                     &buf);
+    }
+    ASSERT_TRUE(!s.ok());
+    ASSERT_STR_CONTAINS(s.ToString(), "HTTP 405") << "Failed for method: " << method;
+    ASSERT_STR_CONTAINS(buf.ToString(), "{\"error\":\"Method not allowed\"}")
+        << "Failed for method: " << method;
+  }
 }
 
 TEST_F(RestCatalogTest, TestGetTablesZeroTables) {
@@ -156,6 +185,16 @@ TEST_F(RestCatalogTest, TestGetTablesOneTable) {
   ASSERT_STR_CONTAINS(
       buf.ToString(),
       Substitute("{\"tables\":[{\"table_id\":\"$0\",\"table_name\":\"test_table\"}]}", table_id));
+}
+
+TEST_F(RestCatalogTest, TestGetTableNoId) {
+  EasyCurl c;
+  faststring buf;
+  Status s = c.FetchURL(Substitute("http://$0/api/v1/tables/",
+                                   cluster_->mini_master()->bound_http_addr().ToString()),
+                        &buf);
+  ASSERT_TRUE(!s.ok());
+  ASSERT_STR_CONTAINS(s.ToString(), "HTTP 404");
 }
 
 TEST_F(RestCatalogTest, TestGetTableEndpoint) {
@@ -192,6 +231,7 @@ TEST_F(RestCatalogTest, TestGetTableNotFound) {
   Status s = c.FetchURL(Substitute("http://$0/api/v1/tables/05755b4c0c7640cd9f6673c2530a4e78",
                                    cluster_->mini_master()->bound_http_addr().ToString()),
                         &buf);
+  ASSERT_TRUE(!s.ok());
   ASSERT_STR_CONTAINS(s.ToString(), "HTTP 404");
   ASSERT_STR_CONTAINS(buf.ToString(), "{\"error\":\"Table not found\"}");
 }
@@ -202,6 +242,7 @@ TEST_F(RestCatalogTest, TestGetTableMalformedId) {
   Status s = c.FetchURL(Substitute("http://$0/api/v1/tables/123",
                                    cluster_->mini_master()->bound_http_addr().ToString()),
                         &buf);
+  ASSERT_TRUE(!s.ok());
   ASSERT_STR_CONTAINS(s.ToString(), "HTTP 400");
   ASSERT_STR_CONTAINS(buf.ToString(),
                       "{\"error\":\"Invalid table ID: must be exactly 32 characters long.\"}");
@@ -211,10 +252,10 @@ TEST_F(RestCatalogTest, TestDeleteTableNonExistent) {
   EasyCurl c;
   faststring buf;
   c.set_custom_method("DELETE");
-  c.set_verbose(true);
   Status s = c.FetchURL(Substitute("http://$0/api/v1/tables/05755b4c0c7640cd9f6673c2530a4e78",
                                    cluster_->mini_master()->bound_http_addr().ToString()),
                         &buf);
+  ASSERT_TRUE(!s.ok());
   ASSERT_STR_CONTAINS(s.ToString(), "HTTP 404");
   ASSERT_STR_CONTAINS(buf.ToString(), "{\"error\":\"Table not found\"}");
 }
@@ -226,14 +267,13 @@ TEST_F(RestCatalogTest, TestDeleteTableEndpoint) {
   EasyCurl c;
   faststring buf;
   c.set_custom_method("DELETE");
-  Status s = c.FetchURL(Substitute("http://$0/api/v1/tables/$1",
-                                   cluster_->mini_master()->bound_http_addr().ToString(),
-                                   table_id),
-                        &buf);
-  ASSERT_STR_CONTAINS(s.ToString(), "OK");
+  ASSERT_OK(c.FetchURL(Substitute("http://$0/api/v1/tables/$1",
+                                  cluster_->mini_master()->bound_http_addr().ToString(),
+                                  table_id),
+                       &buf));
   ASSERT_TRUE(buf.size() == 0);
   shared_ptr<KuduTable> table;
-  s = client_->OpenTable(kTableName, &table);
+  Status s = client_->OpenTable(kTableName, &table);
   ASSERT_STR_CONTAINS(s.ToString(),
                       "Not found: the table does not exist: table_name: \"test_table\"");
   ASSERT_TRUE(table == nullptr);
@@ -246,6 +286,7 @@ TEST_F(RestCatalogTest, TestDeleteTableMalformedId) {
   Status s = c.FetchURL(Substitute("http://$0/api/v1/tables/123",
                                    cluster_->mini_master()->bound_http_addr().ToString()),
                         &buf);
+  ASSERT_TRUE(!s.ok());
   ASSERT_STR_CONTAINS(s.ToString(), "HTTP 400");
   ASSERT_STR_CONTAINS(buf.ToString(),
                       "{\"error\":\"Invalid table ID: must be exactly 32 characters long.\"}");
@@ -258,6 +299,7 @@ TEST_F(RestCatalogTest, TestPostTableNoData) {
   Status s = c.FetchURL(
       Substitute("http://$0/api/v1/tables", cluster_->mini_master()->bound_http_addr().ToString()),
       &buf);
+  ASSERT_TRUE(!s.ok());
   ASSERT_STR_CONTAINS(s.ToString(), "HTTP 411");
 }
 
@@ -268,6 +310,7 @@ TEST_F(RestCatalogTest, TestPostTableMalformedData) {
       Substitute("http://$0/api/v1/tables", cluster_->mini_master()->bound_http_addr().ToString()),
       "{\"name\":\"test_table\"}",
       &buf);
+  ASSERT_TRUE(!s.ok());
   ASSERT_STR_CONTAINS(s.ToString(), "HTTP 400");
   ASSERT_STR_CONTAINS(
       buf.ToString(),
@@ -278,7 +321,7 @@ TEST_F(RestCatalogTest, TestPostTableEndpoint) {
   EasyCurl c;
   faststring buf;
   c.set_custom_method("POST");
-  Status s = c.PostToURL(
+  ASSERT_OK(c.PostToURL(
       Substitute("http://$0/api/v1/tables", cluster_->mini_master()->bound_http_addr().ToString()),
       R"({
         "name": "test_table",
@@ -295,8 +338,7 @@ TEST_F(RestCatalogTest, TestPostTableEndpoint) {
         },
         "num_replicas": 1
       })",
-      &buf);
-  ASSERT_STR_CONTAINS(s.ToString(), "OK");
+      &buf));
   string table_id;
   ASSERT_OK(GetTableId(kTableName, &table_id));
   shared_ptr<KuduTable> table;
@@ -314,8 +356,8 @@ TEST_F(RestCatalogTest, TestPostTableEndpoint) {
                                  partition_schema,
                                  table->owner()));
   ASSERT_TRUE(table != nullptr);
-  ASSERT_EQ(table->name(), kTableName);
-  ASSERT_EQ(table->num_replicas(), 1);
+  ASSERT_EQ(kTableName, table->name());
+  ASSERT_EQ(1, table->num_replicas());
 }
 
 TEST_F(RestCatalogTest, TestPutTableMalformedId) {
@@ -326,6 +368,7 @@ TEST_F(RestCatalogTest, TestPutTableMalformedId) {
                                     cluster_->mini_master()->bound_http_addr().ToString()),
                          "{\"name\":\"test_table\"}",
                          &buf);
+  ASSERT_TRUE(!s.ok());
   ASSERT_STR_CONTAINS(s.ToString(), "HTTP 400");
   ASSERT_STR_CONTAINS(buf.ToString(),
                       "{\"error\":\"Invalid table ID: must be exactly 32 characters long.\"}");
@@ -342,6 +385,7 @@ TEST_F(RestCatalogTest, TestPutTableNoData) {
                                    cluster_->mini_master()->bound_http_addr().ToString(),
                                    table_id),
                         &buf);
+  ASSERT_TRUE(!s.ok());
   ASSERT_STR_CONTAINS(s.ToString(), "HTTP 411");
 }
 
@@ -357,6 +401,7 @@ TEST_F(RestCatalogTest, TestPutTableMalformedData) {
                                     table_id),
                          "{\"name\":\"test_table\"}",
                          &buf);
+  ASSERT_TRUE(!s.ok());
   ASSERT_STR_CONTAINS(s.ToString(), "HTTP 400");
   ASSERT_STR_CONTAINS(
       buf.ToString(),
@@ -388,6 +433,7 @@ TEST_F(RestCatalogTest, TestPutTableNonExistent) {
                         }
                         )",
                          &buf);
+  ASSERT_TRUE(!s.ok());
   ASSERT_STR_CONTAINS(s.ToString(), "HTTP 404");
   ASSERT_STR_CONTAINS(buf.ToString(), "{\"error\":\"Table not found\"}");
 }
@@ -399,10 +445,10 @@ TEST_F(RestCatalogTest, TestPutTableEndpointAddColumn) {
   EasyCurl c;
   faststring buf;
   c.set_custom_method("PUT");
-  Status s = c.PostToURL(Substitute("http://$0/api/v1/tables/$1",
-                                    cluster_->mini_master()->bound_http_addr().ToString(),
-                                    table_id),
-                         R"({
+  ASSERT_OK(c.PostToURL(Substitute("http://$0/api/v1/tables/$1",
+                                   cluster_->mini_master()->bound_http_addr().ToString(),
+                                   table_id),
+                        R"({
                           "table": {
                             "table_name": "test_table"
                           },
@@ -420,10 +466,9 @@ TEST_F(RestCatalogTest, TestPutTableEndpointAddColumn) {
                           ]
                         }
                         )",
-                         &buf);
-  ASSERT_STR_CONTAINS(s.ToString(), "OK");
+                        &buf));
   shared_ptr<KuduTable> table;
-  s = client_->OpenTable(kTableName, &table);
+  ASSERT_OK(client_->OpenTable(kTableName, &table));
   int first_column_id = FindColumnId(buf.ToString());
   ASSERT_NE(first_column_id, -1) << "Column ID not found in the schema";
   string partition_schema =
@@ -436,12 +481,11 @@ TEST_F(RestCatalogTest, TestPutTableEndpointAddColumn) {
                  ConstructTableSchema(first_column_id, true),
                  partition_schema,
                  table->owner()));
-  ASSERT_TRUE(s.ok());
   const KuduSchema& schema = table->schema();
-  ASSERT_EQ(schema.num_columns(), 3);
-  ASSERT_EQ(schema.Column(0).name(), "key");
-  ASSERT_EQ(schema.Column(1).name(), "int_val");
-  ASSERT_EQ(schema.Column(2).name(), "new_column");
+  ASSERT_EQ(3, schema.num_columns());
+  ASSERT_EQ("key", schema.Column(0).name());
+  ASSERT_EQ("int_val", schema.Column(1).name());
+  ASSERT_EQ("new_column", schema.Column(2).name());
 }
 
 TEST_F(RestCatalogTest, TestPutTableEndpointRenameColumn) {
@@ -451,10 +495,10 @@ TEST_F(RestCatalogTest, TestPutTableEndpointRenameColumn) {
   EasyCurl c;
   faststring buf;
   c.set_custom_method("PUT");
-  Status s = c.PostToURL(Substitute("http://$0/api/v1/tables/$1",
-                                    cluster_->mini_master()->bound_http_addr().ToString(),
-                                    table_id),
-                         R"({
+  ASSERT_OK(c.PostToURL(Substitute("http://$0/api/v1/tables/$1",
+                                   cluster_->mini_master()->bound_http_addr().ToString(),
+                                   table_id),
+                        R"({
                           "table": {
                             "table_name": "test_table"
                           },
@@ -469,15 +513,13 @@ TEST_F(RestCatalogTest, TestPutTableEndpointRenameColumn) {
                           ]
                         }
                         )",
-                         &buf);
-  ASSERT_STR_CONTAINS(s.ToString(), "OK");
+                        &buf));
   shared_ptr<KuduTable> table;
-  s = client_->OpenTable(kTableName, &table);
-  ASSERT_TRUE(s.ok());
+  ASSERT_OK(client_->OpenTable(kTableName, &table));
   const KuduSchema& schema = table->schema();
-  ASSERT_EQ(schema.num_columns(), 2);
-  ASSERT_EQ(schema.Column(0).name(), "key");
-  ASSERT_EQ(schema.Column(1).name(), "new_int_val");
+  ASSERT_EQ(2, schema.num_columns());
+  ASSERT_EQ("key", schema.Column(0).name());
+  ASSERT_EQ("new_int_val", schema.Column(1).name());
 }
 
 TEST_F(RestCatalogTest, TestPutTableEndpointDropColumn) {
@@ -487,10 +529,10 @@ TEST_F(RestCatalogTest, TestPutTableEndpointDropColumn) {
   EasyCurl c;
   faststring buf;
   c.set_custom_method("PUT");
-  Status s = c.PostToURL(Substitute("http://$0/api/v1/tables/$1",
-                                    cluster_->mini_master()->bound_http_addr().ToString(),
-                                    table_id),
-                         R"({
+  ASSERT_OK(c.PostToURL(Substitute("http://$0/api/v1/tables/$1",
+                                   cluster_->mini_master()->bound_http_addr().ToString(),
+                                   table_id),
+                        R"({
                             "table": {
                               "table_name": "test_table"
                             },
@@ -504,14 +546,12 @@ TEST_F(RestCatalogTest, TestPutTableEndpointDropColumn) {
                             ]
                           }
                           )",
-                         &buf);
-  ASSERT_STR_CONTAINS(s.ToString(), "OK");
+                        &buf));
   shared_ptr<KuduTable> table;
-  s = client_->OpenTable(kTableName, &table);
-  ASSERT_TRUE(s.ok());
+  ASSERT_OK(client_->OpenTable(kTableName, &table));
   const KuduSchema& schema = table->schema();
-  ASSERT_EQ(schema.num_columns(), 1);
-  ASSERT_EQ(schema.Column(0).name(), "key");
+  ASSERT_EQ(1, schema.num_columns());
+  ASSERT_EQ("key", schema.Column(0).name());
 }
 
 TEST_F(RestCatalogTest, TestPutTableEndpointChangeOwner) {
@@ -521,22 +561,20 @@ TEST_F(RestCatalogTest, TestPutTableEndpointChangeOwner) {
   EasyCurl c;
   faststring buf;
   c.set_custom_method("PUT");
-  Status s = c.PostToURL(Substitute("http://$0/api/v1/tables/$1",
-                                    cluster_->mini_master()->bound_http_addr().ToString(),
-                                    table_id),
-                         R"({
+  ASSERT_OK(c.PostToURL(Substitute("http://$0/api/v1/tables/$1",
+                                   cluster_->mini_master()->bound_http_addr().ToString(),
+                                   table_id),
+                        R"({
                           "table": {
                             "table_name": "test_table"
                           },
                           "new_table_owner": "new_owner"
                         }
                         )",
-                         &buf);
-  ASSERT_STR_CONTAINS(s.ToString(), "OK");
+                        &buf));
   shared_ptr<KuduTable> table;
-  s = client_->OpenTable(kTableName, &table);
-  ASSERT_TRUE(s.ok());
-  ASSERT_EQ(table->owner(), "new_owner");
+  ASSERT_OK(client_->OpenTable(kTableName, &table));
+  ASSERT_EQ("new_owner", table->owner());
 }
 
 }  // namespace master

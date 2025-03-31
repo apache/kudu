@@ -316,7 +316,7 @@ Status Master::Init() {
   if (web_server_) {
     RETURN_NOT_OK(path_handlers_->Register(web_server_.get()));
     if (rest_catalog_path_handlers_) {
-      RETURN_NOT_OK(rest_catalog_path_handlers_->Register(web_server_.get()));
+      rest_catalog_path_handlers_->Register(web_server_.get());
     }
   }
 
