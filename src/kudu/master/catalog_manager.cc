@@ -921,10 +921,10 @@ void CheckIfNoLongerLeaderAndSetupError(const Status& s, RespClass* resp) {
   // that is no longer the leader, this suffices until we
   // distinguish this cause of write failure more explicitly.
   if (s.IsIllegalState() || s.IsAborted()) {
-    SetupError(Status::ServiceUnavailable(
-          "operation requested can only be executed on a leader master, but this"
-          " master is no longer the leader", s.ToString()),
-        resp, MasterErrorPB::NOT_THE_LEADER);
+    ignore_result(SetupError(Status::ServiceUnavailable(
+          "operation requested can only be executed on a leader master, "
+          "but this master is no longer the leader", s.ToString()),
+        resp, MasterErrorPB::NOT_THE_LEADER));
   }
 }
 
@@ -3163,7 +3163,7 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
           RETURN_NOT_OK(partition_schema.DropRange(
               range_bound.first, range_bound.second, schema));
           PartitionSchemaPB ps_pb;
-          partition_schema.ToPB(schema, &ps_pb);
+          RETURN_NOT_OK(partition_schema.ToPB(schema, &ps_pb));
           // Make sure exactly one range is gone.
           DCHECK_EQ(ps_pb.custom_hash_schema_ranges_size() + 1,
                     l->data().pb.partition_schema().custom_hash_schema_ranges_size());

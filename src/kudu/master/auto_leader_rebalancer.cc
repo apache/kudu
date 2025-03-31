@@ -443,7 +443,8 @@ Status AutoLeaderRebalancerTask::RunLeaderRebalancer() {
     }
   }
   for (const auto& table_info : table_infos) {
-    RunLeaderRebalanceForTable(table_info, tserver_uuids, exclude_dest_uuids);
+    RETURN_NOT_OK(RunLeaderRebalanceForTable(
+        table_info, tserver_uuids, exclude_dest_uuids));
   }
   // @TODO(duyuqi)
   // Enrich the log and add metrics for leader rebalancer.

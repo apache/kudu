@@ -317,7 +317,7 @@ Status AutoRebalancerTask::GetMoves(
     for (const auto& elem : ts_id_by_location) {
       const auto& location = elem.first;
       ClusterRawInfo location_raw_info;
-      BuildClusterRawInfo(location, &location_raw_info);
+      RETURN_NOT_OK(BuildClusterRawInfo(location, &location_raw_info));
       RETURN_NOT_OK(GetMovesUsingRebalancingAlgo(
           location_raw_info, &algo, CrossLocations::NO, &rep_moves));
     }

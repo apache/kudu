@@ -54,6 +54,7 @@
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/replica_management.pb.h"
 #include "kudu/generated/version_defines.h"
+#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/map-util.h"
@@ -2203,7 +2204,7 @@ TEST_F(MasterTest, TestGetTableLocationsDuringRepeatedTableVisit) {
   // Call ElectedAsLeaderCb() repeatedly. If these spurious calls aren't
   // ignored, the concurrent GetTableLocations() calls may crash the master.
   for (int i = 0; i < 100; i++) {
-    master_->catalog_manager()->ElectedAsLeaderCb();
+    ignore_result(master_->catalog_manager()->ElectedAsLeaderCb());
   }
   done.Store(true);
   t.join();
