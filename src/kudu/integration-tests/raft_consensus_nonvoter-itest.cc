@@ -25,6 +25,7 @@
 #include <string>
 #include <thread>
 #include <tuple>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -1073,7 +1074,7 @@ TEST_F(RaftConsensusNonVoterITest, PromotedReplicaCanVote) {
   // The newly added voter needs to be registered in the internal replica map
   // tablet_replicas_: this is necessary for the future calls like
   // GetLeaderReplicaWithRetries() when the replica becomes a leader.
-  NO_FATALS(WaitForReplicasAndUpdateLocations(table_->name()));
+  ASSERT_OK(WaitForReplicasAndUpdateLocations(table_->name()));
   ASSERT_EQ(kInitialReplicasNum + 1, tablet_replicas_.size());
 
   // Verify that the newly promoted replica's vote counts to achieve
@@ -1718,7 +1719,7 @@ TEST_F(RaftConsensusNonVoterITest, RestartClusterWithNonVoter) {
   // The newly added replica needs to be registered in the internal
   // tablet_replicas_: this is necessary for the future calls like
   // GetLeaderReplicaWithRetries() when the replica becomes a leader.
-  NO_FATALS(WaitForReplicasAndUpdateLocations(table_->name()));
+  ASSERT_OK(WaitForReplicasAndUpdateLocations(table_->name()));
 
   consensus::ConsensusStatePB cstate;
   ASSERT_EVENTUALLY([&] {
@@ -1806,8 +1807,10 @@ TEST_F(RaftConsensusNonVoterITest, NonVoterReplicasInConsensusQueue) {
   }
 
   LOG(INFO) << "Adding NON_VOTER replica...";
+  Status add_server_status;
   std::thread t([&] {
-      AddServer(leader, tablet_id, new_replica, RaftPeerPB::NON_VOTER, kTimeout);
+    add_server_status = AddServer(
+        leader, tablet_id, new_replica, RaftPeerPB::NON_VOTER, kTimeout);
   });
   SCOPED_CLEANUP({ t.join(); });
 
@@ -1818,6 +1821,7 @@ TEST_F(RaftConsensusNonVoterITest, NonVoterReplicasInConsensusQueue) {
     ASSERT_OK(GetConsensusState(leader, tablet_id, kTimeout, EXCLUDE_HEALTH_REPORT, &cstate));
     ASSERT_TRUE(cstate.has_pending_config());
   });
+  ASSERT_OK(add_server_status);
 
   // Ensure it does not commit.
   SleepFor(MonoDelta::FromSeconds(5));

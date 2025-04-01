@@ -406,16 +406,25 @@ TEST_F(DeleteTableITest, TestAtomicDeleteTablet) {
 
   // Now use the "latest", which is -1.
   ASSERT_OK(DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout, -1));
-  inspect_->CheckTabletDataStateOnTS(kTsIndex, tablet_id, { TABLET_DATA_TOMBSTONED });
+  ASSERT_OK(inspect_->CheckTabletDataStateOnTS(
+      kTsIndex, tablet_id, { TABLET_DATA_TOMBSTONED }));
 
   // Now that the tablet is already tombstoned, our opid_index should be
   // ignored (because it's impossible to check it).
   ASSERT_OK(DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout, -9999));
-  inspect_->CheckTabletDataStateOnTS(kTsIndex, tablet_id, { TABLET_DATA_TOMBSTONED });
+  ASSERT_OK(inspect_->CheckTabletDataStateOnTS(
+      kTsIndex, tablet_id, { TABLET_DATA_TOMBSTONED }));
 
-  // Same with TOMBSTONED -> DELETED.
+  // Same with TOMBSTONED -> DELETED, but here the tablet's data will be
+  // removed, so expect corresponding status reported by MiniClusterFsInspector.
   ASSERT_OK(itest::DeleteTablet(ts, tablet_id, TABLET_DATA_DELETED, timeout, -9999));
-  inspect_->CheckTabletDataStateOnTS(kTsIndex, tablet_id, { TABLET_DATA_DELETED });
+  ASSERT_EVENTUALLY([&]() {
+    const auto s = inspect_->CheckTabletDataStateOnTS(
+        kTsIndex, tablet_id, { TABLET_DATA_DELETED });
+    ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "/tablet-meta/" + tablet_id);
+    ASSERT_STR_CONTAINS(s.ToString(), "No such file or directory");
+  });
 }
 
 TEST_F(DeleteTableITest, TestDeleteTableWithConcurrentWrites) {
@@ -644,7 +653,7 @@ TEST_F(DeleteTableITest, TestAutoTombstoneAfterTabletCopyRemoteFails) {
   // a replica to the dead TS.
   cluster_->master()->Shutdown();
   ASSERT_OK(cluster_->master()->Restart());
-  cluster_->WaitForTabletServerCount(2, kTimeout);
+  ASSERT_OK(cluster_->WaitForTabletServerCount(2, kTimeout));
 
   // Start a workload on the cluster, and run it for a little while.
   TestWorkload workload(cluster_.get());
@@ -1229,9 +1238,12 @@ TEST_F(DeleteTableITest, TestNoDeleteTombstonedTablets) {
   const int kMaxDeleteAttemptsPerEviction = 3;
 
   // 'to_remove' should eventually have no tablets and the metrics should show
-  // a deleted tablet.
+  // a deleted tablet, but the metadata files should still be present.
   ASSERT_EVENTUALLY([&] {
-    inspect_->WaitForNoDataOnTS(to_remove_index, kTimeout);
+    const auto s = inspect_->WaitForNoDataOnTS(to_remove_index, kTimeout);
+    ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "Timed out waiting for no data");
+    ASSERT_STR_CONTAINS(s.ToString(), "tablet metadata blocks still exist");
 
     int64_t num_delete_attempts;
     ASSERT_OK(GetInt64Metric(
@@ -1343,8 +1355,11 @@ TEST_F(DeleteTableITest, TombstonedTabletsDeletedByReport) {
   NO_FATALS(DeleteTable(TestWorkload::kDefaultTableName));
   ASSERT_EVENTUALLY([&] {
     master::ListTablesResponsePB table;
-    ListTablesWithInfo(cluster_->master_proxy(), TestWorkload::kDefaultTableName,
-                       MonoDelta::FromSeconds(10), &table);
+    ASSERT_OK(ListTablesWithInfo(
+        cluster_->master_proxy(),
+        TestWorkload::kDefaultTableName,
+        MonoDelta::FromSeconds(10),
+        &table));
     ASSERT_EQ(0, table.tables_size());
   });
   ASSERT_OK(CheckTabletTombstonedOnTS(index, tablet_id, CMETA_NOT_EXPECTED));

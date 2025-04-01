@@ -3881,7 +3881,7 @@ TEST_F(AdminCliTest, TestRebuildTables) {
   // Rebuild 2 tables in update mode.
   ASSERT_OK(RunKuduTool(RebuildMasterCmd(*cluster_, FLAGS_num_tablet_servers,
                                          /*is_secure*/false, /*log_to_stderr*/true,
-                                         part_tables, /*default_replica_num*/1),
+                                         part_tables, /*default_replica_num*/3),
                         &stdout1, &stderr1));
   ASSERT_STR_CONTAINS(stdout1,
                       "Rebuilt from 3 tablet servers, of which 0 had errors");
@@ -3891,7 +3891,7 @@ TEST_F(AdminCliTest, TestRebuildTables) {
   }
   // Restart the cluster to check cluster healthy.
   cluster_->Restart();
-  WaitForTSAndReplicas();
+  ASSERT_OK(WaitForTSAndReplicas());
   ClusterVerifier cv1(cluster_.get());
   NO_FATALS(cv1.CheckCluster());
 
@@ -3909,13 +3909,13 @@ TEST_F(AdminCliTest, TestRebuildTables) {
   ASSERT_STR_NOT_CONTAINS(stderr2, "must be empty");
   ASSERT_STR_CONTAINS(stdout2,
                       "Rebuilt from 3 tablet servers, of which 0 had errors");
-  ASSERT_STR_CONTAINS(stdout2, "Rebuilt from 1 replicas, of which 0 had errors");
+  ASSERT_STR_CONTAINS(stdout2, "Rebuilt from 3 replicas, of which 0 had errors");
   for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
     cluster_->tablet_server(i)->Shutdown();
   }
   // Restart the cluster to check cluster healthy.
   cluster_->Restart();
-  WaitForTSAndReplicas();
+  ASSERT_OK(WaitForTSAndReplicas());
   ClusterVerifier cv2(cluster_.get());
   NO_FATALS(cv2.CheckCluster());
 }
@@ -4029,7 +4029,7 @@ TEST_F(AdminCliTest, TestAddColumnsAndRebuildMaster) {
     cluster_->tablet_server(i)->Shutdown();
   }
   ASSERT_OK(cluster_->Restart());
-  WaitForTSAndReplicas();
+  ASSERT_OK(WaitForTSAndReplicas());
 
   // Wait the cluster to become healthy.
   string master_address = cluster_->master()->bound_rpc_addr().ToString();

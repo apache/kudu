@@ -18,11 +18,13 @@
 #include "kudu/integration-tests/ts_itest-base.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <memory>
 #include <ostream>
 #include <random>
 #include <set>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -34,6 +36,7 @@
 
 #include "kudu/client/client.h"
 #include "kudu/client/schema.h"
+#include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/metadata.pb.h"
@@ -45,7 +48,7 @@
 #include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/integration-tests/mini_cluster_fs_inspector.h"
 #include "kudu/master/master.pb.h"
-#include "kudu/master/master.proxy.h"
+#include "kudu/master/master.proxy.h" // IWYU pragma: keep
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/tserver/tablet_server-test-base.h"
@@ -156,10 +159,12 @@ void TabletServerIntegrationTestBase::CreateTSProxies() {
                                         &tablet_servers_));
 }
 
-// Waits that all replicas for a all tablets of 'table_id' table are online
-// and creates the tablet_replicas_ map.
-void TabletServerIntegrationTestBase::WaitForReplicasAndUpdateLocations(
+// Waits for all the replicas of all tablets of 'table_id' table to become
+// online and populates the tablet_replicas_ map.
+Status TabletServerIntegrationTestBase::WaitForReplicasAndUpdateLocations(
     const string& table_id) {
+
+  const size_t num_replicas_total = FLAGS_num_replicas;
   bool replicas_missing = true;
   for (int num_retries = 0; replicas_missing && num_retries < kMaxRetries; num_retries++) {
     unordered_multimap<string, TServerDetails*> tablet_replicas;
@@ -170,8 +175,8 @@ void TabletServerIntegrationTestBase::WaitForReplicasAndUpdateLocations(
     req.set_replica_type_filter(master::ANY_REPLICA);
     req.set_intern_ts_infos_in_response(true);
     controller.set_timeout(MonoDelta::FromSeconds(1));
-    CHECK_OK(cluster_->master_proxy()->GetTableLocations(req, &resp, &controller));
-    CHECK_OK(controller.status());
+    RETURN_NOT_OK(cluster_->master_proxy()->GetTableLocations(req, &resp, &controller));
+    RETURN_NOT_OK(controller.status());
     if (resp.has_error()) {
       switch (resp.error().code()) {
         case master::MasterErrorPB::TABLET_NOT_RUNNING:
@@ -184,9 +189,9 @@ void TabletServerIntegrationTestBase::WaitForReplicasAndUpdateLocations(
           break;
 
         default:
-          FAIL() << "Response had a fatal error: "
-                 << pb_util::SecureShortDebugString(resp.error());
-          break;  // unreachable
+          LOG(ERROR) << "Response had a fatal error: "
+                     << pb_util::SecureShortDebugString(resp.error());
+          return StatusFromPB(resp.error().status());
       }
       SleepFor(MonoDelta::FromSeconds(1));
       continue;
@@ -196,13 +201,15 @@ void TabletServerIntegrationTestBase::WaitForReplicasAndUpdateLocations(
       for (const auto& replica : location.interned_replicas()) {
         TServerDetails* server =
             FindOrDie(tablet_servers_, resp.ts_infos(replica.ts_info_idx()).permanent_uuid());
-        tablet_replicas.insert(pair<string, TServerDetails*>(
-            location.tablet_id(), server));
+        tablet_replicas.emplace(location.tablet_id(), server);
       }
 
-      if (tablet_replicas.count(location.tablet_id()) < FLAGS_num_replicas) {
-        LOG(WARNING)<< "Couldn't find the leader and/or replicas. Location: "
-            << pb_util::SecureShortDebugString(location);
+      const size_t num_replicas_found = tablet_replicas.count(location.tablet_id());
+      if (num_replicas_found < num_replicas_total) {
+        LOG(WARNING)<< Substitute(
+            "found only $0 out of $1 replicas of tablet $2: $3",
+            num_replicas_found, num_replicas_total,
+            location.tablet_id(), pb_util::SecureShortDebugString(location));
         replicas_missing = true;
         SleepFor(MonoDelta::FromSeconds(1));
         break;
@@ -211,31 +218,38 @@ void TabletServerIntegrationTestBase::WaitForReplicasAndUpdateLocations(
       replicas_missing = false;
     }
     if (!replicas_missing) {
-      tablet_replicas_ = tablet_replicas;
+      tablet_replicas_.swap(tablet_replicas);
     }
+  }
+
+  if (replicas_missing) {
+    return Status::NotFound(Substitute(
+        "not all replicas of tablets comprising table $0 are registered yet",
+        table_id));
   }
 
   // GetTableLocations() does not guarantee that all replicas are actually
   // running. Some may still be bootstrapping. Wait for them before
   // returning.
-  //
-  // Just as with the above loop and its behavior once kMaxRetries is
-  // reached, the wait here is best effort only. That is, if the wait
-  // deadline expires, the resulting timeout failure is ignored.
   for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
     ExternalTabletServer* ts = cluster_->tablet_server(i);
     int expected_tablet_count = 0;
-    for (const auto& e : tablet_replicas_) {
-      if (ts->uuid() == e.second->uuid()) {
+    for (const auto& [_, ts_details] : tablet_replicas_) {
+      if (ts->uuid() == ts_details->uuid()) {
         ++expected_tablet_count;
       }
+    }
+    if (expected_tablet_count == 0) {
+      // Nothing to wait for.
+      continue;
     }
     LOG(INFO) << Substitute(
         "Waiting for $0 tablets on tserver $1 to finish bootstrapping",
         expected_tablet_count, ts->uuid());
-    cluster_->WaitForTabletsRunning(ts, expected_tablet_count,
-                                    MonoDelta::FromSeconds(20));
+    RETURN_NOT_OK(cluster_->WaitForTabletsRunning(
+        ts, expected_tablet_count, MonoDelta::FromSeconds(20)));
   }
+  return Status::OK();
 }
 
 // Returns the last committed leader of the consensus configuration. Tries to get it from master
@@ -375,15 +389,19 @@ TServerDetails* TabletServerIntegrationTestBase::GetReplicaWithUuidOrNull(
   return nullptr;
 }
 
-void TabletServerIntegrationTestBase::WaitForTabletServers() {
+Status TabletServerIntegrationTestBase::WaitForTabletServers() {
+  const auto num_ts = FLAGS_num_tablet_servers;
   int num_retries = 0;
   while (true) {
     if (num_retries >= kMaxRetries) {
-      FAIL() << " Reached max. retries while looking up the config.";
+      return Status::TimedOut(Substitute(
+          "Reached maximum number of retries ($0) while "
+          "waiting for all $1 tablet servers to register with master(s)",
+          kMaxRetries, num_ts));
     }
 
-    Status status = cluster_->WaitForTabletServerCount(FLAGS_num_tablet_servers,
-                                                       MonoDelta::FromSeconds(5));
+    Status status = cluster_->WaitForTabletServerCount(
+        num_ts, MonoDelta::FromSeconds(5));
     if (status.IsTimedOut()) {
       LOG(WARNING)<< "Timeout waiting for all replicas to be online, retrying...";
       num_retries++;
@@ -391,13 +409,14 @@ void TabletServerIntegrationTestBase::WaitForTabletServers() {
     }
     break;
   }
+  return Status::OK();
 }
 
 // Gets the the locations of the consensus configuration and waits until all replicas
 // are available for all tablets.
-void TabletServerIntegrationTestBase::WaitForTSAndReplicas(const string& table_id) {
-  WaitForTabletServers();
-  WaitForReplicasAndUpdateLocations(table_id);
+Status TabletServerIntegrationTestBase::WaitForTSAndReplicas(const string& table_id) {
+  RETURN_NOT_OK(WaitForTabletServers());
+  return WaitForReplicasAndUpdateLocations(table_id);
 }
 
 // Removes a set of servers from the replicas_ list.
@@ -533,11 +552,11 @@ void TabletServerIntegrationTestBase::BuildAndStart(
   NO_FATALS(CreateClient(&client_));
   if (create_table) {
     NO_FATALS(CreateTable());
-    WaitForTSAndReplicas();
+    ASSERT_OK(WaitForTSAndReplicas());
     ASSERT_FALSE(tablet_replicas_.empty());
     tablet_id_ = tablet_replicas_.begin()->first;
   } else {
-    WaitForTabletServers();
+    ASSERT_OK(WaitForTabletServers());
   }
 }
 

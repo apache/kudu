@@ -21,6 +21,7 @@
 #include <optional>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <vector>
 
@@ -34,6 +35,7 @@
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/internal_mini_cluster-itest-base.h"
@@ -121,7 +123,8 @@ TEST_F(TombstonedVotingIMCITest, TestNoVoteAfterShutdown) {
   ASSERT_OK(cluster_->mini_tablet_server(0)->server()->tablet_manager()->GetTabletReplica(
       tablet_id, &ts0_replica));
   LeaderStepDownResponsePB resp;
-  ts0_replica->consensus()->StepDown(&resp); // Ignore result, in case TS1 was the leader.
+  // Ignore result, in case TS1 was the leader.
+  ignore_result(ts0_replica->consensus()->StepDown(&resp));
   ASSERT_EQ(RaftPeerPB::FOLLOWER, ts0_replica->consensus()->role());
   ASSERT_OK(ts0_replica->consensus()->StartElection(
       RaftConsensus::ELECT_EVEN_IF_LEADER_IS_ALIVE, RaftConsensus::EXTERNAL_REQUEST));
@@ -285,7 +288,8 @@ TEST_F(TombstonedVotingIMCITest, TestNoVoteIfTombstonedVotingDisabled) {
   ASSERT_OK(cluster_->mini_tablet_server(0)->server()->tablet_manager()->GetTabletReplica(
       tablet_id, &ts0_replica));
   LeaderStepDownResponsePB resp;
-  ts0_replica->consensus()->StepDown(&resp); // Ignore result, in case TS1 was the leader.
+  // Ignore result, in case TS1 was the leader.
+  ignore_result(ts0_replica->consensus()->StepDown(&resp));
   ASSERT_OK(ts0_replica->consensus()->StartElection(
       RaftConsensus::ELECT_EVEN_IF_LEADER_IS_ALIVE, RaftConsensus::EXTERNAL_REQUEST));
 

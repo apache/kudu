@@ -21,10 +21,11 @@
 #include <algorithm>
 #include <cstdint>
 #include <memory>
-#include <ostream>
 #include <optional>
+#include <ostream>
 #include <string>
 #include <tuple>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -46,7 +47,7 @@
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/data_gen_util.h"
 #include "kudu/master/master.pb.h"
-#include "kudu/master/master.proxy.h"
+#include "kudu/master/master.proxy.h" // IWYU pragma: keep
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/util/monotime.h"
@@ -196,7 +197,7 @@ class FlexPartitioningITest : public KuduTest,
                             const RangePartitionOptions range_options) {
     NO_FATALS(CreateTable(hash_options, range_options));
     NO_FATALS(InsertAndVerifyScans(range_options));
-    DeleteTable();
+    NO_FATALS(DeleteTable());
   }
 
   void CreateTable(const vector<HashPartitionOptions> hash_partitions,
@@ -253,7 +254,7 @@ class FlexPartitioningITest : public KuduTest,
 
   void DeleteTable() {
     inserted_rows_.clear();
-    client_->DeleteTable(table_->name());
+    ASSERT_OK(client_->DeleteTable(table_->name()));
     table_.reset();
   }
 
@@ -410,7 +411,7 @@ void FlexPartitioningITest::CheckScanTokensWithColumnPredicate(
 
 void FlexPartitioningITest::CheckPKRangeScan(int lower, int upper) {
   KuduScanner scanner(table_.get());
-  scanner.SetTimeoutMillis(60000);
+  ASSERT_OK(scanner.SetTimeoutMillis(60000));
   ASSERT_OK(scanner.AddLowerBound(*inserted_rows_[lower]));
   ASSERT_OK(scanner.AddExclusiveUpperBound(*inserted_rows_[upper]));
   vector<string> rows;
@@ -445,7 +446,7 @@ void FlexPartitioningITest::CheckPartitionKeyRangeScan() {
     string partition_key_end = tablet_locations.partition().partition_key_end();
 
     KuduScanner scanner(table_.get());
-    scanner.SetTimeoutMillis(60000);
+    ASSERT_OK(scanner.SetTimeoutMillis(60000));
     ASSERT_OK(scanner.AddLowerBoundPartitionKeyRaw(partition_key_start));
     ASSERT_OK(scanner.AddExclusiveUpperBoundPartitionKeyRaw(partition_key_end));
     ASSERT_OK(ScanToStrings(&scanner, &rows));
@@ -479,7 +480,7 @@ void FlexPartitioningITest::CheckPartitionKeyRangeScanWithPKRange(int lower, int
     string partition_key_end = tablet_locations.partition().partition_key_end();
 
     KuduScanner scanner(table_.get());
-    scanner.SetTimeoutMillis(60000);
+    ASSERT_OK(scanner.SetTimeoutMillis(60000));
     ASSERT_OK(scanner.AddLowerBoundPartitionKeyRaw(partition_key_start));
     ASSERT_OK(scanner.AddExclusiveUpperBoundPartitionKeyRaw(partition_key_end));
     ASSERT_OK(scanner.AddLowerBound(*inserted_rows_[lower]));

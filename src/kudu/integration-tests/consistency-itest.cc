@@ -42,6 +42,7 @@
 #include "kudu/clock/hybrid_clock.h"
 #include "kudu/clock/mock_ntp.h"
 #include "kudu/common/partial_row.h"
+#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
@@ -139,7 +140,14 @@ class ConsistencyITest : public MiniClusterITestBase {
     size_t row_count;
     for (int i = 0; i < 3; i++) {
       // Insert multiple rows into the tablets.
-      InsertTestRows(client.get(), table.get(), rows_to_insert, first_row * i);
+      //
+      // TODO(aserbin): The result status of InsertTestRows() invocation below
+      // is ignored since the way how this is originally implemented produces
+      // duplicate primary keys: see Adar's TODO comment in the
+      // ScanYourWritesMultiClientsParamTest.Test scenario. It's necessary to
+      // address that and start handling the result status here appropriately.
+      ignore_result(InsertTestRows(
+          client.get(), table.get(), rows_to_insert, first_row * i));
       int expected_count = rows_to_insert * (i + 1);
       // Perform a bunch of READ_YOUR_WRITES scans to all the replicas
       // that count the rows. And verify that the count of the rows

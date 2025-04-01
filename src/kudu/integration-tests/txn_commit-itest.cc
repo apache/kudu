@@ -25,6 +25,7 @@
 #include <ostream>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -49,7 +50,6 @@
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
-#include "kudu/rpc/messenger.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_metadata.h"
@@ -143,9 +143,9 @@ class TxnCommitITest : public KuduTest {
       }
       ASSERT_FALSE(tsm_id_.empty());
     });
-    TxnSystemClient::Create(cluster_->master_rpc_addrs(),
-                            cluster_->messenger()->sasl_proto_name(),
-                            &txn_client_);
+    ASSERT_OK(TxnSystemClient::Create(cluster_->master_rpc_addrs(),
+                                      cluster_->messenger()->sasl_proto_name(),
+                                      &txn_client_));
     ASSERT_OK(txn_client_->OpenTxnStatusTable());
 
     client::KuduClientBuilder builder;

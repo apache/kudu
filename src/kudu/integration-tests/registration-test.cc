@@ -268,8 +268,8 @@ TEST_F(RegistrationTest, TestTSRegisters) {
 TEST_F(RegistrationTest, TestMasterSoftwareVersion) {
   // Verify that the master's software version exists.
   ServerRegistrationPB reg;
-  cluster_->mini_master()->master()->GetMasterRegistration(
-      &reg, /*use_external_addr=*/false);
+  ASSERT_OK(cluster_->mini_master()->master()->GetMasterRegistration(
+      &reg, /*use_external_addr=*/false));
   {
     SCOPED_TRACE(SecureShortDebugString(reg));
     ASSERT_TRUE(reg.has_software_version());
@@ -281,8 +281,8 @@ TEST_F(RegistrationTest, TestMasterSoftwareVersion) {
 
 TEST_F(RegistrationTest, TestServerStartWallTime) {
   ServerRegistrationPB reg;
-  cluster_->mini_master()->master()->GetMasterRegistration(
-      &reg, /*use_external_addr=*/false);
+  ASSERT_OK(cluster_->mini_master()->master()->GetMasterRegistration(
+      &reg, /*use_external_addr=*/false));
   ASSERT_LE(setup_time_, reg.start_time());
   ASSERT_LE(reg.start_time(), WallTime_Now());
 

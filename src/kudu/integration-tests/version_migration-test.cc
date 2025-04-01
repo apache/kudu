@@ -27,6 +27,7 @@
 #include <gtest/gtest.h>
 
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/linked_list-test-util.h"
 #include "kudu/integration-tests/log_verifier.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
@@ -133,7 +134,8 @@ TEST_F(VersionMigrationTest, TestLinkedListSimpleMigration) {
   // We loop this twice, in case we've introduced a bug where tablet bootstrap
   // might fail on the second restart after migrating between versions of Kudu.
   for (int i = 0; i < 2; i++) {
-    cluster_->Restart();
+    SCOPED_TRACE(strings::Substitute("iteration $0", i));
+    ASSERT_OK(cluster_->Restart());
     ASSERT_OK(tester_->WaitAndVerify(FLAGS_seconds_to_run, written));
     ASSERT_OK(verifier_->VerifyCommittedOpIdsMatch());
     NO_FATALS(cluster_->AssertNoCrashes());

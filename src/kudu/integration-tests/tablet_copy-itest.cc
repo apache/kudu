@@ -2070,7 +2070,8 @@ TEST_F(TabletCopyITest, TestDownloadWalInParallelWithHeavyInsert) {
   ASSERT_OK(StartElection(first_leader, tablet_id, kTimeout));
 
   workload.Start();
-  inspect_->WaitForMinFilesInTabletWalDirOnTS(first_leader_index, tablet_id, kNumWalSegments);
+  ASSERT_OK(inspect_->WaitForMinFilesInTabletWalDirOnTS(
+      first_leader_index, tablet_id, kNumWalSegments));
   workload.StopAndJoin();
   ASSERT_OK(WaitForServersToAgree(kTimeout, ts_map_, tablet_id, 1));
 
@@ -2146,7 +2147,8 @@ TEST_F(TabletCopyITest, TestDownloadWalInParallelWithHeavyUpdate) {
   ASSERT_OK(StartElection(first_leader, tablet_id, kTimeout));
 
   workload.Start();
-  inspect_->WaitForMinFilesInTabletWalDirOnTS(first_leader_index, tablet_id, kNumWalSegments);
+  ASSERT_OK(inspect_->WaitForMinFilesInTabletWalDirOnTS(
+      first_leader_index, tablet_id, kNumWalSegments));
   workload.StopAndJoin();
   ASSERT_OK(WaitForServersToAgree(kTimeout, ts_map_, tablet_id, 1));
 

@@ -254,7 +254,7 @@ TEST_F(AutoIncrementingItest, BasicInserts) {
     rpc::RpcController rpc;
     tserver::ListTabletsRequestPB req;
     tserver::ListTabletsResponsePB resp;
-    server->ListTablets(req, &resp, &rpc);
+    ASSERT_OK(server->ListTablets(req, &resp, &rpc));
     ASSERT_EQ(1, resp.status_and_schema_size());
     vector<string> results;
     ASSERT_OK(ScanTablet(j, resp.status_and_schema(0).tablet_status().tablet_id(), &results));
@@ -273,7 +273,7 @@ TEST_F(AutoIncrementingItest, BasicInserts) {
     rpc::RpcController rpc;
     tserver::ListTabletsRequestPB req;
     tserver::ListTabletsResponsePB resp;
-    server->ListTablets(req, &resp, &rpc);
+    ASSERT_OK(server->ListTablets(req, &resp, &rpc));
     ASSERT_EQ(1, resp.status_and_schema_size());
     vector<string> results;
     ASSERT_OK(ScanTablet(j, resp.status_and_schema(0).tablet_status().tablet_id(), &results));
@@ -301,7 +301,7 @@ TEST_F(AutoIncrementingItest, BasicUpserts) {
     rpc::RpcController rpc;
     tserver::ListTabletsRequestPB req;
     tserver::ListTabletsResponsePB resp;
-    server->ListTablets(req, &resp, &rpc);
+    ASSERT_OK(server->ListTablets(req, &resp, &rpc));
     ASSERT_EQ(1, resp.status_and_schema_size());
     vector<string> results;
     ASSERT_OK(ScanTablet(j, resp.status_and_schema(0).tablet_status().tablet_id(), &results));
@@ -319,7 +319,7 @@ TEST_F(AutoIncrementingItest, BasicUpserts) {
     rpc::RpcController rpc;
     tserver::ListTabletsRequestPB req;
     tserver::ListTabletsResponsePB resp;
-    server->ListTablets(req, &resp, &rpc);
+    ASSERT_OK(server->ListTablets(req, &resp, &rpc));
     ASSERT_EQ(1, resp.status_and_schema_size());
     vector<string> results;
     ASSERT_OK(ScanTablet(j, resp.status_and_schema(0).tablet_status().tablet_id(), &results));
@@ -353,7 +353,7 @@ TEST_F(AutoIncrementingItest, TestNegatives) {
 
 TEST_F(AutoIncrementingItest, BootstrapWithNoWals) {
   string tablet_uuid;
-  TestSetup(&tablet_uuid);
+  ASSERT_OK(TestSetup(&tablet_uuid));
 
   // Delete the first 100 rows to make sure at least latest 2 wals
   // are not insert operations.
@@ -401,7 +401,7 @@ TEST_F(AutoIncrementingItest, BootstrapWithNoWals) {
 
 TEST_F(AutoIncrementingItest, BootstrapNoWalsNoData) {
   string tablet_uuid;
-  TestSetup(&tablet_uuid);
+  ASSERT_OK(TestSetup(&tablet_uuid));
 
   // Delete all the rows.
   for (int i = 0; i < kNumRows; i++) {
@@ -476,7 +476,7 @@ TEST_F(AutoIncrementingItest, BootstrapWalsDiverge) {
     rpc::RpcController rpc;
     tserver::ListTabletsRequestPB req;
     tserver::ListTabletsResponsePB resp;
-    cluster_->tserver_proxy(i)->ListTablets(req, &resp, &rpc);
+    ASSERT_OK(cluster_->tserver_proxy(i)->ListTablets(req, &resp, &rpc));
     ASSERT_EQ(1, resp.status_and_schema_size());
     if (tablet_uuid.empty()) {
       tablet_uuid = resp.status_and_schema(0).tablet_status().tablet_id();
