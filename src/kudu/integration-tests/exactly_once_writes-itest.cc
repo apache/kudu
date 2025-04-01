@@ -142,7 +142,7 @@ void ExactlyOnceSemanticsITest::WriteRowsAndCollectResponses(Sockaddr address,
     barrier->Wait();
     WriteRequestPB request;
     request.set_tablet_id(tablet_id_);
-    SchemaToPB(schema, request.mutable_schema());
+    ASSERT_OK(SchemaToPB(schema, request.mutable_schema()));
 
     // For 1/3 of the batches, perform an empty write. This will make sure that we also stress
     // the path where writes aren't serialized by row locks.

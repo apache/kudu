@@ -246,7 +246,7 @@ TEST_P(HeavyUpdateCompactionITestWithEvictionPolicy, TestHeavyUpdateCompaction) 
         "key", KuduPredicate::LESS, KuduValue::FromInt(FLAGS_rows))));
 
   // Walking the updates can take a long time.
-  scanner.SetTimeoutMillis(FLAGS_scan_timeout_ms);
+  ASSERT_OK(scanner.SetTimeoutMillis(FLAGS_scan_timeout_ms));
 
   LOG_TIMING(INFO, "scanning") {
     ASSERT_OK(scanner.Open());

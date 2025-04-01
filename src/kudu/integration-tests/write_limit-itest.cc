@@ -19,6 +19,7 @@
 
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -126,7 +127,7 @@ vector<Status> GetSessionErrors(KuduSession* session) {
 
 Status ScanWholeTable(KuduTable* table, vector<string>* rows) {
   KuduScanner scanner(table);
-  scanner.SetTimeoutMillis(kOperationTimeoutSecs * 1000);
+  RETURN_NOT_OK(scanner.SetTimeoutMillis(kOperationTimeoutSecs * 1000));
   return ScanToStrings(&scanner, rows);
 }
 

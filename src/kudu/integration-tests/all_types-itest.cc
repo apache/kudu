@@ -602,7 +602,7 @@ class AllTypesItest : public KuduTest {
       int total_rows_in_tablet = 0;
       while (scanner.HasMoreRows()) {
         KuduScanBatch batch;
-        scanner.NextBatch(&batch);
+        RETURN_NOT_OK(scanner.NextBatch(&batch));
         verifier(batch, i, &total_rows_in_tablet);
       }
       CHECK_EQ(total_rows_in_tablet, setup_.GetRowsPerTablet());

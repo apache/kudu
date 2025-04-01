@@ -22,6 +22,7 @@
 #include <optional>
 #include <ostream>
 #include <set>
+#include <type_traits>
 #include <utility>
 
 #include <glog/logging.h>
@@ -46,7 +47,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/master/master.pb.h"
-#include "kudu/master/master.proxy.h"
+#include "kudu/master/master.proxy.h" // IWYU pragma: keep
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/rpc_header.pb.h"
@@ -272,7 +273,7 @@ Status CreateTabletServerMap(const shared_ptr<MasterServiceProxy>& master_proxy,
   for (const auto& entry : tservers) {
     HostPort host_port = HostPortFromPB(entry.registration().rpc_addresses(0));
     vector<Sockaddr> addresses;
-    host_port.ResolveAddresses(&addresses);
+    RETURN_NOT_OK(host_port.ResolveAddresses(&addresses));
 
     unique_ptr<TServerDetails> peer(new TServerDetails);
     peer->instance_id.CopyFrom(entry.instance_id());

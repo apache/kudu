@@ -54,6 +54,7 @@
 #include "kudu/common/schema.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus.proxy.h"
+#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
@@ -649,7 +650,7 @@ TEST_F(TxnWriteOpsITest, FrequentElections) {
         rpc.set_timeout(MonoDelta::FromSeconds(5));
         // A best effort call: the replica might already be a leader or electing
         // a new leader might fail, etc.
-        proxy.RunLeaderElection(req, &resp, &rpc);
+        ignore_result(proxy.RunLeaderElection(req, &resp, &rpc));
       }
       int sleep_time = rand() % static_cast<int>(max_sleep_ms);
       if (MonoTime::Now() > run_until) {

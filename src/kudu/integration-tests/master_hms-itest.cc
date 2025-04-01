@@ -824,7 +824,7 @@ TEST_F(MasterHmsUpgradeTest, TestConflictingNormalizedNames) {
   ASSERT_OK(cluster_->Restart());
 
   vector<string> tables;
-  client_->ListTables(&tables);
+  ASSERT_OK(client_->ListTables(&tables));
   std::sort(tables.begin(), tables.end());
   ASSERT_EQ(tables, vector<string>({ "default.MyTable", "default.mytable-renamed" }));
 }
@@ -853,7 +853,7 @@ TEST_F(MasterHmsUpgradeTest, TestRenameExistingTables) {
   ASSERT_OK(alterer->RenameTo("default.illegal_chars")->modify_external_catalogs(false)->Alter());
 
   tables.clear();
-  client_->ListTables(&tables);
+  ASSERT_OK(client_->ListTables(&tables));
   std::sort(tables.begin(), tables.end());
   ASSERT_EQ(tables, vector<string>({ "default.illegal_chars", "default.uppercase" }));
 }

@@ -2437,7 +2437,7 @@ TEST_F(RaftConsensusITest, TestMasterReplacesEvictedFollowers) {
     // any replica after the replacement completes.
     ASSERT_EQ(kReplicasNum + 1, tablet_servers_.size());
     ASSERT_EVENTUALLY([&] {
-      NO_FATALS(WaitForReplicasAndUpdateLocations(kTableId));
+      ASSERT_OK(WaitForReplicasAndUpdateLocations(kTableId));
       const auto uuids_no_replica = GetServersWithoutReplica(tablet_id_);
       ASSERT_EQ(1, uuids_no_replica.size());
       ASSERT_EQ(follower_uuid, uuids_no_replica.front());
@@ -3028,7 +3028,7 @@ TEST_F(RaftConsensusITest, TestLogIOErrorIsFatal) {
 
   cluster_->Shutdown();
   ASSERT_OK(cluster_->Restart());
-  NO_FATALS(WaitForTSAndReplicas());
+  ASSERT_OK(WaitForTSAndReplicas());
   tservers.clear();
   AppendValuesFromMap(tablet_servers_, &tservers);
   ASSERT_EQ(3, tservers.size());

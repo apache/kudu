@@ -86,7 +86,7 @@ TEST_F(MultiDirClusterITest, TestBasicMultiDirCluster) {
     for (const string& data_dir : ts->data_dirs()) {
       string data_path = JoinPathSegments(data_dir, "data");
       vector<string> files;
-      ListFilesInDir(env_, data_path, &files);
+      ASSERT_OK(ListFilesInDir(env_, data_path, &files));
       int* num_files_before_insert = FindOrNull(num_files_in_each_dir, data_dir);
       ASSERT_NE(nullptr, num_files_before_insert);
       if (*num_files_before_insert < files.size()) {

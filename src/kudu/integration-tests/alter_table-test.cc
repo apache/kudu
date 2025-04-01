@@ -1054,7 +1054,7 @@ TEST_F(AlterTableTest, TestMajorCompactDeltasAfterUpdatingRemovedColumn) {
   // Check via debug dump that the data was properly compacted, including deltas.
   // We expect to see neither deltas nor base data for the deleted column.
   rows.clear();
-  tablet_replica_->tablet()->DebugDump(&rows);
+  ASSERT_OK(tablet_replica_->tablet()->DebugDump(&rows));
   ASSERT_EQ("Dumping tablet:\n"
             "---------------------------\n"
             "MRS memrowset:\n"
@@ -1102,7 +1102,7 @@ TEST_F(AlterTableTest, TestMajorCompactDeltasIntoMissingBaseData) {
   // row, the default value materialized for the second, and a proper UNDO to undo
   // the update on the first row.
   rows.clear();
-  tablet_replica_->tablet()->DebugDump(&rows);
+  ASSERT_OK(tablet_replica_->tablet()->DebugDump(&rows));
   ASSERT_EQ("Dumping tablet:\n"
             "---------------------------\n"
             "MRS memrowset:\n"
@@ -1158,7 +1158,7 @@ TEST_F(AlterTableTest, TestMajorCompactDeltasAfterAddUpdateRemoveColumn) {
   // Check via debug dump that the data was properly compacted, including deltas.
   // We expect to see neither deltas nor base data for the deleted column.
   rows.clear();
-  tablet_replica_->tablet()->DebugDump(&rows);
+  ASSERT_OK(tablet_replica_->tablet()->DebugDump(&rows));
   ASSERT_EQ("Dumping tablet:\n"
             "---------------------------\n"
             "MRS memrowset:\n"
@@ -1386,7 +1386,7 @@ TEST_F(AlterTableTest, TestMultipleAlters) {
   }
 
   // Now wait. This should block on all of them.
-  WaitAlterTableCompletion(kSplitTableName, 50);
+  ASSERT_OK(WaitAlterTableCompletion(kSplitTableName, 50));
 
   // All new columns should be present.
   KuduSchema new_schema;
@@ -2568,13 +2568,13 @@ TEST_F(ReplicatedAlterTableTest, AlterReplicationFactorAfterWALGCed) {
   // Function to fetch the GC count of all tablet's WAL.
   auto get_tablet_wal_gc_count = [&] (int tserver_idx) {
     int64_t tablet_wal_gc_count = 0;
-    itest::GetInt64Metric(
+    CHECK_OK(itest::GetInt64Metric(
         HostPort(cluster_->mini_tablet_server(tserver_idx)->bound_http_addr()),
         &METRIC_ENTITY_tablet,
         "*",
         &METRIC_log_gc_duration,
         "total_count",
-        &tablet_wal_gc_count);
+        &tablet_wal_gc_count));
     return tablet_wal_gc_count;
   };
 

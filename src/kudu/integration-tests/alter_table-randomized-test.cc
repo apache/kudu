@@ -23,6 +23,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -626,11 +627,11 @@ struct MirrorTable {
     vector<string> rows;
     {
       shared_ptr<KuduTable> table;
-      CHECK_OK(client_->OpenTable(kTableName, &table));
+      ASSERT_OK(client_->OpenTable(kTableName, &table));
       KuduScanner scanner(table.get());
       ASSERT_OK(scanner.SetSelection(KuduClient::LEADER_ONLY));
       ASSERT_OK(scanner.SetFaultTolerant());
-      scanner.SetTimeoutMillis(60000);
+      ASSERT_OK(scanner.SetTimeoutMillis(60000));
       ASSERT_OK(ScanToStrings(&scanner, &rows));
     }
 

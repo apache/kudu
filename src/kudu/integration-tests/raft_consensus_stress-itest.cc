@@ -28,6 +28,7 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/cluster_verifier.h"
@@ -210,7 +211,7 @@ TEST_F(RaftConsensusStressITest, RemoveReplaceInCycle) {
         CHECK_OK(s);
         const auto tablet_idx = rand() % tablet_ids.size();
         // Best effort attempt: ignoring the result of StartElection() call.
-        StartElection(ts, tablet_ids[tablet_idx], kShortTimeout);
+        ignore_result(StartElection(ts, tablet_ids[tablet_idx], kShortTimeout));
       }
       SleepFor(kShortTimeout);
     }

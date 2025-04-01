@@ -25,10 +25,10 @@
 #include <vector>
 
 #include <gflags/gflags_declare.h>
-#include <glog/logging.h>
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/cluster_verifier.h"
@@ -164,7 +164,8 @@ TEST_F(DeleteTabletITest, TestLeaderElectionDuringDeleteTablet) {
   for (const string& tablet_id : tablet_ids) {
     threads.emplace_back([ts, tablet_id, &running, &kTimeout] {
       while (running) {
-        itest::StartElection(ts, tablet_id, kTimeout); // Ignore result.
+        // Ignore result since this has 'best effort' semantics.
+        ignore_result(itest::StartElection(ts, tablet_id, kTimeout));
       }
     });
   }

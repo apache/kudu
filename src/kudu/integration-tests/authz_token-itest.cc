@@ -129,7 +129,7 @@ vector<Status> GetSessionErrors(KuduSession* session) {
 // Scans values from the given table.
 Status ScanFromTable(KuduTable* table) {
   KuduScanner scanner(table);
-  scanner.SetTimeoutMillis(kOperationTimeoutSecs * 1000);
+  RETURN_NOT_OK(scanner.SetTimeoutMillis(kOperationTimeoutSecs * 1000));
   vector<string> rows;
   return ScanToStrings(&scanner, &rows);
 }

@@ -59,9 +59,9 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
   // in 'tablet_servers_'.
   void CreateTSProxies();
 
-  // Waits that all replicas for a all tablets of 'table_id' table are online
-  // and creates the tablet_replicas_ map.
-  void WaitForReplicasAndUpdateLocations(const std::string& table_id = kTableId);
+  // Waits for all the replicas of all tablets of 'table_id' table to become
+  // online and populates the tablet_replicas_ map.
+  Status WaitForReplicasAndUpdateLocations(const std::string& table_id = kTableId);
 
   // Returns the last committed leader of the consensus configuration. Tries to get it from master
   // but then actually tries to the get the committed consensus configuration to make sure.
@@ -84,11 +84,11 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
                                                   const std::string& uuid);
 
   // Wait for tablet servers to start up.
-  void WaitForTabletServers();
+  Status WaitForTabletServers();
 
   // Wait for tablet servers to start and all replicas are available for all
   // the test table's tablets.
-  void WaitForTSAndReplicas(const std::string& table_id = kTableId);
+  Status WaitForTSAndReplicas(const std::string& table_id = kTableId);
 
   // Removes a set of servers from the replicas_ list.
   // Handy for controlling who to validate against after killing servers.

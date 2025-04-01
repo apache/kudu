@@ -462,7 +462,7 @@ TEST_F(CreateTableITest, TestSpreadReplicas) {
     rpc::RpcController rpc;
     tserver::ListTabletsRequestPB req;
     tserver::ListTabletsResponsePB resp;
-    cluster_->tserver_proxy(ts_idx)->ListTablets(req, &resp, &rpc);
+    ASSERT_OK(cluster_->tserver_proxy(ts_idx)->ListTablets(req, &resp, &rpc));
     for (auto i = 0; i < resp.status_and_schema_size(); ++i) {
       auto tablet_status = resp.status_and_schema(i).tablet_status();
       if (tablet_status.has_partition()) {
@@ -696,7 +696,7 @@ TEST_F(CreateTableITest, ProxyAdvertisedAddresses) {
   // Get information on table's locations via endpoint for proxied RPCs.
   {
     Sockaddr ma;
-    ma.ParseFromNumericHostPort(m_proxied_addr);
+    ASSERT_OK(ma.ParseFromNumericHostPort(m_proxied_addr));
     auto mp = std::make_shared<master::MasterServiceProxy>(
         cluster_->messenger(), ma, ma.host());
 

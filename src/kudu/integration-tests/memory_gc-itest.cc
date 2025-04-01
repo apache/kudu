@@ -158,26 +158,26 @@ TEST_F(MemoryGcITest, TestLockContentionInVariousThreadCacheSize) {
 
   // Make sure the flag works.
   int64_t total_size = 0;
-  itest::GetInt64Metric(cluster_->tablet_server(0)->bound_http_hostport(),
-                        &METRIC_ENTITY_server,
-                        "kudu.tabletserver",
-                        &METRIC_tcmalloc_max_total_thread_cache_bytes,
-                        "value",
-                        &total_size);
+  ASSERT_OK(itest::GetInt64Metric(cluster_->tablet_server(0)->bound_http_hostport(),
+                                  &METRIC_ENTITY_server,
+                                  "kudu.tabletserver",
+                                  &METRIC_tcmalloc_max_total_thread_cache_bytes,
+                                  "value",
+                                  &total_size));
   ASSERT_EQ(1048576, total_size);
-  itest::GetInt64Metric(cluster_->tablet_server(1)->bound_http_hostport(),
-                        &METRIC_ENTITY_server,
-                        "kudu.tabletserver",
-                        &METRIC_tcmalloc_max_total_thread_cache_bytes,
-                        "value",
-                        &total_size);
+  ASSERT_OK(itest::GetInt64Metric(cluster_->tablet_server(1)->bound_http_hostport(),
+                                  &METRIC_ENTITY_server,
+                                  "kudu.tabletserver",
+                                  &METRIC_tcmalloc_max_total_thread_cache_bytes,
+                                  "value",
+                                  &total_size));
   ASSERT_EQ(8388608, total_size);
-  itest::GetInt64Metric(cluster_->tablet_server(2)->bound_http_hostport(),
-                        &METRIC_ENTITY_server,
-                        "kudu.tabletserver",
-                        &METRIC_tcmalloc_max_total_thread_cache_bytes,
-                        "value",
-                        &total_size);
+  ASSERT_OK(itest::GetInt64Metric(cluster_->tablet_server(2)->bound_http_hostport(),
+                                  &METRIC_ENTITY_server,
+                                  "kudu.tabletserver",
+                                  &METRIC_tcmalloc_max_total_thread_cache_bytes,
+                                  "value",
+                                  &total_size));
   ASSERT_EQ(67108864, total_size);
 
   // Write some data to be scanned later on.
@@ -210,26 +210,26 @@ TEST_F(MemoryGcITest, TestLockContentionInVariousThreadCacheSize) {
 
   // Compare the lock contention.
   int64_t contention_0 = 0;
-  itest::GetInt64Metric(cluster_->tablet_server(0)->bound_http_hostport(),
-                        &METRIC_ENTITY_server,
-                        "kudu.tabletserver",
-                        &METRIC_spinlock_contention_time,
-                        "value",
-                        &contention_0);
+  ASSERT_OK(itest::GetInt64Metric(cluster_->tablet_server(0)->bound_http_hostport(),
+                                  &METRIC_ENTITY_server,
+                                  "kudu.tabletserver",
+                                  &METRIC_spinlock_contention_time,
+                                  "value",
+                                  &contention_0));
   int64_t contention_1 = 1;
-  itest::GetInt64Metric(cluster_->tablet_server(1)->bound_http_hostport(),
-                        &METRIC_ENTITY_server,
-                        "kudu.tabletserver",
-                        &METRIC_spinlock_contention_time,
-                        "value",
-                        &contention_1);
+  ASSERT_OK(itest::GetInt64Metric(cluster_->tablet_server(1)->bound_http_hostport(),
+                                  &METRIC_ENTITY_server,
+                                  "kudu.tabletserver",
+                                  &METRIC_spinlock_contention_time,
+                                  "value",
+                                  &contention_1));
   int64_t contention_2 = 2;
-  itest::GetInt64Metric(cluster_->tablet_server(2)->bound_http_hostport(),
-                        &METRIC_ENTITY_server,
-                        "kudu.tabletserver",
-                        &METRIC_spinlock_contention_time,
-                        "value",
-                        &contention_2);
+  ASSERT_OK(itest::GetInt64Metric(cluster_->tablet_server(2)->bound_http_hostport(),
+                                  &METRIC_ENTITY_server,
+                                  "kudu.tabletserver",
+                                  &METRIC_spinlock_contention_time,
+                                  "value",
+                                  &contention_2));
   LOG(INFO) << "The lock contention metric of Tablet server 0 is " << contention_0;
   LOG(INFO) << "The lock contention metric of Tablet server 1 is " << contention_1;
   LOG(INFO) << "The lock contention metric of Tablet server 2 is " << contention_2;

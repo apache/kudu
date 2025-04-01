@@ -20,6 +20,7 @@
 #include <ostream>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -121,7 +122,7 @@ TEST_F(OpenReadonlyFsITest, TestWriteAndVerify) {
   ASSERT_OK(table_creator->Create());
 
   shared_ptr<KuduTable> table;
-  client_->OpenTable(kTableName, &table);
+  ASSERT_OK(client_->OpenTable(kTableName, &table));
 
   shared_ptr<KuduSession> session(client_->NewSession());
   ASSERT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_BACKGROUND));

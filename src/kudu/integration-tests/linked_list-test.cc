@@ -135,7 +135,7 @@ class LinkedListTest : public tserver::TabletServerIntegrationTestBase {
                             std::move(ts_flags), std::move(common_flags)));
     ResetClientAndTester();
     ASSERT_OK(tester_->CreateLinkedListTable());
-    WaitForTSAndReplicas();
+    ASSERT_OK(WaitForTSAndReplicas());
   }
 
   void ResetClientAndTester() {
@@ -150,7 +150,7 @@ class LinkedListTest : public tserver::TabletServerIntegrationTestBase {
   void RestartCluster() {
     CHECK(cluster_);
     cluster_->ShutdownNodes(ClusterNodes::TS_ONLY);
-    cluster_->Restart();
+    ASSERT_OK(cluster_->Restart());
     ResetClientAndTester();
   }
 
@@ -195,7 +195,7 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
 
   if (can_kill_ts) {
     // Restart a tserver during a scan to test scanner fault tolerance.
-    WaitForTSAndReplicas();
+    ASSERT_OK(WaitForTSAndReplicas());
     LOG(INFO) << "Will restart the tablet server during verification scan.";
     ASSERT_OK(tester_->WaitAndVerify(
         FLAGS_seconds_to_run, written,
@@ -214,7 +214,7 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
     ASSERT_OK(CheckTabletServersAreAlive(tablet_servers_.size()-1));
     NO_FATALS(RestartCluster());
     // Again wait for cluster to finish bootstrapping.
-    WaitForTSAndReplicas();
+    ASSERT_OK(WaitForTSAndReplicas());
 
     // Check in-memory state with a downed TS. Scans may try other replicas.
     string tablet = (*tablet_replicas_.begin()).first;
