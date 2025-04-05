@@ -1410,7 +1410,7 @@ TEST_P(TestRpc, TimedOutOnResponseMetric) {
 // A special scenario for the per-RPC 'timed_out_on_response' metric when an
 // RPC times out while waiting in the queue, so it's not actually processed.
 TEST_P(TestRpc, TimedOutOnResponseMetricServiceQueue) {
-  constexpr uint64_t kSleepMicros = 20 * 1000;
+  constexpr uint64_t kSleepMicros = 200 * 1000;
   const string kMethodName = "Sleep";
 
   // Set RPC connection negotiation timeout to be very high to avoid flakiness
@@ -1473,7 +1473,9 @@ TEST_P(TestRpc, TimedOutOnResponseMetricServiceQueue) {
   req1.set_return_app_error(true);
   SleepResponsePB resp1;
   RpcController ctl1;
-  ctl1.set_timeout(MonoDelta::FromMicroseconds(kSleepMicros));
+  // Add an extra margin for the timeout setting to avoid flakiness
+  // due to scheduler anomalies and off-by-one differences in timestamps.
+  ctl1.set_timeout(MonoDelta::FromMicroseconds(kSleepMicros / 2));
   p.AsyncRequest(kMethodName, req1, &resp1, &ctl1,
                  [&latch]() { latch.CountDown(); });
 
