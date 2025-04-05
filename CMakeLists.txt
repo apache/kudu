@@ -225,6 +225,12 @@ set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -Wno-sign-compare")
 #     which appear in the Kudu source code due to the use of ASCII art and
 #     multi-line command line examples in comments.
 set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -Wno-comment")
+# Error out on warnings about unused return values: it helps catching issues
+# with improper handling of those. At least, it works for functions/methods
+# marked with the standard [[nodiscard]] attribute, WARN_UNUSED_RESULT macro,
+# and for any functions/methods that return classes/structs/enums marked
+# with [[nodiscard]] attribute, e.g. Status class.
+set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -Werror=unused-result")
 #  -pthread: enable multithreaded malloc
 set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -pthread")
 #  -fno-strict-aliasing
