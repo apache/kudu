@@ -32,15 +32,14 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.security.AccessController;
-import java.security.PrivilegedAction;
-import java.security.PrivilegedActionException;
-import java.security.PrivilegedExceptionAction;
 import java.security.cert.Certificate;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CompletionException;
+
 import javax.net.ssl.SSLEngine;
 import javax.net.ssl.SSLException;
 import javax.net.ssl.SSLPeerUnverifiedException;
@@ -72,6 +71,7 @@ import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.ssl.SslHandler;
 import io.netty.util.concurrent.Future;
+import org.apache.kudu.client.internals.SecurityManagerCompatibility;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.ietf.jgss.GSSException;
 import org.slf4j.Logger;
@@ -952,14 +952,14 @@ public class Negotiator extends SimpleChannelInboundHandler<CallResponse> {
   private byte[] evaluateChallenge(final byte[] challenge)
       throws SaslException, NonRecoverableException {
     try {
-      return Subject.doAs(securityContext.getSubject(),
-          new PrivilegedExceptionAction<byte[]>() {
-            @Override
-            public byte[] run() throws SaslException {
-              return saslClient.evaluateChallenge(challenge);
-            }
-          });
-    } catch (PrivilegedActionException e) {
+      return SecurityManagerCompatibility.get().callAs(securityContext.getSubject(),
+              new Callable<byte[]>() {
+                @Override
+                public byte[] call() throws SaslException {
+                  return saslClient.evaluateChallenge(challenge);
+                }
+              });
+    } catch (CompletionException e) {
       // This cast is safe because the action above only throws checked SaslException.
       SaslException saslException = (SaslException) e.getCause();
 
@@ -1038,7 +1038,7 @@ public class Negotiator extends SimpleChannelInboundHandler<CallResponse> {
     }
 
     void resetAdded() {
-      Field addedField = AccessController.doPrivileged((PrivilegedAction<Field>) () -> {
+      Field addedField = SecurityManagerCompatibility.get().doPrivileged(() -> {
         try {
           Class<?> c = ChannelHandlerAdapter.class;
           Field added = c.getDeclaredField("added");
