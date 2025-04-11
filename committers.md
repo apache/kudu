@@ -29,6 +29,7 @@ Following is a list of current Kudu committers and members of the Kudu PMC.
 | jfarrell | Jake Farrell | PMC |
 | jtbirdsell | Jordan Birdsell | PMC |
 | julien | Julien Le Dem | PMC |
+| kedeng | Ke Deng | PMC |
 | laiyingchun | Yingchun Lai | PMC |
 | mattmann | Chris Mattmann | PMC |
 | misty | Misty Linville | PMC |
