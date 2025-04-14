@@ -22,12 +22,15 @@
 #include <string>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include <gflags/gflags.h>
 #include <google/protobuf/stubs/status.h>
 #include <google/protobuf/util/json_util.h>
 
 #include "kudu/common/common.pb.h"
+#include "kudu/common/wire_protocol.pb.h"
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/catalog_manager.h"
@@ -64,9 +67,11 @@ TAG_FLAG(rest_catalog_default_request_timeout_ms, runtime);
 
 using google::protobuf::util::JsonParseOptions;
 using google::protobuf::util::JsonStringToMessage;
+using kudu::consensus::RaftPeerPB;
 using std::optional;
 using std::ostringstream;
 using std::string;
+using std::vector;
 using strings::Substitute;
 
 namespace kudu {
@@ -164,7 +169,50 @@ void RestCatalogPathHandlers::HandleApiTablesEndpoint(const Webserver::WebReques
   }
 }
 
-void RestCatalogPathHandlers::HandleGetTables(ostringstream* output,
+void RestCatalogPathHandlers::HandleLeaderEndpoint(const Webserver::WebRequest& req,
+                                                   Webserver::PrerenderedWebResponse* resp) {
+  ostringstream* output = &resp->output;
+  JsonWriter jw(output, JsonWriter::COMPACT);
+
+  if (req.request_method != "GET") {
+    RETURN_JSON_ERROR(
+        jw, "Method not allowed", resp->status_code, HttpStatusCode::MethodNotAllowed);
+  }
+  CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
+  vector<ServerEntryPB> masters;
+  Status s = master_->ListMasters(&masters,
+                                  /*use_external_addr=*/false);
+
+  if (!s.ok()) {
+    RETURN_JSON_ERROR(
+        jw, "unable to list masters", resp->status_code, HttpStatusCode::InternalServerError);
+  }
+
+  for (const auto& master : masters) {
+    if (master.has_error() || master.role() != RaftPeerPB::LEADER) {
+      continue;
+    }
+
+    const ServerRegistrationPB& reg = master.registration();
+
+    if (reg.http_addresses().empty()) {
+      RETURN_JSON_ERROR(
+          jw, "leader master has no http address", resp->status_code, HttpStatusCode::NotFound);
+    }
+    jw.StartObject();
+    jw.String("leader");
+    jw.String(Substitute("$0://$1:$2",
+                         reg.https_enabled() ? "https" : "http",
+                         reg.http_addresses(0).host(),
+                         reg.http_addresses(0).port()));
+    jw.EndObject();
+    resp->status_code = HttpStatusCode::Ok;
+    return;
+  }
+  RETURN_JSON_ERROR(jw, "No leader master found", resp->status_code, HttpStatusCode::NotFound);
+}
+
+void RestCatalogPathHandlers::HandleGetTables(std::ostringstream* output,
                                               const Webserver::WebRequest& req,
                                               HttpStatusCode* status_code) {
   ListTablesRequestPB request;
@@ -383,6 +431,14 @@ void RestCatalogPathHandlers::Register(Webserver* server) {
       "",
       [this](const Webserver::WebRequest& req, Webserver::PrerenderedWebResponse* resp) {
         this->HandleApiTablesEndpoint(req, resp);
+      },
+      StyleMode::JSON,
+      false);
+  server->RegisterPrerenderedPathHandler(
+      "/api/v1/leader",
+      "",
+      [this](const Webserver::WebRequest& req, Webserver::PrerenderedWebResponse* resp) {
+        this->HandleLeaderEndpoint(req, resp);
       },
       StyleMode::JSON,
       false);

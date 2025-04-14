@@ -16,6 +16,7 @@
 // under the License.
 
 #include <memory>
+#include <set>
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -25,6 +26,7 @@
 
 #include "kudu/client/client.h"
 #include "kudu/client/schema.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/master/rest_catalog_test_base.h"
@@ -44,6 +46,7 @@ using kudu::client::KuduTable;
 using kudu::client::sp::shared_ptr;
 using kudu::cluster::InternalMiniCluster;
 using kudu::cluster::InternalMiniClusterOptions;
+using std::set;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -575,6 +578,56 @@ TEST_F(RestCatalogTest, TestPutTableEndpointChangeOwner) {
   shared_ptr<KuduTable> table;
   ASSERT_OK(client_->OpenTable(kTableName, &table));
   ASSERT_EQ("new_owner", table->owner());
+}
+
+class MultiMasterTest : public RestCatalogTestBase {
+ public:
+  void SetUp() override {
+    KuduTest::SetUp();
+    FLAGS_enable_rest_api = true;
+
+    InternalMiniClusterOptions opts;
+    opts.num_masters = 3;
+    cluster_.reset(new InternalMiniCluster(env_, opts));
+    ASSERT_OK(cluster_->Start());
+    KuduClientBuilder client_builder;
+    ASSERT_OK(cluster_->CreateClient(&client_builder, &client_));
+  }
+
+ protected:
+  unique_ptr<InternalMiniCluster> cluster_;
+};
+
+TEST_F(MultiMasterTest, TestGetLeaderEndpoint) {
+  set<string> leader_addresses;
+
+  static KuduRegex re("\"leader\":\"([^\"]+)\"", 1);
+
+  for (int i = 0; i < cluster_->num_masters(); i++) {
+    EasyCurl c;
+    faststring buf;
+    ASSERT_OK(c.FetchURL(Substitute("http://$0/api/v1/leader",
+                                    cluster_->mini_master(i)->bound_http_addr().ToString()),
+                         &buf));
+    vector<string> matches;
+    ASSERT_TRUE(re.Match(buf.ToString(), &matches));
+    ASSERT_FALSE(matches.empty()) << "No leader match in: " << buf.ToString();
+
+    leader_addresses.insert(matches[0]);
+  }
+
+  // All masters should report the same leader
+  ASSERT_EQ(1, leader_addresses.size())
+      << JoinStrings(leader_addresses, ", ");
+
+  string leader_addr = *leader_addresses.begin();
+  ASSERT_FALSE(leader_addr.empty());
+  EasyCurl leader_curl;
+  faststring leader_buf;
+  leader_curl.set_verbose(true);
+  ASSERT_OK(leader_curl.FetchURL(Substitute("$0/api/v1/tables", leader_addr),
+                                &leader_buf));
+  ASSERT_STR_CONTAINS(leader_buf.ToString(), "{\"tables\":[]}");
 }
 
 }  // namespace master

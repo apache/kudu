@@ -45,6 +45,8 @@ class RestCatalogPathHandlers final {
                               Webserver::PrerenderedWebResponse* resp);
   void HandleApiTablesEndpoint(const Webserver::WebRequest& req,
                                Webserver::PrerenderedWebResponse* resp);
+  void HandleLeaderEndpoint(const Webserver::WebRequest& req,
+                            Webserver::PrerenderedWebResponse* resp);
 
   // Handles REST API endpoints based on the request method and path.
   void HandleGetTables(std::ostringstream* output,
