@@ -38,6 +38,7 @@ Following is a list of current Kudu committers and members of the Kudu PMC.
 | shenxingwuying | Yuqi Du | PMC |
 | stack | Michael Stack | PMC |
 | todd | Todd Lipcon | PMC |
+| wangxixu | Xixu Wang | PMC |
 | wdberkeley | William Berkeley | PMC |
 | yaoxu | Yao Xu | PMC |
 | yaozhang | Yao Zhang | PMC |
