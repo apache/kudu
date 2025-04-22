@@ -48,8 +48,11 @@
 #include "kudu/rpc/user_credentials.h"
 #include "kudu/security/test/mini_kdc.h"
 #include "kudu/transactions/txn_system_client.h"
+#include "kudu/util/curl_util.h"
 #include "kudu/util/decimal_util.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
@@ -101,6 +104,9 @@ const char* const kImpalaUser = "impala";
 const char* const kDatabaseName = "db";
 const char* const kTableName = "table";
 const char* const kSecondTable = "second_table";
+
+// REST API integration test constants.
+const char* const kHttp403Error = "HTTP 403";
 } // namespace
 
 namespace kudu {
@@ -323,10 +329,12 @@ class MasterAuthzITestHarness {
     // Always enable Kerberos, as Authz deployments do not make sense
     // in non-Kerberized environments.
     opts.enable_kerberos = true;
+    opts.enable_rest_api = true;
     // Add 'impala' as trusted user who may access the cluster without being
     // authorized.
     opts.extra_master_flags.emplace_back("--trusted_user_acl=impala");
     opts.extra_master_flags.emplace_back("--user_acl=test-user,impala,alice");
+
     SetUpExternalMiniServiceOpts(&opts);
     return opts;
   }
@@ -977,6 +985,268 @@ TEST_P(MasterAuthzITest, TestAlterAndChangeOwner) {
 
   this->GrantAllWithGrantTablePrivilege({kDatabaseName, kTableName});
   ASSERT_OK(alterer->Alter());
+}
+
+// REST API Authorization Integration Tests
+class RestApiAuthzITest : public MasterAuthzITestBase,
+                          public ::testing::WithParamInterface<HarnessEnum> {
+ public:
+  void SetUp() override {
+    NO_FATALS(MasterAuthzITestBase::SetUp());
+    NO_FATALS(SetUpCluster(GetParam()));
+  }
+
+  // Utility functions for REST API tests
+  static string CreateTestTableJson(const string& table_name) {
+    return Substitute(R"({
+    "name": "$0",
+    "schema": {
+      "columns": [
+        {"name": "key", "type": "INT32", "is_nullable": false, "is_key": true},
+        {"name": "value", "type": "STRING", "is_nullable": true}
+      ]
+    },
+    "partition_schema": {
+      "range_schema": {
+        "columns": [{"name": "key"}]
+      }
+    },
+    "num_replicas": 1
+    })",
+                      table_name);
+  }
+
+  static string CreateAlterTableJsonAddColumn(const string& table_name) {
+    return Substitute(R"({
+      "table": {
+        "table_name": "$0"
+      },
+      "alter_schema_steps": [
+        {
+        "type": "ADD_COLUMN",
+        "add_column": {
+          "schema": {
+          "name": "new_column",
+          "type": "STRING",
+          "is_nullable": true
+          }
+        }
+        }
+      ]
+      })",
+                      table_name);
+  }
+
+  static void AssertUnauthorizedResponse(const Status& status, const string& response) {
+    ASSERT_STR_CONTAINS(status.ToString(), kHttp403Error);
+    ASSERT_STR_CONTAINS(response, "Not authorized");
+  }
+
+  static void AssertValidTableResponse(const string& response, const string& expected_table_name) {
+    ASSERT_STR_CONTAINS(response, "name");
+    ASSERT_STR_CONTAINS(response, expected_table_name);
+    ASSERT_STR_CONTAINS(response, "id");
+    ASSERT_STR_CONTAINS(response, "schema");
+  }
+};
+
+INSTANTIATE_TEST_SUITE_P(AuthzProviders,
+                         RestApiAuthzITest,
+                         ::testing::Values(kRanger),
+                         [](const testing::TestParamInfo<RestApiAuthzITest::ParamType>& info) {
+                           return HarnessEnumToString(info.param);
+                         });
+
+TEST_P(RestApiAuthzITest, TestTableIsolationBetweenUsers) {
+  // Create table with User A, verify that a table created by User A remains invisible to User B who
+  // lacks proper privileges. Verify that User B cannot access it using PUT or DELETE endpoints.
+
+  // Note: These methods default to using kTestUser as the owner
+  // when not explicitly specified in the privilege parameters.
+  NO_FATALS(this->GrantCreateTablePrivilege({kDatabaseName}));
+  NO_FATALS(this->GrantDropTablePrivilege({kDatabaseName, "test_table"}));
+  ASSERT_OK(CreateKuduTable(kDatabaseName, "test_table"));
+
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(this->client_->OpenTable(Substitute("$0.$1", kDatabaseName, "test_table"), &table));
+  const auto& table_id = table->id();
+
+  // User B cannot access the table
+  {
+    ASSERT_OK(cluster_->kdc()->Kinit(kSecondUser));
+    EasyCurl c;
+    faststring buf;
+    c.set_auth(CurlAuthType::SPNEGO);
+    c.set_custom_method("DELETE");
+
+    Status s = c.FetchURL(Substitute("http://$0/api/v1/tables/$1",
+                                     cluster_->master()->bound_http_hostport().ToString(),
+                                     table_id),
+                          &buf);
+    AssertUnauthorizedResponse(s, buf.ToString());
+
+    c.set_custom_method("PUT");
+    string alter_json = CreateAlterTableJsonAddColumn("test_table");
+    s = c.PostToURL(Substitute("http://$0/api/v1/tables/$1",
+                               cluster_->master()->bound_http_hostport().ToString(),
+                               table_id),
+                    alter_json,
+                    &buf);
+    AssertUnauthorizedResponse(s, buf.ToString());
+    ASSERT_OK(cluster_->kdc()->Kdestroy());
+  }
+
+  // User A should still be able to access the table
+  {
+    ASSERT_OK(cluster_->kdc()->Kinit(kTestUser));
+    EasyCurl c;
+    faststring buf;
+    c.set_auth(CurlAuthType::SPNEGO);
+    c.set_custom_method("DELETE");
+    ASSERT_OK(c.FetchURL(Substitute("http://$0/api/v1/tables/$1",
+                                    cluster_->master()->bound_http_hostport().ToString(),
+                                    table_id),
+                         &buf));
+  }
+}
+
+TEST_P(RestApiAuthzITest, TestRestApiCreateTableWithAuthorization) {
+  // Test that users can only create tables when they have proper privileges
+  const string table_name = Substitute("$0.rest_api_create_test", kDatabaseName);
+  const string table_json = CreateTestTableJson(table_name);
+
+  EasyCurl c;
+  c.set_auth(CurlAuthType::SPNEGO);
+  faststring buf;
+
+  // User without CREATE privileges should get 403
+  ASSERT_OK(cluster_->kdc()->Kinit(kTestUser));
+  Status s = c.PostToURL(
+      Substitute("http://$0/api/v1/tables", cluster_->master()->bound_http_hostport().ToString()),
+      table_json,
+      &buf);
+  AssertUnauthorizedResponse(s, buf.ToString());
+
+  // User with CREATE privileges should succeed
+  // Use a different table name to avoid conflicts
+  const string second_table_name = Substitute("$0.rest_api_create_test_authorized", kDatabaseName);
+  const string second_table_json = CreateTestTableJson(second_table_name);
+
+  NO_FATALS(this->GrantCreateTablePrivilege({kDatabaseName}));
+  NO_FATALS(this->GrantGetMetadataTablePrivilege(
+      {kDatabaseName, "rest_api_create_test_authorized", kTestUser}));
+
+  ASSERT_OK(c.PostToURL(
+      Substitute("http://$0/api/v1/tables", cluster_->master()->bound_http_hostport().ToString()),
+      second_table_json,
+      &buf));
+
+  AssertValidTableResponse(buf.ToString(), second_table_name);
+}
+
+TEST_P(RestApiAuthzITest, TestRestApiDeleteTableWithAuthorization) {
+  // Test that users can only delete tables when they have proper privileges
+  const string table_name = "rest_api_delete_test";
+
+  NO_FATALS(this->GrantCreateTablePrivilege({kDatabaseName}));
+  ASSERT_OK(CreateKuduTable(kDatabaseName, table_name));
+
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(this->client_->OpenTable(Substitute("$0.$1", kDatabaseName, table_name), &table));
+  const auto& table_id = table->id();
+
+  EasyCurl c;
+  c.set_auth(CurlAuthType::SPNEGO);
+  c.set_custom_method("DELETE");
+  faststring buf;
+
+  // User without DROP privileges should get 403
+  ASSERT_OK(cluster_->kdc()->Kinit(kSecondUser));
+  Status s = c.FetchURL(Substitute("http://$0/api/v1/tables/$1",
+                                   cluster_->master()->bound_http_hostport().ToString(),
+                                   table_id),
+                        &buf);
+  AssertUnauthorizedResponse(s, buf.ToString());
+
+  // User with DROP privileges should succeed
+  NO_FATALS(this->GrantDropTablePrivilege({kDatabaseName, table_name, kSecondUser}));
+  ASSERT_OK(c.FetchURL(Substitute("http://$0/api/v1/tables/$1",
+                            cluster_->master()->bound_http_hostport().ToString(),
+                            table_id),
+                 &buf));
+
+  // Verify table is actually deleted
+  Status open_status =
+      this->client_->OpenTable(Substitute("$0.$1", kDatabaseName, table_name), &table);
+  ASSERT_TRUE(open_status.IsNotFound());
+}
+
+TEST_P(RestApiAuthzITest, TestRestApiPrincipalMapping) {
+  // Test that Kerberos principals are properly mapped to local usernames
+
+  const string table_name = "principal_mapping_test";
+
+  NO_FATALS(this->GrantCreateTablePrivilege({kDatabaseName}));
+  ASSERT_OK(CreateKuduTable(kDatabaseName, table_name));
+
+  // Grant access to alice using her local username
+  NO_FATALS(this->GrantGetMetadataTablePrivilege({kDatabaseName, table_name, kSecondUser}));
+
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(this->client_->OpenTable(Substitute("$0.$1", kDatabaseName, table_name), &table));
+  const auto& table_id = table->id();
+
+  // Alice should be able to access the table via REST API
+  // This verifies that her Kerberos principal (alice@KRBTEST.COM) is properly
+  // mapped to the local username (alice) that has the privileges
+  ASSERT_OK(cluster_->kdc()->Kinit(kSecondUser));
+
+  EasyCurl c;
+  c.set_auth(CurlAuthType::SPNEGO);
+  faststring buf;
+
+  ASSERT_OK(c.FetchURL(Substitute("http://$0/api/v1/tables/$1",
+                                  cluster_->master()->bound_http_hostport().ToString(),
+                                  table_id),
+                       &buf));
+
+  // Should return table details, proving the principal mapping worked
+  AssertValidTableResponse(buf.ToString(), table_name);
+}
+
+TEST_P(RestApiAuthzITest, TestListTablesIsolationWithRestApi) {
+  // User A creates a table, User B should not see it in list tables
+  const string table_name = "rest_api_list_tables_test";
+  NO_FATALS(this->GrantCreateTablePrivilege({kDatabaseName}));
+  ASSERT_OK(CreateKuduTable(kDatabaseName, table_name));
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(this->client_->OpenTable(Substitute("$0.$1", kDatabaseName, table_name), &table));
+  const auto& table_id = table->id();
+
+  // User A should see the table in list tables
+  {
+    ASSERT_OK(cluster_->kdc()->Kinit(kTestUser));
+    EasyCurl c;
+    c.set_auth(CurlAuthType::SPNEGO);
+    faststring buf;
+    ASSERT_OK(c.FetchURL(
+        Substitute("http://$0/api/v1/tables", cluster_->master()->bound_http_hostport().ToString()),
+        &buf));
+    ASSERT_STR_CONTAINS(buf.ToString(), table_name);
+    ASSERT_STR_CONTAINS(buf.ToString(), table_id);
+  }
+
+  // User B should not see the table in list tables
+  {
+    ASSERT_OK(cluster_->kdc()->Kinit(kSecondUser));
+    EasyCurl c;
+    c.set_auth(CurlAuthType::SPNEGO);
+    faststring buf;
+    ASSERT_OK(c.FetchURL(
+        Substitute("http://$0/api/v1/tables", cluster_->master()->bound_http_hostport().ToString()),
+        &buf));
+    ASSERT_STR_CONTAINS(buf.ToString(), "\"tables\":[]");
+  }
 }
 
 class MasterAuthzOwnerITest : public MasterAuthzITestBase,
