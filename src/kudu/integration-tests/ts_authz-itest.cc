@@ -190,23 +190,31 @@ Status PerformWrite(const WritePrivileges& write_privileges,
   };
   // Note: we could test UPSERTs, but it complicates the logic, and UPSERTs are
   // tested elsewhere anyway.
+  unique_ptr<ThreadSafeRandom> own_prng(
+      prng ? nullptr : new ThreadSafeRandom(SeedRandom()));
   switch (op_type) {
     case WritePrivilegeType::INSERT: {
         unique_ptr<KuduInsert> ins(table->NewInsert());
-        GenerateDataForRow(table->schema(), prng->Next32(), prng, ins->mutable_row());
+        GenerateDataForRow(table->schema(),
+                           prng ? prng->Next32() : 0,
+                           prng ? prng : own_prng.get(),
+                           ins->mutable_row());
         return unwrap_session_error(session->Apply(ins.release()));
       }
       break;
     case WritePrivilegeType::UPDATE: {
         unique_ptr<KuduUpdate> upd(table->NewUpdate());
-        GenerateDataForRow(table->schema(), prng->Next32(), prng, upd->mutable_row());
+        GenerateDataForRow(table->schema(),
+                           prng ? prng->Next32() : 0,
+                           prng ? prng : own_prng.get(),
+                           upd->mutable_row());
         return unwrap_session_error(session->Apply(upd.release()));
       }
       break;
     case WritePrivilegeType::DELETE: {
         unique_ptr<KuduDelete> del(table->NewDelete());
         KuduPartialRow* row = del->mutable_row();
-        RETURN_NOT_OK(row->SetInt32(0, prng->Next32()));
+        RETURN_NOT_OK(row->SetInt32(0, prng ? prng->Next32() : 0));
         return unwrap_session_error(session->Apply(del.release()));
       }
       break;
@@ -603,6 +611,38 @@ TEST_P(TSAuthzITest, TestReadsAndWrites) {
       });
     }
   }
+}
+
+// Test to catch KUDU-3661 regression
+TEST_P(TSAuthzITest, Kudu3661) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+  static const string kTableName = "table";
+  const string table_ident = Substitute("$0.$1", kDb, kTableName);
+  const string user = "user0";
+  ASSERT_OK(CreateTable(table_ident, user));
+
+  ASSERT_OK(cluster_->kdc()->CreateUserPrincipal(user));
+  ASSERT_OK(cluster_->kdc()->Kinit(user));
+
+  shared_ptr<KuduClient> user_client;
+  ASSERT_OK(cluster_->CreateClient(nullptr, &user_client));
+
+  ASSERT_OK(harness_->GrantTablePrivilege(kDb, kTableName, user, "SELECT", /*admin=*/false,
+                                          cluster_));
+  ASSERT_OK(harness_->GrantTablePrivilege(kDb, kTableName, user, "INSERT", /*admin=*/false,
+                                          cluster_));
+  ASSERT_OK(harness_->GrantTablePrivilege(kDb, kTableName, user, "UPDATE", /*admin=*/false,
+                                          cluster_));
+
+  // Perform INSERT and UPDATE operations on the table. Ensure that the UPDATE privilege is
+  // included in the authz token. Without the KUDU-3661 fix, this privilege may be missing
+  // on RHEL/CentOS 8 systems due to the SELECT privilege grant blocking the UPDATE privilege
+  // from being granted.
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(user_client->OpenTable(table_ident, &table));
+  ASSERT_OK(PerformWrite({ WritePrivilegeType::INSERT }, nullptr, table.get()));
+  ASSERT_OK(PerformWrite({ WritePrivilegeType::UPDATE }, nullptr, table.get()));
 }
 
 // Test for a couple of scenarios related to alter tables.
