@@ -311,9 +311,10 @@ Status RangerAuthzProvider::FillTablePrivilegePB(const string& table_name,
         LOG(WARNING) << "Unexpected action returned by Ranger: " << ActionPB_Name(action);
         break;
     }
-    if (pb->scan_privilege()) {
-      return Status::OK();
-    }
+  }
+  // If select is allowed, we can skip checking column-level privileges and return early.
+  if (pb->scan_privilege()) {
+    return Status::OK();
   }
 
   // If select is not allowed on the table level we need to dig in and set
