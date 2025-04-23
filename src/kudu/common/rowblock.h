@@ -451,6 +451,8 @@ class RowBlock final {
   // nrows_ <= row_capacity_
   size_t nrows_;
 
+  // Memory to store column of variable length (e.g., BINARY/STRING type or
+  // array columns).
   RowBlockMemory* memory_;
 
   // The bitmap indicating which rows are valid in this block.

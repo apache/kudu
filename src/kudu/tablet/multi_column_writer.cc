@@ -27,6 +27,7 @@
 #include "kudu/common/columnblock.h"
 #include "kudu/common/rowblock.h"
 #include "kudu/common/schema.h"
+#include "kudu/common/types.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs_manager.h"
@@ -88,8 +89,10 @@ Status MultiColumnWriter::Open() {
     BlockId block_id(block->id());
 
     // Create the CFile writer itself.
-    unique_ptr<CFileWriter> writer(new CFileWriter(
-        std::move(opts), col.type_info(), col.is_nullable(), std::move(block)));
+    unique_ptr<CFileWriter> writer(new CFileWriter(std::move(opts),
+                                                   col.type_info(),
+                                                   col.is_nullable(),
+                                                   std::move(block)));
     RETURN_NOT_OK_PREPEND(writer->Start(),
         Substitute("tablet $0: unable to start writer for column $1",
                    tablet_id_, col.ToString()));
@@ -107,11 +110,16 @@ Status MultiColumnWriter::AppendBlock(const RowBlock& block) {
   DCHECK(open_);
   for (auto i = 0; i < schema_->num_columns(); ++i) {
     ColumnBlock column = block.column_block(i);
-    if (column.is_nullable()) {
-      RETURN_NOT_OK(cfile_writers_[i]->AppendNullableEntries(column.non_null_bitmap(),
-          column.data(), column.nrows()));
-    } else {
+    if (!column.is_nullable()) {
       RETURN_NOT_OK(cfile_writers_[i]->AppendEntries(column.data(), column.nrows()));
+    } else {
+      if (column.type_info()->is_array()) {
+        RETURN_NOT_OK(cfile_writers_[i]->AppendNullableArrayEntries(
+            column.non_null_bitmap(), column.data(), column.nrows()));
+      } else {
+        RETURN_NOT_OK(cfile_writers_[i]->AppendNullableEntries(
+            column.non_null_bitmap(), column.data(), column.nrows()));
+      }
     }
   }
   return Status::OK();

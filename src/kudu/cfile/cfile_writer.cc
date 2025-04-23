@@ -17,6 +17,8 @@
 
 #include "kudu/cfile/cfile_writer.h"
 
+#include <sys/types.h>
+
 #include <functional>
 #include <iterator>
 #include <numeric>
@@ -34,6 +36,7 @@
 #include "kudu/cfile/cfile_util.h"
 #include "kudu/cfile/index_btree.h"
 #include "kudu/cfile/type_encodings.h"
+#include "kudu/common/array_cell_view.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/key_encoder.h"
 #include "kudu/common/schema.h"
@@ -63,6 +66,10 @@ DEFINE_bool(cfile_write_checksums, true,
             "Write CRC32 checksums for each block");
 TAG_FLAG(cfile_write_checksums, evolving);
 
+DEFINE_bool(cfile_support_arrays, false,
+            "Support encoding/decoding of arrays in CFile data blocks");
+TAG_FLAG(cfile_support_arrays, evolving);
+
 using google::protobuf::RepeatedPtrField;
 using kudu::fs::BlockCreationTransaction;
 using kudu::fs::BlockManager;
@@ -81,6 +88,9 @@ const int kMagicLength = 8;
 const size_t kChecksumSize = sizeof(uint32_t);
 
 static const size_t kMinBlockSize = 512;
+
+// TODO(aserbin): source this from a flag?
+static const size_t kMaxElementsInArray = 1024;
 
 class NonNullBitmapBuilder {
  public:
@@ -117,6 +127,42 @@ class NonNullBitmapBuilder {
   RleEncoder<bool, 1> rle_encoder_;
 };
 
+class ArrayElemNumBuilder {
+ public:
+  explicit ArrayElemNumBuilder(size_t initial_row_capacity)
+      : nitems_(0),
+        // TODO(aserbin): improve or remove the estimate for the buffer size
+        buffer_(initial_row_capacity * sizeof(uint32_t)),
+        rle_encoder_(&buffer_) {
+  }
+
+  size_t nitems() const {
+    return nitems_;
+  }
+
+  // If value parameter is true, it means that all values in this run are null
+  void Add(uint32_t elem_num) {
+    ++nitems_;
+    rle_encoder_.Put(elem_num, 1);
+  }
+
+  // NOTE: the returned Slice is only valid until this Builder is destroyed or Reset
+  Slice Finish() {
+    int len = rle_encoder_.Flush();
+    return Slice(buffer_.data(), len);
+  }
+
+  void Reset() {
+    nitems_ = 0;
+    rle_encoder_.Clear();
+  }
+
+ private:
+  size_t nitems_;
+  faststring buffer_;
+  RleEncoder<uint16_t, 16> rle_encoder_;
+};
+
 ////////////////////////////////////////////////////////////
 // CFileWriter
 ////////////////////////////////////////////////////////////
@@ -132,6 +178,7 @@ CFileWriter::CFileWriter(WriterOptions options,
       value_count_(0),
       is_nullable_(is_nullable),
       typeinfo_(typeinfo),
+      is_array_(typeinfo->is_array()),
       state_(kWriterInitialized) {
   const EncodingType encoding = options_.storage_attributes.encoding;
   if (auto s = TypeEncodingInfo::Get(typeinfo_, encoding, &type_encoding_info_);
@@ -183,6 +230,13 @@ Status CFileWriter::Start() {
   TRACE_EVENT0("cfile", "CFileWriter::Start");
   DCHECK(state_ == kWriterInitialized) << "bad state for Start(): " << state_;
 
+  if (PREDICT_FALSE(is_array_ && !FLAGS_cfile_support_arrays)) {
+    static const auto kErrStatus = Status::ConfigurationError(
+        "support for array data blocks is disabled");
+    LOG(DFATAL) << kErrStatus.ToString();
+    return kErrStatus;
+  }
+
   if (compression_ != NO_COMPRESSION) {
     const CompressionCodec* codec;
     RETURN_NOT_OK(GetCompressionCodec(compression_, &codec));
@@ -214,9 +268,19 @@ Status CFileWriter::Start() {
   RETURN_NOT_OK_PREPEND(WriteRawData(header_slices), "Couldn't write header");
   data_block_ = type_encoding_info_->CreateBlockBuilder(&options_);
 
-  if (is_nullable_) {
-    size_t nrows = ((options_.storage_attributes.cfile_block_size + typeinfo_->size() - 1) /
-                    typeinfo_->size());
+  if (is_array_) {
+    // Array data blocks allows nullable elements both for array's elements
+    // and for arrays cells themselves.
+    size_t nrows =
+        (options_.storage_attributes.cfile_block_size + typeinfo_->size() - 1) /
+        typeinfo_->size();
+    array_non_null_bitmap_builder_.reset(new NonNullBitmapBuilder(nrows));
+    non_null_bitmap_builder_.reset(new NonNullBitmapBuilder(nrows * kMaxElementsInArray));
+    array_elem_num_builder_.reset(new ArrayElemNumBuilder(nrows));
+  } else if (is_nullable_) {
+    size_t nrows =
+        (options_.storage_attributes.cfile_block_size + typeinfo_->size() - 1) /
+        typeinfo_->size();
     non_null_bitmap_builder_.reset(new NonNullBitmapBuilder(nrows * 8));
   }
 
@@ -237,19 +301,40 @@ Status CFileWriter::FinishAndReleaseBlock(BlockCreationTransaction* transaction)
   TRACE_EVENT0("cfile", "CFileWriter::FinishAndReleaseBlock");
   DCHECK(state_ == kWriterWriting) << "Bad state for Finish(): " << state_;
 
-  // Write out any pending values as the last data block.
-  RETURN_NOT_OK(FinishCurDataBlock());
-
-  state_ = kWriterFinished;
-
-  uint32_t incompatible_features = 0;
+  uint32_t incompatible_features = IncompatibleFeatures::NONE;
   if (FLAGS_cfile_write_checksums) {
     incompatible_features |= IncompatibleFeatures::CHECKSUM;
   }
+  if (is_array_) {
+    incompatible_features |= IncompatibleFeatures::ARRAY_DATA_BLOCK;
+  }
+
+  // Write out any pending values as the last data block.
+  if (is_array_) {
+    RETURN_NOT_OK(FinishCurArrayDataBlock());
+  } else {
+    RETURN_NOT_OK(FinishCurDataBlock());
+  }
+
+  state_ = kWriterFinished;
 
   // Start preparing the footer.
   CFileFooterPB footer;
-  footer.set_data_type(typeinfo_->type());
+  if (is_array_) {
+    // For 1D arrays, the 'data_type' field is set to reflect the type
+    // of the array's elements. Elements of an array can be nullable.
+    const auto* desc = typeinfo_->nested_type_info();
+    DCHECK(desc);
+    DCHECK(desc->is_array());
+    DCHECK(desc->array().elem_type_info());
+    footer.set_data_type(desc->array().elem_type_info()->type());
+    footer.set_is_type_array(true);
+  } else {
+    footer.set_data_type(typeinfo_->type());
+    // NOTE: leaving the 'is_type_array' field as unset: semantically it's the
+    //       same as if it were set to 'false', but the result CFile footer
+    //       would be a few bytes larger if explicitly setting the field
+  }
   footer.set_is_type_nullable(is_nullable_);
   footer.set_encoding(type_encoding_info_->encoding_type());
   footer.set_num_values(value_count_);
@@ -327,6 +412,7 @@ void CFileWriter::FlushMetadataToPB(RepeatedPtrField<FileMetadataPairPB>* field)
 
 Status CFileWriter::AppendEntries(const void* entries, size_t count) {
   DCHECK(!is_nullable_);
+  DCHECK(!is_array_);
 
   int rem = count;
 
@@ -353,6 +439,7 @@ Status CFileWriter::AppendNullableEntries(const uint8_t* bitmap,
                                           const void* entries,
                                           size_t count) {
   DCHECK(is_nullable_ && bitmap != nullptr);
+  DCHECK(!is_array_);
 
   const uint8_t* ptr = reinterpret_cast<const uint8_t*>(entries);
 
@@ -386,7 +473,124 @@ Status CFileWriter::AppendNullableEntries(const uint8_t* bitmap,
   return Status::OK();
 }
 
+Status CFileWriter::AppendNullableArrayEntries(const uint8_t* bitmap,
+                                               const void* entries,
+                                               size_t count) {
+  DCHECK_EQ(DataType::NESTED, typeinfo_->type());
+  DCHECK_EQ(sizeof(Slice), typeinfo_->size());
+
+  // For 1D arrays, get information on the elements.
+  const auto* desc = typeinfo_->nested_type_info();
+  DCHECK(desc);
+  DCHECK(desc->is_array());
+  // For 1D arrays, the encoder is chosen based on the type of the array's
+  // elements.
+  const auto* const elem_type_info = desc->array().elem_type_info();
+  DCHECK(elem_type_info);
+  const size_t elem_size = elem_type_info->size();
+
+  const Slice* cells_ptr = reinterpret_cast<const Slice*>(entries);
+  BitmapIterator cell_bitmap_it(bitmap, count);
+  size_t cur_cell_idx = 0;
+
+  size_t cells_num = 0;
+  bool cell_is_not_null = false;
+  while ((cells_num = cell_bitmap_it.Next(&cell_is_not_null)) > 0) {
+    if (!cell_is_not_null) {
+      // This is a run of null array-type cells.
+
+      value_count_ += cells_num;
+      array_non_null_bitmap_builder_->AddRun(false, cells_num);
+      for (size_t i = 0; i < cells_num; ++i) {
+        array_elem_num_builder_->Add(0);
+      }
+
+#if DCHECK_IS_ON()
+      // TODO(aserbin): re-enable this extra validation after SetNull()/set_null()
+      //                updates the underlying Slice for previously stored
+      //                non-null cell's data in ContiguousRow and elsewhere
+      //                if DCHECK_IS_ON()
+      //const Slice* cell = cells_ptr;
+      //DCHECK(cell->empty());
+#endif // if DCHECK_IS_ON() ...
+
+      cells_ptr += cells_num;
+      cur_cell_idx += cells_num;
+    } else {
+      // This is a run of non-null array-type cells.
+      for (size_t i = 0; i < cells_num; ++i, ++cur_cell_idx, ++cells_ptr) {
+        ++value_count_;
+        array_non_null_bitmap_builder_->AddRun(true, 1);
+
+        // Information on validity of the elements in the in-cell array.
+        const Slice* cell = cells_ptr;
+        DCHECK(cell);
+        ArrayCellMetadataView view(cell->data(), cell->size());
+        RETURN_NOT_OK(view.Init());
+
+        // Add information on the array's elements boundary
+        // in the flattened sequence.
+        const size_t cell_elem_num = view.elem_num();
+        array_elem_num_builder_->Add(cell_elem_num);
+        if (cell_elem_num == 0) {
+          // Current cell contains an empty array.
+          //DCHECK(!cell->data_);
+          //DCHECK(!cell->non_null_bitmap_);
+          continue;
+        }
+
+        const uint8_t* cell_non_null_bitmap = view.not_null_bitmap();
+        DCHECK(cell_non_null_bitmap);
+        BitmapIterator elem_bitmap_iter(cell_non_null_bitmap,
+                                        cell_elem_num);
+        const uint8_t* data = view.data_as(elem_type_info->type());
+        DCHECK(data);
+
+        // Mask the 'block is full' while writing a single array.
+        data_block_->SetBlockFullMasked(true);
+        size_t elem_num = 0;
+        bool elem_is_non_null = false;
+        while ((elem_num = elem_bitmap_iter.Next(&elem_is_non_null)) > 0) {
+          if (!elem_is_non_null) {
+            // Add info on the run of 'elem_num' null elements in the array.
+            non_null_bitmap_builder_->AddRun(false, elem_num);
+            // Skip over the null elements in the input data.
+            data += elem_num * elem_size;
+            continue;
+          }
+
+          // A run of 'elem_num' non-null elements in the array.
+          ssize_t elem_rem = elem_num;
+          do {
+            int n = data_block_->Add(data, elem_rem);
+            DCHECK_GT(n, 0);
+
+            non_null_bitmap_builder_->AddRun(true, n);
+            data += n * elem_size;
+            elem_rem -= n;
+          } while (elem_rem > 0);
+        }
+        // Unmask the 'block is full' logic, so the logic below works
+        // as necessary.
+        data_block_->SetBlockFullMasked(false);
+
+        // If the current block is full, switch to a new one.
+        if (data_block_->IsBlockFull()) {
+          // NOTE: with long arrays the block may get quite beyond the size
+          // threshold before switching to the next one.
+          RETURN_NOT_OK(FinishCurArrayDataBlock());
+        }
+      }
+    }
+  }
+
+  DCHECK_EQ(count, cur_cell_idx);
+
+  return Status::OK();
+}
+
 Status CFileWriter::FinishCurDataBlock() {
+  DCHECK(!is_array_);
   const uint32_t num_elems_in_block =
       is_nullable_ ? non_null_bitmap_builder_->nitems() : data_block_->Count();
   if (PREDICT_FALSE(num_elems_in_block == 0)) {
@@ -439,6 +643,100 @@ Status CFileWriter::FinishCurDataBlock() {
     RETURN_NOT_OK(data_block_->GetLastKey(key_tmp_space));
     (*options_.validx_key_encoder)(key_tmp_space, &last_key_);
   }
+  data_block_->Reset();
+
+  return s;
+}
+
+Status CFileWriter::FinishCurArrayDataBlock() {
+  DCHECK(!validx_builder_); // array-type column cannot be a part of primary key
+
+  // Number of array cells in the block.
+  const uint32_t num_arrays_in_block = array_non_null_bitmap_builder_->nitems();
+  const uint32_t num_elems_in_block = non_null_bitmap_builder_->nitems();
+  if (PREDICT_FALSE(num_arrays_in_block == 0)) {
+    DCHECK_EQ(0, num_elems_in_block);
+    return Status::OK();
+  }
+
+  DCHECK_GE(value_count_, num_arrays_in_block);
+  rowid_t first_array_ord = value_count_ - num_arrays_in_block;
+  VLOG(1) << "Appending nullable array data block for values "
+          << first_array_ord << "-" << value_count_;
+
+  // The current data block is full, need to push it into the file.
+  Status s;
+  {
+    vector<Slice> data_slices;
+    data_block_->Finish(first_array_ord, &data_slices);
+
+    // A nullable array data block has the following layout
+    // (see docs/design-docs/cfile.md for more details):
+    //
+    // flattened value count          : unsigned [LEB128] encoded count of values
+    //
+    // array count                    : unsigned [LEB128] encoded count of arrays
+    //
+    // flattened non-null bitmap size : unsigned [LEB128] encoded size
+    //                                  of the following non-null bitmap
+    //
+    // flattened non-null bitmap      : [RLE] encoded bitmap
+    //
+    // array element numbers size     : unsigned [LEB128] encoded size of the
+    //                                  following field
+    //
+    // array element numbers          : [RLE] encoded sequence of 16-bit
+    //                                  unsigned integers
+    //
+    // array non-null bitmap size     : unsigned [LEB128] encoded size of the
+    //                                  following non-null bitmap
+    //
+    // array non-null bitmap          : [RLE] encoded bitmap on non-nullness
+    //                                  of array cells
+    //
+    // data                           : encoded non-null data values
+    //                                  (a.k.a. 'flattened sequence of elements')
+    vector<Slice> v;
+    v.reserve(data_slices.size() + 6);
+
+    const Slice flattened_non_null_bitmap = non_null_bitmap_builder_->Finish();
+    faststring array_headers_0;
+    PutVarint32(&array_headers_0, num_elems_in_block);
+    PutVarint32(&array_headers_0, array_elem_num_builder_->nitems());
+    PutVarint32(&array_headers_0, static_cast<uint32_t>(flattened_non_null_bitmap.size()));
+    v.emplace_back(array_headers_0.data(), array_headers_0.size());
+    if (!flattened_non_null_bitmap.empty()) {
+      v.emplace_back(flattened_non_null_bitmap);
+    }
+
+    const Slice array_elem_num_encoded = array_elem_num_builder_->Finish();
+    faststring array_headers_1;
+    PutVarint32(&array_headers_1, static_cast<uint32_t>(array_elem_num_encoded.size()));
+    v.emplace_back(array_headers_1.data(), array_headers_1.size());
+    if (!array_elem_num_encoded.empty()) {
+      v.emplace_back(array_elem_num_encoded);
+    }
+
+    const Slice array_non_null_bitmap = array_non_null_bitmap_builder_->Finish();
+    DCHECK(!array_non_null_bitmap.empty());
+    faststring array_headers_2;
+    PutVarint32(&array_headers_2, static_cast<uint32_t>(array_non_null_bitmap.size()));
+    v.emplace_back(array_headers_2.data(), array_headers_2.size());
+    v.emplace_back(array_non_null_bitmap);
+
+    std::move(data_slices.begin(), data_slices.end(), std::back_inserter(v));
+    s = AppendRawBlock(std::move(v),
+                       first_array_ord,
+                       nullptr,
+                       Slice(last_key_),
+                       "array data block");
+  }
+
+  // Reset per-block state.
+  non_null_bitmap_builder_->Reset();
+  array_non_null_bitmap_builder_->Reset();
+  array_elem_num_builder_->Reset();
+
   data_block_->Reset();
 
   return s;

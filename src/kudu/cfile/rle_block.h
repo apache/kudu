@@ -67,7 +67,7 @@ class RleBitMapBlockBuilder final : public BlockBuilder {
     return count;
   }
 
-  bool IsBlockFull() const override {
+  bool IsBlockFullImpl() const override {
     return encoder_.len() > options_->storage_attributes.cfile_block_size;
   }
 
@@ -232,7 +232,7 @@ class RleIntBlockBuilder final : public BlockBuilder {
     Reset();
   }
 
-  bool IsBlockFull() const override {
+  bool IsBlockFullImpl() const override {
     return rle_encoder_.len() > options_->storage_attributes.cfile_block_size;
   }
 

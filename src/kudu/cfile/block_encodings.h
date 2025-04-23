@@ -39,7 +39,9 @@ class CFileWriter;
 
 class BlockBuilder {
  public:
-  BlockBuilder() = default;
+  BlockBuilder()
+      : block_full_masked_(false) {
+  }
   virtual ~BlockBuilder() = default;
 
   // Append extra information to the end of the current cfile, for example:
@@ -53,7 +55,15 @@ class BlockBuilder {
   // A block is full if it its estimated size is larger than the configured
   // WriterOptions' cfile_block_size.
   // If it is full, the cfile writer will call FinishCurDataBlock().
-  virtual bool IsBlockFull() const = 0;
+  bool IsBlockFull() const {
+    if (block_full_masked_) {
+      return false;
+    }
+    return IsBlockFullImpl();
+  }
+
+  // The indication of the 'block is full' not affected by SetBlockFullMasked().
+  virtual bool IsBlockFullImpl() const = 0;
 
   // Add a sequence of values to the block.
   // Returns the number of values actually added, which may be less
@@ -94,7 +104,22 @@ class BlockBuilder {
   // If no keys have been added, returns Status::NotFound
   virtual Status GetLastKey(void* key) const = 0;
 
+  // Mask the 'block is full' criterion. This is used when writing array data
+  // blocks: the contents of a single array cell cannot be split between
+  // different array data blocks. The cfile writer uses this to make sure the
+  // encoder isn't switching to a new block when writing data within
+  // a single array cell.
+  void SetBlockFullMasked(bool block_full_masked) {
+    block_full_masked_ = block_full_masked;
+  }
+
+  // Whether the 'block is full' is masked.
+  bool IsBlockFullMasked() const {
+    return block_full_masked_;
+  }
+
  private:
+  bool block_full_masked_;
   DISALLOW_COPY_AND_ASSIGN(BlockBuilder);
 };
 

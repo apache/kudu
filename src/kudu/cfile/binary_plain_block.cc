@@ -66,7 +66,7 @@ void BinaryPlainBlockBuilder::Reset() {
   finished_ = false;
 }
 
-bool BinaryPlainBlockBuilder::IsBlockFull() const {
+bool BinaryPlainBlockBuilder::IsBlockFullImpl() const {
   return size_estimate_ > options_->storage_attributes.cfile_block_size;
 }
 

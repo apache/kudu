@@ -17,8 +17,11 @@
 
 #include "kudu/cfile/cfile_reader.h"
 
+#include <sys/types.h>
+
 #include <algorithm>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <ostream>
 #include <utility>
@@ -36,6 +39,7 @@
 #include "kudu/cfile/cfile_writer.h" // for kMagicString
 #include "kudu/cfile/index_btree.h"
 #include "kudu/cfile/type_encodings.h"
+#include "kudu/common/array_type_serdes.h"
 #include "kudu/common/column_materialization_context.h"
 #include "kudu/common/column_predicate.h"
 #include "kudu/common/columnblock.h"
@@ -43,6 +47,7 @@
 #include "kudu/common/encoded_key.h"
 #include "kudu/common/key_encoder.h"
 #include "kudu/common/rowblock.h"
+#include "kudu/common/rowblock_memory.h"
 #include "kudu/common/types.h"
 #include "kudu/fs/error_manager.h"
 #include "kudu/fs/io_context.h"
@@ -84,6 +89,8 @@ DEFINE_double(cfile_inject_corruption, 0,
               "Fraction of the time that read operations on CFiles will fail "
               "with a corruption status");
 TAG_FLAG(cfile_inject_corruption, hidden);
+
+DECLARE_bool(cfile_support_arrays);
 
 using kudu::fault_injection::MaybeTrue;
 using kudu::fs::ErrorHandlerType;
@@ -187,6 +194,12 @@ Status CFileReader::InitOnce(const IOContext* io_context) {
         "CFile uses features from an incompatible bitset value $0 vs supported $1",
         footer_->incompatible_features(),
         IncompatibleFeatures::SUPPORTED));
+  }
+  if (PREDICT_FALSE(footer_->is_type_array() && !FLAGS_cfile_support_arrays)) {
+    static const auto kErrStatus = Status::ConfigurationError(
+        "support for array data blocks is disabled");
+    LOG(DFATAL) << kErrStatus.ToString();
+    return kErrStatus;
   }
 
   type_info_ = footer_->is_type_array() ? GetArrayTypeInfo(footer_->data_type())
@@ -777,7 +790,31 @@ void CFileIterator::SeekToPositionInBlock(PreparedBlock* pb, uint32_t idx_in_blo
   // we need to translate from 'ord_idx' (the absolute row id)
   // to the index within the non-null entries.
   uint32_t index_within_nonnulls;
-  if (reader_->is_nullable()) {
+  if (reader_->is_array()) {
+    DCHECK_LT(idx_in_block, pb->num_rows_in_block_);
+    if (PREDICT_TRUE(pb->idx_in_block_ <= idx_in_block)) {
+      // Seeking forward.
+      pb->array_rle_decoder_.Skip(idx_in_block - pb->idx_in_block_);
+      DCHECK_LT(pb->idx_in_block_, pb->array_start_indices_.size());
+      // Indices in the flattened value sequence (including null elements).
+      ssize_t flattened_idx_to_seek = pb->array_start_indices_[idx_in_block];
+      ssize_t flattened_idx_cur = pb->array_start_indices_[pb->idx_in_block_];
+      DCHECK_LE(flattened_idx_cur, flattened_idx_to_seek);
+      ssize_t nskip = flattened_idx_to_seek - flattened_idx_cur;
+      index_within_nonnulls = pb->dblk_->GetCurrentIndex() + pb->rle_decoder_.Skip(nskip);
+    } else {
+      // Seeking backward: need to reset the positions in both array and
+      // flattened values bitmaps and rewind them forward to required offsets.
+      pb->array_rle_decoder_ = RleDecoder<bool, 1>(pb->array_rle_bitmap_.data(),
+                                                   pb->array_rle_bitmap_.size());
+      pb->array_rle_decoder_.Skip(idx_in_block);
+      DCHECK_LE(idx_in_block, pb->array_start_indices_.size());
+      ssize_t flattened_idx_to_seek = pb->array_start_indices_[idx_in_block];
+      pb->rle_decoder_ = RleDecoder<bool, 1>(pb->rle_bitmap.data(),
+                                             pb->rle_bitmap.size());
+      index_within_nonnulls = pb->rle_decoder_.Skip(flattened_idx_to_seek);
+    }
+  } else if (reader_->is_nullable()) {
     if (PREDICT_TRUE(pb->idx_in_block_ <= idx_in_block)) {
       // We are seeking forward. Skip from the current position in the RLE decoder
       // instead of going back to the beginning of the block.
@@ -964,6 +1001,47 @@ Status DecodeNullInfo(scoped_refptr<BlockHandle>* data_block_handle,
   return Status::OK();
 }
 
+Status DecodeArrayInfo(scoped_refptr<BlockHandle>* data_block_handle,
+                       uint32_t* num_flattened_elements_in_block,
+                       uint32_t* num_arrays_in_block,
+                       Slice* flattened_non_null_bitmap,
+                       Slice* array_non_null_bitmap,
+                       Slice* array_elem_num_seq) {
+  Slice data_block = (*data_block_handle)->data();
+
+  if (PREDICT_FALSE(!GetVarint32(&data_block, num_flattened_elements_in_block))) {
+    return Status::Corruption("bad array header, num flattened elements");
+  }
+  if (PREDICT_FALSE(!GetVarint32(&data_block, num_arrays_in_block))) {
+    return Status::Corruption("bad array header, array count");
+  }
+
+  uint32_t flattened_non_null_bitmap_size;
+  if (PREDICT_FALSE(!GetVarint32(&data_block, &flattened_non_null_bitmap_size))) {
+    return Status::Corruption("bad array header, non-null bitmap size");
+  }
+  *flattened_non_null_bitmap = Slice(data_block.data(), flattened_non_null_bitmap_size);
+  data_block.remove_prefix(flattened_non_null_bitmap_size);
+
+  uint32_t array_elem_num_seq_size;
+  if (PREDICT_FALSE(!GetVarint32(&data_block, &array_elem_num_seq_size))) {
+    return Status::Corruption("bad array header, array element numbers size");
+  }
+  *array_elem_num_seq = Slice(data_block.data(), array_elem_num_seq_size);
+  data_block.remove_prefix(array_elem_num_seq_size);
+
+  uint32_t array_non_null_bitmap_size;
+  if (PREDICT_FALSE(!GetVarint32(&data_block, &array_non_null_bitmap_size))) {
+    return Status::Corruption("bad array header, non-null array bitmap size");
+  }
+  *array_non_null_bitmap = Slice(data_block.data(), array_non_null_bitmap_size);
+  data_block.remove_prefix(array_non_null_bitmap_size);
+
+  auto offset = data_block.data() - (*data_block_handle)->data().data();
+  *data_block_handle = (*data_block_handle)->SubrangeBlock(offset, data_block.size());
+  return Status::OK();
+}
+
 Status CFileIterator::ReadCurrentDataBlock(const IndexTreeIterator& idx_iter,
                                            PreparedBlock* prep_block) {
   prep_block->dblk_ptr_ = idx_iter.GetCurrentBlockPointer();
@@ -972,8 +1050,44 @@ Status CFileIterator::ReadCurrentDataBlock(const IndexTreeIterator& idx_iter,
 
   uint32_t num_rows_in_block = 0;
   scoped_refptr<BlockHandle> data_block = prep_block->dblk_handle_;
-  size_t total_size_read = data_block->data().size();
-  if (reader_->is_nullable()) {
+  const size_t total_size_read = data_block->data().size();
+  if (reader_->is_array()) {
+    Slice array_elem_num_seq;
+    RETURN_NOT_OK(DecodeArrayInfo(&data_block,
+                                  &(prep_block->num_flattened_elems_in_block_),
+                                  &num_rows_in_block,
+                                  &(prep_block->rle_bitmap),
+                                  &(prep_block->array_rle_bitmap_),
+                                  &array_elem_num_seq));
+    prep_block->rle_decoder_ = RleDecoder<bool, 1>(
+        prep_block->rle_bitmap.data(),
+        prep_block->rle_bitmap.size());
+    prep_block->array_rle_decoder_ = RleDecoder<bool, 1>(
+        prep_block->array_rle_bitmap_.data(),
+        prep_block->array_rle_bitmap_.size());
+
+    // Build array start indices given array element number sequence.
+    {
+      auto& start_indices = prep_block->array_start_indices_;
+      start_indices.reserve(num_rows_in_block);
+
+      RleDecoder<uint16_t, 16> dec(array_elem_num_seq.data(),
+                                   array_elem_num_seq.size());
+      size_t idx = 0;
+      uint16_t elem_num;
+      while (const size_t run_len = dec.GetNextRun(&elem_num, num_rows_in_block)) {
+        for (size_t i = 0; i < run_len; ++i) {
+          start_indices.emplace_back(idx);
+          idx += elem_num;
+        }
+      }
+      if (PREDICT_FALSE(num_rows_in_block != start_indices.size())) {
+        return Status::Corruption(
+            "bad array header, number of arrays mismatch");
+      }
+      DCHECK_LE(start_indices.size(), std::numeric_limits<uint32_t>::max());
+    }
+  } else if (reader_->is_nullable()) {
     RETURN_NOT_OK(DecodeNullInfo(&data_block, &num_rows_in_block, &(prep_block->rle_bitmap)));
     prep_block->rle_decoder_ = RleDecoder<bool, 1>(prep_block->rle_bitmap.data(),
                                                    prep_block->rle_bitmap.size());
@@ -987,10 +1101,11 @@ Status CFileIterator::ReadCurrentDataBlock(const IndexTreeIterator& idx_iter,
                                    reader_->block_id().ToString(),
                                    prep_block->dblk_ptr_.ToString()));
 
-  // For nullable blocks, we filled in the row count from the null information above,
-  // since the data block decoder only knows about the non-null values.
-  // For non-nullable ones, we use the information from the block decoder.
-  if (!reader_->is_nullable()) {
+  // For nullable and array data blocks, the row count information is set
+  // in the code above since the data block decoder only knows about the
+  // non-null values. For non-nullable data blocks, the correspondind
+  // information is provided by the block decoder.
+  if (!reader_->is_nullable() && !reader_->is_array()) {
     num_rows_in_block = prep_block->dblk_->Count();
   }
 
@@ -1116,6 +1231,10 @@ Status CFileIterator::FinishBatch() {
 }
 
 Status CFileIterator::Scan(ColumnMaterializationContext* ctx) {
+  // Utility block memory for reading in array data, if any.
+  unique_ptr<RowBlockMemory> array_rbm(
+      reader_->is_array() ? new RowBlockMemory : nullptr);
+
   DCHECK(seeked_) << "not seeked";
 
   // Use views to advance the block and selection vector as we read into them.
@@ -1147,12 +1266,137 @@ Status CFileIterator::Scan(ColumnMaterializationContext* ctx) {
       // that might be more efficient (allowing the decoder to save internal state
       // instead of having to reconstruct it)
     }
-    if (reader_->is_nullable()) {
-      DCHECK(ctx->block()->is_nullable());
+    if (reader_->is_array()) {
+      DCHECK(ctx->block()->type_info()->is_array());
+      DCHECK_GE(pb->num_rows_in_block_, pb->idx_in_block_);
+      const auto& start_indices = pb->array_start_indices_;
+      size_t cur_flattened_idx = 0;
 
-      size_t nrows = std::min(rem, pb->num_rows_in_block_ - pb->idx_in_block_);
-      // Fill column bitmap
-      size_t count = nrows;
+      ssize_t count = std::min(rem, pb->num_rows_in_block_ - pb->idx_in_block_);
+      while (count > 0) {
+        // Procesing one array at a time, peeking into the next array's start
+        // index in the flattened sequence to know how many elements to read
+        // from the flattened sequence.
+        const auto idx = pb->idx_in_block_;
+        DCHECK_LE(idx, start_indices.size());
+
+        const uint32_t flattened_idx = start_indices[idx];
+        const uint32_t flattened_next_idx =
+            (idx + 1) == start_indices.size() ? pb->num_flattened_elems_in_block_
+                                              : start_indices[idx + 1];
+        if (PREDICT_FALSE(flattened_next_idx < flattened_idx)) {
+          static constexpr const char* const kErrMsg =
+              "non-monotonous array start indices";
+          LOG(DFATAL) << kErrMsg;
+          return Status::Corruption(kErrMsg);
+        }
+        if (PREDICT_FALSE(flattened_idx > pb->num_flattened_elems_in_block_ ||
+                          flattened_next_idx > pb->num_flattened_elems_in_block_)) {
+          // Trailing elements of the array start indices may have be set
+          // to pb->num_flattened_elems_in_block_ if the corresponding trailing
+          // arrays are empty or null, but they should never be greater than
+          // the total number of elements in the flattened sequence.
+          static constexpr const char* const kErrMsg =
+              "out-of-bounds array start index";
+          LOG(DFATAL) << kErrMsg;
+          return Status::Corruption(kErrMsg);
+        }
+
+        bool array_not_null = false;
+        const size_t array_run_len = pb->array_rle_decoder_.GetNextRun(
+            &array_not_null, 1);
+        if (PREDICT_FALSE(array_run_len != 1)) {
+          static constexpr const char* const kErrMsg =
+              "unexpected end of array non-null bitmap";
+          LOG(DFATAL) << kErrMsg;
+          return Status::Corruption(kErrMsg);
+        }
+        ColumnDataView* dst = &remaining_dst;
+        if (array_not_null) {
+          const auto* ati = reader_->type_info();
+          DCHECK(ati->is_array());
+          const TypeInfo* elem_type_info = ati->nested_type_info()->array().elem_type_info();
+          DCHECK(elem_type_info);
+
+          if (flattened_idx == flattened_next_idx) {
+            // An empty array cell: no need to fetch any data.
+            memset(dst->data(), 0, sizeof(Slice));
+          } else {
+            // A non-empty array cell: need to fetch its elements from
+            // the flattened sequence.
+
+            const size_t array_elems_to_fetch = flattened_next_idx - flattened_idx;
+            // TODO(aserbin): is it possible to reuse array_rbm or the column
+            //                block's memory for this?
+            // TODO(aserbin): allocate it once for the whole block?
+            unique_ptr<uint8_t[]> cblock_data(
+                new uint8_t[array_elems_to_fetch * elem_type_info->size()]);
+            unique_ptr<uint8_t[]> cblock_not_null_bitmap(
+                new uint8_t[BitmapSize(array_elems_to_fetch)]);
+
+            // Column block to help with reading in array elements for current
+            // array cell.
+            ColumnBlock cblock(
+                elem_type_info,
+                cblock_not_null_bitmap.get(),
+                cblock_data.get(),
+                array_elems_to_fetch,
+                array_rbm.get());
+            ColumnDataView cdv(&cblock);
+
+            bool not_null = false;
+            size_t num_fetched = 0;
+            while (num_fetched + flattened_idx < flattened_next_idx) {
+              size_t run_len = pb->rle_decoder_.GetNextRun(
+                  &not_null, flattened_next_idx - flattened_idx - num_fetched);
+              if (PREDICT_FALSE(run_len == 0)) {
+                static constexpr const char* const kErrMsg =
+                    "unexpected end of flattened non-null bitmap";
+                LOG(DFATAL) << kErrMsg;
+                return Status::Corruption(kErrMsg);
+              }
+
+              size_t this_batch = run_len;
+              if (not_null) {
+                RETURN_NOT_OK(pb->dblk_->CopyNextValues(&this_batch, &cdv));
+                DCHECK_EQ(run_len, this_batch);
+                pb->needs_rewind_ = true;
+              }
+              cdv.SetNonNullBits(this_batch, not_null);
+              cdv.Advance(this_batch);
+
+              num_fetched += run_len;
+              // Flattened element count includes null elements.
+              cur_flattened_idx += run_len;
+            }
+
+            // Serialize the read data into dst->arena().
+            Slice cell_out;
+            RETURN_NOT_OK(SerializeIntoArena(
+                elem_type_info,
+                cblock_data.get(),
+                cblock_not_null_bitmap.get(),
+                cblock.nrows(),
+                dst->arena(),
+                &cell_out));
+            DCHECK_EQ(ati->size(), sizeof(Slice));
+            DCHECK_GT(dst->nrows(), 0);
+            memcpy(dst->data(), &cell_out, sizeof(Slice));
+          }
+        }
+        dst->SetNonNullBits(1, array_not_null);
+        dst->Advance(1);
+        remaining_sel.Advance(1);
+        pb->idx_in_block_++;
+        --rem;
+        --count;
+      }
+      DCHECK_LE(cur_flattened_idx, pb->num_flattened_elems_in_block_);
+    } else if (reader_->is_nullable()) {
+      DCHECK(ctx->block()->is_nullable());
+      DCHECK_GE(pb->num_rows_in_block_, pb->idx_in_block_);
+
+      ssize_t count = std::min(rem, pb->num_rows_in_block_ - pb->idx_in_block_);
       while (count > 0) {
         bool not_null = false;
         size_t nblock = pb->rle_decoder_.GetNextRun(&not_null, count);

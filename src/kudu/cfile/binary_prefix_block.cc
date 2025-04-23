@@ -96,7 +96,7 @@ void BinaryPrefixBlockBuilder::Reset() {
   last_val_.clear();
 }
 
-bool BinaryPrefixBlockBuilder::IsBlockFull() const {
+bool BinaryPrefixBlockBuilder::IsBlockFullImpl() const {
   // TODO(todd): take restarts size into account
   return buffer_.size() > options_->storage_attributes.cfile_block_size;
 }

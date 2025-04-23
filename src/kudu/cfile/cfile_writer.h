@@ -52,6 +52,7 @@ extern const char kMagicStringV2[];
 extern const int kMagicLength;
 extern const size_t kChecksumSize;
 
+class ArrayElemNumBuilder;
 class NonNullBitmapBuilder;
 
 // Main class used to write a CFile.
@@ -96,6 +97,23 @@ class CFileWriter final {
   // "entries" is not "compact" - ie if you're appending 10 rows, and 9 are NULL,
   // 'entries' still will have 10 elements in it
   Status AppendNullableEntries(const uint8_t* bitmap, const void* entries, size_t count);
+
+  // Similar to AppendNullableEntries above, but for appending array-type
+  // column blocks.
+  //
+  // The 'entries' is a pointer to a C-style array of Slice elements,
+  // where each Slice element represents a cell of an array-type column.
+  // The 'entries' may contain NULL array cells as well, and the validity
+  // of a cell (i.e. whether it's a non-NULL cell) is determined by
+  // corresponding bit in 'bitmap': 1 means that the cell contains an array
+  // (NOTE: the array may be empty, i.e. contain no elements), and 0 means
+  // the cell is nil (NULL).
+  //
+  // The information on the validity of elemenents in each of the array cells
+  // is encoded in the cell's data.
+  Status AppendNullableArrayEntries(const uint8_t* bitmap,
+                                    const void* entries,
+                                    size_t count);
 
   // Append a raw block to the file, adding it to the various indexes.
   //
@@ -153,6 +171,7 @@ class CFileWriter final {
   Status WriteRawData(const std::vector<Slice>& data);
 
   Status FinishCurDataBlock();
+  Status FinishCurArrayDataBlock();
 
   // Flush the current unflushed_metadata_ entries into the given protobuf
   // field, clearing the buffer.
@@ -166,7 +185,8 @@ class CFileWriter final {
   // Current file offset.
   uint64_t off_;
 
-  // Current number of values that have been appended.
+  // Current number of values that have been appended. It's accumulated
+  // across all the blocks that are to be written into this CFile.
   rowid_t value_count_;
 
   // Type of data being written
@@ -174,6 +194,7 @@ class CFileWriter final {
   CompressionType compression_;
   const TypeInfo* typeinfo_;
   const TypeEncodingInfo* type_encoding_info_;
+  const bool is_array_;
 
   // The last key written to the block.
   // Only set if the writer is writing an embedded value index.
@@ -189,6 +210,8 @@ class CFileWriter final {
   std::unique_ptr<IndexTreeBuilder> posidx_builder_;
   std::unique_ptr<IndexTreeBuilder> validx_builder_;
   std::unique_ptr<NonNullBitmapBuilder> non_null_bitmap_builder_;
+  std::unique_ptr<NonNullBitmapBuilder> array_non_null_bitmap_builder_;
+  std::unique_ptr<ArrayElemNumBuilder> array_elem_num_builder_;
   std::unique_ptr<CompressedBlockBuilder> block_compressor_;
 
   enum State {

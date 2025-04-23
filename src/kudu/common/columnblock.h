@@ -248,6 +248,7 @@ class ColumnDataView {
     // Check <= here, not <, since you can skip to
     // the very end of the data (leaving an empty block)
     DCHECK_LE(skip, column_block_->nrows());
+    DCHECK_LE(row_offset_ + skip, column_block_->nrows());
     row_offset_ += skip;
   }
 

@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/cfile/cfile-test-base.h"
+
 #include <algorithm>
 #include <cstdint>
 #include <cstdlib>
@@ -25,6 +27,7 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -36,7 +39,6 @@
 #include "kudu/cfile/block_cache.h"
 #include "kudu/cfile/block_handle.h"
 #include "kudu/cfile/block_pointer.h"
-#include "kudu/cfile/cfile-test-base.h"
 #include "kudu/cfile/cfile.pb.h"
 #include "kudu/cfile/cfile_reader.h"
 #include "kudu/cfile/cfile_util.h"
@@ -78,10 +80,7 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
-namespace kudu {
-class Arena;
-}  // namespace kudu
-
+DECLARE_bool(cfile_support_arrays);
 DECLARE_bool(cfile_write_checksums);
 DECLARE_bool(cfile_verify_checksums);
 DECLARE_string(block_cache_eviction_policy);
@@ -92,11 +91,8 @@ DECLARE_string(nvm_cache_path);
 DECLARE_bool(nvm_cache_simulate_allocation_failure);
 
 METRIC_DECLARE_counter(block_cache_hits_caching);
-
 METRIC_DECLARE_entity(server);
 
-
-using kudu::fs::BlockManager;
 using kudu::fs::CountingReadableBlock;
 using kudu::fs::CreateCorruptBlock;
 using kudu::fs::ReadableBlock;
@@ -108,7 +104,127 @@ using std::vector;
 using strings::Substitute;
 
 namespace kudu {
+
+class Arena;
+
 namespace cfile {
+
+Status TimeReadFileForScalars(DataType data_type,
+                              CFileIterator* iter,
+                              size_t* count_ret) {
+  switch (data_type) {
+    case UINT8:
+      return TimeReadFileForDataType<UINT8, uint64_t>(iter, count_ret);
+    case INT8:
+      return TimeReadFileForDataType<INT8, int64_t>(iter, count_ret);
+    case UINT16:
+      return TimeReadFileForDataType<UINT16, uint64_t>(iter, count_ret);
+    case INT16:
+      return TimeReadFileForDataType<INT16, int64_t>(iter, count_ret);
+    case UINT32:
+      return TimeReadFileForDataType<UINT32, uint64_t>(iter, count_ret);
+    case INT32:
+      return TimeReadFileForDataType<INT32, int64_t>(iter, count_ret);
+    case UINT64:
+      return TimeReadFileForDataType<UINT64, uint64_t>(iter, count_ret);
+    case INT64:
+      return TimeReadFileForDataType<INT64, int64_t>(iter, count_ret);
+    case INT128:
+      return TimeReadFileForDataType<INT128, int128_t>(iter, count_ret);
+    case FLOAT:
+      return TimeReadFileForDataType<FLOAT, float>(iter, count_ret);
+    case DOUBLE:
+      return TimeReadFileForDataType<DOUBLE, double>(iter, count_ret);
+    case STRING:
+      return ReadBinaryFile<STRING>(iter, count_ret);
+    case BINARY:
+      return ReadBinaryFile<BINARY>(iter, count_ret);
+    default:
+      return Status::NotSupported(
+          Substitute("not implemented for type: $0", DataType_Name(data_type)));
+  }
+}
+
+Status TimeReadFileForArrays(DataType data_type,
+                             CFileIterator* iter,
+                             size_t* count_ret,
+                             size_t* total_array_element_count_ret,
+                             size_t* total_elem_str_size_ret) {
+  switch (data_type) {
+    case INT8:
+      return TimeReadFileForArrayDataType<INT8>(
+          iter, count_ret, total_array_element_count_ret);
+    case UINT8:
+      return TimeReadFileForArrayDataType<UINT8>(
+          iter, count_ret, total_array_element_count_ret);
+    case INT16:
+      return TimeReadFileForArrayDataType<INT16>(
+          iter, count_ret, total_array_element_count_ret);
+    case UINT16:
+      return TimeReadFileForArrayDataType<UINT16>(
+          iter, count_ret, total_array_element_count_ret);
+    case INT32:
+      return TimeReadFileForArrayDataType<INT32>(
+          iter, count_ret, total_array_element_count_ret);
+    case UINT32:
+      return TimeReadFileForArrayDataType<UINT32>(
+          iter, count_ret, total_array_element_count_ret);
+    case INT64:
+      return TimeReadFileForArrayDataType<INT64>(
+          iter, count_ret, total_array_element_count_ret);
+    case UINT64:
+      return TimeReadFileForArrayDataType<UINT64>(
+          iter, count_ret, total_array_element_count_ret);
+    case FLOAT:
+      return TimeReadFileForArrayDataType<FLOAT>(
+          iter, count_ret, total_array_element_count_ret);
+    case DOUBLE:
+      return TimeReadFileForArrayDataType<DOUBLE>(
+          iter, count_ret, total_array_element_count_ret);
+    case STRING:
+    case VARCHAR:
+      return TimeReadFileForArrayDataType<STRING>(
+          iter, count_ret, total_array_element_count_ret, total_elem_str_size_ret);
+    case BINARY:
+      return TimeReadFileForArrayDataType<BINARY>(
+          iter, count_ret, total_array_element_count_ret, total_elem_str_size_ret);
+    default:
+      return Status::NotSupported(
+          Substitute("not implemented for arrays of type: $0", DataType_Name(data_type)));
+  }
+}
+
+Status TimeReadFile(FsManager* fs_manager,
+                    const BlockId& block_id,
+                    size_t* count_ret,
+                    size_t* total_array_element_count_ret,
+                    size_t* total_elem_str_size_ret) {
+  std::unique_ptr<fs::ReadableBlock> source;
+  RETURN_NOT_OK(fs_manager->OpenBlock(block_id, &source));
+  std::unique_ptr<CFileReader> reader;
+  RETURN_NOT_OK(CFileReader::Open(std::move(source), ReaderOptions(), &reader));
+
+  std::unique_ptr<CFileIterator> iter;
+  RETURN_NOT_OK(reader->NewIterator(&iter, CFileReader::CACHE_BLOCK, nullptr));
+  RETURN_NOT_OK(iter->SeekToOrdinal(0));
+
+  if (!reader->is_array()) {
+    return TimeReadFileForScalars(
+        reader->type_info()->physical_type(), iter.get(), count_ret);
+  }
+
+  DCHECK(reader->is_array());
+
+  // Get the type of array elements.
+  const auto* elem_type_info = GetArrayElementTypeInfo(*reader->type_info());
+  // Only 1D arrays of scalar types are supported yet.
+  DCHECK_NE(NESTED, elem_type_info->type());
+  return TimeReadFileForArrays(elem_type_info->type(),
+                               iter.get(),
+                               count_ret,
+                               total_array_element_count_ret,
+                               total_elem_str_size_ret);
+}
 
 class TestCFile : public CFileTestBase {
  protected:
@@ -196,7 +312,7 @@ class TestCFile : public CFileTestBase {
       out[i] = 0;
     }
 
-    TimeReadFile(fs_manager_.get(), block_id, &n);
+    ASSERT_OK(TimeReadFile(fs_manager_.get(), block_id, &n));
     ASSERT_EQ(10000, n);
   }
 
@@ -255,7 +371,7 @@ class TestCFile : public CFileTestBase {
     WriteTestFile(generator, encoding, compression, 10000, SMALL_BLOCKSIZE, &block_id);
 
     size_t n;
-    NO_FATALS(TimeReadFile(fs_manager_.get(), block_id, &n));
+    ASSERT_OK(TimeReadFile(fs_manager_.get(), block_id, &n));
     ASSERT_EQ(n, 10000);
 
     generator->Reset();
@@ -346,7 +462,7 @@ class TestCFile : public CFileTestBase {
     LOG_TIMING(INFO, "reading 100M strings") {
       LOG(INFO) << "Starting readfile";
       size_t n;
-      TimeReadFile(fs_manager_.get(), block_id, &n);
+      ASSERT_OK(TimeReadFile(fs_manager_.get(), block_id, &n));
       ASSERT_EQ(100000000, n);
       LOG(INFO) << "End readfile";
     }
@@ -366,7 +482,7 @@ class TestCFile : public CFileTestBase {
     LOG_TIMING(INFO, Substitute("reading $0 strings with dupes", num_rows)) {
       LOG(INFO) << "Starting readfile";
       size_t n;
-      TimeReadFile(fs_manager_.get(), block_id, &n);
+      ASSERT_OK(TimeReadFile(fs_manager_.get(), block_id, &n));
       ASSERT_EQ(num_rows, n);
       LOG(INFO) << "End readfile";
     }
@@ -406,7 +522,7 @@ class TestCFile : public CFileTestBase {
 // once for each cache memory type (DRAM, NVM).
 class TestCFileBothCacheMemoryTypes :
     public TestCFile,
- public ::testing::WithParamInterface<std::pair<Cache::MemoryType, Cache::EvictionPolicy>> {
+    public ::testing::WithParamInterface<std::pair<Cache::MemoryType, Cache::EvictionPolicy>> {
  public:
   void SetUp() override {
     // The NVM cache can run using any directory as its path -- it doesn't have
@@ -486,7 +602,7 @@ TEST_P(TestCFileBothCacheMemoryTypes, TestWrite100MFileInts) {
   LOG_TIMING(INFO, "reading 100M ints") {
     LOG(INFO) << "Starting readfile";
     size_t n;
-    TimeReadFile(fs_manager_.get(), block_id, &n);
+    ASSERT_OK(TimeReadFile(fs_manager_.get(), block_id, &n));
     ASSERT_EQ(100000000, n);
     LOG(INFO) << "End readfile";
   }
@@ -505,7 +621,7 @@ TEST_P(TestCFileBothCacheMemoryTypes, TestWrite100MFileNullableInts) {
   LOG_TIMING(INFO, "reading 100M nullable ints") {
     LOG(INFO) << "Starting readfile";
     size_t n;
-    TimeReadFile(fs_manager_.get(), block_id, &n);
+    ASSERT_OK(TimeReadFile(fs_manager_.get(), block_id, &n));
     ASSERT_EQ(100000000, n);
     LOG(INFO) << "End readfile";
   }
@@ -547,7 +663,7 @@ TEST_P(TestCFileBothCacheMemoryTypes, TestWrite1MUniqueFileStringsDictEncoding) 
   LOG_TIMING(INFO, "reading 1M strings") {
     LOG(INFO) << "Starting readfile";
     size_t n;
-    TimeReadFile(fs_manager_.get(), block_id, &n);
+    ASSERT_OK(TimeReadFile(fs_manager_.get(), block_id, &n));
     ASSERT_EQ(1000000, n);
     LOG(INFO) << "End readfile";
   }
@@ -626,7 +742,8 @@ TYPED_TEST(BitShuffleTest, TestFixedSizeReadWriteBitShuffle) {
   this->TestBitShuffle();
 }
 
-void EncodeStringKey(const Schema& schema,
+
+static void EncodeStringKey(const Schema& schema,
                      const Slice& key,
                      Arena* arena,
                      EncodedKey** encoded_key) {
@@ -1144,9 +1261,165 @@ TEST_P(TestCFileDifferentCodecs, TestUncompressible) {
     RandomInt32DataGenerator int_gen;
     WriteTestFile(&int_gen, PLAIN_ENCODING, codec, nrows,
                   NO_FLAGS, &block_id);
-    TimeReadFile(fs_manager_.get(), block_id, &rdrows);
+    ASSERT_OK(TimeReadFile(fs_manager_.get(), block_id, &rdrows));
     ASSERT_EQ(nrows, rdrows);
   }
+}
+
+class TestCFileArrayValues : public TestCFile,
+                             public testing::WithParamInterface<
+                                 std::tuple<EncodingType, CompressionType>> {
+  void SetUp() override {
+    FLAGS_cfile_support_arrays = true;
+    TestCFile::SetUp();
+  }
+
+ protected:
+  template<typename GenType>
+  void Run(size_t nrows) {
+    const auto codec = std::get<0>(GetParam());
+    const auto compressor = std::get<1>(GetParam());
+    srand(time(nullptr));
+    BlockId block_id;
+    size_t rdrows;
+
+    GenType array_gen;
+    NO_FATALS(WriteTestFile(&array_gen, codec, compressor, nrows, NO_FLAGS, &block_id));
+    size_t total_elem_count = 0;
+    size_t total_elem_str_size = 0;
+    ASSERT_OK(TimeReadFile(
+        fs_manager_.get(), block_id, &rdrows, &total_elem_count, &total_elem_str_size));
+    ASSERT_EQ(nrows, rdrows);
+    ASSERT_EQ(array_gen.total_elem_count(), total_elem_count);
+    ASSERT_EQ(array_gen.str_values_total_size(), total_elem_str_size);
+    // TODO(aserbin): add assertion on array_gen.values_total_sum()
+  }
+};
+
+// Various scenarios for writing arrays of integer type elements. For TSAN build
+// configuration, the amount of generated data is reduced to allow for faster
+// test runtime. Since there isn't any concurrency involved in these scenarios,
+// the test coverage is not reduced because of that.
+class TestCFileIntegerArrayValues : public TestCFileArrayValues {
+};
+INSTANTIATE_TEST_SUITE_P(ArrayBasics, TestCFileIntegerArrayValues,
+                         ::testing::Combine(
+                             ::testing::Values(PLAIN_ENCODING, RLE, BIT_SHUFFLE),
+                             ::testing::Values(NO_COMPRESSION, SNAPPY, LZ4, ZLIB)));
+
+// Write/read a file with random int8 values in array cells, where there might
+// be empty array cells and empty array elements themselves.
+TEST_P(TestCFileIntegerArrayValues, ReadWriteInt8WithNulls) {
+  Run<Int8ArrayRandomDataGenerator</* HAS_NULLS */true,
+                                   /* HAS_NULLS_IN_ARRAY */true,
+#if defined(THREAD_SANITIZER)
+                                   /* MAX_NUM_ELEMENTS_IN_ARRAY */100>>(1000/*nrows*/);
+#else
+                                   /* MAX_NUM_ELEMENTS_IN_ARRAY */10000>>(10000/*nrows*/);
+#endif  // #ifdef THREAD_SANITIZER
+}
+
+// Similar to ReadWriteInt8 above, but each array can have at most two nullable
+// elements.
+TEST_P(TestCFileIntegerArrayValues, ReadWriteInt8WithNullShortArrays) {
+  Run<Int8ArrayRandomDataGenerator</* HAS_NULLS */true,
+                                   /* HAS_NULLS_IN_ARRAY */true,
+#if defined(THREAD_SANITIZER)
+                                   /* MAX_NUM_ELEMENTS_IN_ARRAY */2>>(1000/*nrows*/);
+#else
+                                   /* MAX_NUM_ELEMENTS_IN_ARRAY */2>>(100000/*nrows*/);
+#endif  // #ifdef THREAD_SANITIZER
+}
+
+// Write/read a file with random int32 values in array cells with no null cells,
+// nor null elements in array cells themselves.
+TEST_P(TestCFileIntegerArrayValues, ReadWriteInt32) {
+  Run<Int32ArrayRandomDataGenerator</* HAS_NULLS */false,
+                                    /* HAS_NULLS_IN_ARRAY */false,
+#if defined(THREAD_SANITIZER)
+                                    /* MAX_NUM_ELEMENTS_IN_ARRAY */10>>(100/*nrows*/);
+#else
+                                    /* MAX_NUM_ELEMENTS_IN_ARRAY */100>>(10000/*nrows*/);
+#endif  // #ifdef THREAD_SANITIZER
+}
+
+// Write/read a file with random int32 values in array cells, where both
+// the elements of arrays and array cells themselves might be null,
+// and the number of elements in an array might be quite high.
+TEST_P(TestCFileIntegerArrayValues, ReadWriteInt32WithNulls) {
+  Run<Int32ArrayRandomDataGenerator</* HAS_NULLS */true,
+                                    /* HAS_NULLS_IN_ARRAY */true,
+#if defined(THREAD_SANITIZER)
+                                    /* MAX_NUM_ELEMENTS_IN_ARRAY */1024>>(50/*nrows*/);
+#else
+                                    /* MAX_NUM_ELEMENTS_IN_ARRAY */65535>>(50/*nrows*/);
+#endif  // #ifdef THREAD_SANITIZER
+}
+
+// Same as TestCFileArrayValues.ReadWriteWithNulls scenario above, but
+// the maximum number of elements in an array is small, but there are big number
+// of array cells.
+TEST_P(TestCFileIntegerArrayValues, ReadWriteInt32WithNullsShortArrays) {
+  Run<Int32ArrayRandomDataGenerator</* HAS_NULLS */true,
+                                    /* HAS_NULLS_IN_ARRAY */true,
+#if defined(THREAD_SANITIZER)
+                                    /* MAX_NUM_ELEMENTS_IN_ARRAY */5>>(1000/*nrows*/);
+#else
+                                    /* MAX_NUM_ELEMENTS_IN_ARRAY */5>>(100000/*nrows*/);
+#endif  // #ifdef THREAD_SANITIZER
+}
+
+class TestCFileBinaryArrayValues : public TestCFileArrayValues {
+};
+INSTANTIATE_TEST_SUITE_P(ArrayBasics, TestCFileBinaryArrayValues,
+                         ::testing::Combine(
+                             // TODO(aserbin): address DICT_ENCODING issues
+                             //::testing::Values(PLAIN_ENCODING, PREFIX_ENCODING, DICT_ENCODING),
+                             ::testing::Values(PLAIN_ENCODING, PREFIX_ENCODING),
+                             ::testing::Values(NO_COMPRESSION, SNAPPY, LZ4, ZLIB)));
+
+// Write/read a file with random string values in array cells.
+TEST_P(TestCFileBinaryArrayValues, ReadWriteStrings) {
+  Run<StringArrayRandomDataGenerator</* HAS_NULLS */false,
+                                     /* HAS_NULLS_IN_ARRAY */false,
+                                     /* MAX_NUM_ELEMENTS_IN_ARRAY */10>>(1000/*nrows*/);
+}
+
+// Write/read a file with random string values in array cells, where both
+// the elements of array cells and array cells themselves might be null,
+// and the number of elements in an array might be quite high.
+TEST_P(TestCFileBinaryArrayValues, ReadWriteStringsWithNulls) {
+  Run<StringArrayRandomDataGenerator</* HAS_NULLS */false,
+                                     /* HAS_NULLS_IN_ARRAY */true,
+#if defined(THREAD_SANITIZER)
+                                     /* MAX_NUM_ELEMENTS_IN_ARRAY */500>>(100/*nrows*/);
+#else
+                                     /* MAX_NUM_ELEMENTS_IN_ARRAY */5000>>(1000/*nrows*/);
+#endif // #if defined(THREAD_SANITIZER)
+}
+
+// Same as ReadWriteStringsWithNulls above, but this one is for arbitrary binary
+// data array elements, not just strings.
+TEST_P(TestCFileBinaryArrayValues, ReadWriteBinaryWithNulls) {
+  Run<BinaryArrayRandomDataGenerator</* HAS_NULLS */false,
+                                     /* HAS_NULLS_IN_ARRAY */true,
+#if defined(THREAD_SANITIZER)
+                                     /* MAX_NUM_ELEMENTS_IN_ARRAY */500>>(100/*nrows*/);
+#else
+                                     /* MAX_NUM_ELEMENTS_IN_ARRAY */5000>>(1000/*nrows*/);
+#endif // #if defined(THREAD_SANITIZER)
+}
+
+// Same as the ReadWriteBinaryWithNulls scenario above, but the maximum number
+// of elements in an array is small, while there are a big number of array cells.
+TEST_P(TestCFileBinaryArrayValues, ReadWriteBinaryWithNullsShortArrays) {
+  Run<BinaryArrayRandomDataGenerator</* HAS_NULLS */true,
+                                     /* HAS_NULLS_IN_ARRAY */true,
+#if defined(THREAD_SANITIZER)
+                                     /* MAX_NUM_ELEMENTS_IN_ARRAY */3>>(1000/*nrows*/);
+#else
+                                     /* MAX_NUM_ELEMENTS_IN_ARRAY */3>>(100000/*nrows*/);
+#endif // #if defined(THREAD_SANITIZER)
 }
 
 } // namespace cfile

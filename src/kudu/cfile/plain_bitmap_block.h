@@ -50,7 +50,7 @@ class PlainBitMapBlockBuilder final : public BlockBuilder {
     Reset();
   }
 
-  bool IsBlockFull() const override {
+  bool IsBlockFullImpl() const override {
     return writer_.bytes_written() > options_->storage_attributes.cfile_block_size;
   }
 

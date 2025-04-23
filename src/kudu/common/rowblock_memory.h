@@ -31,7 +31,7 @@ class RowBlockRefCounted;
 // cells.
 //
 // When scanning rows into a RowBlock, the rows may contain variable-length
-// data (eg BINARY columns). In this case, the data cannot be inlined directly
+// data (e.g. BINARY columns or array columns). In this case, the data cannot be inlined directly
 // into the columnar data arrays that are part of the RowBlock and instead need
 // to be allocated out of a separate Arena. This class wraps that Arena.
 //

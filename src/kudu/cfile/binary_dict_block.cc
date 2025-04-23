@@ -68,7 +68,7 @@ BinaryDictBlockBuilder::BinaryDictBlockBuilder(const WriterOptions* options)
 
 void BinaryDictBlockBuilder::Reset() {
   if (mode_ == kCodeWordMode &&
-      dict_block_.IsBlockFull()) {
+      dict_block_.IsBlockFullImpl()) {
     mode_ = kPlainBinaryMode;
     data_builder_.reset(new BinaryPlainBlockBuilder(options_));
   } else {
@@ -96,9 +96,9 @@ void BinaryDictBlockBuilder::Finish(rowid_t ordinal_pos, vector<Slice>* slices) 
 //
 // If it is the latter case, all the subsequent data blocks will switch to
 // StringPlainBlock automatically.
-bool BinaryDictBlockBuilder::IsBlockFull() const {
-  if (data_builder_->IsBlockFull()) return true;
-  if (dict_block_.IsBlockFull() && (mode_ == kCodeWordMode)) return true;
+bool BinaryDictBlockBuilder::IsBlockFullImpl() const {
+  if (data_builder_->IsBlockFullImpl()) return true;
+  if (dict_block_.IsBlockFullImpl() && (mode_ == kCodeWordMode)) return true;
   return false;
 }
 

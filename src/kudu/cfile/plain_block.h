@@ -64,7 +64,7 @@ class PlainBlockBuilder final : public BlockBuilder {
     return count;
   }
 
-  bool IsBlockFull() const override {
+  bool IsBlockFullImpl() const override {
     return buffer_.size() > options_->storage_attributes.cfile_block_size;
   }
 

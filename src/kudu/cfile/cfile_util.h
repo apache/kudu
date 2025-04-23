@@ -47,7 +47,10 @@ enum IncompatibleFeatures {
   // Write a crc32 checksum at the end of each cfile block
   CHECKSUM = 1 << 0,
 
-  SUPPORTED = NONE | CHECKSUM
+  // Support for reading/writing array data blocks
+  ARRAY_DATA_BLOCK = 1 << 1,
+
+  SUPPORTED = NONE | CHECKSUM | ARRAY_DATA_BLOCK
 };
 
 typedef std::function<void(const void*, faststring*)> ValidxKeyEncoder;

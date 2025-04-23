@@ -119,13 +119,13 @@ class BShufBlockBuilder final : public BlockBuilder {
     rem_elem_capacity_ = block_size / size_of_type;
   }
 
-  bool IsBlockFull() const override {
-    return rem_elem_capacity_ == 0;
+  bool IsBlockFullImpl() const override {
+    return rem_elem_capacity_ <= 0;
   }
 
   int Add(const uint8_t* vals_void, size_t count) override {
     DCHECK(!finished_);
-    int to_add = std::min<int>(rem_elem_capacity_, count);
+    int to_add = IsBlockFullMasked() ? count : std::min<int>(rem_elem_capacity_, count);
     data_.append(vals_void, to_add * size_of_type);
     count_ += to_add;
     rem_elem_capacity_ -= to_add;

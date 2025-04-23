@@ -60,7 +60,7 @@ class BinaryPlainBlockBuilder final : public BlockBuilder {
  public:
   explicit BinaryPlainBlockBuilder(const WriterOptions* options);
 
-  bool IsBlockFull() const override;
+  bool IsBlockFullImpl() const override;
 
   int Add(const uint8_t* vals, size_t count) override;
 

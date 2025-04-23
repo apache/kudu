@@ -16,7 +16,9 @@
 // under the License.
 #pragma once
 
+#include <cstdint>
 #include <memory>
+#include <type_traits>
 
 #include "kudu/gutil/macros.h"
 
@@ -31,17 +33,18 @@ namespace kudu {
 //
 // This is more useful in test code than production code,
 // since it doesn't allocate from an arena, etc.
-template<DataType type>
+template<DataType type, bool IS_ARRAY = false>
 class ScopedColumnBlock : public ColumnBlock {
  public:
-  typedef typename TypeTraits<type>::cpp_type cpp_type;
+  typedef typename std::conditional<
+       IS_ARRAY, Slice, typename TypeTraits<type>::cpp_type>::type cpp_type;
 
   explicit ScopedColumnBlock(size_t n_rows, bool allow_nulls = true)
-      : ColumnBlock(GetTypeInfo(type),
+      : ColumnBlock(IS_ARRAY ? GetArrayTypeInfo(type) : GetTypeInfo(type),
                     allow_nulls ? new uint8_t[BitmapSize(n_rows)] : nullptr,
                     new cpp_type[n_rows],
                     n_rows,
-                    new RowBlockMemory()),
+                    new RowBlockMemory),
         non_null_bitmap_buf_(non_null_bitmap_),
         data_buf_(reinterpret_cast<cpp_type*>(data_)),
         memory_buf_(memory_) {

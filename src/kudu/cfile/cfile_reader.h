@@ -144,6 +144,10 @@ class CFileReader {
     return footer().is_type_nullable();
   }
 
+  bool is_array() const {
+    return footer().is_type_array();
+  }
+
   const CFileHeaderPB& header() const {
     DCHECK(init_once_.init_succeeded());
     return *DCHECK_NOTNULL(header_.get());
@@ -439,12 +443,24 @@ class CFileIterator final : public ColumnIterator {
     bool needs_rewind_;
     uint32_t rewind_idx_;
 
-    // Total number of rows in the block (nulls + not nulls)
+    // Total number of rows in the block (nulls + not nulls).
     uint32_t num_rows_in_block_;
 
-    // Null bitmap and bitmap (RLE) decoder
+    // Non-null bitmap and bitmap (RLE) decoder.
+    // This is a bitmap for the flattened/concatenated element sequence
+    // for array data blocks.
     Slice rle_bitmap;
     RleDecoder<bool, 1> rle_decoder_;
+
+    // Array non-null bitmap and bitmap (RLE) decoder
+    Slice array_rle_bitmap_;
+    RleDecoder<bool, 1> array_rle_decoder_;
+
+    // Array start indices (used only for array data blocks).
+    std::vector<uint32_t> array_start_indices_;
+
+    // Total number of values in the 'flattened' sequence in an array block.
+    uint32_t num_flattened_elems_in_block_ = 0;
 
     rowid_t last_row_idx() const {
       return first_row_idx() + num_rows_in_block_ - 1;
