@@ -72,14 +72,14 @@ ColumnPredicate::ColumnPredicate(PredicateType predicate_type,
       bloom_filters_(std::move(bfs)) {}
 
 ColumnPredicate ColumnPredicate::Equality(ColumnSchema column, const void* value) {
-  CHECK(value != nullptr);
+  DCHECK(value != nullptr);
   return ColumnPredicate(PredicateType::Equality, std::move(column), value, nullptr);
 }
 
 ColumnPredicate ColumnPredicate::Range(ColumnSchema column,
                                        const void* lower,
                                        const void* upper) {
-  CHECK(lower != nullptr || upper != nullptr);
+  DCHECK(lower != nullptr || upper != nullptr);
   ColumnPredicate pred(PredicateType::Range, std::move(column), lower, upper);
   pred.Simplify();
   return pred;
@@ -87,7 +87,7 @@ ColumnPredicate ColumnPredicate::Range(ColumnSchema column,
 
 ColumnPredicate ColumnPredicate::InList(ColumnSchema column,
                                         vector<const void*>* values) {
-  CHECK(values != nullptr);
+  DCHECK(values != nullptr);
 
   // Sort values and remove duplicates.
   std::sort(values->begin(), values->end(),
@@ -109,7 +109,7 @@ ColumnPredicate ColumnPredicate::InBloomFilter(ColumnSchema column,
                                                std::vector<BlockBloomFilter*> bfs,
                                                const void* lower,
                                                const void* upper) {
-  CHECK(!bfs.empty());
+  DCHECK(!bfs.empty());
   ColumnPredicate pred(
       PredicateType::InBloomFilter, std::move(column), std::move(bfs), lower, upper);
   pred.Simplify();
@@ -120,13 +120,13 @@ std::optional<ColumnPredicate> ColumnPredicate::InclusiveRange(ColumnSchema colu
                                                                const void* lower,
                                                                const void* upper,
                                                                Arena* arena) {
-  CHECK(lower != nullptr || upper != nullptr);
+  DCHECK(lower != nullptr || upper != nullptr);
 
   if (upper != nullptr) {
     // Transform the upper bound to exclusive by incrementing it.
     // Make a copy of the value before incrementing in case it's aliased.
     size_t size = column.type_info()->size();
-    void*  buf = CHECK_NOTNULL(arena->AllocateBytes(size));
+    void* buf = CHECK_NOTNULL(arena->AllocateBytes(size));
     memcpy(buf, upper, size);
     if (!key_util::IncrementCell(column, buf, arena)) {
       if (lower == nullptr) {
@@ -150,7 +150,7 @@ ColumnPredicate ColumnPredicate::ExclusiveRange(ColumnSchema column,
                                                 const void* lower,
                                                 const void* upper,
                                                 Arena* arena) {
-  CHECK(lower != nullptr || upper != nullptr);
+  DCHECK(lower != nullptr || upper != nullptr);
 
   if (lower != nullptr) {
     // Transform the lower bound to inclusive by incrementing it.
@@ -194,8 +194,9 @@ void ColumnPredicate::Simplify() {
   switch (predicate_type_) {
     case PredicateType::None:
     case PredicateType::Equality:
-    case PredicateType::IsNotNull: return;
-    case PredicateType::IsNull: return;
+    case PredicateType::IsNotNull:
+    case PredicateType::IsNull:
+      return;
     case PredicateType::Range: {
       DCHECK(lower_ != nullptr || upper_ != nullptr);
       if (lower_ != nullptr && upper_ != nullptr) {
@@ -223,7 +224,7 @@ void ColumnPredicate::Simplify() {
         }
       }
       return;
-    };
+    }
     case PredicateType::InList: {
       if (values_.empty()) {
         // If the list is empty, no results can be returned.
@@ -244,7 +245,7 @@ void ColumnPredicate::Simplify() {
         values_.clear();
       }
       return;
-    };
+    }
     case PredicateType::InBloomFilter: {
       if (lower_ == nullptr && upper_ == nullptr) {
         return;
@@ -280,7 +281,7 @@ void ColumnPredicate::Simplify() {
         }
       }
       return;
-    };
+    }
   }
   LOG(FATAL) << "unknown predicate type";
 }
@@ -288,37 +289,26 @@ void ColumnPredicate::Simplify() {
 void ColumnPredicate::Merge(const ColumnPredicate& other) {
   CHECK(column_.Equals(other.column_, ColumnSchema::COMPARE_NAME_AND_TYPE));
   switch (predicate_type_) {
-    case PredicateType::None: return;
-    case PredicateType::Range: {
-      MergeIntoRange(other);
+    case PredicateType::None:
       return;
-    };
-    case PredicateType::Equality: {
-      MergeIntoEquality(other);
-      return;
-    };
-    case PredicateType::IsNotNull: {
-      MergeIntoIsNotNull(other);
-      return;
-    };
-    case PredicateType::IsNull: {
-      MergeIntoIsNull(other);
-      return;
-    }
-    case PredicateType::InList: {
-      MergeIntoInList(other);
-      return;
-    };
-    case PredicateType::InBloomFilter: {
-      MergeIntoBloomFilter(other);
-      return;
-    };
+    case PredicateType::Range:
+      return MergeIntoRange(other);
+    case PredicateType::Equality:
+      return MergeIntoEquality(other);
+    case PredicateType::IsNotNull:
+      return MergeIntoIsNotNull(other);
+    case PredicateType::IsNull:
+      return MergeIntoIsNull(other);
+    case PredicateType::InList:
+      return MergeIntoInList(other);
+    case PredicateType::InBloomFilter:
+      return MergeIntoBloomFilter(other);
   }
   LOG(FATAL) << "unknown predicate type";
 }
 
 void ColumnPredicate::MergeIntoRange(const ColumnPredicate& other) {
-  CHECK(predicate_type_ == PredicateType::Range);
+  DCHECK(predicate_type_ == PredicateType::Range);
 
   switch (other.predicate_type()) {
     case PredicateType::None:
@@ -382,57 +372,51 @@ void ColumnPredicate::MergeIntoRange(const ColumnPredicate& other) {
 }
 
 void ColumnPredicate::MergeIntoEquality(const ColumnPredicate& other) {
-  CHECK(predicate_type_ == PredicateType::Equality);
+  DCHECK(predicate_type_ == PredicateType::Equality);
 
   switch (other.predicate_type()) {
-    case PredicateType::None: {
+    case PredicateType::None:
       SetToNone();
       return;
-    }
-    case PredicateType::Range: {
+    case PredicateType::Range:
       if (!other.CheckValueInRange(lower_)) {
         // This equality value does not fall in the other range.
         SetToNone();
       }
       return;
-    };
-    case PredicateType::Equality: {
+    case PredicateType::Equality:
       if (column_.type_info()->Compare(lower_, other.lower_) != 0) {
         SetToNone();
       }
       return;
-    };
-    case PredicateType::IsNotNull: return;
-    case PredicateType::IsNull: {
+    case PredicateType::IsNotNull:
+      return;
+    case PredicateType::IsNull:
       SetToNone();
       return;
-    }
-    case PredicateType::InList : {
+    case PredicateType::InList :
       // The equality value needs to be a member of the InList
       if (!other.CheckValueInList(lower_)) {
         SetToNone();
       }
       return;
-    };
-    case PredicateType::InBloomFilter: {
+    case PredicateType::InBloomFilter:
       if (!other.CheckValueInBloomFilter(lower_)) {
         SetToNone();
       }
       return;
-    };
   }
   LOG(FATAL) << "unknown predicate type";
 }
 
-void ColumnPredicate::MergeIntoIsNotNull(const ColumnPredicate &other) {
-  CHECK(predicate_type_ == PredicateType::IsNotNull);
+void ColumnPredicate::MergeIntoIsNotNull(const ColumnPredicate& other) {
+  DCHECK(predicate_type_ == PredicateType::IsNotNull);
   switch (other.predicate_type()) {
     // The intersection of NULL and IS NOT NULL is None.
-    case PredicateType::IsNull: {
+    case PredicateType::IsNull:
       SetToNone();
       return;
-    }
-    default: {
+    default:
       // Otherwise, the intersection is the other predicate.
       predicate_type_ = other.predicate_type_;
       lower_ = other.lower_;
@@ -440,35 +424,32 @@ void ColumnPredicate::MergeIntoIsNotNull(const ColumnPredicate &other) {
       values_ = other.values_;
       bloom_filters_ = other.bloom_filters_;
       return;
-    }
   }
 }
 
-void ColumnPredicate::MergeIntoIsNull(const ColumnPredicate &other) {
-  CHECK(predicate_type_ == PredicateType::IsNull);
+void ColumnPredicate::MergeIntoIsNull(const ColumnPredicate& other) {
+  DCHECK(predicate_type_ == PredicateType::IsNull);
   switch (other.predicate_type()) {
     // The intersection of IS NULL and IS NULL is IS NULL.
-    case PredicateType::IsNull: {
+    case PredicateType::IsNull:
       return;
-    }
-    default: {
+    default:
       // Otherwise, the intersection is None.
       // NB: This will not be true if NULL is allowed in an InList predicate.
       SetToNone();
       return;
-    }
   }
 }
 
-void ColumnPredicate::MergeIntoInList(const ColumnPredicate &other) {
-  CHECK(predicate_type_ == PredicateType::InList);
-  DCHECK(values_.size() >= 1);
+void ColumnPredicate::MergeIntoInList(const ColumnPredicate& other) {
+  DCHECK(predicate_type_ == PredicateType::InList);
+  DCHECK(!values_.empty());
 
   switch (other.predicate_type()) {
     case PredicateType::None: {
       SetToNone();
       return;
-    };
+    }
     case PredicateType::Range: {
       // Only values within the range should be retained.
       auto search_by = [&] (const void* lhs, const void* rhs) {
@@ -559,7 +540,7 @@ void ColumnPredicate::MergeIntoInList(const ColumnPredicate &other) {
       values_.erase(std::remove_if(values_.begin(), values_.end(), other_absent), values_.end());
       Simplify();
       return;
-    };
+    }
     case PredicateType::InBloomFilter: {
       std::vector<const void*> new_values;
       std::copy_if(values_.begin(), values_.end(), std::back_inserter(new_values),
@@ -569,13 +550,13 @@ void ColumnPredicate::MergeIntoInList(const ColumnPredicate &other) {
       values_.swap(new_values);
       Simplify();
       return;
-    };
+    }
   }
   LOG(FATAL) << "unknown predicate type";
 }
 
-void ColumnPredicate::MergeIntoBloomFilter(const ColumnPredicate &other) {
-  CHECK(predicate_type_ == PredicateType::InBloomFilter);
+void ColumnPredicate::MergeIntoBloomFilter(const ColumnPredicate& other) {
+  DCHECK(predicate_type_ == PredicateType::InBloomFilter);
   DCHECK(!bloom_filters_.empty());
 
   switch (other.predicate_type()) {
@@ -649,12 +630,12 @@ namespace {
 // only processes multiples of 8, so if cb.nrows() is not a multiple of 8, the
 // last few elements may need to be processed by the caller.
 template <DataType PhysicalType, typename P>
-ATTRIBUTE_NOINLINE
-int ApplyPredicatePrimitive(const ColumnBlock& block, uint8_t* __restrict__ sel_bitmap, P p) {
+ATTRIBUTE_NOINLINE size_t ApplyPredicatePrimitive(
+    const ColumnBlock& block, uint8_t* __restrict__ sel_bitmap, P p) {
   using cpp_type = typename DataTypeTraits<PhysicalType>::cpp_type;
   const cpp_type* data = reinterpret_cast<const cpp_type*>(block.data());
-  const int n_chunks = block.nrows() / 8;
-  for (int i = 0; i < n_chunks; i++) {
+  const size_t n_chunks = block.nrows() / 8;
+  for (size_t i = 0; i < n_chunks; ++i) {
     uint8_t res_8 = 0;
     for (int j = 0; j < 8; j++) {
       res_8 |= p(data++) << j;
@@ -662,8 +643,9 @@ int ApplyPredicatePrimitive(const ColumnBlock& block, uint8_t* __restrict__ sel_
     sel_bitmap[i] &= res_8;
   }
   if (block.is_nullable()) {
-    for (int i = 0; i < n_chunks; i++) {
-      sel_bitmap[i] &= block.non_null_bitmap()[i];
+    const uint8_t* const non_null_bitmap = block.non_null_bitmap();
+    for (size_t i = 0; i < n_chunks; ++i) {
+      sel_bitmap[i] &= non_null_bitmap[i];
     }
   }
   return n_chunks * 8;
@@ -673,10 +655,12 @@ int ApplyPredicatePrimitive(const ColumnBlock& block, uint8_t* __restrict__ sel_
 template <DataType PhysicalType, typename P>
 void ApplyPredicate(const ColumnBlock& block, SelectionVector* sel, P p) {
   using cpp_type = typename DataTypeTraits<PhysicalType>::cpp_type;
-  int start_idx = 0;
-  if (std::is_fundamental<cpp_type>::value) {
+  size_t start_idx = 0;
+  if constexpr (std::is_fundamental<cpp_type>::value) {
     start_idx = ApplyPredicatePrimitive<PhysicalType>(block, sel->mutable_bitmap(), p);
-    if (PREDICT_TRUE(start_idx == block.nrows())) return;
+    if (PREDICT_TRUE(start_idx == block.nrows())) {
+      return;
+    }
     // If we couldn't process the whole block unrolled by 8, fall through to the
     // remainder.
   }
@@ -684,7 +668,9 @@ void ApplyPredicate(const ColumnBlock& block, SelectionVector* sel, P p) {
   const cpp_type* data = reinterpret_cast<const cpp_type*>(block.data());
   if (block.is_nullable()) {
     for (size_t i = start_idx; i < block.nrows(); i++) {
-      if (!sel->IsRowSelected(i)) continue;
+      if (!sel->IsRowSelected(i)) {
+        continue;
+      }
       const cpp_type* cell = block.is_null(i) ? nullptr : &data[i];
       if (cell == nullptr || !p(cell)) {
         BitmapClear(sel->mutable_bitmap(), i);
@@ -692,7 +678,9 @@ void ApplyPredicate(const ColumnBlock& block, SelectionVector* sel, P p) {
     }
   } else {
     for (size_t i = start_idx; i < block.nrows(); i++) {
-      if (!sel->IsRowSelected(i)) continue;
+      if (!sel->IsRowSelected(i)) {
+        continue;
+      }
       const cpp_type* cell = &data[i];
       if (!p(cell)) {
         BitmapClear(sel->mutable_bitmap(), i);
@@ -703,11 +691,14 @@ void ApplyPredicate(const ColumnBlock& block, SelectionVector* sel, P p) {
 
 template<bool IS_NOT_NULL>
 void ApplyNullPredicate(const ColumnBlock& block, uint8_t* __restrict__ sel_vec) {
-  int n_bytes = KUDU_ALIGN_UP(block.nrows(), 8) / 8;
-  for (int i = 0; i < n_bytes; i++) {
-    uint8_t non_null_byte = block.non_null_bitmap()[i];
-    if (!IS_NOT_NULL) non_null_byte = ~non_null_byte;
-    sel_vec[i] &= non_null_byte;
+  const size_t n_bytes = KUDU_ALIGN_UP(block.nrows(), 8) / 8;
+  const uint8_t* const non_null_bitmap = block.non_null_bitmap();
+  for (size_t i = 0; i < n_bytes; ++i) {
+    if constexpr (IS_NOT_NULL) {
+      sel_vec[i] &= non_null_bitmap[i];
+    } else {
+      sel_vec[i] &= ~non_null_bitmap[i];
+    }
   }
 }
 } // anonymous namespace
@@ -738,19 +729,21 @@ void ColumnPredicate::EvaluateForPhysicalType(const ColumnBlock& block,
         });
       }
       return;
-    };
+    }
     case PredicateType::Equality: {
       cpp_type local_lower = lower_ ? *static_cast<const cpp_type*>(lower_) : cpp_type();
       ApplyPredicate<PhysicalType>(block, sel, [local_lower] (const void* cell) {
             return traits::Compare(cell, &local_lower) == 0;
       });
       return;
-    };
+    }
     case PredicateType::IsNotNull: {
-      if (!block.is_nullable()) return;
+      if (!block.is_nullable()) {
+        return;
+      }
       ApplyNullPredicate<true>(block, sel->mutable_bitmap());
       return;
-    };
+    }
     case PredicateType::IsNull: {
       if (!block.is_nullable()) {
         BitmapChangeBits(sel->mutable_bitmap(), 0, block.nrows(), false);
@@ -767,14 +760,15 @@ void ColumnPredicate::EvaluateForPhysicalType(const ColumnBlock& block,
                                   });
       });
       return;
-    };
-    case PredicateType::None: LOG(FATAL) << "NONE predicate evaluation";
+    }
     case PredicateType::InBloomFilter: {
       ApplyPredicate<PhysicalType>(block, sel, [this] (const void* cell) {
           return EvaluateCell<PhysicalType>(cell);
       });
       return;
-    };
+    }
+    case PredicateType::None:
+      LOG(FATAL) << "NONE predicate evaluation";
   }
   LOG(FATAL) << "unknown predicate type";
 }
@@ -820,7 +814,8 @@ void ColumnPredicate::Evaluate(const ColumnBlock& block, SelectionVector* sel) c
 
 string ColumnPredicate::ToString() const {
   switch (predicate_type()) {
-    case PredicateType::None: return strings::Substitute("$0 NONE", column_.name());
+    case PredicateType::None:
+      return strings::Substitute("$0 NONE", column_.name());
     case PredicateType::Range: {
       if (lower_ == nullptr) {
         return strings::Substitute("$0 < $1", column_.name(), column_.Stringify(upper_));
@@ -833,16 +828,16 @@ string ColumnPredicate::ToString() const {
                                  column_.Stringify(lower_),
                                  column_.Stringify(upper_));
 
-    };
+    }
     case PredicateType::Equality: {
       return strings::Substitute("$0 = $1", column_.name(), column_.Stringify(lower_));
-    };
+    }
     case PredicateType::IsNotNull: {
       return strings::Substitute("$0 IS NOT NULL", column_.name());
-    };
+    }
     case PredicateType::IsNull: {
       return strings::Substitute("$0 IS NULL", column_.name());
-    };
+    }
     case PredicateType::InList: {
       string ss;
       ss.append(column_.name());
@@ -852,18 +847,20 @@ string ColumnPredicate::ToString() const {
                                        ", ")));
       ss.append(")");
       return ss;
-    };
+    }
     case PredicateType::InBloomFilter: {
       return strings::Substitute("`$0` IS InBloomFilter", column_.name());
-    };
+    }
     default:
       LOG(FATAL) << "unknown predicate type";
   }
 }
 
 bool ColumnPredicate::operator==(const ColumnPredicate& other) const {
-  if (!column_.Equals(other.column_, ColumnSchema::COMPARE_NAME_AND_TYPE)) { return false; }
   if (predicate_type_ != other.predicate_type_) {
+    return false;
+  }
+  if (!column_.Equals(other.column_, ColumnSchema::COMPARE_NAME_AND_TYPE)) {
     return false;
   }
   switch (predicate_type_) {
@@ -894,7 +891,9 @@ bool ColumnPredicate::operator==(const ColumnPredicate& other) const {
         return false;
       }
       for (int i = 0; i < values_.size(); i++) {
-        if (column_.type_info()->Compare(values_[i], other.values_[i]) != 0) return false;
+        if (column_.type_info()->Compare(values_[i], other.values_[i]) != 0) {
+          return false;
+        }
       }
       return true;
     case PredicateType::None:
@@ -906,7 +905,7 @@ bool ColumnPredicate::operator==(const ColumnPredicate& other) const {
 }
 
 bool ColumnPredicate::CheckValueInRange(const void* value) const {
-  CHECK(predicate_type_ == PredicateType::Range);
+  DCHECK(predicate_type_ == PredicateType::Range);
   return ((lower_ == nullptr || column_.type_info()->Compare(lower_, value) <= 0) &&
           (upper_ == nullptr || column_.type_info()->Compare(upper_, value) > 0));
 }
