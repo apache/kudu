@@ -94,6 +94,13 @@ static bool CheckIsInitializedAndIsLeader(JsonWriter& jw,  // NOLINT JsonWriter 
 
 static HttpStatusCode GetHttpCodeFromStatus(const Status& status) {
   DCHECK(!status.ok());
+  // After SPNEGO authentication, the server assumes the caller is known and authenticated.
+  // A NotAuthorized status at this point indicates the user is authenticated but lacks permission,
+  // which semantically maps better to HTTP 403 Forbidden than 401 Unauthorized.
+  // See: https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status#client_error_responses
+  if (status.IsNotAuthorized()) {
+    return HttpStatusCode::Forbidden;
+  }
   if (status.IsInvalidArgument() || status.IsAlreadyPresent()) {
     return HttpStatusCode::BadRequest;
   }

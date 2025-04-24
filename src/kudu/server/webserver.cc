@@ -163,6 +163,8 @@ string HttpStatusCodeToString(kudu::HttpStatusCode code) {
       return "400 Bad Request";
     case kudu::HttpStatusCode::AuthenticationRequired:
       return "401 Authentication Required";
+    case kudu::HttpStatusCode::Forbidden:
+      return "403 Forbidden";
     case kudu::HttpStatusCode::NotFound:
       return "404 Not Found";
     case kudu::HttpStatusCode::MethodNotAllowed:

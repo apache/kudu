@@ -32,6 +32,7 @@ enum class HttpStatusCode {
   TemporaryRedirect, //307
   BadRequest, // 400
   AuthenticationRequired, // 401
+  Forbidden, // 403
   NotFound, // 404
   MethodNotAllowed, // 405
   LengthRequired, // 411
