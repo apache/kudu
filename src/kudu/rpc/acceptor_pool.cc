@@ -261,10 +261,10 @@ void AcceptorPool::RunThread() {
 
   const int ds_query_freq_log2 = FLAGS_rpc_listen_socket_stats_every_log2;
   const bool ds_query_enabled = (ds_query_freq_log2 >= 0);
-  const uint64_t ds_query_freq_mask =
-      ds_query_enabled ? (1ULL << ds_query_freq_log2) - 1 : 0;
 
 #if defined(KUDU_HAS_DIAGNOSTIC_SOCKET)
+  const uint64_t ds_query_freq_mask =
+      ds_query_enabled ? (1ULL << ds_query_freq_log2) - 1 : 0;
   DiagnosticSocket ds;
   uint64_t counter = 0;
   if (ds_query_enabled) {
