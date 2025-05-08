@@ -23,6 +23,7 @@
 
 #include <gflags/gflags_declare.h>
 #include <gtest/gtest.h>
+#include <rapidjson/document.h>
 
 #include "kudu/client/client.h"
 #include "kudu/client/schema.h"
@@ -32,8 +33,11 @@
 #include "kudu/master/rest_catalog_test_base.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/util/curl_util.h"
+#include "kudu/util/env.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/jsonreader.h"
 #include "kudu/util/net/sockaddr.h"
+#include "kudu/util/path_util.h"
 #include "kudu/util/regex.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
@@ -46,6 +50,7 @@ using kudu::client::KuduTable;
 using kudu::client::sp::shared_ptr;
 using kudu::cluster::InternalMiniCluster;
 using kudu::cluster::InternalMiniClusterOptions;
+using rapidjson::Value;
 using std::set;
 using std::string;
 using std::unique_ptr;
@@ -53,6 +58,7 @@ using std::vector;
 using strings::Substitute;
 
 DECLARE_bool(enable_rest_api);
+DECLARE_string(webserver_doc_root);
 
 namespace kudu {
 namespace master {
@@ -63,6 +69,11 @@ class RestCatalogTest : public RestCatalogTestBase {
     KuduTest::SetUp();
     // Set REST endpoint flag to true
     FLAGS_enable_rest_api = true;
+
+    // Set webserver doc root to enable swagger UI and static file serving
+    string bin_path;
+    ASSERT_OK(Env::Default()->GetExecutablePath(&bin_path));
+    FLAGS_webserver_doc_root = JoinPathSegments(DirName(bin_path), "testdata/www");
 
     // Configure the mini-cluster
     cluster_.reset(new InternalMiniCluster(env_, InternalMiniClusterOptions()));
@@ -858,6 +869,86 @@ TEST_F(MultiMasterTest, TestGetLeaderEndpoint) {
   ASSERT_OK(leader_curl.FetchURL(Substitute("$0/api/v1/tables", leader_addr),
                                 &leader_buf));
   ASSERT_STR_CONTAINS(leader_buf.ToString(), "{\"tables\":[]}");
+}
+
+TEST_F(RestCatalogTest, TestApiSpecEndpoint) {
+  EasyCurl c;
+  faststring buf;
+  ASSERT_OK(c.FetchURL(
+      Substitute("http://$0/api/v1/spec", cluster_->mini_master()->bound_http_addr().ToString()),
+      &buf));
+
+  string spec_json = buf.ToString();
+  ASSERT_FALSE(spec_json.empty()) << "API spec should not be empty";
+
+  JsonReader reader(spec_json);
+  ASSERT_OK(reader.Init());
+
+  // Helper lambda to verify an object exists in parent
+  auto VerifyObjectExists = [&reader](const Value* parent, const char* field) {
+    const Value* obj;
+    Status s = reader.ExtractObject(parent, field, &obj);
+    ASSERT_TRUE(s.ok()) << "Field '" << field << "' not found: " << s.ToString();
+  };
+
+  string openapi_version;
+  ASSERT_OK(reader.ExtractString(reader.root(), "openapi", &openapi_version));
+  ASSERT_FALSE(openapi_version.empty());
+
+  const Value* paths;
+  ASSERT_OK(reader.ExtractObject(reader.root(), "paths", &paths));
+
+  const Value* tables_path;
+  ASSERT_OK(reader.ExtractObject(paths, "/tables", &tables_path));
+  NO_FATALS(VerifyObjectExists(tables_path, "get"));
+  NO_FATALS(VerifyObjectExists(tables_path, "post"));
+
+  const Value* table_by_id_path;
+  ASSERT_OK(reader.ExtractObject(paths, "/tables/{table_id}", &table_by_id_path));
+  NO_FATALS(VerifyObjectExists(table_by_id_path, "get"));
+  NO_FATALS(VerifyObjectExists(table_by_id_path, "put"));
+  NO_FATALS(VerifyObjectExists(table_by_id_path, "delete"));
+
+  const Value* leader_path;
+  ASSERT_OK(reader.ExtractObject(paths, "/leader", &leader_path));
+  NO_FATALS(VerifyObjectExists(leader_path, "get"));
+
+  const Value* components;
+  ASSERT_OK(reader.ExtractObject(reader.root(), "components", &components));
+  const Value* schemas;
+  ASSERT_OK(reader.ExtractObject(components, "schemas", &schemas));
+
+  const vector<string> expected_schemas = {"TablesResponse", "TableInfo", "TableResponse",
+                                           "LeaderResponse", "ErrorResponse", "TableSchema",
+                                           "PartitionSchema", "CreateTableRequest",
+                                           "AlterTableRequest"};
+  for (const auto& schema_name : expected_schemas) {
+    NO_FATALS(VerifyObjectExists(schemas, schema_name.c_str()));
+  }
+}
+
+TEST_F(RestCatalogTest, TestApiDocsEndpoint) {
+  EasyCurl c;
+  faststring buf;
+  Status s = c.FetchURL(
+      Substitute("http://$0/api/docs", cluster_->mini_master()->bound_http_addr().ToString()),
+      &buf);
+
+  ASSERT_TRUE(s.ok()) << "API docs endpoint should return HTTP 200: " << s.ToString();
+
+  string content = buf.ToString();
+  ASSERT_FALSE(content.empty()) << "API docs should not be empty";
+
+  ASSERT_STR_CONTAINS(content, "swagger-ui.css") << "Should include Swagger UI CSS";
+  ASSERT_STR_CONTAINS(content, "swagger-ui-bundle.js") << "Should include Swagger UI JS bundle";
+  ASSERT_STR_CONTAINS(content, "kudu-swagger-init.js") << "Should include Kudu Swagger init script";
+
+  ASSERT_STR_CONTAINS(content, "id=\"swagger-ui\"") << "Should have Swagger UI container div";
+
+  // Verify it has loading or ready state text
+  bool has_swagger_content =
+      content.find("swagger-ui") != string::npos || content.find("API") != string::npos;
+  ASSERT_TRUE(has_swagger_content) << "Should contain Swagger UI or API-related content";
 }
 
 }  // namespace master

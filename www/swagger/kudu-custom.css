@@ -1,0 +1,21 @@
+/* Hide any navbar/header elements */
+.swagger-ui .topbar,
+.swagger-ui .swagger-ui-wrap > .topbar,
+.swagger-ui .header,
+.swagger-ui .info .title,
+.swagger-ui .info hgroup.main {
+  display: none !important;
+}
+
+.swagger-ui {
+  max-width: none !important;
+}
+
+.swagger-ui .wrapper {
+  padding-top: 0 !important;
+}
+
+.swagger-ui .scheme-container {
+  margin-top: 0 !important;
+  padding-top: 0 !important;
+}
