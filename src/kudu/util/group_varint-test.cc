@@ -25,21 +25,6 @@
 
 #include "kudu/util/group_varint-inl.h"
 
-#include <boost/preprocessor/arithmetic/dec.hpp>
-#include <boost/preprocessor/arithmetic/inc.hpp>
-#include <boost/preprocessor/control/iif.hpp>
-#include <boost/preprocessor/control/while.hpp>
-#include <boost/preprocessor/list/fold_left.hpp>
-#include <boost/preprocessor/logical/bitand.hpp>
-#include <boost/preprocessor/logical/bool.hpp>
-#include <boost/preprocessor/logical/compl.hpp>
-#include <boost/preprocessor/seq/elem.hpp>
-#include <boost/preprocessor/seq/fold_left.hpp>
-#include <boost/preprocessor/seq/size.hpp>
-#include <boost/preprocessor/tuple/elem.hpp>
-#include <boost/preprocessor/variadic/elem.hpp>
-#include <boost/tti/has_template.hpp>
-#include <boost/utility/binary.hpp>
 #include <gtest/gtest.h>
 
 #include "kudu/util/faststring.h"
@@ -117,7 +102,7 @@ TEST(TestGroupVarInt, TestGroupVarInt) {
   // Mixed 1-byte and 2-byte
   AppendGroupVarInt32(&buf, 256, 2, 3, 65535);
   ASSERT_EQ(7UL, buf.size());
-  ASSERT_EQ(BOOST_BINARY(01 00 00 01), buf.at(0));
+  ASSERT_EQ(0b01000001, buf.at(0));
   ASSERT_EQ(256, *reinterpret_cast<const uint16_t *>(&buf[1]));
   ASSERT_EQ(2, *reinterpret_cast<const uint8_t *>(&buf[3]));
   ASSERT_EQ(3, *reinterpret_cast<const uint8_t *>(&buf[4]));

@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_UTIL_GROUP_VARINT_INL_H
-#define KUDU_UTIL_GROUP_VARINT_INL_H
+#pragma once
 
 #ifdef __linux__
 #include <endian.h>
@@ -33,21 +32,6 @@
 #include <cstdint>
 #include <cstring>
 
-#include <boost/utility/binary.hpp>
-#include <boost/parameter/name.hpp>
-#include <boost/preprocessor/arithmetic/dec.hpp>
-#include <boost/preprocessor/arithmetic/inc.hpp>
-#include <boost/preprocessor/control/iif.hpp>
-#include <boost/preprocessor/control/while.hpp>
-#include <boost/preprocessor/list/fold_left.hpp>
-#include <boost/preprocessor/logical/bitand.hpp>
-#include <boost/preprocessor/logical/bool.hpp>
-#include <boost/preprocessor/logical/compl.hpp>
-#include <boost/preprocessor/seq/elem.hpp>
-#include <boost/preprocessor/seq/fold_left.hpp>
-#include <boost/preprocessor/seq/size.hpp>
-#include <boost/preprocessor/tuple/elem.hpp>
-#include <boost/preprocessor/variadic/elem.hpp>
 #include <glog/logging.h>
 
 #ifndef __linux__
@@ -81,10 +65,10 @@ inline const uint8_t *DecodeGroupVarInt32(
   const uint8_t *src,
   uint32_t *a, uint32_t *b, uint32_t *c, uint32_t *d) {
 
-  uint8_t a_sel = (*src & BOOST_BINARY(11 00 00 00)) >> 6;
-  uint8_t b_sel = (*src & BOOST_BINARY(00 11 00 00)) >> 4;
-  uint8_t c_sel = (*src & BOOST_BINARY(00 00 11 00)) >> 2;
-  uint8_t d_sel = (*src & BOOST_BINARY(00 00 00 11 ));
+  uint8_t a_sel = (*src & 0b11000000) >> 6;
+  uint8_t b_sel = (*src & 0b00110000) >> 4;
+  uint8_t c_sel = (*src & 0b00001100) >> 2;
+  uint8_t d_sel = (*src & 0b00000011);
 
   src++; // skip past selector byte
 
@@ -294,8 +278,5 @@ inline void AppendGroupVarInt32Sequence(faststring *s, uint32_t frame_of_referen
   }
 }
 
-
 } // namespace coding
 } // namespace kudu
-
-#endif
