@@ -16,45 +16,29 @@
 // under the License.
 #include "kudu/util/bit-util.h"
 
-#include <boost/preprocessor/arithmetic/dec.hpp>
-#include <boost/preprocessor/arithmetic/inc.hpp>
-#include <boost/preprocessor/control/iif.hpp>
-#include <boost/preprocessor/control/while.hpp>
-#include <boost/preprocessor/list/fold_left.hpp>
-#include <boost/preprocessor/logical/bitand.hpp>
-#include <boost/preprocessor/logical/bool.hpp>
-#include <boost/preprocessor/logical/compl.hpp>
-#include <boost/preprocessor/seq/elem.hpp>
-#include <boost/preprocessor/seq/fold_left.hpp>
-#include <boost/preprocessor/seq/size.hpp>
-#include <boost/preprocessor/tuple/elem.hpp>
-#include <boost/preprocessor/variadic/elem.hpp>
-#include <boost/tti/has_template.hpp>
-#include <boost/utility/binary.hpp>
 #include <gtest/gtest.h>
 
 namespace kudu {
 
 TEST(BitUtil, TrailingBits) {
-  EXPECT_EQ(BitUtil::TrailingBits(BOOST_BINARY(1 1 1 1 1 1 1 1), 0), 0);
-  EXPECT_EQ(BitUtil::TrailingBits(BOOST_BINARY(1 1 1 1 1 1 1 1), 1), 1);
-  EXPECT_EQ(BitUtil::TrailingBits(BOOST_BINARY(1 1 1 1 1 1 1 1), 64),
-            BOOST_BINARY(1 1 1 1 1 1 1 1));
-  EXPECT_EQ(BitUtil::TrailingBits(BOOST_BINARY(1 1 1 1 1 1 1 1), 100),
-            BOOST_BINARY(1 1 1 1 1 1 1 1));
+  EXPECT_EQ(BitUtil::TrailingBits(0b11111111, 0), 0);
+  EXPECT_EQ(BitUtil::TrailingBits(0b11111111, 1), 1);
+  EXPECT_EQ(BitUtil::TrailingBits(0b11111111, 64), 0b11111111);
+  EXPECT_EQ(BitUtil::TrailingBits(0b11111111, 100), 0b11111111);
   EXPECT_EQ(BitUtil::TrailingBits(0, 1), 0);
   EXPECT_EQ(BitUtil::TrailingBits(0, 64), 0);
   EXPECT_EQ(BitUtil::TrailingBits(1LL << 63, 0), 0);
   EXPECT_EQ(BitUtil::TrailingBits(1LL << 63, 63), 0);
   EXPECT_EQ(BitUtil::TrailingBits(1LL << 63, 64), 1LL << 63);
-
 }
 
 TEST(BitUtil, ShiftBits) {
   EXPECT_EQ(BitUtil::ShiftLeftZeroOnOverflow(1ULL, 64), 0ULL);
-  EXPECT_EQ(BitUtil::ShiftLeftZeroOnOverflow(0xFFFFFFFFFFFFFFFFULL, 32), 0xFFFFFFFF00000000ULL);
+  EXPECT_EQ(BitUtil::ShiftLeftZeroOnOverflow(0xFFFFFFFFFFFFFFFFULL, 32),
+            0xFFFFFFFF00000000ULL);
   EXPECT_EQ(BitUtil::ShiftRightZeroOnOverflow(1ULL, 64), 0ULL);
-  EXPECT_EQ(BitUtil::ShiftRightZeroOnOverflow(0xFFFFFFFFFFFFFFFFULL, 32), 0x00000000FFFFFFFFULL);
+  EXPECT_EQ(BitUtil::ShiftRightZeroOnOverflow(0xFFFFFFFFFFFFFFFFULL, 32),
+            0x00000000FFFFFFFFULL);
 }
 
 } // namespace kudu

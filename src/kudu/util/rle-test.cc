@@ -24,21 +24,6 @@
 #include <string>
 #include <vector>
 
-#include <boost/preprocessor/arithmetic/dec.hpp>
-#include <boost/preprocessor/arithmetic/inc.hpp>
-#include <boost/preprocessor/control/iif.hpp>
-#include <boost/preprocessor/control/while.hpp>
-#include <boost/preprocessor/list/fold_left.hpp>
-#include <boost/preprocessor/logical/bitand.hpp>
-#include <boost/preprocessor/logical/bool.hpp>
-#include <boost/preprocessor/logical/compl.hpp>
-#include <boost/preprocessor/seq/elem.hpp>
-#include <boost/preprocessor/seq/fold_left.hpp>
-#include <boost/preprocessor/seq/size.hpp>
-#include <boost/preprocessor/tuple/elem.hpp>
-#include <boost/preprocessor/variadic/elem.hpp>
-#include <boost/tti/has_template.hpp>
-#include <boost/utility/binary.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -72,7 +57,7 @@ TEST(BitArray, TestBool) {
     writer.PutValue(i % 2, 1);
   }
   writer.Flush();
-  EXPECT_EQ(buffer[0], BOOST_BINARY(1 0 1 0 1 0 1 0));
+  EXPECT_EQ(buffer[0], 0b10101010);
 
   // Write 00110011
   for (int i = 0; i < 8; ++i) {
@@ -91,8 +76,8 @@ TEST(BitArray, TestBool) {
   writer.Flush();
 
   // Validate the exact bit value
-  EXPECT_EQ(buffer[0], BOOST_BINARY(1 0 1 0 1 0 1 0));
-  EXPECT_EQ(buffer[1], BOOST_BINARY(1 1 0 0 1 1 0 0));
+  EXPECT_EQ(buffer[0], 0b10101010);
+  EXPECT_EQ(buffer[1], 0b11001100);
 
   // Use the reader and validate
   BitReader reader(buffer.data(), buffer.size());
@@ -286,10 +271,10 @@ TEST(Rle, SpecificSequences) {
   constexpr const auto num_groups = BitUtil::Ceil<3>(100);
   expected_buffer[0] = (num_groups << 1) | 1;
   for (int i = 0; i < 100/8; ++i) {
-    expected_buffer[i + 1] = BOOST_BINARY(1 0 1 0 1 0 1 0); // 0xaa
+    expected_buffer[i + 1] = 0b10101010; // 0xaa
   }
   // Values for the last 4 0 and 1's
-  expected_buffer[1 + 100/8] = BOOST_BINARY(0 0 0 0 1 0 1 0); // 0x0a
+  expected_buffer[1 + 100/8] = 0b00001010; // 0x0a
 
   // num_groups and expected_buffer only valid for bit width = 1
   ValidateRle<uint64_t, 1>(values, expected_buffer, num_groups + 1);
