@@ -87,7 +87,7 @@ class NullBitmapBuilder {
   explicit NullBitmapBuilder(size_t initial_row_capacity)
       : nitems_(0),
         bitmap_(BitmapSize(initial_row_capacity)),
-        rle_encoder_(&bitmap_, 1) {
+        rle_encoder_(&bitmap_) {
   }
 
   size_t nitems() const {
@@ -114,7 +114,7 @@ class NullBitmapBuilder {
  private:
   size_t nitems_;
   faststring bitmap_;
-  RleEncoder<bool> rle_encoder_;
+  RleEncoder<bool, 1> rle_encoder_;
 };
 
 ////////////////////////////////////////////////////////////
