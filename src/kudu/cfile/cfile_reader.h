@@ -444,7 +444,7 @@ class CFileIterator final : public ColumnIterator {
 
     // Null bitmap and bitmap (RLE) decoder
     Slice rle_bitmap;
-    RleDecoder<bool> rle_decoder_;
+    RleDecoder<bool, 1> rle_decoder_;
 
     rowid_t last_row_idx() const {
       return first_row_idx() + num_rows_in_block_ - 1;

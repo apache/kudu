@@ -785,7 +785,7 @@ void CFileIterator::SeekToPositionInBlock(PreparedBlock* pb, uint32_t idx_in_blo
       index_within_nonnulls = cur_blk_idx + pb->rle_decoder_.Skip(nskip);
     } else {
       // Seek backward - have to start from the start of the block.
-      pb->rle_decoder_ = RleDecoder<bool>(pb->rle_bitmap.data(), pb->rle_bitmap.size(), 1);
+      pb->rle_decoder_ = RleDecoder<bool, 1>(pb->rle_bitmap.data(), pb->rle_bitmap.size());
       index_within_nonnulls = pb->rle_decoder_.Skip(idx_in_block);
     }
   } else {
@@ -974,8 +974,8 @@ Status CFileIterator::ReadCurrentDataBlock(const IndexTreeIterator& idx_iter,
   size_t total_size_read = data_block->data().size();
   if (reader_->is_nullable()) {
     RETURN_NOT_OK(DecodeNullInfo(&data_block, &num_rows_in_block, &(prep_block->rle_bitmap)));
-    prep_block->rle_decoder_ = RleDecoder<bool>(prep_block->rle_bitmap.data(),
-                                                prep_block->rle_bitmap.size(), 1);
+    prep_block->rle_decoder_ = RleDecoder<bool, 1>(prep_block->rle_bitmap.data(),
+                                                   prep_block->rle_bitmap.size());
   }
 
   RETURN_NOT_OK(reader_->type_encoding_info()->CreateBlockDecoder(

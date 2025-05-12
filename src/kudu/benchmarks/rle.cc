@@ -71,7 +71,7 @@ int BooleanBitStream(faststring* buffer) {
 int BooleanRLE(faststring* buffer) {
   constexpr int kNumIters = 3 * 1024;
 
-  RleEncoder<bool> encoder(buffer, 1);
+  RleEncoder<bool, 1> encoder(buffer);
   for (auto i = 0; i < kNumIters; ++i) {
     encoder.Put(false, 100 * 1024);
     encoder.Put(true, 3);
@@ -84,7 +84,7 @@ int BooleanRLE(faststring* buffer) {
 
   const auto bytes_written = encoder.len();
 
-  RleDecoder<bool> decoder(buffer->data(), encoder.len(), 1);
+  RleDecoder<bool, 1> decoder(buffer->data(), encoder.len());
   bool val = false;
   for (auto i = 0; i < kNumIters * 7; ++i) {
     ignore_result(decoder.GetNextRun(&val, MathLimits<size_t>::kMax));

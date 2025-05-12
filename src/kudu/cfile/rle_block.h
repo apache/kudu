@@ -50,7 +50,7 @@ class RleBitMapBlockBuilder final : public BlockBuilder {
  public:
   explicit RleBitMapBlockBuilder(const WriterOptions* options)
       : options_(options),
-        encoder_(&buf_, 1) {
+        encoder_(&buf_) {
     Reset();
   }
 
@@ -100,7 +100,7 @@ class RleBitMapBlockBuilder final : public BlockBuilder {
  private:
   const WriterOptions* const options_;
   faststring buf_;
-  RleEncoder<bool> encoder_;
+  RleEncoder<bool, 1> encoder_;
   size_t count_;
 };
 
@@ -131,8 +131,8 @@ class RleBitMapBlockDecoder final : public BlockDecoder {
 
     parsed_ = true;
 
-    rle_decoder_ = RleDecoder<bool>(data_.data() + kRleBitmapBlockHeaderSize,
-                                    data_.size() - kRleBitmapBlockHeaderSize, 1);
+    rle_decoder_ = RleDecoder<bool, 1>(data_.data() + kRleBitmapBlockHeaderSize,
+                                       data_.size() - kRleBitmapBlockHeaderSize);
 
     SeekToPositionInBlock(0);
 
@@ -158,8 +158,9 @@ class RleBitMapBlockDecoder final : public BlockDecoder {
     } else {
       // This approach is also used by CFileReader to
       // seek backwards in an RLE encoded block
-      rle_decoder_ = RleDecoder<bool>(data_.data() + kRleBitmapBlockHeaderSize,
-                                      data_.size() - kRleBitmapBlockHeaderSize, 1);
+      DCHECK_GE(data_.size(), kRleBitmapBlockHeaderSize);
+      rle_decoder_ = RleDecoder<bool, 1>(data_.data() + kRleBitmapBlockHeaderSize,
+                                         data_.size() - kRleBitmapBlockHeaderSize);
       rle_decoder_.Skip(pos);
     }
     cur_idx_ = pos;
@@ -213,7 +214,7 @@ class RleBitMapBlockDecoder final : public BlockDecoder {
   uint32_t num_elems_;
   rowid_t ordinal_pos_base_;
   uint32_t cur_idx_;
-  RleDecoder<bool> rle_decoder_;
+  RleDecoder<bool, 1> rle_decoder_;
 };
 
 //
@@ -226,7 +227,7 @@ class RleIntBlockBuilder final : public BlockBuilder {
  public:
   explicit RleIntBlockBuilder(const WriterOptions* options)
       : options_(options),
-        rle_encoder_(&buf_, kCppTypeSize * 8) {
+        rle_encoder_(&buf_) {
     Reset();
   }
 
@@ -296,7 +297,7 @@ class RleIntBlockBuilder final : public BlockBuilder {
   CppType last_key_;
   faststring buf_;
   size_t count_;
-  RleEncoder<CppType> rle_encoder_;
+  RleEncoder<CppType, kCppTypeSize * 8> rle_encoder_;
 };
 
 //
@@ -331,9 +332,9 @@ class RleIntBlockDecoder final : public BlockDecoder {
 
     parsed_ = true;
 
-    rle_decoder_ = RleDecoder<CppType>(data_.data() + kRleBitmapBlockHeaderSize,
-                                       data_.size() - kRleBitmapBlockHeaderSize,
-                                       kCppTypeSize * 8);
+    rle_decoder_ = RleDecoder<CppType, kCppTypeSize * 8>(
+        data_.data() + kRleBitmapBlockHeaderSize,
+        data_.size() - kRleBitmapBlockHeaderSize);
 
     SeekToPositionInBlock(0);
 
@@ -357,9 +358,9 @@ class RleIntBlockDecoder final : public BlockDecoder {
       uint nskip = pos - cur_idx_;
       rle_decoder_.Skip(nskip);
     } else {
-      rle_decoder_ = RleDecoder<CppType>(data_.data() + kRleBitmapBlockHeaderSize,
-                                         data_.size() - kRleBitmapBlockHeaderSize,
-                                         kCppTypeSize * 8);
+      rle_decoder_ = RleDecoder<CppType, kCppTypeSize * 8>(
+          data_.data() + kRleBitmapBlockHeaderSize,
+          data_.size() - kRleBitmapBlockHeaderSize);
       rle_decoder_.Skip(pos);
     }
     cur_idx_ = pos;
@@ -502,7 +503,7 @@ class RleIntBlockDecoder final : public BlockDecoder {
   uint32_t num_elems_;
   rowid_t ordinal_pos_base_;
   size_t cur_idx_;
-  RleDecoder<CppType> rle_decoder_;
+  RleDecoder<CppType, kCppTypeSize * 8> rle_decoder_;
 };
 
 } // namespace cfile
