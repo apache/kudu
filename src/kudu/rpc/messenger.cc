@@ -259,6 +259,11 @@ Status Messenger::AddAcceptorPool(const Sockaddr& accept_addr,
   RETURN_NOT_OK(sock.Init(accept_addr.family(), 0));
   RETURN_NOT_OK(sock.SetReuseAddr(true));
   if (reuseport_) {
+    // SO_REUSEPORT socket option is not applicable to Unix domain sockets.
+    if (PREDICT_FALSE(accept_addr.is_unix())) {
+      return Status::ConfigurationError(
+          "Port reuse is not applicable to Unix domain sockets.");
+    }
     RETURN_NOT_OK(sock.SetReusePort(true));
   }
   RETURN_NOT_OK(sock.Bind(accept_addr));
