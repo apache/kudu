@@ -319,6 +319,7 @@ DEFINE_uint64(tcmalloc_max_total_thread_cache_bytes, 128 * 1024 * 1024,
 TAG_FLAG(tcmalloc_max_total_thread_cache_bytes, advanced);
 TAG_FLAG(tcmalloc_max_total_thread_cache_bytes, experimental);
 
+DECLARE_bool(rpc_reuseport);
 DECLARE_bool(use_hybrid_clock);
 DECLARE_int32(dns_resolver_max_threads_num);
 DECLARE_uint32(dns_resolver_cache_capacity_mb);
@@ -511,6 +512,19 @@ bool ValidateEitherJWKSFilePathOrUrlSet() {
 }
 
 GROUP_FLAG_VALIDATOR(jwks_file_or_url_set_validator, &ValidateEitherJWKSFilePathOrUrlSet);
+
+bool ValidateSocketOptionCompatibility() {
+  if (FLAGS_rpc_listen_on_unix_domain_socket && FLAGS_rpc_reuseport) {
+    LOG(ERROR) << Substitute(
+        "Either --rpc_listen_on_unix_domain_socket or --rpc_reuseport should "
+        "be set, reuse of port is not applicable to Unix domain sockets.");
+    return false;
+  }
+
+  return true;
+}
+
+GROUP_FLAG_VALIDATOR(socket_options_compatibility, ValidateSocketOptionCompatibility);
 
 } // namespace
 

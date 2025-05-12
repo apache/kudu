@@ -45,6 +45,7 @@ using std::vector;
 using strings::Substitute;
 
 DECLARE_bool(enable_minidumps);
+DECLARE_bool(rpc_listen_on_unix_domain_socket);
 DECLARE_bool(rpc_server_allow_ephemeral_ports);
 
 namespace kudu {
@@ -57,7 +58,10 @@ MiniMaster::MiniMaster(string fs_root, HostPort rpc_bind_addr, int num_data_dirs
   FLAGS_enable_minidumps = false;
   HostPort web_bind_addr(rpc_bind_addr_.host(), /*port=*/ 0);
   opts_.rpc_opts.rpc_bind_addresses = rpc_bind_addr_.ToString();
-  opts_.rpc_opts.rpc_reuseport = true;
+  // A MiniMaster enables SO_REUSEPORT on its RPC socket to simplify operation
+  // of multi-master mini-clusters, but the SO_REUSEPORT option isn't applicable
+  // for Unix domain sockets.
+  opts_.rpc_opts.rpc_reuseport = !FLAGS_rpc_listen_on_unix_domain_socket;
   opts_.webserver_opts.bind_interface = web_bind_addr.host();
   opts_.webserver_opts.port = web_bind_addr.port();
   opts_.set_block_cache_metrics_policy(Cache::ExistingMetricsPolicy::kKeep);

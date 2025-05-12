@@ -19,6 +19,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -37,7 +38,6 @@
 #include "kudu/mini-cluster/mini_cluster.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/tserver/tserver.pb.h"
-#include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
@@ -218,8 +218,8 @@ class DnsAliasWithUnixSocketsITest : public DnsAliasITest {
     // it's local to a tserver.
     FLAGS_host_for_tests = Substitute("$0.$1", kTServerHostPrefix, kTServerIdxWithLocalClient);
     FLAGS_client_use_unix_domain_sockets = true;
-    SetUpCluster({ "--rpc_listen_on_unix_domain_socket=true" },
-                 { "--rpc_listen_on_unix_domain_socket=true" });
+    SetUpCluster({ "--rpc_listen_on_unix_domain_socket=true", "--rpc_reuseport=false" },
+                 { "--rpc_listen_on_unix_domain_socket=true", "--rpc_reuseport=false" });
   }
  protected:
   const int kTServerIdxWithLocalClient = 0;
