@@ -15,6 +15,8 @@
 
 package org.apache.kudu.replication;
 
+import org.apache.flink.api.java.utils.ParameterTool;
+
 /**
  * This class is used to submit Kudu Replication Jobs into a Flink Cluster.
  * This is a wrapper for convenience.
@@ -28,7 +30,11 @@ public class ReplicationJob {
    * @throws Exception
    */
   public static void main(String[] args) throws Exception {
-    ReplicationEnvProvider provider = new ReplicationEnvProvider();
+    ParameterTool parameters = ParameterTool.fromArgs(args);
+
+    ReplicationJobConfig jobConfig = ReplicationConfigParser.parseJobConfig(parameters);
+
+    ReplicationEnvProvider provider = new ReplicationEnvProvider(jobConfig);
     provider.getEnv().execute();
   }
 }

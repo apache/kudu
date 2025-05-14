@@ -25,6 +25,7 @@ ext {
 }
 
 versions += [
+    assertj        : "3.27.3",
     async          : "1.4.1",
     checkstyle     : "8.36.1",
     clojure        : "1.12.0",
@@ -85,6 +86,7 @@ versions["scalaBase"] = versions.scala.substring(0, versions.scala.lastIndexOf("
 versions["sparkBase"] = versions.spark.substring(0, versions.spark.indexOf("."))
 
 libs += [
+    assertj              : "org.assertj:assertj-core:$versions.assertj",
     async                : "com.stumbleupon:async:$versions.async",
     clojure              : "org.clojure:clojure:$versions.clojure",
     clojureToolsCli      : "org.clojure:tools.cli:$versions.clojureToolsCli",

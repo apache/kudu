@@ -20,6 +20,9 @@ apply from: "$rootDir/gradle/shadow.gradle"
 dependencies {
     // todo(zchovan) confirm if any dependencies should be shaded to avoid classpath issues
     implementation libs.flinkStreamingJava
+
+    testImplementation libs.junit
+    testImplementation libs.assertj
 }
 
 // kudu-replication has no public Javadoc.
