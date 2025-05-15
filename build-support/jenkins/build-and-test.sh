@@ -246,9 +246,9 @@ elif [ "$BUILD_TYPE" = "COVERAGE" ]; then
   CMAKE_BUILD=debug
   EXTRA_BUILD_FLAGS="-DKUDU_GENERATE_COVERAGE=1"
   DO_COVERAGE=1
+  BUILD_JAVA=1
 
-  # We currently dont capture coverage for Java or Python.
-  BUILD_JAVA=0
+  # We currently dont capture coverage for Python.
   BUILD_PYTHON=0
   BUILD_PYTHON3=0
 elif [ "$BUILD_TYPE" = "LINT" ]; then
@@ -597,9 +597,26 @@ if [ "$BUILD_JAVA" == "1" ]; then
       FAILURES="$FAILURES"$'Could not submit Java distributed test job\n'
     fi
   else
-    if ! ./gradlew $EXTRA_GRADLE_FLAGS clean test $EXTRA_GRADLE_TEST_FLAGS; then
-      TESTS_FAILED=1
-      FAILURES="$FAILURES"$'Java Gradle build/test failed\n'
+    if [ "$DO_COVERAGE" == "1" ]; then
+      # Clean previous report results
+      rm -rf ./build
+
+      # jacocoAggregatedReport will trigger test execution if necessary.
+      if ! ./gradlew $EXTRA_GRADLE_FLAGS clean jacocoAggregatedReport; then
+        TESTS_FAILED=1
+        EXIT_STATUS=1
+        FAILURES="$FAILURES"$'Java Gradle test/coverage aggregation failed\n'
+      fi
+
+      if ! $SOURCE_ROOT/build-support/process_jacoco_report.sh; then
+        EXIT_STATUS=1
+        FAILURES="$FAILURES"$'Java Jacoco report processing failed\n'
+      fi
+    else
+      if ! ./gradlew $EXTRA_GRADLE_FLAGS clean test $EXTRA_GRADLE_TEST_FLAGS; then
+        TESTS_FAILED=1
+        FAILURES="$FAILURES"$'Java Gradle build/test failed\n'
+      fi
     fi
   fi
   set +x
