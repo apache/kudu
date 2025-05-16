@@ -17,6 +17,7 @@
 
 #include "kudu/security/cert.h"
 
+#include <openssl/crypto.h>
 #include <openssl/obj_mac.h>
 
 #include <optional>
@@ -57,9 +58,13 @@ class CertTest : public KuduTest {
     ASSERT_OK(ca_exp_cert_.FromString(kCaExpiredCert, DataFormat::PEM));
     ASSERT_OK(ca_exp_private_key_.FromString(kCaExpiredPrivateKey,
                                              DataFormat::PEM));
+    ASSERT_OK(ca_rsassapss_cert_.FromString(kCaRsassaPssCert, DataFormat::PEM));
+    ASSERT_OK(ca_rsassapss_private_key_.FromString(kCaRsassaPssPrivateKey,
+                                                   DataFormat::PEM));
     // Sanity checks.
     ASSERT_OK(ca_cert_.CheckKeyMatch(ca_private_key_));
     ASSERT_OK(ca_exp_cert_.CheckKeyMatch(ca_exp_private_key_));
+    ASSERT_OK(ca_rsassapss_cert_.CheckKeyMatch(ca_rsassapss_private_key_));
   }
 
  protected:
@@ -69,6 +74,9 @@ class CertTest : public KuduTest {
 
   Cert ca_exp_cert_;
   PrivateKey ca_exp_private_key_;
+
+  Cert ca_rsassapss_cert_;
+  PrivateKey ca_rsassapss_private_key_;
 };
 
 // Regression test to make sure that GetKuduKerberosPrincipalOidNid is thread
@@ -162,6 +170,24 @@ TEST_F(CertTest, DnsHostnameInSanField) {
   EXPECT_EQ(hostname_mega_giga, hostnames[0]);
   EXPECT_EQ(hostname_foo_bar, hostnames[1]);
   EXPECT_EQ(hostname_too_long, hostnames[2]);
+}
+
+TEST_F(CertTest, SignatureHashAlgorithm) {
+  int digest_nid = NID_undef;
+  Status status = ca_cert_.GetSignatureHashAlgorithm(&digest_nid);
+  EXPECT_OK(status);
+  EXPECT_EQ(digest_nid, NID_sha256);
+
+  digest_nid = NID_undef;
+  status = ca_rsassapss_cert_.GetSignatureHashAlgorithm(&digest_nid);
+#if OPENSSL_VERSION_NUMBER >= 0x10101000L
+  EXPECT_OK(status);
+  EXPECT_EQ(digest_nid, NID_sha256);
+#else
+  EXPECT_FALSE(status.ok());
+  EXPECT_TRUE(status.IsNotSupported());
+#endif
+
 }
 
 } // namespace security
