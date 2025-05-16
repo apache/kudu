@@ -35,6 +35,8 @@
 #include <glog/logging.h>
 
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/security/crypto.h"
 #include "kudu/util/openssl_util.h"
 #include "kudu/util/openssl_util_bio.h"
@@ -44,6 +46,7 @@ using std::nullopt;
 using std::optional;
 using std::string;
 using std::vector;
+using strings::Substitute;
 
 namespace kudu {
 namespace security {
@@ -171,7 +174,7 @@ Status Cert::CheckKeyMatch(const PrivateKey& key) const {
   return Status::OK();
 }
 
-Status Cert::GetServerEndPointChannelBindings(string* channel_bindings) const {
+Status Cert::GetSignatureHashAlgorithm(int* digest_nid_out) const {
   SCOPED_OPENSSL_NO_PENDING_ERRORS;
   // Find the signature type of the certificate. This corresponds to the digest
   // (hash) algorithm, and the public key type which signed the cert.
@@ -186,9 +189,22 @@ Status Cert::GetServerEndPointChannelBindings(string* channel_bindings) const {
 #endif
 
   // Retrieve the digest algorithm type.
+  //
+  // Prefer OpenSSL 1.1.1's X509_get_signature_info when available, as it has extra
+  // handling to determine the hash algorithm for signature types that store the hash
+  // algorithm separately (e.g. RSASSA-PSS).
   int digest_nid;
-  int public_key_nid;
-  OBJ_find_sigid_algs(signature_nid, &digest_nid, &public_key_nid);
+#if OPENSSL_VERSION_NUMBER >= 0x10101000L
+  X509_get_signature_info(GetTopOfChainX509(), &digest_nid, nullptr, nullptr, nullptr);
+#else
+  // Return a better error message for RSASSA-PSS, because we know that
+  // OBJ_find_sigid_algs() won't handle it properly.
+  if (PREDICT_FALSE(signature_nid == NID_rsassaPss)) {
+    return Status::NotSupported("Server certificate uses an RSASSA-PSS signature. "
+        "RSASSA-PSS signatures are not supported for OpenSSL < 1.1.1");
+  }
+  OBJ_find_sigid_algs(signature_nid, &digest_nid, nullptr);
+#endif
 
   // RFC 5929: if the certificate's signatureAlgorithm uses no hash functions or
   // uses multiple hash functions, then this channel binding type's channel
@@ -197,9 +213,24 @@ Status Cert::GetServerEndPointChannelBindings(string* channel_bindings) const {
   //
   // TODO(dan): can the multiple hash function scenario actually happen? What
   // does OBJ_find_sigid_algs do in that scenario?
-  if (digest_nid == NID_undef) {
-    return Status::NotSupported("server certificate has no signature digest (hash) algorithm");
+  if (PREDICT_FALSE(digest_nid == NID_undef)) {
+    std::string signature_type(OBJ_nid2ln(signature_nid));
+    return Status::NotSupported(Substitute(
+        "server certificate using '$0' signature algorithm has no signature "
+        "digest (hash) algorithm", signature_type));
   }
+
+  *digest_nid_out = digest_nid;
+  return Status::OK();
+}
+
+Status Cert::GetServerEndPointChannelBindings(string* channel_bindings) const {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
+
+  // Get the hash algorithm used for the signature
+  int digest_nid;
+  RETURN_NOT_OK(GetSignatureHashAlgorithm(&digest_nid));
+  DCHECK_NE(digest_nid, NID_undef);
 
   // RFC 5929: if the certificate's signatureAlgorithm uses a single hash
   // function, and that hash function is either MD5 [RFC1321] or SHA-1

@@ -72,6 +72,12 @@ class Cert : public RawDataWrapper<STACK_OF(X509)> {
   // Return Status::OK() if key match the end-user certificate.
   Status CheckKeyMatch(const PrivateKey& key) const WARN_UNUSED_RESULT;
 
+  // Determine the digest (hash) algorithm used in the signature of the certificate
+  // as needed to implement RFC 5929. If the hash algorithm can be determined,
+  // return the NID in digest_nid_out and return Status::OK(). Otherwise, return
+  // an error.
+  Status GetSignatureHashAlgorithm(int* digest_nid_out) const WARN_UNUSED_RESULT;
+
   // Returns the 'tls-server-end-point' channel bindings for the end-user certificate as
   // specified in RFC 5929.
   Status GetServerEndPointChannelBindings(std::string* channel_bindings) const WARN_UNUSED_RESULT;

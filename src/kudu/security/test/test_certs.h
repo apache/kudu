@@ -46,6 +46,11 @@ extern const char kCaExpiredPublicKey[];
 // Certificate with multiple DNS hostnames in the SAN field.
 extern const char kCertDnsHostnamesInSan[];
 
+// Valid root CA certificate that uses RSASSA-PSS signature (PEM format)
+extern const char kCaRsassaPssCert[];
+// The private key for the certificate using RSASSA-PSS
+extern const char kCaRsassaPssPrivateKey[];
+
 extern const char kDataTiny[];
 extern const char kSignatureTinySHA512[];
 
