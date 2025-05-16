@@ -26,9 +26,11 @@ The ancient history mark is a HybridTime timestamp prior to which history is
 considered "ancient". Ancient data is made unavailable and removed from disk.
 The _ancient history mark_ is defined by a property called the "tablet history
 max age". This property is configured with a _gflag_ called
-`--tablet_history_default_max_age_sec`, which at the time of writing defaults
-to 15 minutes. In the future, we may allow this to be specified on a per-table
-basis.
+`--tablet_history_max_age_sec`, which originally had the default setting
+of 900 (15 minutes). In Kudu 1.10.0, the default setting for the flag
+changed to 604800 (7 days) to accommodate for incremental backups running
+more frequently than once a week. In the future, we may allow this
+to be specified on a per-table basis.
 
 ## Consistency and read visibility
 
@@ -83,3 +85,9 @@ it appears to be prone to causing write amplification.
 UndoDeltaBlockGCOp, in contrast, only removes delta history associated with a
 row. If a row is deleted, UndoDeltaBlockGCOp will not remove the row's base
 data or the final REDO record indicating its deletion.
+
+In Kudu 1.12.0, a background maintenance operation was added to remove disk
+rowsets that have had all of their rows deleted. If the most recent update
+to a rowset is older than the ancient history mark, and the rowset contains
+no live rows, the background operation deletes the rowset base data and
+all its delta files from the disk.
