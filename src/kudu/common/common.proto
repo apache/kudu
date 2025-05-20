@@ -60,6 +60,31 @@ enum DataType {
   IS_DELETED = 18; // virtual column; not a real data type
   VARCHAR = 19;
   DATE = 20;
+  NESTED = 21;  // nested (non-scalar) data type
+}
+
+// A representation of a nested (non-scalar) data type.
+message NestedDataTypePB {
+  // Type descriptor to define arrays.
+  message ArrayTypeDescriptor {
+    // The type of elements in an array.
+    optional DataType type = 1;
+
+    // TODO(aserbin): add the 'nested_type' field below to describe
+    //                multi-dimensional arrays of nested types; with the 'type'
+    //                field only, ArrayTypeDescriptor is limited to describing
+    //                one-dimensional arrays of scalar types
+    //
+    // The descriptor of the nested type when 'type' == DataType::NESTED.
+    // This field isn't relevant for 1d-arrays of scalar data types.
+    //optional NestedDataTypePB nested_type = 2;
+  }
+
+  // Selector of a particular nested data type.
+  oneof descriptor {
+    ArrayTypeDescriptor array = 1;
+    // TODO(aserbin): add support for maps and structures as well (unions?)
+  }
 }
 
 enum EncodingType {
@@ -133,6 +158,10 @@ message ColumnSchemaPB {
   optional CompressionType compression = 9 [default=DEFAULT_COMPRESSION];
   optional int32 cfile_block_size = 10 [default=0];
 
+  // TODO(aserbin): add corresponding information into NestedDataType and
+  //                switch to using that instead of this field when extending
+  //                the support of nested data types to structures, maps,
+  //                and arrays of nested data types
   optional ColumnTypeAttributesPB type_attributes = 11;
 
   // The comment for the column.
@@ -142,6 +171,9 @@ message ColumnSchemaPB {
 
   // Whether the column is auto-incrementing.
   optional bool is_auto_incrementing = 14 [default = false];
+
+  // Descriptor of the nested data type if 'type' == DataType::NESTED.
+  optional NestedDataTypePB nested_type = 15;
 }
 
 message ColumnSchemaDeltaPB {
