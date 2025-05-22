@@ -37,19 +37,19 @@ using strings::Substitute;
 
 template<typename TypeTraitsClass>
 TypeInfo::TypeInfo(TypeTraitsClass /*t*/)
-  : type_(TypeTraitsClass::type),
-    physical_type_(TypeTraitsClass::physical_type),
-    name_(TypeTraitsClass::name()),
-    size_(TypeTraitsClass::size),
-    min_value_(TypeTraitsClass::min_value()),
-    max_value_(TypeTraitsClass::max_value()),
-    is_virtual_(TypeTraitsClass::IsVirtual()),
-    append_func_(TypeTraitsClass::AppendDebugStringForValue),
-    compare_func_(TypeTraitsClass::Compare),
-    are_consecutive_func_(TypeTraitsClass::AreConsecutive) {
+    : type_(TypeTraitsClass::type),
+      physical_type_(TypeTraitsClass::physical_type),
+      name_(TypeTraitsClass::name()),
+      size_(TypeTraitsClass::size),
+      min_value_(TypeTraitsClass::min_value()),
+      max_value_(TypeTraitsClass::max_value()),
+      is_virtual_(TypeTraitsClass::IsVirtual()),
+      append_func_(TypeTraitsClass::AppendDebugStringForValue),
+      compare_func_(TypeTraitsClass::Compare),
+      are_consecutive_func_(TypeTraitsClass::AreConsecutive) {
 }
 
-void TypeInfo::AppendDebugStringForValue(const void *ptr, string *str) const {
+void TypeInfo::AppendDebugStringForValue(const void* ptr, string* str) const {
   if (KUDU_SHOULD_REDACT()) {
     str->append(kRedactionMessage);
   } else {
@@ -57,7 +57,7 @@ void TypeInfo::AppendDebugStringForValue(const void *ptr, string *str) const {
   }
 }
 
-int TypeInfo::Compare(const void *lhs, const void *rhs) const {
+int TypeInfo::Compare(const void* lhs, const void* rhs) const {
   return compare_func_(lhs, rhs);
 }
 
@@ -68,13 +68,13 @@ bool TypeInfo::AreConsecutive(const void* a, const void* b) const {
 class TypeInfoResolver {
  public:
   const TypeInfo* GetTypeInfo(DataType t) {
-    const TypeInfo *type_info = mapping_[t].get();
-    CHECK(type_info != nullptr) <<
-      "Bad type: " << t;
-    return type_info;
+    const TypeInfo* type_info = mapping_[t].get();
+    return CHECK_NOTNULL(type_info);
   }
 
  private:
+  friend class Singleton<TypeInfoResolver>;
+
   TypeInfoResolver() {
     AddMapping<UINT8>();
     AddMapping<INT8>();
@@ -101,14 +101,13 @@ class TypeInfoResolver {
 
   template<DataType type> void AddMapping() {
     TypeTraits<type> traits;
-    mapping_.emplace(type, unique_ptr<TypeInfo>(new TypeInfo(traits)));
+    mapping_.emplace(type, new TypeInfo(traits));
   }
 
   unordered_map<DataType,
                 unique_ptr<const TypeInfo>,
-                std::hash<size_t> > mapping_;
+                std::hash<size_t>> mapping_;
 
-  friend class Singleton<TypeInfoResolver>;
   DISALLOW_COPY_AND_ASSIGN(TypeInfoResolver);
 };
 
@@ -117,7 +116,7 @@ const TypeInfo* GetTypeInfo(DataType type) {
 }
 
 void DataTypeTraits<DATE>::AppendDebugStringForValue(const void* val, string* str) {
-  constexpr static const char* kDateFormat = "%F"; // the ISO 8601 date format
+  constexpr static const char* const kDateFormat = "%F"; // the ISO 8601 date format
   static constexpr time_t kSecondsInDay = 24 * 60 * 60;
 
   int32_t days_since_unix_epoch = *reinterpret_cast<const int32_t*>(val);
