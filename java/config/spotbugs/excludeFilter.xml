@@ -375,10 +375,4 @@
         <Class name="org.apache.kudu.test.cluster.FakeDNS"/>
         <Bug pattern="DP_DO_INSIDE_DO_PRIVILEGED" />
     </Match>
-
-    <Match>
-        <!-- TODO: Remove this in follow-up commit. -->
-        <Class name="org.apache.kudu.replication.ReplicationEnvProvider" />
-        <Bug pattern="URF_UNREAD_FIELD" />
-    </Match>
 </FindBugsFilter>

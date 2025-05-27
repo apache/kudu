@@ -228,13 +228,15 @@ public abstract class ClientTestUtil {
     return new Schema(columns);
   }
 
-  public static PartialRow getPartialRowWithAllTypes() {
-    Schema schema = getSchemaWithAllTypes();
-    // Ensure we aren't missing any types
-    assertEquals(15, schema.getColumnCount());
+  public static PartialRow getPartialRowWithAllTypes(PartialRow row, byte int8Value) {
+    if (row == null) {
+      Schema schema = getSchemaWithAllTypes();
+      // Ensure we aren't missing any types
+      assertEquals(15, schema.getColumnCount());
+      row = schema.newPartialRow();
+    }
 
-    PartialRow row = schema.newPartialRow();
-    row.addByte("int8", (byte) 42);
+    row.addByte("int8", int8Value);
     row.addShort("int16", (short) 43);
     row.addInt("int32", 44);
     row.addLong("int64", 45);
@@ -250,7 +252,12 @@ public abstract class ClientTestUtil {
     row.addBinary("binary-bytebuffer", binaryBuffer);
     row.setNull("null");
     row.addDecimal("decimal", BigDecimal.valueOf(12345, 3));
+
     return row;
+  }
+
+  public static PartialRow getPartialRowWithAllTypes() {
+    return getPartialRowWithAllTypes(null, (byte) 42);
   }
 
   public static CreateTableOptions getAllTypesCreateTableOptions() {

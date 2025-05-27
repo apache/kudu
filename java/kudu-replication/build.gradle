@@ -20,9 +20,19 @@ apply from: "$rootDir/gradle/shadow.gradle"
 dependencies {
     // todo(zchovan) confirm if any dependencies should be shaded to avoid classpath issues
     implementation libs.flinkStreamingJava
+    implementation libs.flinkConnectorKudu
+    implementation libs.flinkCore
+    implementation libs.flinkClients
+    implementation libs.flinkConnectorBase
+    implementation project(path: ":kudu-client", configuration: "shadow")
 
     testImplementation libs.junit
     testImplementation libs.assertj
+    testImplementation libs.junit
+    testImplementation project(path: ":kudu-test-utils", configuration: "shadow")
+    testImplementation libs.log4jApi
+    testImplementation libs.log4jCore
+    testImplementation libs.log4jSlf4jImpl
 }
 
 // kudu-replication has no public Javadoc.

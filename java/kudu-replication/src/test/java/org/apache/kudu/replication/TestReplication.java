@@ -1,0 +1,72 @@
+// Licensed to the Apache Software Foundation (ASF) under one or more
+// contributor license agreements.  See the NOTICE file distributed with
+// this work for additional information regarding copyright ownership.
+// The ASF licenses this file to You under the Apache License, Version 2.0
+// (the "License"); you may not use this file except in compliance with
+// the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package org.apache.kudu.replication;
+
+import static org.apache.kudu.test.ClientTestUtil.countRowsInTable;
+import static org.apache.kudu.test.junit.AssertHelpers.assertEventuallyTrue;
+
+import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import org.apache.kudu.client.KuduTable;
+
+
+
+public class TestReplication extends ReplicationTestBase {
+
+  private static final Logger LOG = LoggerFactory.getLogger(TestReplication.class);
+
+  @Test
+  public void testBasicReplication() throws Exception {
+    createAllTypesTable(sourceClient);
+    insertRowsIntoAllTypesTable(sourceClient, 0, 10);
+
+    createAllTypesTable(sinkClient);
+
+    ReplicationEnvProvider executor = new ReplicationEnvProvider(createDefaultJobConfig());
+    executor.getEnv().executeAsync();
+
+    KuduTable sinkTable = sinkClient.openTable(TABLE_NAME);
+    assertEventuallyTrue("Initial 10 rows should be replicated",
+        () -> countRowsInTable(sinkTable) == 10,60000);
+
+    verifySourceAndSinkRowsEqual(10);
+  }
+
+  @Test
+  public void testContinuousReplication() throws Exception {
+    createAllTypesTable(sourceClient);
+    createAllTypesTable(sinkClient);
+
+    ReplicationEnvProvider executor = new ReplicationEnvProvider(createDefaultJobConfig());
+    executor.getEnv().executeAsync();
+
+    KuduTable sinkTable = sinkClient.openTable(TABLE_NAME);
+
+    insertRowsIntoAllTypesTable(sourceClient, 0, 10);
+
+    assertEventuallyTrue("Initial 10 rows should be replicated",
+        () -> countRowsInTable(sinkTable) == 10, 60000);
+
+    insertRowsIntoAllTypesTable(sourceClient, 10, 10);
+
+    assertEventuallyTrue("Additional 10 rows should be replicated, total 20 rows",
+        () -> countRowsInTable(sinkTable) == 20, 60000);
+
+    verifySourceAndSinkRowsEqual(20);
+  }
+}

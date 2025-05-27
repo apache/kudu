@@ -15,7 +15,19 @@
 
 package org.apache.kudu.replication;
 
+import java.time.Duration;
+
+import org.apache.flink.api.common.eventtime.WatermarkStrategy;
+import org.apache.flink.api.common.typeinfo.TypeInformation;
+import org.apache.flink.api.connector.source.Boundedness;
+import org.apache.flink.connector.kudu.connector.KuduTableInfo;
+import org.apache.flink.connector.kudu.connector.reader.KuduReaderConfig;
+import org.apache.flink.connector.kudu.connector.writer.KuduWriterConfig;
+import org.apache.flink.connector.kudu.sink.KuduSink;
+import org.apache.flink.connector.kudu.sink.KuduSinkBuilder;
+import org.apache.flink.connector.kudu.source.KuduSource;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.types.Row;
 
 /**
  * Provides a configured {@link StreamExecutionEnvironment} for the replication job.
@@ -36,6 +48,29 @@ public class ReplicationEnvProvider {
    */
   public StreamExecutionEnvironment getEnv() throws Exception {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+
+    // TODO(mgreber): implement and use reader config parsed from the command line.
+    KuduSource<Row> kuduSource = KuduSource.<Row>builder()
+            .setReaderConfig(KuduReaderConfig.Builder
+                  .setMasters(jobConfig.getSourceMasterAddresses()).build())
+            .setTableInfo(KuduTableInfo.forTable(jobConfig.getTableName()))
+            .setRowResultConverter(new CustomReplicationRowRestultConverter())
+            .setBoundedness(Boundedness.CONTINUOUS_UNBOUNDED)
+            .setDiscoveryPeriod(Duration.ofSeconds(jobConfig.getDiscoveryIntervalSeconds()))
+            .build();
+
+    // TODO(mgreber): implement and use writer config parsed from command line.
+    KuduSink<Row> kuduSink = new KuduSinkBuilder<Row>()
+            .setWriterConfig(KuduWriterConfig.Builder
+                    .setMasters(jobConfig.getSinkMasterAddresses()).build())
+            .setTableInfo(KuduTableInfo.forTable(jobConfig.getSinkTableName()))
+            .setOperationMapper(new CustomReplicationOperationMapper())
+            .build();
+
+    env.fromSource(kuduSource, WatermarkStrategy.noWatermarks(), "KuduSource")
+            .returns(TypeInformation.of(Row.class))
+            .sinkTo(kuduSink);
+
     return env;
   }
 }
