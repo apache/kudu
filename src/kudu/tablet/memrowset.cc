@@ -178,10 +178,10 @@ Status MemRowSet::DebugDumpImpl(int64_t* rows_left, vector<string>* lines) {
 // points into that stack storage.
 #define DEFINE_MRSROW_ON_STACK(memrowset, varname, slice_name) \
   size_t varname##_size = sizeof(MRSRow::Header) + \
-                           ContiguousRowHelper::row_size((memrowset)->schema_nonvirtual()); \
+      ContiguousRowHelper::row_size((memrowset)->schema_nonvirtual()); \
   uint8_t varname##_storage[varname##_size]; \
   Slice slice_name(varname##_storage, varname##_size); \
-  ContiguousRowHelper::InitNullsBitmap((memrowset)->schema_nonvirtual(), slice_name); \
+  ContiguousRowHelper::InitNonNullBitmap((memrowset)->schema_nonvirtual(), &(slice_name)); \
   MRSRow varname(memrowset, slice_name);
 
 Status MemRowSet::Insert(Timestamp timestamp,

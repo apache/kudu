@@ -394,15 +394,13 @@ class ContiguousRowHelper {
     return schema.byte_size() + non_null_bitmap_size(schema);
   }
 
-  static void InitNullsBitmap(const Schema& schema, Slice& row_data) {
-    InitNullsBitmap(schema, row_data.mutable_data(), row_data.size() - schema.byte_size());
+  static void InitNonNullBitmap(const Schema& schema, Slice* row_data) {
+    DCHECK_GE(row_data->size(), schema.byte_size());
+    InitNonNullBitmap(schema, row_data->mutable_data(), row_data->size() - schema.byte_size());
   }
 
-  static void InitNullsBitmap(const Schema& schema, uint8_t *row_data, size_t bitmap_size) {
-    uint8_t *non_null_bitmap = row_data + schema.byte_size();
-    for (size_t i = 0; i < bitmap_size; ++i) {
-      non_null_bitmap[i] = 0x00;
-    }
+  static void InitNonNullBitmap(const Schema& schema, uint8_t* row_data, size_t bitmap_size) {
+    memset(row_data + schema.byte_size(), 0, bitmap_size);
   }
 
   static bool is_null(const Schema& schema, const uint8_t *row_data, size_t col_idx) {
@@ -596,7 +594,7 @@ class RowBuilder {
     CHECK(buf_) << "could not allocate " << row_size << " bytes for row builder";
     col_idx_ = 0;
     byte_idx_ = 0;
-    ContiguousRowHelper::InitNullsBitmap(*schema_, buf_, bitmap_size_);
+    ContiguousRowHelper::InitNonNullBitmap(*schema_, buf_, bitmap_size_);
   }
 
   void AddString(const Slice &slice) {

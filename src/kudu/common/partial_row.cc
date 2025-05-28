@@ -74,8 +74,8 @@ KuduPartialRow::KuduPartialRow(const Schema* schema)
   OverwriteWithPattern(reinterpret_cast<char*>(row_data_),
                        row_size, "NEWNEWNEWNEWNEW");
 #endif
-  ContiguousRowHelper::InitNullsBitmap(
-    *schema_, row_data_, ContiguousRowHelper::non_null_bitmap_size(*schema_));
+  ContiguousRowHelper::InitNonNullBitmap(
+      *schema_, row_data_, ContiguousRowHelper::non_null_bitmap_size(*schema_));
 }
 
 KuduPartialRow::~KuduPartialRow() {
