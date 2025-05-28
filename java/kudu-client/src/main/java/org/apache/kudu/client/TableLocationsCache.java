@@ -63,10 +63,10 @@ class TableLocationsCache {
       try {
         Preconditions.checkState(entries.size() <= 1);
         TableLocationsCache.Entry entry = entries.get(AsyncKuduClient.EMPTY_ARRAY);
-        if (entry.isStale()) {
-          return null;
+        if (entry != null && !entry.isStale()) {
+          return entry;
         }
-        return entry;
+        return null;
       } finally {
         rwl.readLock().unlock();
       }
