@@ -1536,7 +1536,7 @@ static void UndoListSanityCheck(Mutation* new_undos_head) {
 }
 #endif // NDEBUG
 
-// For each input row, go through all the REDO mutations and apply those to base row.
+// For the input row, go through all the REDO mutations and apply those to base row.
 // Generate corresponding UNDO deltas for applied mutations.
 // For a row with 'ghost' entries, merge their histories of mutations.
 // Remove ancient UNDO mutations and check if row is required to be garbage collected.
@@ -1544,8 +1544,7 @@ static void UndoListSanityCheck(Mutation* new_undos_head) {
 // Do sanity check for final UNDO list.
 static Status ApplyMutationsAndMergeDuplicateHistory(const MvccSnapshot& snap,
                                                      const CompactionInputRow& input_row,
-                                                     size_t cur_row_idx,
-                                                     RowBlock* block,
+                                                     RowBlockRow* dst_row,
                                                      Arena* arena,
                                                      const string& tablet_id,
                                                      const scoped_refptr<FsErrorManager>& err_mgr,
@@ -1561,8 +1560,7 @@ static Status ApplyMutationsAndMergeDuplicateHistory(const MvccSnapshot& snap,
 
   DVLOG(4) << "Input Row: " << CompactionInputRowToString(input_row);
 
-  RowBlockRow dst_row = block->row(cur_row_idx);
-  RETURN_NOT_OK(CopyRow(input_row.row, &dst_row, static_cast<Arena*>(nullptr)));
+  RETURN_NOT_OK(CopyRow(input_row.row, dst_row, static_cast<Arena*>(nullptr)));
 
   // Collect the new UNDO/REDO mutations.
   Mutation* new_undos_head = nullptr;
@@ -1574,7 +1572,7 @@ static Status ApplyMutationsAndMergeDuplicateHistory(const MvccSnapshot& snap,
                                                input_row,
                                                arena,
                                                history_gc_opts,
-                                               &dst_row,
+                                               dst_row,
                                                &new_undos_head,
                                                &new_redos_head));
 
@@ -1591,15 +1589,15 @@ static Status ApplyMutationsAndMergeDuplicateHistory(const MvccSnapshot& snap,
                                              new_redos_head,
                                              &new_undos_head);
 
-  DVLOG(4) << "Output Row: " << RowToString(dst_row, new_redos_head, new_undos_head) <<
-      "; Was garbage collected? " << *is_garbage_collected;
+  DVLOG(4) << "Output Row: " << RowToString(*dst_row, new_redos_head, new_undos_head)
+           << "; Was garbage collected? " << *is_garbage_collected;
 
   // Skip further processing if this row was garbage collected
   if (!*is_garbage_collected) {
     RETURN_NOT_OK(AppendDeltasToDRS(out,
                                     new_undos_head,
                                     new_redos_head,
-                                    &dst_row));
+                                    dst_row));
 
     // If the REDO is empty, it should not be a DELETE.
     if (new_redos_head == nullptr) {
@@ -1645,10 +1643,10 @@ Status FlushCompactionInput(const string& tablet_id,
       bool is_garbage_collected = false;
 
       size_t arena_mem_before_mutations = input->PreparedBlockArena()->memory_footprint();
+      RowBlockRow dst_row = block.row(cur_row_idx);
       RETURN_NOT_OK(ApplyMutationsAndMergeDuplicateHistory(snap,
                                                            row,
-                                                           cur_row_idx,
-                                                           &block,
+                                                           &dst_row,
                                                            input->PreparedBlockArena(),
                                                            tablet_id,
                                                            error_manager,
