@@ -21,6 +21,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -39,7 +40,6 @@
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/tablet-test-util.h"
-#include "kudu/tablet/tablet.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
@@ -228,7 +228,7 @@ class TabletSparsePushdownTest : public KuduTabletTest {
  public:
   TabletSparsePushdownTest()
       : KuduTabletTest(Schema({ ColumnSchema("key", INT32),
-                                ColumnSchema("val", INT32, true) },
+                                ColumnSchema("val", INT32, ColumnSchema::NULLABLE) },
                               1)) {
   }
 

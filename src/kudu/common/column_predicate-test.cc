@@ -959,16 +959,16 @@ class TestColumnPredicate : public KuduTest {
 };
 
 TEST_F(TestColumnPredicate, TestMerge) {
-  TestMergeCombinations(ColumnSchema("c", INT8, true),
+  TestMergeCombinations(ColumnSchema("c", INT8, ColumnSchema::NULLABLE),
                         vector<int8_t> { 0, 1, 2, 3, 4, 5, 6 });
 
-  TestMergeCombinations(ColumnSchema("c", INT32, true),
+  TestMergeCombinations(ColumnSchema("c", INT32, ColumnSchema::NULLABLE),
                         vector<int32_t> { -100, -10, -1, 0, 1, 10, 100 });
 
-  TestMergeCombinations(ColumnSchema("c", STRING, true),
+  TestMergeCombinations(ColumnSchema("c", STRING, ColumnSchema::NULLABLE),
                         vector<Slice> { "a", "b", "c", "d", "e", "f", "g" });
 
-  TestMergeCombinations(ColumnSchema("c", BINARY, true),
+  TestMergeCombinations(ColumnSchema("c", BINARY, ColumnSchema::NULLABLE),
                         vector<Slice> { Slice("", 0),
                                         Slice("\0", 1),
                                         Slice("\0\0", 2),
@@ -1032,7 +1032,7 @@ TEST_F(TestColumnPredicate, TestInclusiveRange) {
     ASSERT_FALSE(ColumnPredicate::InclusiveRange(column, nullptr, &max, &arena));
   }
   {
-    ColumnSchema column("c", INT32, true);
+    ColumnSchema column("c", INT32, ColumnSchema::NULLABLE);
     int32_t zero = 0;
     int32_t two = 2;
     int32_t three = 3;
@@ -1312,13 +1312,13 @@ TEST_F(TestColumnPredicate, TestSelectivity) {
   Slice one_s("one", 3);
   int128_t one_dec = 1;
 
-  ColumnSchema column_i32("a", INT32, true);
-  ColumnSchema column_i64("b", INT64, true);
-  ColumnSchema column_d("c", DOUBLE, true);
-  ColumnSchema column_s("d", STRING, true);
-  ColumnSchema column_d32("e", DECIMAL32, true);
-  ColumnSchema column_d64("f", DECIMAL64, true);
-  ColumnSchema column_d128("g", DECIMAL128, true);
+  ColumnSchema column_i32("a", INT32, ColumnSchema::NULLABLE);
+  ColumnSchema column_i64("b", INT64, ColumnSchema::NULLABLE);
+  ColumnSchema column_d("c", DOUBLE, ColumnSchema::NULLABLE);
+  ColumnSchema column_s("d", STRING, ColumnSchema::NULLABLE);
+  ColumnSchema column_d32("e", DECIMAL32, ColumnSchema::NULLABLE);
+  ColumnSchema column_d64("f", DECIMAL64, ColumnSchema::NULLABLE);
+  ColumnSchema column_d128("g", DECIMAL128, ColumnSchema::NULLABLE);
 
   // Predicate type
   ASSERT_LT(SelectivityComparator(ColumnPredicate::IsNull(column_i32),
@@ -1378,7 +1378,7 @@ TEST_F(TestColumnPredicate, TestSelectivity) {
 
 TEST_F(TestColumnPredicate, TestRedaction) {
   ASSERT_NE("", gflags::SetCommandLineOption("redact", "log"));
-  ColumnSchema column_i32("a", INT32, true);
+  ColumnSchema column_i32("a", INT32, ColumnSchema::NULLABLE);
   int32_t one_32 = 1;
   ASSERT_EQ("a = <redacted>", ColumnPredicate::Equality(column_i32, &one_32).ToString());
 }
@@ -1404,9 +1404,10 @@ TEST_F(TestColumnPredicate, TestBloomFilterMerge) {
 
   vector<uint64_t> values_int;
   FillBloomFilterAndValues(n_keys, &values_int, &b1, &b2);
-  TestMergeBloomFilterCombinations(ColumnSchema("c", INT64, true), {&b1}, values_int);
-  TestMergeBloomFilterCombinations(ColumnSchema("c", INT64, true), {&b1, &b2},
-                                   values_int);
+  TestMergeBloomFilterCombinations(
+      ColumnSchema("c", INT64, ColumnSchema::NULLABLE), {&b1}, values_int);
+  TestMergeBloomFilterCombinations(
+      ColumnSchema("c", INT64, ColumnSchema::NULLABLE), {&b1, &b2}, values_int);
 
   // Test for STRING type.
   BlockBloomFilter b3(&allocator);
@@ -1425,7 +1426,8 @@ TEST_F(TestColumnPredicate, TestBloomFilterMerge) {
     keys_slice.emplace_back(key_slice);
   }
 
-  TestMergeBloomFilterCombinations(ColumnSchema("c", STRING, true), {&b3}, keys_slice);
+  TestMergeBloomFilterCombinations(
+      ColumnSchema("c", STRING, ColumnSchema::NULLABLE), {&b3}, keys_slice);
 
   // Test for BINARY type
   BlockBloomFilter b4(&allocator);
@@ -1444,27 +1446,27 @@ TEST_F(TestColumnPredicate, TestBloomFilterMerge) {
       b4.Insert(binary_keys[i]);
     }
   }
-  TestMergeBloomFilterCombinations(ColumnSchema("c", STRING, true), {&b4}, binary_keys);
+  TestMergeBloomFilterCombinations(
+      ColumnSchema("c", STRING, ColumnSchema::NULLABLE), {&b4}, binary_keys);
 }
 
 // Test ColumnPredicate operator (in-)equality.
 TEST_F(TestColumnPredicate, TestEquals) {
-  ColumnSchema c1("c1", INT32, true);
+  ColumnSchema c1("c1", INT32, ColumnSchema::NULLABLE);
   ASSERT_EQ(ColumnPredicate::None(c1), ColumnPredicate::None(c1));
 
-  ColumnSchema c1a("c1", INT32, true);
+  ColumnSchema c1a("c1", INT32, ColumnSchema::NULLABLE);
   ASSERT_EQ(ColumnPredicate::None(c1), ColumnPredicate::None(c1a));
 
-  ColumnSchema c2("c2", INT32, true);
+  ColumnSchema c2("c2", INT32, ColumnSchema::NULLABLE);
   ASSERT_NE(ColumnPredicate::None(c1), ColumnPredicate::None(c2));
 
-  ColumnSchema c1string("c1", STRING, true);
+  ColumnSchema c1string("c1", STRING, ColumnSchema::NULLABLE);
   ASSERT_NE(ColumnPredicate::None(c1), ColumnPredicate::None(c1string));
 
   const int kDefaultOf3 = 3;
-  ColumnSchema c1dflt("c1", INT32, /*is_nullable=*/false,
-                      /*is_immutable=*/false, /*is_auto_incrementing=*/false,
-                      /*read_default=*/&kDefaultOf3);
+  ColumnSchema c1dflt(ColumnSchemaBuilder()
+                          .name("c1").type(INT32).read_default(&kDefaultOf3));
   ASSERT_NE(ColumnPredicate::None(c1), ColumnPredicate::None(c1dflt));
 }
 
@@ -1474,8 +1476,8 @@ using TestColumnPredicateDeathTest = TestColumnPredicate;
 // have the same column name and type as 'this'.
 TEST_F(TestColumnPredicateDeathTest, TestMergeRequiresNameAndType) {
 
-  ColumnSchema c1int32("c1", INT32, true);
-  ColumnSchema c2int32("c2", INT32, true);
+  ColumnSchema c1int32("c1", INT32, ColumnSchema::NULLABLE);
+  ColumnSchema c2int32("c2", INT32, ColumnSchema::NULLABLE);
   vector<int32_t> values = { 0, 1, 2, 3 };
 
   EXPECT_DEATH({
@@ -1486,7 +1488,7 @@ TEST_F(TestColumnPredicateDeathTest, TestMergeRequiresNameAndType) {
               PredicateType::None);
   }, "COMPARE_NAME_AND_TYPE");
 
-  ColumnSchema c1int16("c1", INT16, true);
+  ColumnSchema c1int16("c1", INT16, ColumnSchema::NULLABLE);
   EXPECT_DEATH({
     // This should crash because the columns have different types.
     TestMerge(ColumnPredicate::Equality(c1int32, &values[0]),
@@ -1506,7 +1508,8 @@ class ColumnPredicateBenchmark : public KuduTest {
      const int num_iters = AllowSlowTests() ? 1000000 : 100;
      const int num_evals = num_iters * kNumRows;
 
-     for (bool nullable : {false, true}) {
+     for (ColumnSchema::Nullability nullable : {ColumnSchema::NOT_NULL,
+                                                ColumnSchema::NULLABLE}) {
        ColumnSchema cs("c", kColType, nullable);
        auto pred = pred_factory(cs);
        if (pred.predicate_type() == PredicateType::None) {
@@ -1518,7 +1521,7 @@ class ColumnPredicateBenchmark : public KuduTest {
        ScopedColumnBlock<kColType> b(kNumRows);
        for (int i = 0; i < kNumRows; i++) {
          b[i] = rand() % 3;
-         if (nullable) {
+         if (nullable == ColumnSchema::NULLABLE) {
            b.SetCellIsNull(i, rand() % 10 == 1);
          }
        }

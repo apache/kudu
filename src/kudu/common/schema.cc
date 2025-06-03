@@ -142,13 +142,13 @@ Status ColumnSchema::ApplyDelta(const ColumnSchemaDelta& col_delta) {
   }
 
   if (col_delta.encoding) {
-    attributes_.encoding = *col_delta.encoding;
+    storage_attributes_.encoding = *col_delta.encoding;
   }
   if (col_delta.compression) {
-    attributes_.compression = *col_delta.compression;
+    storage_attributes_.compression = *col_delta.compression;
   }
   if (col_delta.cfile_block_size) {
-    attributes_.cfile_block_size = *col_delta.cfile_block_size;
+    storage_attributes_.cfile_block_size = *col_delta.cfile_block_size;
   }
   if (col_delta.new_comment) {
     comment_ = col_delta.new_comment.value();
@@ -181,7 +181,7 @@ string ColumnSchema::TypeToString() const {
 
 string ColumnSchema::AttrToString() const {
   return Substitute("$0 $1 $2",
-                    attributes_.ToString(),
+                    storage_attributes_.ToString(),
                     has_read_default() ? Stringify(read_default_value()) : "-",
                     has_write_default() ? Stringify(write_default_value()) : "-");
 }
@@ -615,48 +615,21 @@ void SchemaBuilder::Reset(const Schema& schema) {
   }
 }
 
-Status SchemaBuilder::AddKeyColumn(const string& name, DataType type) {
-  return AddColumn(ColumnSchema(name, type), true);
-}
-
-Status SchemaBuilder::AddColumn(const string& name,
-                                DataType type,
-                                bool is_nullable,
-                                const void* read_default,
-                                const void* write_default) {
-  return AddColumn(name, type, is_nullable, false, read_default, write_default);
-}
-
-Status SchemaBuilder::AddColumn(const std::string& name,
-                                DataType type,
-                                bool is_nullable,
-                                bool is_immutable,
-                                const void* read_default,
-                                const void* write_default) {
-  return AddColumn(name, type, is_nullable, is_immutable, false, read_default, write_default);
-}
-
-Status SchemaBuilder::AddColumn(const std::string& name,
-                                DataType type,
-                                bool is_nullable,
-                                bool is_immutable,
-                                bool is_auto_incrementing,
-                                const void* read_default,
-                                const void* write_default) {
-  if (name.empty()) {
-    return Status::InvalidArgument("column name must be non-empty");
+Status SchemaBuilder::AddColumn(const ColumnSchema& column, bool is_key) {
+  if (!InsertIfNotPresent(&col_names_, column.name())) {
+    return Status::AlreadyPresent("The column already exists", column.name());
+  }
+  if (is_key) {
+    cols_.insert(cols_.begin() + num_key_columns_, column);
+    col_ids_.insert(col_ids_.begin() + num_key_columns_, next_id_);
+    ++num_key_columns_;
+  } else {
+    cols_.push_back(column);
+    col_ids_.push_back(next_id_);
   }
 
-  if (is_auto_incrementing) {
-    DCHECK_EQ(type, INT64);
-    DCHECK(!is_nullable);
-    DCHECK(!is_immutable);
-    DCHECK_EQ(read_default, (void *)nullptr);
-    DCHECK_EQ(write_default, (void *)nullptr);
-  }
-
-  return AddColumn(ColumnSchema(name, type, is_nullable, is_immutable,
-                                is_auto_incrementing, read_default, write_default), false);
+  next_id_ = ColumnId(next_id_ + 1);
+  return Status::OK();
 }
 
 Status SchemaBuilder::RemoveColumn(const string& name) {
@@ -708,25 +681,6 @@ Status SchemaBuilder::RenameColumn(const string& old_name, const string& new_nam
 
   LOG(FATAL) << "Should not reach here";
   return Status::IllegalState("Unable to rename existing column");
-}
-
-Status SchemaBuilder::AddColumn(const ColumnSchema& column, bool is_key) {
-  if (ContainsKey(col_names_, column.name())) {
-    return Status::AlreadyPresent("The column already exists", column.name());
-  }
-
-  col_names_.insert(column.name());
-  if (is_key) {
-    cols_.insert(cols_.begin() + num_key_columns_, column);
-    col_ids_.insert(col_ids_.begin() + num_key_columns_, next_id_);
-    ++num_key_columns_;
-  } else {
-    cols_.push_back(column);
-    col_ids_.push_back(next_id_);
-  }
-
-  next_id_ = ColumnId(next_id_ + 1);
-  return Status::OK();
 }
 
 Status SchemaBuilder::ApplyColumnSchemaDelta(const ColumnSchemaDelta& col_delta) {

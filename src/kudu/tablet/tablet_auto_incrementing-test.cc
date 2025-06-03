@@ -43,9 +43,11 @@ namespace tablet {
 
 namespace {
 Schema CreateAutoIncrementingTestSchema() {
-  return Schema({ColumnSchema("key", INT64, false, false,
-                              /*is_auto_incrementing*/ true, nullptr, nullptr, {}, {}, ""),
-                 ColumnSchema("val", INT32, true) }, 1);
+  return Schema({ColumnSchemaBuilder()
+                     .name("key")
+                     .auto_incrementing(true),
+                 ColumnSchema("val", INT32, ColumnSchema::NULLABLE)
+                }, 1);
 }
 } // anonymous namespace
 

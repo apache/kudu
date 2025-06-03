@@ -41,12 +41,18 @@ class PartialRowTest : public KuduTest {
     : schema_({ ColumnSchema("key", INT32),
                 ColumnSchema("int_val", INT32),
                 ColumnSchema("uint64_val", UINT64),
-                ColumnSchema("string_val", STRING, true),
-                ColumnSchema("binary_val", BINARY, true),
-                ColumnSchema("decimal_val", DECIMAL32, true, false, false, nullptr, nullptr,
-                             ColumnStorageAttributes(), ColumnTypeAttributes(6, 2)),
-                ColumnSchema("varchar_val", VARCHAR, true, false, false, nullptr, nullptr,
-                             ColumnStorageAttributes(), ColumnTypeAttributes(10)) },
+                ColumnSchema("string_val", STRING, ColumnSchema::NULLABLE),
+                ColumnSchema("binary_val", BINARY, ColumnSchema::NULLABLE),
+                ColumnSchemaBuilder()
+                      .name("decimal_val")
+                      .type(DECIMAL32)
+                      .nullable(true)
+                      .type_attributes({6, 2}),
+                ColumnSchemaBuilder()
+                      .name("varchar_val")
+                      .type(VARCHAR)
+                      .nullable(true)
+                      .type_attributes(ColumnTypeAttributes(10)) },
               1) {
     SeedRandom();
   }

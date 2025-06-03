@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -147,7 +148,11 @@ TEST_F(TestTabletSchema, TestWrite) {
   const int32_t c2_read_default = 7;
 
   SchemaBuilder builder(*tablet()->metadata()->schema());
-  ASSERT_OK(builder.AddColumn("c2", INT32, false, &c2_read_default, &c2_write_default));
+  ASSERT_OK(builder.AddColumn(ColumnSchemaBuilder()
+                                  .name("c2")
+                                  .type(INT32)
+                                  .read_default(&c2_read_default)
+                                  .write_default(&c2_write_default)));
   AlterSchema(builder.Build());
   Schema s2 = builder.BuildWithoutIds();
 
@@ -190,7 +195,11 @@ TEST_F(TestTabletSchema, TestReInsert) {
   const int32_t c2_read_default = 7;
 
   SchemaBuilder builder(*tablet()->metadata()->schema());
-  ASSERT_OK(builder.AddColumn("c2", INT32, false, &c2_read_default, &c2_write_default));
+  ASSERT_OK(builder.AddColumn(ColumnSchemaBuilder()
+                                  .name("c2")
+                                  .type(INT32)
+                                  .read_default(&c2_read_default)
+                                  .write_default(&c2_write_default)));
   AlterSchema(builder.Build());
   Schema s2 = builder.BuildWithoutIds();
 

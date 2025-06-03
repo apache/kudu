@@ -75,15 +75,18 @@ class TabletDecoderEvalTest : public KuduTabletTest,
 public:
   TabletDecoderEvalTest()
           : KuduTabletTest(Schema({ColumnSchema("key", INT32),
-                                   ColumnSchema("string_val_a", STRING, true, false,
-                                                false, nullptr, nullptr,
-                                                ColumnStorageAttributes(DICT_ENCODING,
-                                                                        DEFAULT_COMPRESSION)),
-                                   ColumnSchema("string_val_b", STRING, true, false,
-                                                false, nullptr, nullptr,
-                                                ColumnStorageAttributes(DICT_ENCODING,
-                                                                        DEFAULT_COMPRESSION))}, 1))
-  {}
+                                   ColumnSchemaBuilder()
+                                       .name("string_val_a")
+                                       .type(STRING)
+                                       .nullable(true)
+                                       .storage_attributes({DICT_ENCODING, DEFAULT_COMPRESSION}),
+                                   ColumnSchemaBuilder()
+                                       .name("string_val_b")
+                                       .type(STRING)
+                                       .nullable(true)
+                                       .storage_attributes({DICT_ENCODING, DEFAULT_COMPRESSION})
+                                  }, 1)) {
+  }
 
   void SetUp() override {
     KuduTabletTest::SetUp();

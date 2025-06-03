@@ -31,7 +31,6 @@
 
 #include <glog/logging.h>
 #include <google/protobuf/map.h>
-#include <google/protobuf/stubs/common.h>
 
 #include "kudu/common/column_predicate.h"
 #include "kudu/common/columnblock.h"
@@ -275,36 +274,40 @@ void ColumnSchemaToPB(const ColumnSchema& col_schema, ColumnSchemaPB *pb, int fl
   }
 }
 
-Status ColumnSchemaFromPB(const ColumnSchemaPB& pb, optional<ColumnSchema>* col_schema) {
-  const void *write_default_ptr = nullptr;
-  const void *read_default_ptr = nullptr;
-  Slice write_default;
-  Slice read_default;
-  const TypeInfo* typeinfo = GetTypeInfo(pb.type());
+Status ColumnSchemaBuilderFromPB(const ColumnSchemaPB& pb,
+                                 ColumnSchemaBuilder* csb) {
+  ColumnSchemaBuilder builder;
+  builder.name(pb.name())
+         .type(pb.type())
+         .nullable(pb.is_nullable());
+
   if (pb.has_read_default_value()) {
-    read_default = Slice(pb.read_default_value());
+    Slice read_default(pb.read_default_value());
+    const TypeInfo* typeinfo = GetTypeInfo(pb.type());
     if (typeinfo->physical_type() == BINARY) {
-      read_default_ptr = &read_default;
+      builder.read_default(&read_default);
     } else {
       if (typeinfo->size() > read_default.size()) {
         return Status::Corruption(
             Substitute("Not enough bytes for $0: read default size ($1) less than type size ($2)",
                        typeinfo->name(), read_default.size(), typeinfo->size()));
       }
-      read_default_ptr = read_default.data();
+      builder.read_default(read_default.data());
     }
   }
+
   if (pb.has_write_default_value()) {
-    write_default = Slice(pb.write_default_value());
+    Slice write_default(pb.write_default_value());
+    const TypeInfo* typeinfo = GetTypeInfo(pb.type());
     if (typeinfo->physical_type() == BINARY) {
-      write_default_ptr = &write_default;
+      builder.write_default(&write_default);
     } else {
       if (typeinfo->size() > write_default.size()) {
         return Status::Corruption(
             Substitute("Not enough bytes for $0: write default size ($1) less than type size ($2)",
                        typeinfo->name(), write_default.size(), typeinfo->size()));
       }
-      write_default_ptr = write_default.data();
+      builder.write_default(write_default.data());
     }
   }
 
@@ -321,6 +324,7 @@ Status ColumnSchemaFromPB(const ColumnSchemaPB& pb, optional<ColumnSchema>* col_
       type_attributes.length = typeAttributesPB.length();
     }
   }
+  builder.type_attributes(type_attributes);
 
   ColumnStorageAttributes attributes;
   if (pb.has_encoding()) {
@@ -332,17 +336,15 @@ Status ColumnSchemaFromPB(const ColumnSchemaPB& pb, optional<ColumnSchema>* col_
   if (pb.has_cfile_block_size()) {
     attributes.cfile_block_size = pb.cfile_block_size();
   }
+  builder.storage_attributes(attributes);
 
-  // According to the URL below, the default value for strings that are optional
-  // in protobuf is the empty string. So, it's safe to use pb.comment() directly
-  // regardless of whether has_comment() is true or false.
-  // https://developers.google.com/protocol-buffers/docs/proto#optional
-  bool immutable = pb.has_immutable() ? pb.immutable() : false;
-  bool auto_incrementing = pb.has_is_auto_incrementing() ? pb.is_auto_incrementing() : false;
-  *col_schema = ColumnSchema(pb.name(), pb.type(), pb.is_nullable(),
-                             immutable, auto_incrementing,
-                             read_default_ptr, write_default_ptr,
-                             attributes, type_attributes, pb.comment());
+  builder.immutable(pb.has_immutable() ? pb.immutable() : false);
+  builder.auto_incrementing(
+      pb.has_is_auto_incrementing() ? pb.is_auto_incrementing() : false);
+  if (pb.has_comment()) {
+    builder.comment(pb.comment());
+  }
+  *csb = std::move(builder);
   return Status::OK();
 }
 
@@ -414,9 +416,6 @@ Status ColumnPBsToSchema(const RepeatedPtrField<ColumnSchemaPB>& column_pbs,
   int num_key_columns = 0;
   bool is_handling_key = true;
   for (const ColumnSchemaPB& pb : column_pbs) {
-    optional<ColumnSchema> column;
-    RETURN_NOT_OK(ColumnSchemaFromPB(pb, &column));
-    columns.emplace_back(std::move(*column));
     if (pb.is_key()) {
       if (!is_handling_key) {
         return Status::InvalidArgument(
@@ -426,6 +425,9 @@ Status ColumnPBsToSchema(const RepeatedPtrField<ColumnSchemaPB>& column_pbs,
     } else {
       is_handling_key = false;
     }
+    ColumnSchemaBuilder builder;
+    RETURN_NOT_OK(ColumnSchemaBuilderFromPB(pb, &builder));
+    columns.emplace_back(builder.Build());
     if (pb.has_id()) {
       column_ids.emplace_back(pb.id());
     }

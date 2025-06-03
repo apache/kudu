@@ -114,10 +114,10 @@ TEST_P(DiffScanTest, TestDiffScan) {
 
     // The merge iterator requires an IS_DELETED column when including deleted
     // rows in order to support deduplication of the rows.
-    ASSERT_OK(builder.AddColumn("deleted", IS_DELETED,
-                                /*is_nullable=*/ false,
-                                /*read_default=*/ &kIsDeletedDefault,
-                                /*write_default=*/ nullptr));
+    ASSERT_OK(builder.AddColumn(ColumnSchemaBuilder()
+                                    .name("deleted")
+                                    .type(IS_DELETED)
+                                    .read_default(&kIsDeletedDefault)));
   }
   Schema projection = builder.BuildWithoutIds();
   opts.projection = &projection;
@@ -189,10 +189,10 @@ TEST_F(OrderedDiffScanWithDeletesTest, TestKudu3108) {
   opts.include_deleted_rows = true;
   static const bool kIsDeletedDefault = false;
   SchemaBuilder builder(*tablet->metadata()->schema());
-  ASSERT_OK(builder.AddColumn("deleted", IS_DELETED,
-                              /*is_nullable=*/ false,
-                              /*read_default=*/ &kIsDeletedDefault,
-                              /*write_default=*/ nullptr));
+  ASSERT_OK(builder.AddColumn(ColumnSchemaBuilder()
+                                  .name("deleted")
+                                  .type(IS_DELETED)
+                                  .read_default(&kIsDeletedDefault)));
   Schema projection = builder.BuildWithoutIds();
   opts.projection = &projection;
 
