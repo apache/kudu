@@ -70,21 +70,37 @@ class CodegenTest : public KuduTest {
       // Set the initial Arena size as small as possible to catch errors during relocation.
       projections_mem_(16) {
     // Create the base schema.
-    vector<ColumnSchema> cols = { ColumnSchema("key           ", UINT64, false),
-                                  ColumnSchema("int32         ",  INT32, false),
-                                  ColumnSchema("int32-null-val",  INT32,  true),
-                                  ColumnSchema("int32-null    ",  INT32,  true),
-                                  ColumnSchema("str32         ", STRING, false),
-                                  ColumnSchema("str32-null-val", STRING,  true),
-                                  ColumnSchema("str32-null    ", STRING,  true) };
+    vector<ColumnSchema> cols = {
+        ColumnSchema("key           ", UINT64, ColumnSchema::NOT_NULL),
+        ColumnSchema("int32         ",  INT32, ColumnSchema::NOT_NULL),
+        ColumnSchema("int32-null-val",  INT32, ColumnSchema::NULLABLE),
+        ColumnSchema("int32-null    ",  INT32, ColumnSchema::NULLABLE),
+        ColumnSchema("str32         ", STRING, ColumnSchema::NOT_NULL),
+        ColumnSchema("str32-null-val", STRING, ColumnSchema::NULLABLE),
+        ColumnSchema("str32-null    ", STRING, ColumnSchema::NULLABLE),
+    };
     CHECK_OK(base_.Reset(cols, 1));
     base_ = SchemaBuilder(base_).Build(); // add IDs
 
     // Create an extended default schema
-    cols.emplace_back("int32-R ",  INT32, false, false, false, kI32R, nullptr);
-    cols.emplace_back("int32-RW",  INT32, false, false, false, kI32R, kI32W);
-    cols.emplace_back("str32-R ", STRING, false, false, false, kStrR, nullptr);
-    cols.emplace_back("str32-RW", STRING, false, false, false, kStrR, kStrW);
+    cols.emplace_back(ColumnSchemaBuilder()
+                          .name("int32-R ")
+                          .type(INT32)
+                          .read_default(kI32R));
+    cols.emplace_back(ColumnSchemaBuilder()
+                          .name("int32-RW")
+                          .type(INT32)
+                          .read_default(kI32R)
+                          .write_default(kI32W));
+    cols.emplace_back(ColumnSchemaBuilder()
+                          .name("str32-R ")
+                          .type(STRING)
+                          .read_default(kStrR));
+    cols.emplace_back(ColumnSchemaBuilder()
+                          .name("str32-RW")
+                          .type(STRING)
+                          .read_default(kStrR)
+                          .write_default(kStrW));
     CHECK_OK(defaults_.Reset(cols, 1));
     defaults_ = SchemaBuilder(defaults_).Build(); // add IDs
 

@@ -1704,9 +1704,10 @@ TYPED_TEST(TestTablet, TestDiffScanUnobservableOperations) {
     // Create a projection with an IS_DELETED virtual column.
     vector<ColumnSchema> col_schemas(this->client_schema().columns());
     bool read_default = false;
-    col_schemas.emplace_back("is_deleted", IS_DELETED, /*is_nullable=*/ false,
-                             /*is_immutable=*/ false, /*is_auto_incremented=*/ false,
-                             &read_default);
+    col_schemas.emplace_back(ColumnSchemaBuilder()
+                                 .name("is_deleted")
+                                 .type(IS_DELETED)
+                                 .read_default(&read_default));
     Schema projection(col_schemas, this->client_schema().num_key_columns());
 
     // Do the diff scan.

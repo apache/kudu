@@ -480,25 +480,26 @@ static bool GetScanPrivilegesOrRespond(const NewScanRequestPB& scan_pb, const Sc
   unordered_set<ColumnId> required_privileges;
   // Determine the scan's projected key column IDs.
   for (int i = 0; i < scan_pb.projected_columns_size(); i++) {
-    optional<ColumnSchema> projected_column;
-    Status s = ColumnSchemaFromPB(scan_pb.projected_columns(i), &projected_column);
-    if (PREDICT_FALSE(!s.ok())) {
+    ColumnSchemaBuilder builder;
+    if (auto s = ColumnSchemaBuilderFromPB(scan_pb.projected_columns(i), &builder);
+        PREDICT_FALSE(!s.ok())) {
       LOG(WARNING) << s.ToString();
       context->RespondRpcFailure(ErrorStatusPB::ERROR_INVALID_REQUEST, s);
       return false;
     }
+    const auto projected_column(builder.Build());
     // A projection may contain virtual columns, which don't exist in the
     // tablet schema. If we were to search for a virtual column, we would
     // incorrectly get a "not found" error. To reconcile this with the fact
     // that we want to return an authorization error if the user has requested
     // a non-virtual column that doesn't exist, we require full scan privileges
     // for virtual columns.
-    if (projected_column->type_info()->is_virtual()) {
+    if (projected_column.type_info()->is_virtual()) {
       *required_column_privileges = unordered_set<ColumnId>(schema.column_ids().begin(),
                                                             schema.column_ids().end());
       return true;
     }
-    int col_idx = schema.find_column(projected_column->name());
+    int col_idx = schema.find_column(projected_column.name());
     if (col_idx == Schema::kColumnNotFound) {
       respond_not_authorized(scan_pb.projected_columns(i).name());
       return false;
@@ -2674,24 +2675,27 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
         string("Invalid predicate ") + SecureShortDebugString(pred_pb) +
         ": has no lower or upper bound.");
     }
-    optional<ColumnSchema> col;
-    RETURN_NOT_OK(ColumnSchemaFromPB(pred_pb.column(), &col));
+    ColumnSchemaBuilder builder;
+    RETURN_NOT_OK(ColumnSchemaBuilderFromPB(pred_pb.column(), &builder));
+    const auto column_schema(builder.Build());
 
     const void* lower_bound = nullptr;
     const void* upper_bound = nullptr;
     if (pred_pb.has_lower_bound()) {
-      RETURN_NOT_OK(ExtractPredicateValue(*col, pred_pb.lower_bound(),
+      RETURN_NOT_OK(ExtractPredicateValue(column_schema,
+                                          pred_pb.lower_bound(),
                                           scanner->arena(),
                                           &lower_bound));
     }
     if (pred_pb.has_inclusive_upper_bound()) {
-      RETURN_NOT_OK(ExtractPredicateValue(*col, pred_pb.inclusive_upper_bound(),
+      RETURN_NOT_OK(ExtractPredicateValue(column_schema,
+                                          pred_pb.inclusive_upper_bound(),
                                           scanner->arena(),
                                           &upper_bound));
     }
 
-    auto pred = ColumnPredicate::InclusiveRange(*col, lower_bound, upper_bound, scanner->arena());
-    if (pred) {
+    if (const auto pred = ColumnPredicate::InclusiveRange(
+            column_schema, lower_bound, upper_bound, scanner->arena()); pred) {
       VLOG(3) << Substitute("Parsed predicate $0 from $1",
                             pred->ToString(), SecureShortDebugString(scan_pb));
       spec->AddPredicate(*pred);

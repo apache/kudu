@@ -241,14 +241,10 @@ Status ScanConfiguration::AddIsDeletedColumn() {
 
   // Add the IS_DELETED virtual column to the list of projected columns.
   bool read_default = false;
-  ColumnSchema is_deleted(col_name,
-                          IS_DELETED,
-                          /*is_nullable=*/false,
-                          /*is_immutable=*/false,
-                          /*is_auto_incrementing=*/false,
-                          &read_default);
-  cols.emplace_back(std::move(is_deleted));
-
+  cols.emplace_back(ColumnSchemaBuilder()
+                        .name(col_name)
+                        .type(IS_DELETED)
+                        .read_default(&read_default));
   return CreateProjection(cols);
 }
 

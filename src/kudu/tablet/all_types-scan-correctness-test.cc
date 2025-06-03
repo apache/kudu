@@ -79,11 +79,18 @@ static const int kStrlen = 10;
 
 struct RowOpsBase {
   RowOpsBase(DataType type, EncodingType encoding) : type_(type), encoding_(encoding) {
-    schema_ = Schema({ColumnSchema("key", INT32),
-                     ColumnSchema("val_a", type, true, false, false, nullptr, nullptr,
-                         ColumnStorageAttributes(encoding, DEFAULT_COMPRESSION)),
-                     ColumnSchema("val_b", type, true, false, false, nullptr, nullptr,
-                         ColumnStorageAttributes(encoding, DEFAULT_COMPRESSION))}, 1);
+    schema_ = Schema({ ColumnSchema("key", INT32),
+                       ColumnSchemaBuilder()
+                          .name("val_a")
+                          .type(type)
+                          .nullable(true)
+                          .storage_attributes({encoding, DEFAULT_COMPRESSION}),
+                       ColumnSchemaBuilder()
+                          .name("val_b")
+                          .type(type)
+                          .nullable(true)
+                          .storage_attributes({encoding, DEFAULT_COMPRESSION})
+                     }, 1);
 
   }
   DataType type_;
@@ -366,15 +373,30 @@ public:
     }
     SchemaBuilder builder(*tablet()->metadata()->schema());
     ignore_result(builder.RemoveColumn("val_c"));
-    ASSERT_OK(builder.AddColumn("val_c", rowops_.type_, true, default_ptr, nullptr));
+    ASSERT_OK(builder.AddColumn(ColumnSchemaBuilder()
+                                    .name("val_c")
+                                    .type(rowops_.type_)
+                                    .nullable(true)
+                                    .read_default(default_ptr)));
     AlterSchema(builder.Build());
-    altered_schema_ = Schema({ColumnSchema("key", INT32),
-                     ColumnSchema("val_a", rowops_.type_, true, false, false, nullptr, nullptr,
-                         ColumnStorageAttributes(rowops_.encoding_, DEFAULT_COMPRESSION)),
-                     ColumnSchema("val_b", rowops_.type_, true, false, false, nullptr, nullptr,
-                         ColumnStorageAttributes(rowops_.encoding_, DEFAULT_COMPRESSION)),
-                     ColumnSchema("val_c", rowops_.type_, true, false, false, default_ptr, nullptr,
-                         ColumnStorageAttributes(rowops_.encoding_, DEFAULT_COMPRESSION))}, 1);
+    altered_schema_ = Schema({ ColumnSchema("key", INT32),
+                               ColumnSchemaBuilder()
+                                  .name("val_a")
+                                  .type(rowops_.type_)
+                                  .nullable(true)
+                                  .storage_attributes({rowops_.encoding_, DEFAULT_COMPRESSION}),
+                               ColumnSchemaBuilder()
+                                  .name("val_b")
+                                  .type(rowops_.type_)
+                                  .nullable(true)
+                                  .storage_attributes({rowops_.encoding_, DEFAULT_COMPRESSION}),
+                               ColumnSchemaBuilder()
+                                  .name("val_c")
+                                  .type(rowops_.type_)
+                                  .nullable(true)
+                                  .storage_attributes({rowops_.encoding_, DEFAULT_COMPRESSION})
+                                  .read_default(default_ptr) },
+                             1);
   }
 
   // Scan the results of a query. Set "count" to the number of results satisfying the predicates.

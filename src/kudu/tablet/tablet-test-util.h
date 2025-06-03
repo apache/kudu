@@ -791,9 +791,10 @@ static inline Schema GetRandomProjection(const Schema& schema,
   // Add a IS_DELETED virtual column some of the time.
   if (allow == AllowIsDeleted::YES && prng->Uniform(10) == 0) {
     bool read_default = false;
-    projected_cols.emplace_back("is_deleted", IS_DELETED, /*is_nullable=*/ false,
-                                /*is_immutable=*/ false, /*is_auto_incrementing*/ false,
-                                &read_default);
+    projected_cols.emplace_back(ColumnSchemaBuilder()
+                                    .name("is_deleted")
+                                    .type(IS_DELETED)
+                                    .read_default(&read_default));
     projected_col_ids.emplace_back(schema.max_col_id() + 1);
   }
   return Schema(projected_cols, projected_col_ids, 0);

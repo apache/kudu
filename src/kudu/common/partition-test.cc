@@ -876,10 +876,14 @@ TEST_F(PartitionTest, TestIncrementRangePartitionStringBounds) {
 }
 
 TEST_F(PartitionTest, TestVarcharRangePartitions) {
-  Schema schema({ ColumnSchema("c1", VARCHAR, false, false, false, nullptr, nullptr,
-                               ColumnStorageAttributes(), ColumnTypeAttributes(10)),
-                  ColumnSchema("c2", VARCHAR, false, false, false, nullptr, nullptr,
-                               ColumnStorageAttributes(), ColumnTypeAttributes(10)) },
+  Schema schema({ ColumnSchemaBuilder()
+                      .name("c1")
+                      .type(VARCHAR)
+                      .type_attributes(ColumnTypeAttributes(10)),
+                  ColumnSchemaBuilder()
+                      .name("c2")
+                      .type(VARCHAR)
+                      .type_attributes(ColumnTypeAttributes(10)) },
                   { ColumnId(0), ColumnId(1) }, 2);
 
   PartitionSchemaPB schema_builder;
@@ -2320,7 +2324,9 @@ TEST_F(PartitionTest, PartitionKeyWithAutoIncrementingColumn) {
   // NON-UNIQUE PRIMARY KEY (c1)
   // PARTITION BY HASH (c1) PARTITIONS 2;
   Schema schema({ ColumnSchema("c1", STRING),
-                  ColumnSchema("auto_increment_id", INT64, false, false, true),
+                  ColumnSchemaBuilder()
+                     .name("auto_increment_id")
+                     .auto_incrementing(true),
                   ColumnSchema("c2", STRING) },
                 { ColumnId(0), ColumnId(1), ColumnId(2) }, 2);
 

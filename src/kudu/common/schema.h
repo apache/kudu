@@ -204,57 +204,47 @@ struct ColumnSchemaDelta {
 //
 // Holds the data type as well as information about nullability & column name.
 // In the future, it may hold information about annotations, etc.
-class ColumnSchema {
+class ColumnSchema final {
  public:
+  // Enumeration to express a column's nullability.
+  enum Nullability {
+     NOT_NULL,
+     NULLABLE,
+  };
+
+  // A minimalistic constructor with only name, type, and nullability of
+  // the column to specify: the latter parameter is optional and by default
+  // is set to Nullability::NOT_NULL.
+  //
   // name: column name
   // type: column type (e.g. UINT8, INT32, STRING, ...)
-  // is_nullable: true if a row value can be null
-  // is_immutable: true if the column is immutable.
-  //    Immutable column means the cell value can not be updated after the first insert.
-  // is_auto_incrementing: true if the column is auto-incrementing column.
-  //    Auto-incrementing column cannot be updated but written to by a client and is auto
-  //    filled in by Kudu by incrementing the previous highest written value to the tablet.
-  //    There can only be a single auto-incrementing column per table.
-  // read_default: default value used on read if the column was not present before alter.
-  //    The value will be copied and released on ColumnSchema destruction.
-  // write_default: default value added to the row if the column value was
-  //    not specified on insert.
-  //    The value will be copied and released on ColumnSchema destruction.
-  // comment: the comment for the column.
+  // nullability: NOT_NULL or NULLABLE
   //
   // Example:
-  //   ColumnSchema col_a("a", UINT32)
-  //   ColumnSchema col_b("b", STRING, true);
-  //   ColumnSchema col_b("b", STRING, false, true);
+  //   ColumnSchema col_a("a", UINT32);
+  //   ColumnSchema col_b("b", STRING, ColumnSchema::NULLABLE);
+  //
+  // Don't use this constructor if there are more column parameters to specify.
+  // Instead, switch to ColumnSchemaBuilder():
   //   uint32_t default_i32 = -15;
-  //   ColumnSchema col_c("c", INT32, false, false, false, &default_i32);
+  //   ColumnSchema col_c(ColumnSchemaBuilder()
+  //                          .name("c")
+  //                          .type(INT32)
+  //                          .read_default(&default_i32));
+  //
   //   Slice default_str("Hello");
-  //   ColumnSchema col_d("d", STRING, false, false, false, &default_str);
-  //   ColumnSchema col_e("e", STRING, false, false, true, &default_str);
+  //   ColumnSchema col_d(ColumnSchemaBuilder()
+  //                          .name("d")
+  //                          .type(STRING)
+  //                          .nullable(true)
+  //                          .read_default(&default_str)
+  //                          .write_default(&default_str));
   ColumnSchema(std::string name,
                DataType type,
-               bool is_nullable = false,
-               bool is_immutable = false,
-               bool is_auto_incrementing = false,
-               const void* read_default = nullptr,
-               const void* write_default = nullptr,
-               ColumnStorageAttributes attributes = {},
-               ColumnTypeAttributes type_attributes = {},
-               std::string comment = "")
+               Nullability nullability = NOT_NULL)
       : name_(std::move(name)),
         type_info_(GetTypeInfo(type)),
-        is_nullable_(is_nullable),
-        is_immutable_(is_immutable),
-        is_auto_incrementing_(is_auto_incrementing),
-        read_default_(read_default ? std::make_shared<Variant>(type, read_default) : nullptr),
-        attributes_(attributes),
-        type_attributes_(type_attributes),
-        comment_(std::move(comment)) {
-    if (write_default == read_default) {
-      write_default_ = read_default_;
-    } else if (write_default != nullptr) {
-      write_default_ = std::make_shared<Variant>(type, write_default);
-    }
+        is_nullable_(nullability != NOT_NULL) {
   }
 
   const TypeInfo* type_info() const {
@@ -415,7 +405,7 @@ class ColumnSchema {
   // struct is so that in the future, they may be moved out to a more
   // appropriate location as opposed to parts of ColumnSchema.
   const ColumnStorageAttributes& attributes() const {
-    return attributes_;
+    return storage_attributes_;
   }
 
   const ColumnTypeAttributes& type_attributes() const {
@@ -458,23 +448,233 @@ class ColumnSchema {
   size_t memory_footprint_including_this() const;
 
  private:
+  friend class ColumnSchemaBuilder;
   friend class SchemaBuilder;
+
+  // Constructor with initializers for all the fields.
+  //
+  // name: column name
+  // type: column type (e.g. UINT8, INT32, STRING, ...)
+  // is_nullable: true if a row value can be null
+  // is_immutable: true if the column is immutable.
+  //    Immutable column means the cell value can not be updated after the first insert.
+  // is_auto_incrementing: true if the column is auto-incrementing column.
+  //    Auto-incrementing column cannot be updated but written to by a client and is auto
+  //    filled in by Kudu by incrementing the previous highest written value to the tablet.
+  //    There can only be a single auto-incrementing column per table.
+  // read_default: default value used on read if the column was not present before alter.
+  //    The value will be copied and released on ColumnSchema destruction.
+  // write_default: default value added to the row if the column value was
+  //    not specified on insert.
+  //    The value will be copied and released on ColumnSchema destruction
+  // storage_attributes: CFile-level attributes for corresponding column blocks
+  // type_attributes: attributes of the column type (e.g. precision for DECIMAL)
+  // comment: the comment for the column.
+  //
+  // This constructor is private to encourage using ColumnSchemaBuilder when
+  // it's necessary to specify more attributes than just name, type, and column
+  // nullability.
+  ColumnSchema(std::string name,
+               DataType type,
+               bool is_nullable,
+               bool is_immutable,
+               bool is_auto_incrementing,
+               std::shared_ptr<Variant> read_default,
+               std::shared_ptr<Variant> write_default,
+               ColumnStorageAttributes storage_attributes,
+               ColumnTypeAttributes type_attributes,
+               std::string comment)
+      : name_(std::move(name)),
+        type_info_(GetTypeInfo(type)),
+        is_nullable_(is_nullable),
+        is_immutable_(is_immutable),
+        is_auto_incrementing_(is_auto_incrementing),
+        read_default_(std::move(read_default)),
+        write_default_(std::move(write_default)),
+        storage_attributes_(storage_attributes),
+        type_attributes_(type_attributes),
+        comment_(std::move(comment)) {
+  }
 
   void set_name(const std::string& name) {
     name_ = name;
   }
 
-  std::string name_;
-  const TypeInfo* type_info_;
-  bool is_nullable_;
-  bool is_immutable_;
-  bool is_auto_incrementing_;
+  std::string name_{};
+  const TypeInfo* type_info_ = nullptr;
+  bool is_nullable_ = false;
+  bool is_immutable_ = false;
+  bool is_auto_incrementing_ = false;
   // use shared_ptr since the ColumnSchema is always copied around.
-  std::shared_ptr<Variant> read_default_;
-  std::shared_ptr<Variant> write_default_;
-  ColumnStorageAttributes attributes_;
-  ColumnTypeAttributes type_attributes_;
-  std::string comment_;
+  std::shared_ptr<Variant> read_default_{};
+  std::shared_ptr<Variant> write_default_{};
+  ColumnStorageAttributes storage_attributes_{};
+  ColumnTypeAttributes type_attributes_{};
+  std::string comment_{};
+};
+
+// A builder class to facilitate creation of ColumnSchema instances.
+class ColumnSchemaBuilder final {
+ public:
+  ColumnSchemaBuilder() = default;
+
+  // Operator for implicit conversion to ColumnSchema. This is useful to
+  // get rid of trailing call to Build() when creating an in-place instance
+  // of ColumnSchemaBilder as an argument for a method accepting ColumnSchema
+  // as a parameter.
+  operator ColumnSchema() const {
+    return Build();
+  }
+
+  ColumnSchema Build() const {
+#if DCHECK_IS_ON()
+    Validate();
+#endif
+    return ColumnSchema(
+        name_,
+        type_,
+        is_nullable_,
+        is_immutable_,
+        is_auto_incrementing_,
+        read_default_,
+        write_default_,
+        storage_attributes_,
+        type_attributes_,
+        comment_);
+  }
+
+  std::unique_ptr<ColumnSchema> New() const {
+#if DCHECK_IS_ON()
+    Validate();
+#endif
+    std::unique_ptr<ColumnSchema> ret(new ColumnSchema(
+        name_,
+        type_,
+        is_nullable_,
+        is_immutable_,
+        is_auto_incrementing_,
+        read_default_,
+        write_default_,
+        storage_attributes_,
+        type_attributes_,
+        comment_));
+    return ret;
+  }
+
+  ColumnSchemaBuilder& name(std::string name) {
+    name_ = std::move(name);
+    return *this;
+  }
+
+  ColumnSchemaBuilder& type(DataType type) {
+    type_ = type;
+    return *this;
+  }
+
+  ColumnSchemaBuilder& nullable(bool nullable) {
+    is_nullable_ = nullable;
+    return *this;
+  }
+
+  ColumnSchemaBuilder& immutable(bool immutable) {
+    is_immutable_ = immutable;
+    return *this;
+  }
+
+  ColumnSchemaBuilder& auto_incrementing(bool auto_incrementing) {
+    if (auto_incrementing) {
+      // If the data type is set explicitly for an auto-incrementing column,
+      // check if it's consistent.
+      DCHECK(type_ == DataType::UNKNOWN_DATA || type_ == DataType::INT64);
+      // Automatically set the proper type for an auto-incrementing column.
+      type_ = DataType::INT64;
+    }
+    is_auto_incrementing_ = auto_incrementing;
+    return *this;
+  }
+
+  // Set default value used on read if the column was not present before alter.
+  // The value 'read_default' is copied and the copy is passed to the produced
+  // ColumnSchema upon calling Build() or New().
+  ColumnSchemaBuilder& read_default(const void* read_default) {
+    DCHECK(type_ != DataType::UNKNOWN_DATA);
+    if (!read_default) {
+      read_default_.reset();
+    } else {
+      if (write_default_ && write_default_.get() == read_default) {
+        read_default_ = write_default_;
+      } else {
+        read_default_ = std::make_shared<Variant>(type_, read_default);
+      }
+    }
+    return *this;
+  }
+
+  // Set default value for the column cell if the value was not specified on insert.
+  // The value 'write_default' is copied and the copy is passed to the produced
+  // ColumnSchema upon calling Build() or New().
+  ColumnSchemaBuilder& write_default(const void* write_default) {
+    DCHECK(type_ != DataType::UNKNOWN_DATA);
+    if (!write_default) {
+      write_default_.reset();
+    } else {
+      if (read_default_ && read_default_.get() == write_default) {
+        write_default_ = read_default_;
+      } else {
+        write_default_ = std::make_shared<Variant>(type_, write_default);
+      }
+    }
+    return *this;
+  }
+
+  ColumnSchemaBuilder& storage_attributes(ColumnStorageAttributes attributes) {
+    storage_attributes_ = attributes;
+    return *this;
+  }
+
+  ColumnSchemaBuilder& type_attributes(ColumnTypeAttributes attributes) {
+    type_attributes_ = attributes;
+    return *this;
+  }
+
+  ColumnSchemaBuilder& comment(std::string comment) {
+    comment_ = std::move(comment);
+    return *this;
+  }
+
+ private:
+
+#if DCHECK_IS_ON()
+  void Validate() const {
+    // At least name and type should be set for a column.
+    DCHECK(!name_.empty());
+    DCHECK(type_ != DataType::UNKNOWN_DATA);
+
+    // Make sure the specified Variant data is consistent with the data type.
+    DCHECK(!read_default_ || type_ == read_default_->type());
+    DCHECK(!write_default_ || type_ == write_default_->type());
+
+    // Extra sanity check for auto-incrementing columns.
+    if (is_auto_incrementing_) {
+      DCHECK_EQ(INT64, type_);
+      DCHECK(!is_nullable_);
+      DCHECK(!is_immutable_);
+      DCHECK(!read_default_);
+      DCHECK(!write_default_);
+    }
+  }
+#endif // #if DCHECK_IS_ON() ...
+
+  std::string name_{};
+  DataType type_ = DataType::UNKNOWN_DATA;
+  bool is_nullable_ = false;
+  bool is_immutable_ = false;
+  bool is_auto_incrementing_ = false;
+  std::shared_ptr<Variant> read_default_{};
+  std::shared_ptr<Variant> write_default_{};
+  ColumnStorageAttributes storage_attributes_{};
+  ColumnTypeAttributes type_attributes_{};
+  std::string comment_{};
 };
 
 // The schema for a set of rows.
@@ -1095,38 +1295,24 @@ class SchemaBuilder {
   Schema Build() const { return Schema(cols_, col_ids_, num_key_columns_); }
   Schema BuildWithoutIds() const { return Schema(cols_, num_key_columns_); }
 
-  Status AddKeyColumn(const std::string& name, DataType type);
-
-  Status AddColumn(const ColumnSchema& column, bool is_key);
+  Status AddKeyColumn(const std::string& name, DataType type) {
+    return AddKeyColumn(ColumnSchemaBuilder().name(name).type(type));
+  }
+  Status AddKeyColumn(const ColumnSchema& column) {
+    return AddColumn(column, /*is_key=*/true);
+  }
 
   Status AddColumn(const std::string& name, DataType type) {
-    return AddColumn(name, type, false, false, nullptr, nullptr);
+    return AddColumn(ColumnSchemaBuilder().name(name).type(type));
   }
-
+  Status AddColumn(const ColumnSchema& column) {
+    return AddColumn(column, /*is_key=*/false);
+  }
   Status AddNullableColumn(const std::string& name, DataType type) {
-    return AddColumn(name, type, true, false, nullptr, nullptr);
+    return AddColumn(ColumnSchemaBuilder().name(name).type(type).nullable(true));
   }
 
-  Status AddColumn(const std::string& name,
-                   DataType type,
-                   bool is_nullable,
-                   const void* read_default,
-                   const void* write_default);
-
-  Status AddColumn(const std::string& name,
-                   DataType type,
-                   bool is_nullable,
-                   bool is_immutable,
-                   const void* read_default,
-                   const void* write_default);
-
-  Status AddColumn(const std::string& name,
-                   DataType type,
-                   bool is_nullable,
-                   bool is_immutable,
-                   bool is_auto_incrementing,
-                   const void* read_default,
-                   const void* write_default);
+  Status AddColumn(const ColumnSchema& column, bool is_key);
 
   Status RemoveColumn(const std::string& name);
 
@@ -1135,13 +1321,13 @@ class SchemaBuilder {
   Status ApplyColumnSchemaDelta(const ColumnSchemaDelta& col_delta);
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(SchemaBuilder);
-
   ColumnId next_id_;
   std::vector<ColumnId> col_ids_;
   std::vector<ColumnSchema> cols_;
   std::unordered_set<std::string> col_names_;
   size_t num_key_columns_;
+
+  DISALLOW_COPY_AND_ASSIGN(SchemaBuilder);
 };
 
 } // namespace kudu

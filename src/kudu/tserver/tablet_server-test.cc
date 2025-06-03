@@ -3530,10 +3530,10 @@ TEST_F(ScannerScansTest, TestDiffScan) {
   // Build a projection with an IS_DELETED column.
   SchemaBuilder builder(*tablet_replica_->tablet()->schema());
   const bool kIsDeletedDefault = false;
-  ASSERT_OK(builder.AddColumn("is_deleted", IS_DELETED,
-                              /*is_nullable=*/ false,
-                              /*read_default=*/ &kIsDeletedDefault,
-                              /*write_default=*/ nullptr));
+  ASSERT_OK(builder.AddColumn(ColumnSchemaBuilder()
+                              .name("is_deleted")
+                              .type(IS_DELETED)
+                              .read_default(&kIsDeletedDefault)));
   Schema projection = builder.BuildWithoutIds();
 
   // Start scan.
@@ -3598,10 +3598,10 @@ TEST_F(ScannerScansTest, TestDiffScanErrors) {
   // Build a projection with an IS_DELETED column.
   SchemaBuilder builder(*tablet_replica_->tablet()->schema());
   const bool kIsDeletedDefault = false;
-  ASSERT_OK(builder.AddColumn("is_deleted", IS_DELETED,
-                              /*is_nullable=*/ false,
-                              /*read_default=*/ &kIsDeletedDefault,
-                              /*write_default=*/ nullptr));
+  ASSERT_OK(builder.AddColumn(ColumnSchemaBuilder()
+                              .name("is_deleted")
+                              .type(IS_DELETED)
+                              .read_default(&kIsDeletedDefault)));
   Schema projection = builder.BuildWithoutIds();
 
   ScanRequestPB req;
@@ -3720,8 +3720,9 @@ TEST_F(ScannerScansTest, TestInvalidScanRequest_BadProjectionTypes) {
 
   // Verify mismatched nullability for the not-null int field
   ASSERT_OK(
-    projection.Reset({ ColumnSchema("int_val", INT32, true) }, // should be NOT NULL
+    projection.Reset({ ColumnSchema("int_val", INT32, ColumnSchema::NULLABLE) },
                      0));
+  // should be NOT NULL
   VerifyScanRequestFailure(projection,
                            TabletServerErrorPB::MISMATCHED_SCHEMA,
                            "The column 'int_val' must have type INT32 NOT "
@@ -3729,8 +3730,9 @@ TEST_F(ScannerScansTest, TestInvalidScanRequest_BadProjectionTypes) {
 
   // Verify mismatched nullability for the nullable string field
   ASSERT_OK(
-    projection.Reset({ ColumnSchema("string_val", STRING, false) }, // should be NULLABLE
+    projection.Reset({ ColumnSchema("string_val", STRING, ColumnSchema::NOT_NULL) },
                      0));
+  // should be NULLABLE
   VerifyScanRequestFailure(projection,
                            TabletServerErrorPB::MISMATCHED_SCHEMA,
                            "The column 'string_val' must have type STRING "
@@ -3738,8 +3740,9 @@ TEST_F(ScannerScansTest, TestInvalidScanRequest_BadProjectionTypes) {
 
   // Verify mismatched type for the not-null int field
   ASSERT_OK(
-    projection.Reset({ ColumnSchema("int_val", INT16, false) },     // should be INT32 NOT NULL
+    projection.Reset({ ColumnSchema("int_val", INT16, ColumnSchema::NOT_NULL) },
                      0));
+  // should be INT32 NOT NULL
   VerifyScanRequestFailure(projection,
                            TabletServerErrorPB::MISMATCHED_SCHEMA,
                            "The column 'int_val' must have type INT32 NOT "
@@ -3747,8 +3750,9 @@ TEST_F(ScannerScansTest, TestInvalidScanRequest_BadProjectionTypes) {
 
   // Verify mismatched type for the nullable string field
   ASSERT_OK(projection.Reset(
-        { ColumnSchema("string_val", INT32, true) }, // should be STRING NULLABLE
+        { ColumnSchema("string_val", INT32, ColumnSchema::NULLABLE) },
         0));
+  // should be STRING NULLABLE
   VerifyScanRequestFailure(projection,
                            TabletServerErrorPB::MISMATCHED_SCHEMA,
                            "The column 'string_val' must have type STRING "
@@ -4050,7 +4054,11 @@ TEST_F(TabletServerTest, TestAlterSchema) {
   const int32_t c2_write_default = 5;
   const int32_t c2_read_default = 7;
   SchemaBuilder builder(schema_);
-  ASSERT_OK(builder.AddColumn("c2", INT32, false, &c2_read_default, &c2_write_default));
+  ASSERT_OK(builder.AddColumn(ColumnSchemaBuilder()
+                              .name("c2")
+                              .type(INT32)
+                              .read_default(&c2_read_default)
+                              .write_default(&c2_write_default)));
   Schema s2 = builder.Build();
 
   req.set_dest_uuid(mini_server_->server()->fs_manager()->uuid());
@@ -4105,7 +4113,10 @@ TEST_F(TabletServerTest, TestAlterSchema_AddColWithoutWriteDefault) {
   // Add a column with a read-default but no write-default.
   const uint32_t c2_read_default = 7;
   SchemaBuilder builder(schema_);
-  ASSERT_OK(builder.AddColumn("c2", INT32, false, &c2_read_default, nullptr));
+  ASSERT_OK(builder.AddColumn(ColumnSchemaBuilder()
+                              .name("c2")
+                              .type(INT32)
+                              .read_default(&c2_read_default)));
   Schema s2 = builder.Build();
 
   req.set_dest_uuid(mini_server_->server()->fs_manager()->uuid());

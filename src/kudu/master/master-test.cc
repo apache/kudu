@@ -3516,7 +3516,7 @@ TEST_F(MasterTest, TestTableSchemaMetrics) {
     req.mutable_table()->set_table_name(kTableName);
     AlterTableRequestPB::Step* step = req.add_alter_schema_steps();
     step->set_type(AlterTableRequestPB::ADD_COLUMN);
-    ColumnSchemaToPB(ColumnSchema("c1", INT32, true),
+    ColumnSchemaToPB(ColumnSchema("c1", INT32, ColumnSchema::NULLABLE),
                      step->mutable_add_column()->mutable_schema());
 
     AlterTableResponsePB resp;

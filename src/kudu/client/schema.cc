@@ -830,12 +830,18 @@ KuduColumnSchema::KuduColumnSchema(const string &name,
   type_attr_private.precision = type_attributes.precision();
   type_attr_private.scale = type_attributes.scale();
   type_attr_private.length = type_attributes.length();
-  col_ = new ColumnSchema(name, ToInternalDataType(type, type_attributes),
-                          is_nullable,
-                          is_immutable,
-                          is_auto_incrementing,
-                          default_value, default_value, attr_private,
-                          type_attr_private, comment);
+  col_ = ColumnSchemaBuilder()
+             .name(name)
+             .type(ToInternalDataType(type, type_attributes))
+             .nullable(is_nullable)
+             .immutable(is_immutable)
+             .auto_incrementing(is_auto_incrementing)
+             .read_default(default_value)
+             .write_default(default_value)
+             .storage_attributes(attr_private)
+             .type_attributes(type_attr_private)
+             .comment(comment)
+             .New().release();
 }
 
 KuduColumnSchema::KuduColumnSchema(const KuduColumnSchema& other)

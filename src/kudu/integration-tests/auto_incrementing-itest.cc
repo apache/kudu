@@ -187,10 +187,11 @@ class AutoIncrementingItest : public KuduTest {
     scan->set_order_mode(ORDERED);
 
     Schema schema = Schema({ ColumnSchema("c0", INT32),
-                             ColumnSchema(Schema::GetAutoIncrementingColumnName(),
-                                          INT64, false,false, true),
+                             ColumnSchemaBuilder()
+                                 .name(Schema::GetAutoIncrementingColumnName())
+                                 .auto_incrementing(true),
                              ColumnSchema("c1", STRING),
-                           },2);
+                           }, 2);
     RETURN_NOT_OK(SchemaToColumnPBs(schema, scan->mutable_projected_columns()));
     RETURN_NOT_OK(cluster_->tserver_proxy(ts)->Scan(req, &resp, &rpc));
     tserver::TabletServerTestBase::StringifyRowsFromResponse(schema, rpc, &resp, results);

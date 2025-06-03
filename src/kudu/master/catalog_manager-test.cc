@@ -375,7 +375,7 @@ TEST_F(CatalogManagerRpcAndUserFunctionsTest, TestAlterTableRpc) {
   req.mutable_table()->set_table_name("test_table");
   AlterTableRequestPB::Step *step = req.add_alter_schema_steps();
   step->set_type(AlterTableRequestPB::ADD_COLUMN);
-  ColumnSchemaToPB(ColumnSchema("int_val2", INT32, true),
+  ColumnSchemaToPB(ColumnSchema("int_val2", INT32, ColumnSchema::NULLABLE),
                     step->mutable_add_column()->mutable_schema());
   CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
   ASSERT_OK(master_->catalog_manager()->AlterTableRpc(req, &resp, nullptr));
@@ -389,7 +389,7 @@ TEST_F(CatalogManagerRpcAndUserFunctionsTest, TestAlterTableWithUser) {
   req.mutable_table()->set_table_name("test_table");
   AlterTableRequestPB::Step *step = req.add_alter_schema_steps();
   step->set_type(AlterTableRequestPB::ADD_COLUMN);
-  ColumnSchemaToPB(ColumnSchema("int_val2", INT32, true),
+  ColumnSchemaToPB(ColumnSchema("int_val2", INT32, ColumnSchema::NULLABLE),
                     step->mutable_add_column()->mutable_schema());
   CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
   const string user = "test_user";

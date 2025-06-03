@@ -232,7 +232,8 @@ void AddFuzzedColumn(SchemaBuilder* builder,
     t = rand_types[random() % arraysize(rand_types)];
   }
   bool nullable = random() & 1;
-  CHECK_OK(builder->AddColumn(name, t, nullable, NULL, NULL));
+  CHECK_OK(builder->AddColumn(
+      ColumnSchemaBuilder().name(name).type(t).nullable(nullable)));
 }
 
 // Generate a randomized schema, where some columns might be missing,
@@ -336,12 +337,12 @@ TEST_F(RowOperationsTest, SchemaFuzz) {
 // One case from SchemaFuzz which failed previously.
 TEST_F(RowOperationsTest, TestFuzz1) {
   SchemaBuilder client_schema_builder;
-  ASSERT_OK(client_schema_builder.AddColumn("c1", INT32, false, nullptr, nullptr));
-  ASSERT_OK(client_schema_builder.AddColumn("c2", STRING, false, nullptr, nullptr));
+  ASSERT_OK(client_schema_builder.AddColumn("c1", INT32));
+  ASSERT_OK(client_schema_builder.AddColumn("c2", STRING));
   Schema client_schema = client_schema_builder.BuildWithoutIds();
   SchemaBuilder server_schema_builder;
-  ASSERT_OK(server_schema_builder.AddColumn("c1", INT32, false, nullptr, nullptr));
-  ASSERT_OK(server_schema_builder.AddColumn("c2", STRING, false, nullptr, nullptr));
+  ASSERT_OK(server_schema_builder.AddColumn("c1", INT32));
+  ASSERT_OK(server_schema_builder.AddColumn("c2", STRING));
   Schema server_schema = server_schema_builder.Build();
   KuduPartialRow row(&client_schema);
   ASSERT_OK(row.SetInt32(0, 12345));
@@ -352,12 +353,12 @@ TEST_F(RowOperationsTest, TestFuzz1) {
 // Another case from SchemaFuzz which failed previously.
 TEST_F(RowOperationsTest, TestFuzz2) {
   SchemaBuilder client_schema_builder;
-  ASSERT_OK(client_schema_builder.AddColumn("c1", STRING, true, nullptr, nullptr));
-  ASSERT_OK(client_schema_builder.AddColumn("c2", STRING, false, nullptr, nullptr));
+  ASSERT_OK(client_schema_builder.AddNullableColumn("c1", STRING));
+  ASSERT_OK(client_schema_builder.AddColumn("c2", STRING));
   Schema client_schema = client_schema_builder.BuildWithoutIds();
   SchemaBuilder server_schema_builder;
-  ASSERT_OK(server_schema_builder.AddColumn("c1", STRING, true, nullptr, nullptr));
-  ASSERT_OK(server_schema_builder.AddColumn("c2", STRING, false, nullptr, nullptr));
+  ASSERT_OK(server_schema_builder.AddNullableColumn("c1", STRING));
+  ASSERT_OK(server_schema_builder.AddColumn("c2", STRING));
   Schema server_schema = server_schema_builder.Build();
   KuduPartialRow row(&client_schema);
   ASSERT_OK(row.SetNull(0));
@@ -396,7 +397,7 @@ string TestProjection(RowOperationsPB::Type type,
 TEST_F(RowOperationsTest, ProjectionTestWholeSchemaSpecified) {
   Schema client_schema({ ColumnSchema("key", INT32),
                          ColumnSchema("int_val", INT32),
-                         ColumnSchema("string_val", STRING, true) },
+                         ColumnSchema("string_val", STRING, ColumnSchema::NULLABLE) },
                        1);
   // Test a row missing 'key', which is key column.
   {
@@ -462,17 +463,24 @@ TEST_F(RowOperationsTest, ProjectionTestWithDefaults) {
   int32_t non_null_default = 456;
   SchemaBuilder b;
   CHECK_OK(b.AddKeyColumn("key", INT32));
-  CHECK_OK(b.AddColumn("nullable_with_default", INT32, true,
-                       &nullable_default, &nullable_default));
-  CHECK_OK(b.AddColumn("non_null_with_default", INT32, false,
-                       &non_null_default, &non_null_default));
+  CHECK_OK(b.AddColumn(ColumnSchemaBuilder()
+                           .name("nullable_with_default")
+                           .type(INT32)
+                           .nullable(true)
+                           .read_default(&nullable_default)
+                           .write_default(&nullable_default)));
+  CHECK_OK(b.AddColumn(ColumnSchemaBuilder()
+                           .name("non_null_with_default")
+                           .type(INT32)
+                           .read_default(&non_null_default)
+                           .write_default(&non_null_default)));
   Schema server_schema = b.Build();
 
   // Clients may not have the defaults specified.
   // TODO: evaluate whether this should be true - how "dumb" should clients be?
   Schema client_schema({ ColumnSchema("key", INT32),
-                         ColumnSchema("nullable_with_default", INT32, true),
-                         ColumnSchema("non_null_with_default", INT32, false) },
+                         ColumnSchema("nullable_with_default", INT32, ColumnSchema::NULLABLE),
+                         ColumnSchema("non_null_with_default", INT32) },
                        1);
 
   // Specify just the key. The other two columns have defaults, so they'll get filled in.
@@ -529,8 +537,11 @@ TEST_F(RowOperationsTest, ProjectionTestWithClientHavingValidSubset) {
   SchemaBuilder b;
   CHECK_OK(b.AddKeyColumn("key", INT32));
   CHECK_OK(b.AddColumn("int_val", INT32));
-  CHECK_OK(b.AddColumn("new_int_with_default", INT32, false,
-                       &nullable_default, &nullable_default));
+  CHECK_OK(b.AddColumn(ColumnSchemaBuilder()
+                           .name("new_int_with_default")
+                           .type(INT32)
+                           .read_default(&nullable_default)
+                           .write_default(&nullable_default)));
   CHECK_OK(b.AddNullableColumn("new_nullable_int", INT32));
   Schema server_schema = b.Build();
 
@@ -583,7 +594,7 @@ TEST_F(RowOperationsTest, ProjectionTestWithClientHavingInvalidSubset) {
 TEST_F(RowOperationsTest, TestProjectUpdates) {
   Schema client_schema({ ColumnSchema("key", INT32),
                          ColumnSchema("int_val", INT32),
-                         ColumnSchema("string_val", STRING, true) },
+                         ColumnSchema("string_val", STRING, ColumnSchema::NULLABLE) },
                        1);
   Schema server_schema = SchemaBuilder(client_schema).Build();
 
@@ -644,12 +655,12 @@ TEST_F(RowOperationsTest, TestProjectUpdates) {
 // sure the name-based projection is functioning.
 TEST_F(RowOperationsTest, TestProjectUpdatesReorderedColumns) {
   Schema client_schema({ ColumnSchema("key", INT32),
-                         ColumnSchema("string_val", STRING, true),
+                         ColumnSchema("string_val", STRING, ColumnSchema::NULLABLE),
                          ColumnSchema("int_val", INT32) },
                        1);
   Schema server_schema({ ColumnSchema("key", INT32),
                          ColumnSchema("int_val", INT32),
-                         ColumnSchema("string_val", STRING, true) },
+                         ColumnSchema("string_val", STRING, ColumnSchema::NULLABLE) },
                        1);
   server_schema = SchemaBuilder(server_schema).Build();
 
@@ -664,11 +675,11 @@ TEST_F(RowOperationsTest, TestProjectUpdatesReorderedColumns) {
 // This is OK on an update.
 TEST_F(RowOperationsTest, DISABLED_TestProjectUpdatesSubsetOfColumns) {
   Schema client_schema({ ColumnSchema("key", INT32),
-                         ColumnSchema("string_val", STRING, true) },
+                         ColumnSchema("string_val", STRING, ColumnSchema::NULLABLE) },
                        1);
   Schema server_schema({ ColumnSchema("key", INT32),
                          ColumnSchema("int_val", INT32),
-                         ColumnSchema("string_val", STRING, true) },
+                         ColumnSchema("string_val", STRING, ColumnSchema::NULLABLE) },
                        1);
   server_schema = SchemaBuilder(server_schema).Build();
 
@@ -700,7 +711,7 @@ TEST_F(RowOperationsTest, TestProjectDeletes) {
   Schema client_schema({ ColumnSchema("key", INT32),
                          ColumnSchema("key_2", INT32),
                          ColumnSchema("int_val", INT32),
-                         ColumnSchema("string_val", STRING, true) },
+                         ColumnSchema("string_val", STRING, ColumnSchema::NULLABLE) },
                        2);
   Schema server_schema = SchemaBuilder(client_schema).Build();
 

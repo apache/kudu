@@ -2849,8 +2849,8 @@ TEST_F(ToolTest, TestWalDumpWithAlterSchema) {
       tserver::AlterSchemaRequestPB* alter_schema =
           replicate->get()->mutable_alter_schema_request();
       SchemaBuilder schema_builder = SchemaBuilder(schema);
-      ASSERT_OK(schema_builder.AddColumn(kAddColumnName1, STRING, true, nullptr, nullptr));
-      ASSERT_OK(schema_builder.AddColumn(kAddColumnName2, STRING, true, nullptr, nullptr));
+      ASSERT_OK(schema_builder.AddNullableColumn(kAddColumnName1, STRING));
+      ASSERT_OK(schema_builder.AddNullableColumn(kAddColumnName2, STRING));
       schema = schema_builder.BuildWithoutIds();
       schema_with_ids = SchemaBuilder(schema).Build();
       ASSERT_OK(SchemaToPB(schema_with_ids, alter_schema->mutable_schema()));
@@ -3690,15 +3690,9 @@ void ToolTest::RunLoadgen(int num_tservers,
         ColumnSchema("int64_val", INT64),
         ColumnSchema("float_val", FLOAT),
         ColumnSchema("double_val", DOUBLE),
-        ColumnSchema("decimal32_val", DECIMAL32, false, false, false,
-                     nullptr, nullptr, ColumnStorageAttributes(),
-                     ColumnTypeAttributes(9, 9)),
-        ColumnSchema("decimal64_val", DECIMAL64, false, false, false,
-                     nullptr, nullptr, ColumnStorageAttributes(),
-                     ColumnTypeAttributes(18, 2)),
-        ColumnSchema("decimal128_val", DECIMAL128, false, false, false,
-                     nullptr, nullptr, ColumnStorageAttributes(),
-                     ColumnTypeAttributes(38, 0)),
+        ColumnSchemaBuilder().name("decimal32_val").type(DECIMAL32).type_attributes({9, 9}),
+        ColumnSchemaBuilder().name("decimal64_val").type(DECIMAL64).type_attributes({18, 2}),
+        ColumnSchemaBuilder().name("decimal128_val").type(DECIMAL128).type_attributes({38, 0}),
         ColumnSchema("unixtime_micros_val", UNIXTIME_MICROS),
         ColumnSchema("string_val", STRING),
         ColumnSchema("binary_val", BINARY),

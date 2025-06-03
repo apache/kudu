@@ -71,9 +71,9 @@ class WireProtocolTest : public KuduTest {
  public:
   WireProtocolTest()
       : schema_({ ColumnSchema("string", STRING),
-                  ColumnSchema("nullable_string", STRING, /* is_nullable=*/true),
+                  ColumnSchema("nullable_string", STRING, ColumnSchema::NULLABLE),
                   ColumnSchema("int", INT32),
-                  ColumnSchema("nullable_int", INT32, /* is_nullable=*/true),
+                  ColumnSchema("nullable_int", INT32, ColumnSchema::NULLABLE),
                   ColumnSchema("int64", INT64) },
         1),
         test_data_arena_(4096) {
@@ -374,8 +374,9 @@ TEST_F(WireProtocolTest, TestColumnarRowBlockToPBWithPadding) {
   Schema tablet_schema({ ColumnSchema("key", UNIXTIME_MICROS),
                          ColumnSchema("col1", STRING),
                          ColumnSchema("col2", UNIXTIME_MICROS),
-                         ColumnSchema("col3", INT32, true /* nullable */),
-                         ColumnSchema("col4", UNIXTIME_MICROS, true /* nullable */)}, 1);
+                         ColumnSchema("col3", INT32, ColumnSchema::NULLABLE),
+                         ColumnSchema("col4", UNIXTIME_MICROS, ColumnSchema::NULLABLE) },
+                       1);
   RowBlock block(&tablet_schema, kNumRows, &mem);
   block.selection_vector()->SetAllTrue();
 
@@ -399,8 +400,9 @@ TEST_F(WireProtocolTest, TestColumnarRowBlockToPBWithPadding) {
   Schema proj_schema({ ColumnSchema("col1", STRING),
                        ColumnSchema("key",  UNIXTIME_MICROS),
                        ColumnSchema("col2", UNIXTIME_MICROS),
-                       ColumnSchema("col4", UNIXTIME_MICROS, true /* nullable */),
-                       ColumnSchema("col3", INT32, true /* nullable */)}, 0);
+                       ColumnSchema("col4", UNIXTIME_MICROS, ColumnSchema::NULLABLE),
+                       ColumnSchema("col3", INT32, ColumnSchema::NULLABLE)},
+                     0);
 
   // Convert to PB.
   faststring direct, indirect;
@@ -497,7 +499,8 @@ class WireProtocolBenchmark :
     for (const auto& c : spec.columns) {
       column_schemas.emplace_back(Substitute("col$0", i++),
                                   c.type,
-                                  /*nullable=*/c.null_fraction >= 0);
+                                  c.null_fraction >= 0 ? ColumnSchema::NULLABLE
+                                                       : ColumnSchema::NOT_NULL);
     }
     CHECK_OK(benchmark_schema_.Reset(std::move(column_schemas), 0));
   }
@@ -716,47 +719,66 @@ TEST_F(WireProtocolTest, TestColumnDefaultValue) {
 
   ColumnSchema col1("col1", STRING);
   ColumnSchemaToPB(col1, &pb);
-  optional<ColumnSchema> col1fpb;
-  ASSERT_OK(ColumnSchemaFromPB(pb, &col1fpb));
-  ASSERT_FALSE(col1fpb->has_read_default());
-  ASSERT_FALSE(col1fpb->has_write_default());
-  ASSERT_TRUE(col1fpb->read_default_value() == nullptr);
+  ColumnSchemaBuilder col1bld;
+  ASSERT_OK(ColumnSchemaBuilderFromPB(pb, &col1bld));
+  ColumnSchema col1fpb(col1bld);
+  ASSERT_FALSE(col1fpb.has_read_default());
+  ASSERT_FALSE(col1fpb.has_write_default());
+  ASSERT_TRUE(col1fpb.read_default_value() == nullptr);
 
-  ColumnSchema col2("col2", STRING, false, false, false, &read_default_str);
+  ColumnSchema col2(ColumnSchemaBuilder()
+                        .name("col2")
+                        .type(STRING)
+                        .read_default(&read_default_str));
   ColumnSchemaToPB(col2, &pb);
-  optional<ColumnSchema> col2fpb;
-  ASSERT_OK(ColumnSchemaFromPB(pb, &col2fpb));
-  ASSERT_TRUE(col2fpb->has_read_default());
-  ASSERT_FALSE(col2fpb->has_write_default());
-  ASSERT_EQ(read_default_str, *static_cast<const Slice *>(col2fpb->read_default_value()));
-  ASSERT_EQ(nullptr, static_cast<const Slice *>(col2fpb->write_default_value()));
+  ColumnSchemaBuilder col2bld;
+  ASSERT_OK(ColumnSchemaBuilderFromPB(pb, &col2bld));
+  ColumnSchema col2fpb(col2bld);
+  ASSERT_TRUE(col2fpb.has_read_default());
+  ASSERT_FALSE(col2fpb.has_write_default());
+  ASSERT_EQ(read_default_str, *static_cast<const Slice*>(col2fpb.read_default_value()));
+  ASSERT_EQ(nullptr, static_cast<const Slice*>(col2fpb.write_default_value()));
 
-  ColumnSchema col3("col3", STRING, false, false, false, &read_default_str, &write_default_str);
+  ColumnSchema col3(ColumnSchemaBuilder()
+                        .name("col3")
+                        .type(STRING)
+                        .read_default(&read_default_str)
+                        .write_default(&write_default_str));
   ColumnSchemaToPB(col3, &pb);
-  optional<ColumnSchema> col3fpb;
-  ASSERT_OK(ColumnSchemaFromPB(pb, &col3fpb));
-  ASSERT_TRUE(col3fpb->has_read_default());
-  ASSERT_TRUE(col3fpb->has_write_default());
-  ASSERT_EQ(read_default_str, *static_cast<const Slice *>(col3fpb->read_default_value()));
-  ASSERT_EQ(write_default_str, *static_cast<const Slice *>(col3fpb->write_default_value()));
+  ColumnSchemaBuilder col3bld;
+  ASSERT_OK(ColumnSchemaBuilderFromPB(pb, &col3bld));
+  ColumnSchema col3fpb(col3bld);
+  ASSERT_TRUE(col3fpb.has_read_default());
+  ASSERT_TRUE(col3fpb.has_write_default());
+  ASSERT_EQ(read_default_str, *static_cast<const Slice*>(col3fpb.read_default_value()));
+  ASSERT_EQ(write_default_str, *static_cast<const Slice*>(col3fpb.write_default_value()));
 
-  ColumnSchema col4("col4", UINT32, false, false, false, &read_default_u32);
+  ColumnSchema col4(ColumnSchemaBuilder()
+                        .name("col4")
+                        .type(UINT32)
+                        .read_default(&read_default_u32));
   ColumnSchemaToPB(col4, &pb);
-  optional<ColumnSchema> col4fpb;
-  ASSERT_OK(ColumnSchemaFromPB(pb, &col4fpb));
-  ASSERT_TRUE(col4fpb->has_read_default());
-  ASSERT_FALSE(col4fpb->has_write_default());
-  ASSERT_EQ(read_default_u32, *static_cast<const uint32_t *>(col4fpb->read_default_value()));
-  ASSERT_EQ(nullptr, static_cast<const uint32_t *>(col4fpb->write_default_value()));
+  ColumnSchemaBuilder col4bld;
+  ASSERT_OK(ColumnSchemaBuilderFromPB(pb, &col4bld));
+  ColumnSchema col4fpb(col4bld);
+  ASSERT_TRUE(col4fpb.has_read_default());
+  ASSERT_FALSE(col4fpb.has_write_default());
+  ASSERT_EQ(read_default_u32, *static_cast<const uint32_t*>(col4fpb.read_default_value()));
+  ASSERT_EQ(nullptr, static_cast<const uint32_t*>(col4fpb.write_default_value()));
 
-  ColumnSchema col5("col5", UINT32, false, false, false, &read_default_u32, &write_default_u32);
+  ColumnSchema col5(ColumnSchemaBuilder()
+                        .name("col5")
+                        .type(UINT32)
+                        .read_default(&read_default_u32)
+                        .write_default(&write_default_u32));
   ColumnSchemaToPB(col5, &pb);
-  optional<ColumnSchema> col5fpb;
-  ASSERT_OK(ColumnSchemaFromPB(pb, &col5fpb));
-  ASSERT_TRUE(col5fpb->has_read_default());
-  ASSERT_TRUE(col5fpb->has_write_default());
-  ASSERT_EQ(read_default_u32, *static_cast<const uint32_t *>(col5fpb->read_default_value()));
-  ASSERT_EQ(write_default_u32, *static_cast<const uint32_t *>(col5fpb->write_default_value()));
+  ColumnSchemaBuilder col5bld;
+  ASSERT_OK(ColumnSchemaBuilderFromPB(pb, &col5bld));
+  ColumnSchema col5fpb(col5bld);
+  ASSERT_TRUE(col5fpb.has_read_default());
+  ASSERT_TRUE(col5fpb.has_write_default());
+  ASSERT_EQ(read_default_u32, *static_cast<const uint32_t*>(col5fpb.read_default_value()));
+  ASSERT_EQ(write_default_u32, *static_cast<const uint32_t*>(col5fpb.write_default_value()));
 }
 
 // Regression test for KUDU-2378; the call to ColumnSchemaFromPB yielded a crash.
@@ -765,8 +787,8 @@ TEST_F(WireProtocolTest, TestCrashOnAlignedLoadOf128BitReadDefault) {
   pb.set_name("col");
   pb.set_type(DECIMAL128);
   pb.set_read_default_value(string(16, 'a'));
-  optional<ColumnSchema> col;
-  ASSERT_OK(ColumnSchemaFromPB(pb, &col));
+  ColumnSchemaBuilder bld;
+  ASSERT_OK(ColumnSchemaBuilderFromPB(pb, &bld));
 }
 
 // Regression test for KUDU-2622; Validate read and write default value sizes.
@@ -776,9 +798,9 @@ TEST_F(WireProtocolTest, TestInvalidReadAndWriteDefault) {
     pb.set_name("col");
     pb.set_type(DECIMAL128);
     pb.set_read_default_value(string(8, 'a'));
-    optional<ColumnSchema> col;
-    Status s = ColumnSchemaFromPB(pb, &col);
-    EXPECT_TRUE(s.IsCorruption());
+    ColumnSchemaBuilder bld;
+    const auto s = ColumnSchemaBuilderFromPB(pb, &bld);
+    EXPECT_TRUE(s.IsCorruption()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "Corruption: Not enough bytes for decimal: read default");
   }
   {
@@ -786,9 +808,9 @@ TEST_F(WireProtocolTest, TestInvalidReadAndWriteDefault) {
     pb.set_name("col");
     pb.set_type(DECIMAL128);
     pb.set_write_default_value(string(8, 'a'));
-    optional<ColumnSchema> col;
-    Status s = ColumnSchemaFromPB(pb, &col);
-    EXPECT_TRUE(s.IsCorruption());
+    ColumnSchemaBuilder bld;
+    const auto s = ColumnSchemaBuilderFromPB(pb, &bld);
+    EXPECT_TRUE(s.IsCorruption()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "Corruption: Not enough bytes for decimal: write default");
   }
 }
