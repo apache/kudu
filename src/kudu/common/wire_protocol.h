@@ -38,6 +38,7 @@ namespace kudu {
 class Arena;
 class ColumnPredicate;
 class ColumnSchema;
+class ColumnSchemaBuilder;
 class faststring;
 class HostPort;
 class RowBlock;
@@ -110,9 +111,12 @@ Status SchemaFromPB(const SchemaPB& pb, Schema *schema);
 // 'flags' is a bitfield of SchemaPBConversionFlags values.
 void ColumnSchemaToPB(const ColumnSchema& schema, ColumnSchemaPB *pb, int flags = 0);
 
-// Return the ColumnSchema created from the specified protobuf.
-// If the column schema is invalid, return a non-OK status.
-Status ColumnSchemaFromPB(const ColumnSchemaPB& pb, std::optional<ColumnSchema>* col_schema);
+// Produce ColumnSchemaBuilder based on the specified protobuf 'pb', outputting
+// the result builder object into the 'csb' output parameter. Calling Build()
+// on the builder object yields corresponding ColumnSchema.
+// If the column schema protobuf is invalid, return a non-OK status.
+Status ColumnSchemaBuilderFromPB(const ColumnSchemaPB& pb,
+                                 ColumnSchemaBuilder* csb);
 
 // Convert the given list of ColumnSchemaPB objects into a Schema object.
 //

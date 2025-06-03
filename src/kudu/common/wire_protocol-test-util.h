@@ -15,8 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#ifndef KUDU_COMMON_WIRE_PROTOCOL_TEST_UTIL_H_
-#define KUDU_COMMON_WIRE_PROTOCOL_TEST_UTIL_H_
+#pragma once
 
 #include "kudu/common/wire_protocol.h"
 
@@ -33,7 +32,7 @@ namespace kudu {
 inline Schema GetSimpleTestSchema() {
   return Schema({ ColumnSchema("key", INT32),
                   ColumnSchema("int_val", INT32),
-                  ColumnSchema("string_val", STRING, true) },
+                  ColumnSchema("string_val", STRING, ColumnSchema::NULLABLE) },
                 1);
 }
 
@@ -122,5 +121,3 @@ inline void AddTestKeyToPB(RowOperationsPB::Type op_type,
 }
 
 } // namespace kudu
-
-#endif /* KUDU_COMMON_WIRE_PROTOCOL_TEST_UTIL_H_ */

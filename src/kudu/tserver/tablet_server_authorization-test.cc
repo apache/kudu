@@ -474,10 +474,17 @@ string GenerateEncodedKey(int32_t val, const Schema& schema) {
 
 // Returns a column schema PB that matches 'col', but has a different name.
 void MisnamedColumnSchemaToPB(const ColumnSchema& col, ColumnSchemaPB* pb) {
-  ColumnSchemaToPB(ColumnSchema(kDummyColumn, col.type_info()->physical_type(), col.is_nullable(),
-                                col.is_immutable(), col.is_auto_incrementing(),
-                                col.read_default_value(), col.write_default_value(),
-                                col.attributes(), col.type_attributes()), pb);
+  ColumnSchemaToPB(ColumnSchemaBuilder()
+                       .name(kDummyColumn)
+                       .type(col.type_info()->physical_type())
+                       .nullable(col.is_nullable())
+                       .immutable(col.is_immutable())
+                       .auto_incrementing(col.is_auto_incrementing())
+                       .read_default(col.read_default_value())
+                       .write_default(col.write_default_value())
+                       .storage_attributes(col.attributes())
+                       .type_attributes(col.type_attributes()),
+                   pb);
 }
 
 } // anonymous namespace
@@ -509,8 +516,7 @@ class ScanPrivilegeAuthzTest : public AuthzTabletServerTestBase,
     }
     for (int i = 0; i < kNumVals; i++) {
       const string val = Substitute("val$0", kNumKeys + i);
-      ASSERT_OK(schema_builder.AddColumn(ColumnSchema(val, DataType::INT32),
-                                         /*is_key=*/false));
+      ASSERT_OK(schema_builder.AddColumn(ColumnSchema(val, DataType::INT32)));
       col_names_.emplace_back(val);
     }
     schema_ = schema_builder.Build();
@@ -594,10 +600,11 @@ class ScanPrivilegeAuthzTest : public AuthzTabletServerTestBase,
     if (special_col == SpecialColumn::VIRTUAL) {
       auto* projected_column = pb.add_projected_columns();
       bool default_bool = false;
-      ColumnSchemaToPB(ColumnSchema("is_deleted", DataType::IS_DELETED, /*is_nullable=*/false,
-                                    /*is_immutable=*/false,
-                                    /*is_auto_incrementing=*/false,
-                                    /*read_default=*/&default_bool, nullptr), projected_column);
+      ColumnSchemaToPB(ColumnSchemaBuilder()
+                           .name("is_deleted")
+                           .type(DataType::IS_DELETED)
+                           .read_default(&default_bool),
+                       projected_column);
     }
     CHECK_OK(GenerateScanAuthzToken(privilege, pb.mutable_authz_token()));
     return pb;

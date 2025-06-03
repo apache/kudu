@@ -21,6 +21,7 @@
 #include <cstring>
 #include <optional>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -227,7 +228,7 @@ class CompositeIntKeysTest : public TestScanSpec {
         Schema({ ColumnSchema("a", INT8),
                  ColumnSchema("b", INT8),
                  ColumnSchema("c", INT8),
-                 ColumnSchema("d", INT8, true),
+                 ColumnSchema("d", INT8, ColumnSchema::NULLABLE),
                  ColumnSchema("e", INT8) },
                3)) {
   }
@@ -1380,7 +1381,7 @@ TEST_F(CompositeIntKeysTest, TestGetMissingColumns) {
   }
   {
     // Projection: d e.
-    Schema projection({ ColumnSchema("d", INT8, true),
+    Schema projection({ ColumnSchema("d", INT8, ColumnSchema::NULLABLE),
                         ColumnSchema("e", INT8) }, 0);
     vector<ColumnSchema> missing_cols = spec.GetMissingColumns(projection);
     EXPECT_EQ(1, missing_cols.size());
@@ -1391,7 +1392,7 @@ TEST_F(CompositeIntKeysTest, TestGetMissingColumns) {
   {
     // Projection: b d e.
     Schema projection({ ColumnSchema("b", INT8),
-                        ColumnSchema("d", INT8, true),
+                        ColumnSchema("d", INT8, ColumnSchema::NULLABLE),
                         ColumnSchema("e", INT8) }, 0);
     vector<ColumnSchema> missing_cols = spec.GetMissingColumns(projection);
     EXPECT_EQ(0, missing_cols.size());

@@ -247,20 +247,20 @@ struct NullableValueTestSetup {
   static Schema CreateSchema() {
     return Schema({ ColumnSchema("key", INT32),
                     ColumnSchema("key_idx", INT32),
-                    ColumnSchema("val", INT32, true) }, 1);
+                    ColumnSchema("val", INT32, ColumnSchema::NULLABLE) }, 1);
   }
 
-  void BuildRowKey(KuduPartialRow *row, int64_t i) {
+  static void BuildRowKey(KuduPartialRow *row, int64_t i) {
     CHECK_OK(row->SetInt32(0, (int32_t)i));
   }
 
   // builds a row key from an existing row for updates
   template<class RowType>
-  void BuildRowKeyFromExistingRow(KuduPartialRow *row, const RowType& src_row) {
+  static void BuildRowKeyFromExistingRow(KuduPartialRow *row, const RowType& src_row) {
     CHECK_OK(row->SetInt32(0, *reinterpret_cast<const int32_t*>(src_row.cell_ptr(0))));
   }
 
-  void BuildRow(KuduPartialRow *row, int64_t key_idx, int32_t val = 0) {
+  static void BuildRow(KuduPartialRow *row, int64_t key_idx, int32_t val = 0) {
     BuildRowKey(row, key_idx);
     CHECK_OK(row->SetInt32(1, key_idx));
     if (ShouldInsertAsNull(key_idx)) {
@@ -270,7 +270,7 @@ struct NullableValueTestSetup {
     }
   }
 
-  std::string FormatDebugRow(int64_t key_idx, int64_t val, bool updated) {
+  static std::string FormatDebugRow(int64_t key_idx, int64_t val, bool updated) {
     if (!updated && ShouldInsertAsNull(key_idx)) {
       return strings::Substitute(
       "(int32 key=$0, int32 key_idx=$1, int32 val=NULL)",
@@ -286,7 +286,7 @@ struct NullableValueTestSetup {
     return (key_idx & 2) != 0;
   }
 
-  uint64_t GetMaxRows() const {
+  static uint64_t GetMaxRows() {
     return std::numeric_limits<uint32_t>::max() - 1;
   }
 };
@@ -297,7 +297,12 @@ struct ImmutableColumnTestSetup {
     return Schema({ ColumnSchema("key", INT32),
                     ColumnSchema("key_idx", INT32),
                     ColumnSchema("val", INT32),
-                    ColumnSchema("imm_val", INT32, true, true) }, 1);
+                    ColumnSchemaBuilder()
+                       .name("imm_val")
+                       .type(INT32)
+                       .nullable(true)
+                       .immutable(true) },
+                  1);
   }
 
   static void BuildRowKey(KuduPartialRow *row, int64_t i) {

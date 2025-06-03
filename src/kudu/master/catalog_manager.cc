@@ -2972,14 +2972,15 @@ Status CatalogManager::ApplyAlterSchemaSteps(
         RETURN_NOT_OK(ProcessColumnPBDefaults(&new_col_pb));
 
         // Can't accept a NOT NULL column without a default.
-        optional<ColumnSchema> new_col;
-        RETURN_NOT_OK(ColumnSchemaFromPB(new_col_pb, &new_col));
-        if (!new_col->is_nullable() && !new_col->has_read_default()) {
+        ColumnSchemaBuilder csb;
+        RETURN_NOT_OK(ColumnSchemaBuilderFromPB(new_col_pb, &csb));
+        const auto new_col = csb.Build();
+        if (!new_col.is_nullable() && !new_col.has_read_default()) {
           return Status::InvalidArgument(
-              Substitute("column `$0`: NOT NULL columns must have a default", new_col->name()));
+              Substitute("column `$0`: NOT NULL columns must have a default", new_col.name()));
         }
 
-        RETURN_NOT_OK(builder.AddColumn(*new_col, false));
+        RETURN_NOT_OK(builder.AddColumn(new_col, false));
         break;
       }
 

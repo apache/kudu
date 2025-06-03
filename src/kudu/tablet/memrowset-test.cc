@@ -25,6 +25,7 @@
 #include <ostream>
 #include <string>
 #include <tuple>
+#include <type_traits>
 #include <unordered_set>
 #include <vector>
 
@@ -699,9 +700,10 @@ TEST_P(ParameterizedTestMemRowSet, TestScanSnapToExclude) {
     unique_ptr<SchemaBuilder> sb = CreateSchemaBuilder();
     if (add_vc_is_deleted) {
       const bool kFalse = false;
-      ASSERT_OK(sb->AddColumn("deleted", IS_DELETED,
-                              /*is_nullable=*/false,
-                              &kFalse, /*write_default=*/nullptr));
+      ASSERT_OK(sb->AddColumn(ColumnSchemaBuilder()
+                                  .name("deleted")
+                                  .type(IS_DELETED)
+                                  .read_default(&kFalse)));
     }
     Schema projection = sb->Build();
     RowIteratorOptions opts;
@@ -786,9 +788,10 @@ TEST_F(TestMemRowSet, TestScanVirtualColumnIsDeleted) {
   ASSERT_OK(sb.AddKeyColumn("key", STRING));
   ASSERT_OK(sb.AddColumn("val", UINT32));
   const bool kFalse = false;
-  ASSERT_OK(sb.AddColumn("deleted", IS_DELETED,
-                         /*is_nullable=*/false,
-                         &kFalse, /*write_default=*/nullptr));
+  ASSERT_OK(sb.AddColumn(ColumnSchemaBuilder()
+                             .name("deleted")
+                             .type(IS_DELETED)
+                             .read_default(&kFalse)));
   Schema projection = sb.Build();
 
   RowIteratorOptions opts;

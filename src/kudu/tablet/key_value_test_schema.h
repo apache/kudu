@@ -59,7 +59,7 @@ struct ExpectedKeyValueRow {
 
 inline Schema CreateKeyValueTestSchema() {
   return Schema({ColumnSchema("key", INT32),
-                 ColumnSchema("val", INT32, true) }, 1);
+                 ColumnSchema("val", INT32, ColumnSchema::NULLABLE) }, 1);
 }
 
 inline std::ostream& operator<<(std::ostream& o, const ExpectedKeyValueRow& t) {

@@ -283,7 +283,7 @@ TEST_F(CreateTableITest, TestSpreadReplicasEvenlyWithDimension) {
   Schema schema = Schema({ ColumnSchema("key1", INT32),
                            ColumnSchema("key2", INT32),
                            ColumnSchema("int_val", INT32),
-                           ColumnSchema("string_val", STRING, true) }, 2);
+                           ColumnSchema("string_val", STRING, ColumnSchema::NULLABLE) }, 2);
   auto client_schema = KuduSchema::FromSchema(schema);
 
   auto create_table_func = [](KuduClient* client,
@@ -416,7 +416,7 @@ TEST_F(CreateTableITest, TestSpreadReplicas) {
   Schema schema = Schema({ ColumnSchema("key1", INT32),
                            ColumnSchema("key2", INT32),
                            ColumnSchema("int_val", INT32),
-                           ColumnSchema("string_val", STRING, true) }, 2);
+                           ColumnSchema("string_val", STRING, ColumnSchema::NULLABLE) }, 2);
   auto client_schema = KuduSchema::FromSchema(schema);
 
   auto create_table_func = [](KuduClient* client,

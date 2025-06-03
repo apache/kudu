@@ -86,12 +86,15 @@ ScanSpec GetInListScanSpec(const ColumnSchema& col_schema, const vector<int>& va
 
 class TestCFileSet : public KuduRowSetTest {
  public:
-  TestCFileSet() :
-    KuduRowSetTest(Schema({ ColumnSchema("c0", INT32),
-                            ColumnSchema("c1", INT32, false, false, false,
-                                         nullptr, nullptr, GetRLEStorage()),
-                            ColumnSchema("c2", INT32, true) }, 1))
-  {}
+  TestCFileSet()
+      : KuduRowSetTest(Schema({ ColumnSchema("c0", INT32),
+                                ColumnSchemaBuilder()
+                                    .name("c1")
+                                    .type(INT32)
+                                    .storage_attributes(GetRLEStorage()),
+                                ColumnSchema("c2", INT32, ColumnSchema::NULLABLE) },
+                               1)) {
+  }
 
   void SetUp() override {
     KuduRowSetTest::SetUp();
