@@ -69,6 +69,17 @@ namespace kudu {
 namespace tablet {
 namespace btree {
 
+// In unit tests, we explicitly enforce 8-byte alignment for LeafNode/InternalNode
+// instances created on the stack. This is critical because:
+// 1. ARM64 architectures require 8-byte alignment for atomic operations on uint64_t.
+//    Unaligned access triggers SIGBUS.
+// 2. Production code guarantees alignment through:
+//    a) PACKED in NodeBase definition
+//    b) Arena allocator's alignment-aware allocations
+// 3. Stack-allocated test nodes lack these guarantees, making explicit alignment
+//    necessary to match production behavior and prevent architecture-specific crashes.
+// 4. This ensures test validity across x86 (tolerant to unaligned access) and ARM
+//    (strict alignment requirements) platforms.
 class TestCBTree : public KuduTest {
  protected:
   template<class T>
@@ -97,7 +108,7 @@ class TestCBTree : public KuduTest {
     Slice key(kbuf, key_size);
     Slice val(vbuf, val_size);
 
-    LeafNode<BTreeTraits> lnode(false);
+    alignas(sizeof(AtomicVersion)) LeafNode<BTreeTraits> lnode(false);
     ASSERT_EQ(INSERT_SUCCESS,
               InsertInLeaf(&lnode, &arena, key, val));
   }
@@ -114,16 +125,17 @@ class TestCBTree : public KuduTest {
 TEST_F(TestCBTree, TestNodeSizes) {
   ThreadSafeArena arena(1024);
 
-  LeafNode<BTreeTraits> lnode(false);
+  alignas(sizeof(AtomicVersion)) LeafNode<BTreeTraits> lnode(false);
   ASSERT_LE(sizeof(lnode), BTreeTraits::kLeafNodeSize);
 
-  InternalNode<BTreeTraits> inode(Slice("split"), &lnode, &lnode, &arena);
+  alignas(sizeof(AtomicVersion)) InternalNode<BTreeTraits> inode(Slice("split"), &lnode,
+                                             &lnode, &arena);
   ASSERT_LE(sizeof(inode), BTreeTraits::kInternalNodeSize);
 
 }
 
 TEST_F(TestCBTree, TestLeafNode) {
-  LeafNode<BTreeTraits> lnode(false);
+  alignas(sizeof(AtomicVersion)) LeafNode<BTreeTraits> lnode(false);
   ThreadSafeArena arena(1024);
 
   Slice k1("key1");
@@ -178,7 +190,7 @@ TEST_F(TestCBTree, TestLeafNode) {
 // Directly test leaf node with keys and values which are large (such that
 // only zero or one would fit in the actual allocated space)
 TEST_F(TestCBTree, TestLeafNodeBigKVs) {
-  LeafNode<BTreeTraits> lnode(false);
+  alignas(sizeof(AtomicVersion)) LeafNode<BTreeTraits> lnode(false);
 
   DoBigKVTest(1000, 1000);
 }
