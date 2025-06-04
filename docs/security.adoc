@@ -498,10 +498,13 @@ encryption. Same as authentication, when `disabled` or encryption fails for
 and reject any unencrypted connections from publicly routable IPs. To secure a
 cluster, use `--rpc_encryption=required`.
 
-NOTE: Kudu will automatically turn off encryption on local loopback connections,
-since traffic from these connections is never exposed externally. This allows
-locality-aware compute frameworks like Spark and Impala to avoid encryption
-overhead, while still ensuring data confidentiality.
+NOTE: Kudu automatically turns off encryption on local RPC connections that
+are established over a loopback network interface because traffic from such
+connections is never exposed externally. This allows locality-aware compute
+frameworks like Spark and Impala to avoid encryption overhead, while still
+ensuring data confidentiality. If necessary, one can customize the setting of
+the `--rpc_encrypt_loopback_connections` flag for Kudu masters and tablet
+servers to encrypt RPC traffic going through loopback network interfaces.
 
 === Data at Rest
 It's also possible to encrypt data at rest. Kudu supports *AES-128-CTR*,
