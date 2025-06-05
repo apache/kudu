@@ -1553,15 +1553,17 @@ TEST_P(TestRpc, RpcPendingConnectionsMetric) {
     ASSERT_OK(socket.Connect(server_addr));
   }
 
-  // A small pause below is to avoid reading 1 from the metric: it's not quite
-  // clear why the sock_diag() netlink facility reports stale data on very fast
-  // machines in rare cases.
-  SleepFor(MonoDelta::FromMilliseconds(10));
-
   // At this point, there should be no connection pending: the only received
   // connection request has already been handled above.
 #if defined(KUDU_HAS_DIAGNOSTIC_SOCKET)
-  ASSERT_EQ(0, pending_connections_gauge->value());
+  // It's not clear why the sock_diag() netlink facility sometimes reports stale
+  // data for a short period of time. That's rare, but it happens. Emprically,
+  // it's about 10 to 20 milliseconds when data might be still stale.
+  // AssertEventually helps in preventing flakiness of this scenario
+  // in such rare cases.
+  AssertEventually([&] {
+    ASSERT_EQ(0, pending_connections_gauge->value());
+  }, MonoDelta::FromMilliseconds(250));
 #else
   ASSERT_EQ(-3, pending_connections_gauge->value());
 #endif // #if defined(KUDU_HAS_DIAGNOSTIC_SOCKET) ...
