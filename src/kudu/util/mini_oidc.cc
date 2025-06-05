@@ -101,7 +101,7 @@ Status MiniOidc::Start() {
   // we've been configured to server.
   WebserverOptions jwks_opts;
   jwks_opts.port = 0;
-  jwks_opts.bind_interface = "localhost";
+  jwks_opts.bind_interface = "127.0.0.1";
   jwks_opts.certificate_file = options_.server_certificate;
   jwks_opts.private_key_file = options_.private_key_file;
 
@@ -170,7 +170,7 @@ Status MiniOidc::Start() {
   // Now start the OIDC Discovery server that points to the JWKS endpoints.
   WebserverOptions oidc_opts;
   oidc_opts.port = 0;
-  oidc_opts.bind_interface = "localhost";
+  oidc_opts.bind_interface = "127.0.0.1";
   oidc_server_.reset(new Webserver(oidc_opts));
   oidc_server_->RegisterJsonPathHandler(
       "/.well-known/openid-configuration",

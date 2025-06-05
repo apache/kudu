@@ -47,6 +47,9 @@ using strings::Substitute;
 
 namespace kudu {
 
+static constexpr const char* const kNonIpV4ErrMsg =
+    "netlink diagnostics is currently supported only on IPv4 TCP sockets";
+
 const DiagnosticSocket::SocketStates& DiagnosticSocket::SocketStateWildcard() {
   static constexpr const SocketStates kSocketStateWildcard {
     SS_ESTABLISHED,
@@ -143,20 +146,18 @@ Status DiagnosticSocket::Query(const Socket& socket,
 // Send query about the specified socket.
 Status DiagnosticSocket::SendRequest(const Socket& socket) const {
   DCHECK_GE(fd_, 0);
-  static constexpr const char* const kNonIpErrMsg =
-      "netlink diagnostics is currently supported only on IPv4 TCP sockets";
 
   Sockaddr src_addr;
   RETURN_NOT_OK(socket.GetSocketAddress(&src_addr));
-  if (PREDICT_FALSE(!src_addr.is_ip())) {
-    return Status::NotSupported(kNonIpErrMsg);
+  if (PREDICT_FALSE(src_addr.family() != AF_INET)) {
+    return Status::NotSupported(kNonIpV4ErrMsg);
   }
 
   Sockaddr dst_addr;
   auto s = socket.GetPeerAddress(&dst_addr);
   if (s.ok()) {
-    if (PREDICT_FALSE(!dst_addr.is_ip())) {
-      return Status::NotSupported(kNonIpErrMsg);
+    if (PREDICT_FALSE(dst_addr.family() != AF_INET)) {
+      return Status::NotSupported(kNonIpV4ErrMsg);
     }
   } else {
     if (PREDICT_TRUE(s.IsNetworkError() && s.posix_code() == ENOTCONN)) {
@@ -175,6 +176,11 @@ Status DiagnosticSocket::SendRequest(const Socket& socket) const {
 Status DiagnosticSocket::SendRequest(const Sockaddr& socket_src_addr,
                                      const Sockaddr& socket_dst_addr,
                                      uint32_t socket_states_bitmask) const {
+  // TODO(araina): Remove this once diagnostic socket handling is added for IPv6.
+  if (socket_src_addr.family() == AF_INET6 || socket_dst_addr.family() == AF_INET6) {
+    return Status::NotSupported(kNonIpV4ErrMsg);
+  }
+
   DCHECK_GE(fd_, 0);
   const in_addr& src_ipv4 = socket_src_addr.ipv4_addr().sin_addr;
   const auto src_port = socket_src_addr.port();

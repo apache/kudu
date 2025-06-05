@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <sys/socket.h>
+#include <sys/un.h>
 #include <unistd.h>
 
 #include <cerrno>
@@ -116,16 +118,83 @@ namespace rpc {
 // the wildcard, so we'll hard-code this hostname instead.
 static const char* const kRemoteHostName = "localhost";
 
-class TestRpc : public RpcTestBase, public ::testing::WithParamInterface<tuple<bool,bool>> {
- protected:
+enum RpcSocketMode {
+  TCP_IPv4_SSL,
+  TCP_IPv4_NOSSL,
+  TCP_IPv6_SSL,
+  TCP_IPv6_NOSSL,
+  UNIX_SSL,
+  UNIX_NOSSL,
+  INVALID_MODE
+};
+
+string ModeEnumToString(enum RpcSocketMode mode) {
+  string test;
+  switch (mode) {
+    case TCP_IPv4_SSL:
+      test = Substitute("TCP_IPv4_SSL");
+      break;
+    case TCP_IPv4_NOSSL:
+      test = Substitute("TCP_IPv4_NoSSL");
+      break;
+    case TCP_IPv6_SSL:
+      test = Substitute("TCP_IPv6_SSL");
+      break;
+    case TCP_IPv6_NOSSL:
+      test = Substitute("TCP_IPv6_NoSSL");
+      break;
+    case UNIX_SSL:
+      test = Substitute("UnixSocket_SSL");
+      break;
+    case UNIX_NOSSL:
+      test = Substitute("UnixSocket_NoSSL");
+      break;
+    default:
+      test = Substitute("Invalid_Mode");
+      break;
+  }
+  return test;
+}
+
+class TestRpc: public RpcTestBase,
+               public ::testing::WithParamInterface<RpcSocketMode> {
+protected:
   TestRpc() {
   }
 
-  bool enable_ssl() const {
-    return std::get<0>(GetParam());
+  static bool enable_ssl() {
+    switch (GetParam()) {
+      case TCP_IPv4_SSL:
+      case TCP_IPv6_SSL:
+      case UNIX_SSL:
+        return true;
+      default:
+        break;
+    }
+    return false;
   }
-  bool use_unix_socket() const {
-    return std::get<1>(GetParam());
+  static bool use_unix_socket() {
+    switch (GetParam()) {
+      case UNIX_SSL:
+      case UNIX_NOSSL:
+        return true;
+      default:
+        break;
+    }
+    return false;
+  }
+  static sa_family_t ip_family() {
+    switch (GetParam()) {
+      case TCP_IPv4_SSL:
+      case TCP_IPv4_NOSSL:
+        return AF_INET;
+      case TCP_IPv6_SSL:
+      case TCP_IPv6_NOSSL:
+        return AF_INET6;
+      default:
+        break;
+    }
+    return AF_UNSPEC;
   }
   Sockaddr bind_addr() const {
     if (use_unix_socket()) {
@@ -136,7 +205,7 @@ class TestRpc : public RpcTestBase, public ::testing::WithParamInterface<tuple<b
       CHECK_OK(addr.ParseUnixDomainPath(socket_path_));
       return addr;
     }
-    return Sockaddr::Wildcard();
+    return Sockaddr::Wildcard(ip_family());
   }
   static string expected_remote_str(const Sockaddr& bound_addr) {
     if (bound_addr.is_ip()) {
@@ -153,15 +222,14 @@ class TestRpc : public RpcTestBase, public ::testing::WithParamInterface<tuple<b
   std::string socket_path_ = GetTestSocketPath("rpc-test");
 };
 
-// This is used to run all parameterized tests with and without SSL, on Unix sockets
-// and TCP.
+// This is used to run all parameterized tests with and without SSL,
+// on Unix sockets and TCP.
 INSTANTIATE_TEST_SUITE_P(Parameters, TestRpc,
-                         testing::Combine(testing::Values(false, true),
-                                          testing::Values(false, true)),
-                         [](const testing::TestParamInfo<tuple<bool, bool>>& info) {
-                           return Substitute("$0_$1",
-                                             std::get<0>(info.param) ? "SSL" : "NoSSL",
-                                             std::get<1>(info.param) ? "UnixSocket" : "TCP");
+                         testing::Values(TCP_IPv4_SSL, TCP_IPv4_NOSSL,
+                                         TCP_IPv6_SSL, TCP_IPv6_NOSSL,
+                                         UNIX_SSL, UNIX_NOSSL),
+                         [] (const testing::TestParamInfo<enum RpcSocketMode>& info) {
+                           return ModeEnumToString(info.param);
                          });
 
 
@@ -2015,8 +2083,11 @@ class TestRpcSocketTxRxQueue : public TestRpc {
 // much sense since it's the same in this context: all the action happens
 // at the TCP level, and RPC connection negotiation doesn't happen.
 INSTANTIATE_TEST_SUITE_P(Parameters, TestRpcSocketTxRxQueue,
-                         testing::Combine(testing::Values(false),
-                                          testing::Values(false)));
+                         testing::Values(TCP_IPv4_NOSSL,
+                                         TCP_IPv6_NOSSL),
+                         [] (const testing::TestParamInfo<enum RpcSocketMode>& info) {
+                           return ModeEnumToString(info.param);
+                         });
 
 // This test scenario verifies the reported socket's stats when it's more than
 // enough space in the listening socket's RX queue to accommodate all the

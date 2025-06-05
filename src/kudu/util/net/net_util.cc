@@ -21,7 +21,6 @@
 #include <ifaddrs.h>
 #include <netdb.h>
 #include <netinet/in.h>
-#include <sys/socket.h>
 #include <unistd.h>
 // IWYU pragma: no_include <bits/local_lim.h>
 
@@ -85,6 +84,7 @@ DEFINE_string(host_for_tests, "", "Host to use when resolving a given server's l
 
 using std::function;
 using std::string;
+using std::string_view;
 using std::unordered_set;
 using std::unique_ptr;
 using std::vector;
@@ -153,7 +153,7 @@ HostPort::HostPort()
     port_(0) {
 }
 
-HostPort::HostPort(std::string host, uint16_t port)
+HostPort::HostPort(string host, uint16_t port)
     : host_(std::move(host)), port_(port) {}
 
 HostPort::HostPort(const Sockaddr& addr)
@@ -173,23 +173,109 @@ size_t HostPort::HashCode() const {
 }
 
 Status HostPort::ParseString(const string& str, uint16_t default_port) {
-  std::pair<string, string> p = strings::Split(str, strings::delimiter::Limit(":", 1));
-
-  // Strip any whitespace from the host.
-  StripWhiteSpace(&p.first);
-
-  // Parse the port.
-  uint32_t port;
-  if (p.second.empty() && strcount(str, ':') == 0) {
-    // No port specified.
-    port = default_port;
-  } else if (!SimpleAtoi(p.second, &port) ||
-             port > 65535) {
-    return Status::InvalidArgument("invalid port", str);
+  string addr = str;
+  StripWhiteSpace(&addr);
+  if (addr.empty()) {
+    return Status::InvalidArgument(Substitute("invalid address '$0'", addr));
   }
 
-  host_.swap(p.first);
-  port_ = port;
+  const auto colon_num = strcount(addr, ':');
+  const auto bracket_left = addr.find('[');
+  const auto bracket_right = addr.rfind(']');
+
+  // Standard IPv4 address format does not have square brackets.
+  if (colon_num < 2) {
+    if (bracket_left != string::npos || bracket_right != string::npos) {
+      return Status::InvalidArgument(Substitute("invalid address $0", addr));
+    }
+  }
+
+  const auto host_empty = [](string_view host) {
+    if (host.empty()) {
+      return Status::InvalidArgument("invalid address");
+    }
+    return Status::OK();
+  };
+
+  // IPv4 address format and no port is specified.
+  // Set host to input the string and port to default port.
+  if (colon_num == 0) {
+    DCHECK(bracket_left == string::npos && bracket_right == string::npos);
+    RETURN_NOT_OK(host_empty(addr));
+    SetHostAndPort(addr, default_port);
+    return Status::OK();
+  }
+
+  // IPv4 address format and a port is specified.
+  // Set host to input sub-string before colon and port to sub-string after colon.
+  if (colon_num == 1) {
+    DCHECK(bracket_left == string::npos && bracket_right == string::npos);
+    uint32_t port;
+    string_view addr_view = addr;
+    std::pair<string_view, string_view> parts;
+    const auto colon_index = addr.rfind(':');
+    parts.first = addr_view.substr(0, colon_index);
+    parts.second = addr_view.substr(colon_index);
+
+    // First half is IP address.
+    RETURN_NOT_OK(host_empty(parts.first.substr(0, colon_index)));
+
+    // Second half is port number after colon.
+    if (!SimpleAtoi(parts.second.substr(1).data(), &port) || port > 65535) {
+      return Status::InvalidArgument(Substitute("invalid port $0", port));
+    }
+
+    SetHostAndPort(parts.first.substr(0, colon_index), port);
+    return Status::OK();
+  }
+
+  // IPv6 address and no port is specified.
+  if (bracket_left == string::npos && bracket_right == string::npos) {
+    RETURN_NOT_OK(host_empty(addr));
+    SetHostAndPort(addr, default_port);
+    return Status::OK();
+  }
+
+  // If only single square bracket is present, it's either opening or closing bracket.
+  if ((bracket_left == string::npos && bracket_right != string::npos) ||
+      (bracket_left != string::npos && bracket_right == string::npos)) {
+    return Status::InvalidArgument(Substitute("invalid address $0", addr));
+  }
+
+  // If number of opening or closing brackets is more than one or
+  // first character of address is not an opening bracket.
+  auto opening_bracket_count = strcount(addr, '[');
+  auto closing_bracket_count = strcount(addr, ']');
+  if (opening_bracket_count > 1 ||
+      closing_bracket_count > 1 ||
+      addr.front() != '[') {
+    return Status::InvalidArgument(Substitute("invalid address $0", addr));
+  }
+
+  DCHECK(bracket_left != string::npos && bracket_right != string::npos);
+  if (addr.back() == ']') {
+    // IPv6 address with enclosed brackets and no port is specified.
+    RETURN_NOT_OK(host_empty(addr.substr(1, addr.length() - 2)));
+    SetHostAndPort(addr.substr(1, addr.length() - 2), default_port);
+    return Status::OK();
+  }
+
+  // IPv6 address with enclosed brackets and a port is specified.
+  uint32_t port;
+  string_view addr_view = addr;
+  std::pair<string_view, string_view> parts1;
+  parts1.first = addr_view.substr(0, bracket_right);
+  parts1.second = addr_view.substr(bracket_right + 1);
+
+  // First half is IP address after opening bracket.
+  RETURN_NOT_OK(host_empty(parts1.first.substr(1, bracket_right - 1)));
+
+  // Second half is port number after colon.
+  if (!SimpleAtoi(parts1.second.substr(1).data(), &port) || port > 65535) {
+    return Status::InvalidArgument(Substitute("invalid port $0", port));
+  }
+
+  SetHostAndPort(parts1.first.substr(1, bracket_right - 1), port);
   return Status::OK();
 }
 
@@ -218,7 +304,7 @@ Status HostPort::ParseStringWithScheme(const string& str, uint16_t default_port)
   return ParseString(str_copy, default_port);
 }
 
-Status HostPort::ResolveAddresses(vector<Sockaddr>* addresses) const {
+Status HostPort::ResolveAddresses(vector<Sockaddr>* addresses, sa_family_t family) const {
   TRACE_EVENT1("net", "HostPort::ResolveAddresses",
                "host", host_);
   TRACE_COUNTER_SCOPE_LATENCY_US("dns_us");
@@ -244,7 +330,7 @@ Status HostPort::ResolveAddresses(vector<Sockaddr>* addresses) const {
   }
   struct addrinfo hints;
   memset(&hints, 0, sizeof(hints));
-  hints.ai_family = AF_INET;
+  hints.ai_family = family;
   hints.ai_socktype = SOCK_STREAM;
   AddrInfo result;
   const string op_description = Substitute("resolve address for $0", host_);
@@ -258,14 +344,25 @@ Status HostPort::ResolveAddresses(vector<Sockaddr>* addresses) const {
   unordered_set<Sockaddr> inserted;
   vector<Sockaddr> result_addresses;
   for (const addrinfo* ai = result.get(); ai != nullptr; ai = ai->ai_next) {
-    CHECK_EQ(AF_INET, ai->ai_family);
-    sockaddr_in* addr = reinterpret_cast<sockaddr_in*>(ai->ai_addr);
-    addr->sin_port = htons(port_);
-    Sockaddr sockaddr(*addr);
-    VLOG(2) << Substitute("resolved address $0 for host/port $1",
-                          sockaddr.ToString(), ToString());
-    if (InsertIfNotPresent(&inserted, sockaddr)) {
-      result_addresses.emplace_back(sockaddr);
+    DCHECK(AF_INET == ai->ai_family || AF_INET6 == ai->ai_family);
+    if (AF_INET == ai->ai_family) {
+      sockaddr_in* addr = reinterpret_cast<sockaddr_in*>(ai->ai_addr);
+      addr->sin_port = htons(port_);
+      Sockaddr sockaddr(*addr);
+      VLOG(2) << Substitute("resolved address $0 for host/port $1",
+                            sockaddr.ToString(), ToString());
+      if (InsertIfNotPresent(&inserted, sockaddr)) {
+        result_addresses.emplace_back(sockaddr);
+      }
+    } else if (AF_INET6 == ai->ai_family) {
+      sockaddr_in6* addr = reinterpret_cast<sockaddr_in6*>(ai->ai_addr);
+      addr->sin6_port = htons(port_);
+      Sockaddr sockaddr(*addr);
+      VLOG(2) << Substitute("resolved address $0 for host/port $1",
+                            sockaddr.ToString(), ToString());
+      if (InsertIfNotPresent(&inserted, sockaddr)) {
+        result_addresses.emplace_back(sockaddr);
+      }
     }
   }
   if (PREDICT_FALSE(FLAGS_fail_dns_resolution)) {
@@ -327,7 +424,9 @@ Status HostPort::ParseStringsWithScheme(const string& comma_sep_addrs,
 }
 
 string HostPort::ToString() const {
-  return Substitute("$0:$1", host_, port_);
+  return host_.find(':') == string::npos ?
+    Substitute("$0:$1", host_, port_) : // IPv4 host
+    Substitute("[$0]:$1", host_, port_); // IPv6 host
 }
 
 string HostPort::ToCommaSeparatedString(const vector<HostPort>& hostports) {
@@ -338,27 +437,57 @@ string HostPort::ToCommaSeparatedString(const vector<HostPort>& hostports) {
   return JoinStrings(hostport_strs, ",");
 }
 
-bool HostPort::IsLoopback(uint32_t addr) {
+bool HostPort::IsLoopback(uint128_t addr, sa_family_t family) {
+  DCHECK(AF_INET == family || AF_INET6 == family);
+  if (AF_INET == family) {
     return (NetworkByteOrder::FromHost32(addr) >> 24) == 127;
+  }
+  struct in6_addr ip6_addr;
+  memcpy(&ip6_addr, &addr, sizeof(ip6_addr));
+  return IN6_IS_ADDR_LOOPBACK(&ip6_addr);
 }
 
-string HostPort::AddrToString(uint32_t addr) {
-  char str[INET_ADDRSTRLEN];
-  ::inet_ntop(AF_INET, &addr, str, INET_ADDRSTRLEN);
+string HostPort::AddrToString(const void* addr, sa_family_t family) {
+  DCHECK(AF_INET == family || AF_INET6 == family);
+  char str[INET6_ADDRSTRLEN] = "";
+  socklen_t len = (family == AF_INET) ? INET_ADDRSTRLEN : INET6_ADDRSTRLEN;
+
+  if (PREDICT_FALSE(!::inet_ntop(family, addr, str, len))) {
+    const int err = errno;
+    LOG(ERROR) << Substitute(
+        "failed converting IP address to text form: $0", ErrnoToString(err));
+  }
   return str;
 }
 
 Network::Network()
   : addr_(0),
-    netmask_(0) {
+    netmask_(0),
+    family_(AF_UNSPEC) {
 }
 
-Network::Network(uint32_t addr, uint32_t netmask)
-  : addr_(addr), netmask_(netmask) {}
+Network::Network(sa_family_t family, uint128_t addr, uint128_t netmask)
+  : addr_(addr),
+    netmask_(netmask),
+    family_(family) {
+}
 
 bool Network::WithinNetwork(const Sockaddr& addr) const {
-  return ((addr.ipv4_addr().sin_addr.s_addr & netmask_) ==
-          (addr_ & netmask_));
+  if (PREDICT_FALSE(family_ != addr.family())) {
+    return false;
+  }
+
+  if (family_ == AF_INET) {
+    return (addr.ipv4_addr().sin_addr.s_addr & netmask_) == (addr_ & netmask_);
+  }
+
+  if (family_ == AF_INET6) {
+    uint128_t addr_value = 0;
+    memcpy(&addr_value, addr.ipv6_addr().sin6_addr.s6_addr, sizeof(addr_value));
+    return ((addr_value & netmask_) == (addr_ & netmask_));
+  }
+
+  return false;
 }
 
 Status Network::ParseCIDRString(const string& addr) {
@@ -366,18 +495,33 @@ Status Network::ParseCIDRString(const string& addr) {
 
   kudu::Sockaddr sockaddr;
   Status s = sockaddr.ParseString(p.first, 0);
+  if (!s.ok()) {
+    return Status::NetworkError("Unable to parse CIDR address", addr);
+  }
 
   uint32_t bits;
   bool success = SimpleAtoi(p.second, &bits);
 
-  if (!s.ok() || !success || bits > 32) {
+  sa_family_t fam = sockaddr.family();
+  if (!success ||
+      (AF_INET == fam && bits > 32) ||
+      (AF_INET6 == fam && bits > 128)) {
     return Status::NetworkError("Unable to parse CIDR address", addr);
   }
 
   // Netmask in network byte order
-  uint32_t netmask = NetworkByteOrder::FromHost32(~(0xffffffff >> bits));
-  addr_ = sockaddr.ipv4_addr().sin_addr.s_addr;
-  netmask_ = netmask;
+  if (AF_INET == fam) {
+    addr_ = sockaddr.ipv4_addr().sin_addr.s_addr;
+    netmask_ = NetworkByteOrder::FromHost32(~(bits == 32 ? 0U : UINT_MAX >> bits));
+  } else if (AF_INET6 == fam) {
+    memcpy(&addr_, sockaddr.ipv6_addr().sin6_addr.s6_addr, sizeof(addr_));
+    netmask_ = NetworkByteOrder::FromHost128(~(bits == 128 ? UINT128_MIN : UINT128_MAX >> bits));
+  } else {
+    return Status::InvalidArgument("Invalid network family");
+  }
+
+  family_ = fam;
+
   return Status::OK();
 }
 
@@ -393,11 +537,11 @@ Status Network::ParseCIDRStrings(const string& comma_sep_addrs,
 }
 
 bool Network::IsLoopback() const {
-  return HostPort::IsLoopback(addr_);
+  return HostPort::IsLoopback(addr_, family_);
 }
 
 string Network::GetAddrAsString() const {
-  return HostPort::AddrToString(addr_);
+  return HostPort::AddrToString(&addr_, family_);
 }
 
 bool IsPrivilegedPort(uint16_t port) {
@@ -478,8 +622,13 @@ Status GetLocalNetworks(std::vector<Network>* net) {
         // constraints in the Sockaddr class.
         ifa_netmask->sin_family = ifa_address->sin_family;
       }
-      net->emplace_back(Sockaddr(*ifa_address).ipv4_addr().sin_addr.s_addr,
+      net->emplace_back(AF_INET, Sockaddr(*ifa_address).ipv4_addr().sin_addr.s_addr,
                         Sockaddr(*ifa_netmask).ipv4_addr().sin_addr.s_addr);
+    } else if (ifa->ifa_addr->sa_family == AF_INET6) {
+      auto* ifa_address = reinterpret_cast<struct sockaddr_in6*>(ifa->ifa_addr);
+      uint128_t addr_value = 0;
+      memcpy(&addr_value, ifa_address->sin6_addr.s6_addr, sizeof(addr_value));
+      net->emplace_back(AF_INET6, addr_value, 0);
     }
   }
 

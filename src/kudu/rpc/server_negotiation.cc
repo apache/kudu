@@ -100,7 +100,8 @@ TAG_FLAG(rpc_send_channel_bindings, unsafe);
 DECLARE_bool(rpc_encrypt_loopback_connections);
 
 DEFINE_string(trusted_subnets,
-              "127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,169.254.0.0/16",
+              "127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,169.254.0.0/16,"
+              "::1/128,fe80::/10,fd00::/8",
               "A trusted subnet whitelist. If set explicitly, all unauthenticated "
               "or unencrypted connections are prohibited except the ones from the "
               "specified address blocks. Otherwise, private network (127.0.0.0/8, etc.) "

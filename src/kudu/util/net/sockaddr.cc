@@ -36,6 +36,7 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/int128.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/stopwatch.h"
@@ -61,11 +62,22 @@ Sockaddr::~Sockaddr() {
   ASAN_UNPOISON_MEMORY_REGION(&storage_, sizeof(storage_));
 }
 
-Sockaddr Sockaddr::Wildcard() {
-  struct sockaddr_in addr;
+Sockaddr Sockaddr::Wildcard(sa_family_t family) {
+  // IPv4.
+  if (family == AF_INET) {
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = INADDR_ANY;
+    return Sockaddr(addr);
+  }
+
+  // IPv6.
+  DCHECK(family == AF_INET6);
+  struct sockaddr_in6 addr;
   memset(&addr, 0, sizeof(addr));
-  addr.sin_family = AF_INET;
-  addr.sin_addr.s_addr = INADDR_ANY;
+  addr.sin6_family = AF_INET6;
+  addr.sin6_addr = IN6ADDR_ANY_INIT;
   return Sockaddr(addr);
 }
 
@@ -81,6 +93,10 @@ Sockaddr& Sockaddr::operator=(const Sockaddr& other) noexcept {
 Sockaddr::Sockaddr(const struct sockaddr& addr, socklen_t len) {
   set_length(len);
   memcpy(&storage_, &addr, len);
+  if (family() == AF_INET6) {
+    storage_.in6.sin6_flowinfo = 0; // Flow-label & traffic class
+    storage_.in6.sin6_scope_id = 0; // Scope identifier
+  }
 }
 
 // When storing sockaddr_in, do not count the padding sin_zero field in the
@@ -94,6 +110,13 @@ Sockaddr::Sockaddr(const struct sockaddr_in& addr) :
   DCHECK_EQ(AF_INET, addr.sin_family);
 }
 
+Sockaddr::Sockaddr(const struct sockaddr_in6& addr) :
+    Sockaddr(reinterpret_cast<const struct sockaddr&>(addr), sizeof(addr)) {
+  DCHECK_EQ(AF_INET6, addr.sin6_family);
+  static_assert(sizeof(struct sockaddr_storage) >= sizeof(struct sockaddr_in6),
+      "Structure not large enough to hold IPv6 socket address");
+}
+
 Status Sockaddr::ParseString(const string& s, uint16_t default_port) {
   HostPort hp;
   RETURN_NOT_OK(hp.ParseString(s, default_port));
@@ -101,25 +124,51 @@ Status Sockaddr::ParseString(const string& s, uint16_t default_port) {
 }
 
 Status Sockaddr::ParseFromNumericHostPort(const HostPort& hp) {
-  struct in_addr addr;
-  if (inet_pton(AF_INET, hp.host().c_str(), &addr) != 1) {
-    return Status::InvalidArgument("Invalid IP address", hp.host());
-  }
-  // Do not count the padding sin_zero field in the length of Sockaddr::storage_
-  // since the padding might contain irrelevant non-zero bytes that should not
-  // be passed along with the rest of the valid and properly initialized
-  // sockaddr_in's fields to BytewiseCompare() and HashCode().
-  constexpr auto len = offsetof(struct sockaddr_in, sin_zero);
-  set_length(len);
-  static_assert(len > offsetof(struct sockaddr_in, sin_addr));
-  storage_.in.sin_family = AF_INET;
-  static_assert(len > offsetof(struct sockaddr_in, sin_family));
-  storage_.in.sin_addr = addr;
+  sa_family_t fam = hp.host().find(':') == string::npos ? AF_INET : AF_INET6;
+  if (AF_INET == fam) {
+    struct in_addr in_addr_local;
+    if (inet_pton(AF_INET, hp.host().c_str(), &in_addr_local) != 1) {
+      return Status::InvalidArgument(Substitute("invalid IPv4 address $0", hp.host()));
+    }
+    // Do not count the padding sin_zero field in the length of Sockaddr::storage_
+    // since the padding might contain irrelevant non-zero bytes that should not
+    // be passed along with the rest of the valid and properly initialized
+    // sockaddr_in's fields to BytewiseCompare() and HashCode().
+    constexpr auto len = offsetof(struct sockaddr_in, sin_zero);
+
+    // Fields inside storage_ need to be set after length is set. This is to avoid any
+    // ASAN failures that can arise due to assginment of storage_ fields still residing
+    // in poisoned memory. set_length() adjusts the poisoned region and avoids such case.
+    set_length(len);
 #ifndef __linux__
-  static_assert(len > offsetof(struct sockaddr_in, sin_len));
-  storage_.in.sin_len = sizeof(struct sockaddr_in);
+    static_assert(len > offsetof(struct sockaddr_in, sin_len));
+    storage_.in.sin_len = sizeof(struct sockaddr_in);
 #endif
+    static_assert(len > offsetof(struct sockaddr_in, sin_family));
+    storage_.in.sin_family = fam;
+    set_port(hp.port());
+    static_assert(len > offsetof(struct sockaddr_in, sin_addr));
+    storage_.in.sin_addr = in_addr_local;
+    return Status::OK();
+  }
+
+  DCHECK(AF_INET6 == fam);
+  struct in6_addr sin6_addr_local;
+  if (inet_pton(AF_INET6, hp.host().c_str(), &sin6_addr_local) != 1) {
+    return Status::InvalidArgument(Substitute("invalid IPv6 address $0", hp.host()));
+  }
+  // Fields inside storage_ need to be set after length is set. This is to avoid any
+  // ASAN failures that can arise due to assginment of storage_ fields still residing
+  // in poisoned memory. set_length() adjusts the poisoned region and avoids such case.
+  set_length(sizeof(struct sockaddr_in6));
+#ifndef __linux__
+  storage_.in6.sin6_len = sizeof(struct sockaddr_in6);
+#endif
+  storage_.in6.sin6_family = fam;
   set_port(hp.port());
+  storage_.in6.sin6_flowinfo = 0; // Flow-label & traffic class
+  storage_.in6.sin6_addr = sin6_addr_local;
+  storage_.in6.sin6_scope_id = 0; // Scope identifier
   return Status::OK();
 }
 
@@ -194,6 +243,15 @@ Sockaddr& Sockaddr::operator=(const struct sockaddr_in &addr) {
   return *this;
 }
 
+Sockaddr& Sockaddr::operator=(const struct sockaddr_in6& addr) {
+  set_length(sizeof(addr));
+  memcpy(&storage_, &addr, len_);
+  storage_.in6.sin6_flowinfo = 0; // Flow-label & traffic class
+  storage_.in6.sin6_scope_id = 0; // Scope identifier
+  DCHECK_EQ(family(), AF_INET6);
+  return *this;
+}
+
 bool Sockaddr::operator==(const Sockaddr& other) const {
   return BytewiseCompare(*this, other) == 0;
 }
@@ -217,22 +275,31 @@ uint32_t Sockaddr::HashCode() const {
   return HashStringThoroughly(reinterpret_cast<const char*>(&storage_), len_);
 }
 
-void Sockaddr::set_port(int port) {
-  DCHECK_EQ(family(), AF_INET);
+void Sockaddr::set_port(uint16_t port) {
+  DCHECK(is_ip());
   DCHECK_GE(port, 0);
   DCHECK_LE(port, std::numeric_limits<uint16_t>::max());
-  storage_.in.sin_port = htons(port);
+  if (AF_INET == family()) {
+    storage_.in.sin_port = htons(port);
+  } else {
+    storage_.in6.sin6_port = htons(port);
+  }
 }
 
-int Sockaddr::port() const {
-  DCHECK_EQ(family(), AF_INET);
-  return ntohs(storage_.in.sin_port);
+uint16_t Sockaddr::port() const {
+  DCHECK(is_ip());
+  if (AF_INET == family()) {
+    return ntohs(storage_.in.sin_port);
+  }
+  return ntohs(storage_.in6.sin6_port);
 }
 
 std::string Sockaddr::host() const {
   switch (family()) {
     case AF_INET:
-      return HostPort::AddrToString(storage_.in.sin_addr.s_addr);
+      return HostPort::AddrToString(&(storage_.in.sin_addr.s_addr), AF_INET);
+    case AF_INET6:
+      return HostPort::AddrToString(&(storage_.in6.sin6_addr.s6_addr), AF_INET6);
     case AF_UNIX:
       DCHECK(false) << "unexpected host() call on unix socket";
       // In case we missed a host() call somewhere in a vlog or error message not
@@ -249,6 +316,11 @@ const struct sockaddr_in& Sockaddr::ipv4_addr() const {
   return storage_.in;
 }
 
+const struct sockaddr_in6& Sockaddr::ipv6_addr() const {
+  DCHECK_EQ(family(), AF_INET6);
+  return storage_.in6;
+}
+
 std::string Sockaddr::ToString() const {
   if (!is_initialized()) {
     return "<uninitialized>";
@@ -256,6 +328,8 @@ std::string Sockaddr::ToString() const {
   switch (family()) {
     case AF_INET:
       return Substitute("$0:$1", host(), port());
+    case AF_INET6:
+      return Substitute("[$0]:$1", host(), port());
     case AF_UNIX:
       return Substitute("unix:$0", UnixDomainPath());
     default:
@@ -264,14 +338,25 @@ std::string Sockaddr::ToString() const {
 }
 
 bool Sockaddr::IsWildcard() const {
-  DCHECK_EQ(family(), AF_INET);
-  return storage_.in.sin_addr.s_addr == 0;
+  DCHECK(is_ip());
+  if (AF_INET == family()) {
+    return 0 == storage_.in.sin_addr.s_addr;
+  }
+  return IN6_IS_ADDR_UNSPECIFIED(&storage_.in6.sin6_addr);
 }
 
 bool Sockaddr::IsAnyLocalAddress() const {
-  if (family() == AF_UNIX) return true;
-  DCHECK_EQ(family(), AF_INET);
-  return HostPort::IsLoopback(storage_.in.sin_addr.s_addr);
+  if (AF_UNIX == family()) {
+    return true;
+  }
+
+  uint128_t addr = 0;
+  if (AF_INET == family()) {
+    addr = storage_.in.sin_addr.s_addr;
+  } else {
+    memcpy(&addr, storage_.in6.sin6_addr.s6_addr, sizeof(addr));
+  }
+  return HostPort::IsLoopback(addr, family());
 }
 
 Status Sockaddr::LookupHostname(string* hostname) const {

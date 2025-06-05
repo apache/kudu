@@ -17,6 +17,8 @@
 
 #include "kudu/util/net/socket.h"
 
+#include <sys/socket.h>
+#include <sys/un.h>
 #include <unistd.h>
 
 #include <cstddef>
@@ -38,35 +40,39 @@
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
-#include "kudu/util/thread.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
+#include "kudu/util/thread.h"
 
 using std::string;
 
 namespace kudu {
 
+constexpr const char* const kIpV4NullAddr = "0.0.0.0:0";
+constexpr const char* const kIpV6NullAddr = "[::]:0";
 constexpr size_t kEchoChunkSize = 32 * 1024 * 1024;
 
 // A test scenario to make sure Sockaddr::HashCode() works as expected for
 // addresses which are logically the same. In essence, the implementation of
 // the Sockaddr class should zero out the zero padding field
 // sockaddr_in::sin_zero to avoid issues related to not-initialized and former
-// contents of the memory backing the zero padding field.
+// contents of the memory backing the zero padding field. Similarly, for IPv6,
+// 'sin6_flowinfo' and 'sin6_scope_id' are initialized to zero.
 TEST(SockaddrHashTest, ZeroPadding) {
-  constexpr const char* const kIpAddr = "127.0.0.1";
+  constexpr const char* const kIpV4Addr = "127.0.0.1";
+  constexpr const char* const kIpV6Addr = "::1";
   constexpr const char* const kPath = "/tmp/some/long/enough/path/to.sock";
   constexpr uint16_t kPort = 5678;
 
   Sockaddr s_in;
-  ASSERT_OK(s_in.ParseString(kIpAddr, kPort));
+  ASSERT_OK(s_in.ParseString(kIpV4Addr, kPort));
 
   Sockaddr s_un;
   ASSERT_OK(s_un.ParseUnixDomainPath(kPath));
 
   // Make 's_un' to be logically the same object as 's_in', but reusing the
   // Sockaddr::storage_ field from its prior incarnation.
-  ASSERT_OK(s_un.ParseString(kIpAddr, kPort));
+  ASSERT_OK(s_un.ParseString(kIpV4Addr, kPort));
 
   // The hash should be the same since 's_in' and 's_un' represent the same
   // logical entity.
@@ -92,6 +98,39 @@ TEST(SockaddrHashTest, ZeroPadding) {
   s_un_1 = s_in.ipv4_addr();
   ASSERT_EQ(s_in.HashCode(), s_un_1.HashCode());
   ASSERT_EQ(s_in, s_un_1);
+
+  Sockaddr s_in6;
+  ASSERT_OK(s_in6.ParseString(kIpV6Addr, kPort));
+  ASSERT_OK(s_un.ParseUnixDomainPath(kPath));
+
+  // Make 's_un' to be logically the same object as 's_in6', but reusing the
+  // Sockaddr::storage_ field from its prior incarnation.
+  ASSERT_OK(s_un.ParseString(kIpV6Addr, kPort));
+
+  // The hash should be the same since 's_in6' and 's_un' represent
+  // the same logical entity.
+  ASSERT_EQ(s_in6.HashCode(), s_un.HashCode());
+  ASSERT_EQ(s_in6, s_un);
+
+  Sockaddr s_in6_0(s_in6);
+  ASSERT_EQ(s_in6.HashCode(), s_in6_0.HashCode());
+  ASSERT_EQ(s_in6, s_in6_0);
+
+  Sockaddr s_in6_1(s_un);
+  ASSERT_EQ(s_in6.HashCode(), s_in6_1.HashCode());
+  ASSERT_EQ(s_in6, s_in6_1);
+
+  Sockaddr s_un6_0;
+  ASSERT_OK(s_un.ParseUnixDomainPath(kPath));
+  s_un6_0 = s_in6_0;
+  ASSERT_EQ(s_in6.HashCode(), s_un6_0.HashCode());
+  ASSERT_EQ(s_in6_0, s_un6_0);
+
+  Sockaddr s_un6_1;
+  ASSERT_OK(s_un6_1.ParseUnixDomainPath(kPath));
+  s_un6_1 = s_in6.ipv6_addr();
+  ASSERT_EQ(s_in6.HashCode(), s_un6_1.HashCode());
+  ASSERT_EQ(s_in6, s_un6_1);
 }
 
 class SocketTest : public KuduTest {
@@ -124,9 +163,8 @@ class SocketTest : public KuduTest {
     return client;
   }
 
-  void DoTestServerDisconnects(bool accept, const std::string &message) {
-    NO_FATALS(BindAndListen("0.0.0.0:0"));
-
+  void DoTestServerDisconnects(const string& addr_str, bool accept, const std::string &message) {
+    NO_FATALS(BindAndListen(addr_str));
     CountDownLatch latch(1);
     scoped_refptr<kudu::Thread> t;
     Status status = kudu::Thread::Create("pool", "worker", ([&]{
@@ -155,6 +193,36 @@ class SocketTest : public KuduTest {
 
     ASSERT_TRUE(s.IsNetworkError()) << s.ToString();
     ASSERT_STR_MATCHES(s.message().ToString(), message);
+  }
+
+  void DoTestServerConnect(const string& addr_str, sa_family_t fam) {
+    NO_FATALS(BindAndListen(addr_str));
+    CountDownLatch latch(1);
+    scoped_refptr<kudu::Thread> t;
+    Status status = kudu::Thread::Create("pool", "worker", ([&]{
+      Sockaddr new_addr;
+      Socket sock;
+      CHECK_OK(listener_.Accept(&sock, &new_addr, 0));
+      Sockaddr sock_addr1;
+      Sockaddr peer_addr1;
+      ASSERT_OK(sock.GetSocketAddress(&sock_addr1));
+      ASSERT_OK(sock.GetPeerAddress(&peer_addr1));
+      CHECK_OK(sock.Close());
+    }), &t);
+    ASSERT_OK(status);
+    SCOPED_CLEANUP({
+      latch.CountDown();
+      if (t) {
+        t->Join();
+      }
+    });
+
+    Socket client = ConnectToListeningServer();
+    Sockaddr peer_addr;
+    ASSERT_OK(client.GetPeerAddress(&peer_addr));
+
+    EXPECT_EQ(addr_str, peer_addr.host());
+    EXPECT_EQ(fam, peer_addr.family());
   }
 
   void DoUnixSocketTest(const string& path) {
@@ -200,12 +268,27 @@ class SocketTest : public KuduTest {
 };
 
 TEST_F(SocketTest, TestRecvReset) {
-  DoTestServerDisconnects(false, "recv error from 127.0.0.1:[0-9]+: "
+  // IPv4.
+  DoTestServerDisconnects(kIpV4NullAddr, false, "recv error from 127.0.0.1:[0-9]+: "
+                          "Resource temporarily unavailable");
+  // IPv6.
+  DoTestServerDisconnects(kIpV6NullAddr, false,
+                          "recv error from \\[::1\\]:[0-9]+: "
                           "Resource temporarily unavailable");
 }
 
 TEST_F(SocketTest, TestRecvEOF) {
-  DoTestServerDisconnects(true, "recv got EOF from 127.0.0.1:[0-9]+");
+  DoTestServerDisconnects(kIpV4NullAddr, true, "recv got EOF from 127.0.0.1:[0-9]+");
+  DoTestServerDisconnects(kIpV6NullAddr, true, "recv got EOF from \\[::1\\]:[0-9]+");
+}
+
+TEST_F(SocketTest, TestServerConnect) {
+  // IPv4.
+  DoTestServerConnect("127.0.0.1", AF_INET);
+  // IPv6.
+  DoTestServerConnect("::1", AF_INET6);
+  // IPv4-mapped IPv6 address.
+  DoTestServerConnect("::ffff:127.0.0.1", AF_INET6);
 }
 
 // Apple does not support abstract namespaces in sockets.

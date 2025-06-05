@@ -17,6 +17,8 @@
 
 #include "kudu/util/net/dns_resolver.h"
 
+#include <sys/socket.h>
+
 #include <cstdint>
 #include <cstdlib>
 #include <ostream>
@@ -47,6 +49,20 @@ using strings::Substitute;
 
 namespace kudu {
 
+// Based on IP family, verify local host address.
+static void VerifyLocalHost(const Sockaddr& addr) {
+  switch (addr.family()) {
+    case AF_INET:
+      EXPECT_TRUE(HasPrefixString(addr.ToString(), "127."));
+      break;
+    case AF_INET6:
+      EXPECT_TRUE(HasPrefixString(addr.ToString(), "[::1]"));
+      break;
+    default:
+      FAIL() << "unexpected family:" << addr.family();
+  }
+}
+
 TEST(DnsResolverTest, AsyncResolution) {
   vector<Sockaddr> addrs;
   // Non-caching asynchronous DNS resolver.
@@ -58,7 +74,7 @@ TEST(DnsResolverTest, AsyncResolution) {
   ASSERT_TRUE(!addrs.empty());
   for (const Sockaddr& addr : addrs) {
     LOG(INFO) << "Address: " << addr.ToString();
-    EXPECT_TRUE(HasPrefixString(addr.ToString(), "127."));
+    VerifyLocalHost(addr);
     EXPECT_TRUE(HasSuffixString(addr.ToString(), ":12345"));
   }
 }
@@ -71,7 +87,7 @@ TEST(DnsResolverTest, RefreshCachedEntry) {
   ASSERT_TRUE(!addrs.empty());
   for (const Sockaddr& addr : addrs) {
     LOG(INFO) << "Address: " << addr.ToString();
-    EXPECT_TRUE(HasPrefixString(addr.ToString(), "127."));
+    VerifyLocalHost(addr);
     EXPECT_TRUE(HasSuffixString(addr.ToString(), ":12345"));
   }
   // If we override the DNS lookup address, when we refresh the address, the
@@ -102,7 +118,7 @@ TEST(DnsResolverTest, RefreshCachedEntry) {
   EXPECT_FALSE(addrs.empty());
   for (const Sockaddr& addr : addrs) {
     LOG(INFO) << "Address: " << addr.ToString();
-    EXPECT_TRUE(HasPrefixString(addr.ToString(), "127."));
+    VerifyLocalHost(addr);
     EXPECT_TRUE(HasSuffixString(addr.ToString(), ":12345"));
   }
 }
@@ -120,7 +136,7 @@ TEST(DnsResolverTest, ConcurrentRefreshesAndResolutions) {
   const auto validate_addrs = [] (const vector<Sockaddr>& addrs) {
     ASSERT_FALSE(addrs.empty());
     for (const Sockaddr& addr : addrs) {
-      EXPECT_TRUE(HasPrefixString(addr.ToString(), "127."));
+      VerifyLocalHost(addr);
       EXPECT_TRUE(HasSuffixString(addr.ToString(), ":12345"));
     }
   };

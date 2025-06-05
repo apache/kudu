@@ -34,10 +34,7 @@ namespace kudu {
 
 class HostPort;
 
-/// Represents a sockaddr.
-///
-/// Typically this wraps a sockaddr_in, but in the future will be extended to support
-/// IPv6 and Unix sockets.
+/// Represents a sockaddr, IPv4, IPv6 and Unix sockets are supported.
 class Sockaddr {
  public:
   // Create an uninitialized socket. This instance must be assigned to before usage.
@@ -49,14 +46,20 @@ class Sockaddr {
 
   // Construct from an IPv4 socket address.
   explicit Sockaddr(const struct sockaddr_in& addr);
+
+  // Construct from an IPv6 socket address.
+  explicit Sockaddr(const struct sockaddr_in6& addr);
+
+  // Construct from a generic socket address.
   explicit Sockaddr(const struct sockaddr& addr, socklen_t len);
 
-  // Return the IPv4 wildcard address.
-  static Sockaddr Wildcard();
+  // Return an IP wildcard address.
+  static Sockaddr Wildcard(sa_family_t family = AF_INET);
 
   // Assignment operators.
   Sockaddr& operator=(const Sockaddr& other) noexcept;
   Sockaddr& operator=(const struct sockaddr_in& addr);
+  Sockaddr& operator=(const struct sockaddr_in6& addr);
 
   // Compare two addresses for equality. To be equal, the addresses must have the same
   // family and have the same bytewise representation. Two uninitialized addresses
@@ -81,7 +84,8 @@ class Sockaddr {
     return len_ != 0;
   }
 
-  // Parse a string IPv4 address of the form "A.B.C.D:port", storing the result
+  // Parse a string IP address of the form "A.B.C.D:port" or "[A:B:C:D:E:F:G:H]:port"
+  // (or any other acceptable IPv6 representation), storing the result
   // in this Sockaddr object. If no ':port' is specified, uses 'default_port'.
   // Note that this function will not handle resolving hostnames.
   //
@@ -101,16 +105,17 @@ class Sockaddr {
   // May return InvalidArgument if the path is too long.
   Status ParseUnixDomainPath(const std::string& s);
 
-  // Returns the dotted-decimal string '1.2.3.4' of the host component of this address.
+  // Returns dotted-decimal host component string '1.2.3.4' for IPv4 address or
+  // hexadecimal with colons host component string '2001:0db8:85a3::1' for IPv6 address.
   std::string host() const;
 
   // Set the IP port for this address.
-  // REQUIRES: is an IPv4 address.
-  void set_port(int port);
+  // REQUIRES: is an IP address.
+  void set_port(uint16_t port);
 
   // Get the IP port for this address.
-  // REQUIRES: is an IPv4 address.
-  int port() const;
+  // REQUIRES: is an IP address.
+  uint16_t port() const;
 
   // Get the path for this address, assuming it's a UNIX domain socket address.
   //
@@ -141,10 +146,14 @@ class Sockaddr {
     if (family() == AF_INET) {
       return sizeof(struct sockaddr_in);
     }
+    if (family() == AF_INET6) {
+      return sizeof(struct sockaddr_in6);
+    }
     return len_;
   }
 
   const struct sockaddr_in& ipv4_addr() const;
+  const struct sockaddr_in6& ipv6_addr() const;
 
   sa_family_t family() const {
     DCHECK(is_initialized());
@@ -152,20 +161,22 @@ class Sockaddr {
   }
 
   bool is_ip() const {
-    return family() == AF_INET;
+    sa_family_t fam = family();
+    return fam == AF_INET || fam == AF_INET6;
   }
 
   bool is_unix() const {
     return family() == AF_UNIX;
   }
 
-  // Returns the stringified address in '1.2.3.4:<port>' format.
+  // Returns the stringified address in '1.2.3.4:<port>' or
+  // '[1:2:3:4:a:b:c:d]:<port>' format.
   std::string ToString() const;
 
-  // Returns true if the address is 0.0.0.0
+  // Returns true if the address is 0.0.0.0 or 0:0:0:0:0:0:0:0 (i.e. ::).
   bool IsWildcard() const;
 
-  // Returns true if the address is 127.*.*.* or a unix socket.
+  // Returns true if the address is 127.*.*.* or ::1 or a unix socket.
   bool IsAnyLocalAddress() const;
 
   // Does reverse DNS lookup of the address and stores it in hostname.
@@ -193,6 +204,7 @@ class Sockaddr {
   // Internal storage. This is a tagged union based on 'generic.ss_family'.
   union {
     struct sockaddr_storage generic;
+    struct sockaddr_in6 in6;
     struct sockaddr_in in;
     struct sockaddr_un un;
   } storage_;
