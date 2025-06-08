@@ -1,0 +1,62 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+package org.apache.kudu.subprocess;
+
+import java.util.concurrent.BlockingQueue;
+
+import org.apache.yetus.audience.InterfaceAudience;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * Util class for taking and putting messages to a queue.
+ */
+@InterfaceAudience.Private
+public class QueueUtil {
+  private static final Logger LOG = LoggerFactory.getLogger(QueueUtil.class);
+
+  static <DataT> DataT take(BlockingQueue<DataT> queue) {
+    // Take an element from the queue. If encountered InterruptedException,
+    // consider it to be fatal (as a signal to shutdown the task), and
+    // propagate it up the call stack.
+    DataT data;
+    try {
+      data = queue.take();
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("Message: {} has been taken from the queue", data);
+      }
+    } catch (InterruptedException e) {
+      throw new KuduSubprocessException("Unable to take a message from the queue", e);
+    }
+    return data;
+  }
+
+  static <DataT> void put(BlockingQueue<DataT> queue, DataT data) {
+    // Put the message to the queue. If encountered InterruptedException
+    // during the put, consider it to be fatal (as a signal to shutdown
+    // the task), and propagate it up the call stack.
+    try {
+      queue.put(data);
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("Message: {} has been put on the queue", data);
+      }
+    } catch (InterruptedException e) {
+      throw new KuduSubprocessException("Unable to put the message to the queue", e);
+    }
+  }
+}
