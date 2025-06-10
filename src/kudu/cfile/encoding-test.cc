@@ -68,6 +68,7 @@ using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
 using std::vector;
+using strings::Substitute;
 
 namespace kudu {
 namespace cfile {
@@ -95,19 +96,30 @@ class TestEncoding : public KuduTest {
     ASSERT_EQ(1, n);
   }
 
-  unique_ptr<BlockBuilder> CreateBlockBuilderOrDie(DataType type,
+  unique_ptr<BlockBuilder> CreateBlockBuilderOrDie(const TypeInfo* type_info,
                                                    EncodingType encoding) {
     const TypeEncodingInfo* tei;
-    CHECK_OK(TypeEncodingInfo::Get(GetTypeInfo(type), encoding, &tei));
+    CHECK_OK(TypeEncodingInfo::Get(type_info, encoding, &tei));
     return tei->CreateBlockBuilder(&default_write_options_);
+  }
+
+  unique_ptr<BlockBuilder> CreateBlockBuilderOrDie(DataType type,
+                                                   EncodingType encoding) {
+    return CreateBlockBuilderOrDie(GetTypeInfo(type), encoding);
+  }
+
+  static unique_ptr<BlockDecoder> CreateBlockDecoderOrDie(const TypeInfo* type_info,
+                                                          EncodingType encoding,
+                                                          scoped_refptr<BlockHandle> block) {
+    const TypeEncodingInfo* tei;
+    CHECK_OK(TypeEncodingInfo::Get(type_info, encoding, &tei));
+    return tei->CreateBlockDecoder(std::move(block), /*parent_cfile_iter=*/nullptr);
   }
 
   static unique_ptr<BlockDecoder> CreateBlockDecoderOrDie(DataType type,
                                                           EncodingType encoding,
                                                           scoped_refptr<BlockHandle> block) {
-    const TypeEncodingInfo* tei;
-    CHECK_OK(TypeEncodingInfo::Get(GetTypeInfo(type), encoding, &tei));
-    return tei->CreateBlockDecoder(std::move(block), /*parent_cfile_iter=*/nullptr);
+    return CreateBlockDecoderOrDie(GetTypeInfo(type), encoding, std::move(block));
   }
 
   // Insert a given number of strings into the provided BlockBuilder.
@@ -390,7 +402,7 @@ class TestEncoding : public KuduTest {
     ASSERT_OK(ibd->ParseHeader());
 
     // Benchmark seeking
-    LOG_TIMING(INFO, strings::Substitute("Seeking in $0 block", TypeTraits<IntType>::name())) {
+    LOG_TIMING(INFO, Substitute("Seeking in $0 block", TypeTraits<IntType>::name())) {
       for (int i = 0; i < num_queries; i++) {
         bool exact = false;
         // Seek to a random value which falls between data[0] and max_seek_target
@@ -433,6 +445,22 @@ class TestEncoding : public KuduTest {
     LOG(INFO) << "Encoded size for 0 items: " << block->data().size();
 
     auto bd = CreateBlockDecoderOrDie(type, encoding, std::move(block));
+    ASSERT_OK(bd->ParseHeader());
+    ASSERT_EQ(0, bd->Count());
+    ASSERT_FALSE(bd->HasNext());
+  }
+
+  void TestEmptyArrayBlockEncodeDecode(DataType type, EncodingType encoding) {
+    const TypeInfo* ti = GetArrayTypeInfo(type);
+    ASSERT_NE(nullptr, ti);
+    auto bb = CreateBlockBuilderOrDie(ti, encoding);
+    scoped_refptr<BlockHandle> block = FinishAndMakeContiguous(bb.get(), 0);
+    ASSERT_GT(block->data().size(), 0);
+    LOG(INFO) << Substitute(
+        "$0 array $1: encoded size for 0 items: $2",
+        DataType_Name(type), EncodingType_Name(encoding), block->data().size());
+
+    auto bd = CreateBlockDecoderOrDie(ti, encoding, std::move(block));
     ASSERT_OK(bd->ParseHeader());
     ASSERT_EQ(0, bd->Count());
     ASSERT_FALSE(bd->HasNext());
@@ -844,6 +872,40 @@ TEST_F(TestEncoding, TestBinaryPlainEmptyBlockEncodeDecode) {
 
 TEST_F(TestEncoding, TestBinaryPrefixEmptyBlockEncodeDecode) {
   TestEmptyBlockEncodeDecode(BINARY, PREFIX_ENCODING);
+}
+
+// Test plain encode/decode for blocks of empty 1D arrays. This is to make
+// sure the corresponding encoders/decoders can be resolved as expected.
+TEST_F(TestEncoding, PlainEmptyArrayBlockEncodeDecode) {
+  for (auto elem_type : { UINT8,
+                          INT8,
+                          UINT16,
+                          INT16,
+                          UINT32,
+                          INT32,
+                          UINT64,
+                          INT64,
+                          INT128,
+                          STRING,
+                          BOOL,
+                          FLOAT,
+                          DOUBLE,
+                          BINARY,
+                          UNIXTIME_MICROS,
+                          DECIMAL32,
+                          DECIMAL64,
+                          DECIMAL128,
+                          VARCHAR,
+                          DATE }) {
+    SCOPED_TRACE(Substitute("PLAIN block encoding/decoding for $0",
+                            DataType_Name(elem_type)));
+    NO_FATALS(TestEmptyArrayBlockEncodeDecode(elem_type, PLAIN_ENCODING));
+  }
+}
+
+TEST_F(TestEncoding, BinaryPrefixEmptyArrayBlockEncodeDecode) {
+  NO_FATALS(TestEmptyArrayBlockEncodeDecode(STRING, PREFIX_ENCODING));
+  NO_FATALS(TestEmptyArrayBlockEncodeDecode(BINARY, PREFIX_ENCODING));
 }
 
 // Test encode/decode of a binary block with various-sized truncations.

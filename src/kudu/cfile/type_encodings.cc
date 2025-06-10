@@ -247,13 +247,35 @@ class TypeEncodingResolver {
 Status TypeEncodingInfo::Get(const TypeInfo* typeinfo,
                              EncodingType encoding,
                              const TypeEncodingInfo** out) {
+  if (!typeinfo->is_array()) {
+    return Singleton<TypeEncodingResolver>::get()->GetTypeEncodingInfo(
+        typeinfo->physical_type(), encoding, out);
+  }
+
+  // For 1D arrays, the encoder is chosen based on the type of the array's
+  // elements. This logic works only for 1D arrays of scalar types.
+  const auto* elem_type_info = GetArrayElementTypeInfo(*typeinfo);
+  DCHECK(elem_type_info);
+  DCHECK_NE(NESTED, elem_type_info->type());
+
   return Singleton<TypeEncodingResolver>::get()->GetTypeEncodingInfo(
-      typeinfo->physical_type(), encoding, out);
+      elem_type_info->physical_type(), encoding, out);
 }
 
 EncodingType TypeEncodingInfo::GetDefaultEncoding(const TypeInfo* typeinfo) {
+  if (!typeinfo->is_array()) {
+    return Singleton<TypeEncodingResolver>::get()->GetDefaultEncoding(
+        typeinfo->physical_type());
+  }
+
+  // For 1D arrays, the encoder is chosen based on the type of the array's
+  // elements. This logic works only for 1D arrays of scalar types.
+  const auto* elem_type_info = GetArrayElementTypeInfo(*typeinfo);
+  DCHECK(elem_type_info);
+  DCHECK_NE(NESTED, elem_type_info->type());
+
   return Singleton<TypeEncodingResolver>::get()->GetDefaultEncoding(
-      typeinfo->physical_type());
+      elem_type_info->physical_type());
 }
 
 }  // namespace cfile

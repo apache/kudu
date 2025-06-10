@@ -189,6 +189,10 @@ class TypeInfo {
   const AreConsecutiveFunc are_consecutive_func_;
 };
 
+// Given TypeInfo of an array, return pointer to the TypeInfo for the array's
+// elements or nullptr if the specified TypeInfo isn't of a NESTED array type.
+const TypeInfo* GetArrayElementTypeInfo(const TypeInfo& typeinfo);
+
 template<DataType Type>
 struct DataTypeTraits {};
 

@@ -79,6 +79,14 @@ message CFileFooterPB {
 
   optional bool is_type_nullable = 8 [default=false];
 
+  // Whether this CFile contains array data blocks: that's the way to represent
+  // one-dimensional arrays of scalar types. If set to 'true', the 'data_type'
+  // field corresponds to the array element type, and there must be
+  // corresponding bit set in the 'incompatible_features' field to prevent
+  // misinterpreting the data in this CFile by readers that do not recognize
+  // array data blocks.
+  optional bool is_type_array = 12 [default=false];
+
   // Block pointer for dictionary block if the cfile is dictionary encoded.
   // Only for dictionary encoding.
   optional BlockPointerPB dict_block_ptr = 9;

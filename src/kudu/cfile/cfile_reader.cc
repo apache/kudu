@@ -189,7 +189,8 @@ Status CFileReader::InitOnce(const IOContext* io_context) {
         IncompatibleFeatures::SUPPORTED));
   }
 
-  type_info_ = GetTypeInfo(footer_->data_type());
+  type_info_ = footer_->is_type_array() ? GetArrayTypeInfo(footer_->data_type())
+                                        : GetTypeInfo(footer_->data_type());
 
   RETURN_NOT_OK(TypeEncodingInfo::Get(type_info_,
                                       footer_->encoding(),

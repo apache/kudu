@@ -22,6 +22,7 @@
 #include <unordered_map>
 #include <utility>
 
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/singleton.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
@@ -146,6 +147,19 @@ const TypeInfo* GetTypeInfo(DataType type) {
 const TypeInfo* GetArrayTypeInfo(DataType element_type) {
   return Singleton<TypeInfoResolver>::get()->GetTypeInfo(element_type,
                                                          /*is_nested=*/true);
+}
+
+const TypeInfo* GetArrayElementTypeInfo(const TypeInfo& typeinfo) {
+  const auto* nested_type_desc = typeinfo.nested_type_info();
+  if (PREDICT_FALSE(!nested_type_desc)) {
+    // Not a NESTED type.
+    return nullptr;
+  }
+  if (PREDICT_FALSE(!nested_type_desc->is_array())) {
+    // Non an array.
+    return nullptr;
+  }
+  return DCHECK_NOTNULL(nested_type_desc->array().elem_type_info());
 }
 
 void DataTypeTraits<DATE>::AppendDebugStringForValue(const void* val, string* str) {
