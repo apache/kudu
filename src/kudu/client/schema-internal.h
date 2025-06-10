@@ -75,6 +75,7 @@ class KuduColumnSpec::Data {
   const std::string name;
 
   std::optional<KuduColumnSchema::DataType> type;
+  std::optional<KuduColumnSchema::KuduNestedTypeDescriptor> nested_type;
   std::optional<int8_t> precision;
   std::optional<int8_t> scale;
   std::optional<uint16_t> length;
@@ -91,6 +92,28 @@ class KuduColumnSpec::Data {
   std::optional<std::string> rename_to;   // For ALTER
   std::optional<std::string> comment;
 };
+
+class KuduColumnSchema::KuduNestedTypeDescriptor::Data final {
+ public:
+  explicit Data(const KuduArrayTypeDescriptor& desc)
+      : kind_(ARRAY),
+        descriptor(desc) {
+  }
+
+  ~Data() = default;
+
+  const KuduNestedType kind_;
+
+  union Descriptor {
+    explicit Descriptor(const KuduArrayTypeDescriptor& desc)
+        : array(desc) {
+    }
+    ~Descriptor() = default;
+
+    const KuduArrayTypeDescriptor array;
+  } descriptor;
+};
+
 
 } // namespace client
 } // namespace kudu

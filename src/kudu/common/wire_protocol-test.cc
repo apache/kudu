@@ -815,6 +815,131 @@ TEST_F(WireProtocolTest, TestInvalidReadAndWriteDefault) {
   }
 }
 
+TEST_F(WireProtocolTest, ScalarArray1DFromPB) {
+  {
+    ColumnSchemaPB pb;
+    pb.set_name("col");
+    pb.set_type(NESTED);
+    pb.set_is_nullable(true);
+    auto* array_info = pb.mutable_nested_type()->mutable_array();
+    array_info->set_type(INT8);
+    ColumnSchemaBuilder bld;
+    ASSERT_OK(ColumnSchemaBuilderFromPB(pb, &bld));
+    const ColumnSchema schema = bld.Build();
+    ASSERT_TRUE(schema.is_nullable());
+    ASSERT_TRUE(schema.is_array());
+    const TypeInfo* ti = schema.type_info();
+    ASSERT_EQ("int8 1d-array", ti->name());
+    ASSERT_FALSE(ti->is_virtual());
+    ASSERT_TRUE(ti->is_array());
+    ASSERT_EQ(BINARY, ti->physical_type());
+    ASSERT_EQ(NESTED, ti->type());
+  }
+  {
+    // IS_DELETED isn't accepted as array element type.
+    ColumnSchemaPB pb;
+    pb.set_name("col");
+    pb.set_type(NESTED);
+    pb.set_is_nullable(true);
+    auto* array_info = pb.mutable_nested_type()->mutable_array();
+    array_info->set_type(IS_DELETED);
+    ColumnSchemaBuilder bld;
+    const auto s = ColumnSchemaBuilderFromPB(pb, &bld);
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(),
+                        "nested types: invalid scalar type 'IS_DELETED' for array elements");
+  }
+}
+
+TEST_F(WireProtocolTest, ScalarArray1DToPB) {
+  {
+    ColumnSchema col(ColumnSchemaBuilder()
+                         .name("col")
+                         .type(STRING)
+                         .array(true));
+    const auto* type_info = col.type_info();
+    ASSERT_EQ(DataType::NESTED, type_info->type());
+    ASSERT_NE(nullptr, type_info->nested_type_info());
+
+    ColumnSchemaPB pb;
+    ColumnSchemaToPB(col, &pb);
+    ColumnSchemaBuilder col_bld;
+    ASSERT_OK(ColumnSchemaBuilderFromPB(pb, &col_bld));
+    ColumnSchema col_fpb(col_bld);
+    ASSERT_TRUE(col_fpb.is_array());
+    ASSERT_FALSE(col_fpb.is_nullable());
+    ASSERT_FALSE(col_fpb.is_immutable());
+    ASSERT_FALSE(col_fpb.is_auto_incrementing());
+    const auto* fpb_type_info = col_fpb.type_info();
+    ASSERT_EQ(DataType::NESTED, fpb_type_info->type());
+
+    // A shortcut to verify the result: based on details of the type registry
+    // implementation, it's possible to compare pointers for type_info()
+    // for both the original and 'from-pb' schemas.
+    ASSERT_EQ(col.type_info(), fpb_type_info);
+
+    // Extra sanity checks.
+    const auto* fpb_nested_type_info = fpb_type_info->nested_type_info();
+    ASSERT_TRUE(fpb_nested_type_info->is_array());
+    const auto& fpb_array_type_info = fpb_nested_type_info->array();
+    ASSERT_EQ(DataType::STRING, fpb_array_type_info.elem_type_info()->type());
+  }
+}
+
+TEST_F(WireProtocolTest, NestedTypeValidityChecks) {
+  {
+    ColumnSchemaPB pb;
+    pb.set_name("col");
+    pb.set_is_nullable(true);
+    auto* array_info = pb.mutable_nested_type()->mutable_array();
+    array_info->set_type(INT64);
+    // The 'type' field should be set even if it's enough information on the
+    // nested type in the 'nested_type' field.
+    ColumnSchemaBuilder bld;
+    const auto s = ColumnSchemaBuilderFromPB(pb, &bld);
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "'type' field is missing");
+  }
+  {
+    ColumnSchemaPB pb;
+    pb.set_name("col");
+    pb.set_type(NESTED);
+    // With the 'type' field set to NESTED and the 'nested_type' field not
+    // present it should result in an error when trying to build ColumnSchema
+    // from ColumnSchemaPB.
+    ColumnSchemaBuilder bld;
+    const auto s = ColumnSchemaBuilderFromPB(pb, &bld);
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "missing 'nested_type' field for NESTED type");
+  }
+  {
+    ColumnSchemaPB pb;
+    pb.set_name("col");
+    pb.set_type(BOOL);
+    pb.set_is_nullable(true);
+    auto* array_info = pb.mutable_nested_type()->mutable_array();
+    array_info->set_type(BOOL);
+    // When 'nested_type' field is set, the 'type' field must be set 'NESTED'.
+    ColumnSchemaBuilder bld;
+    const auto s = ColumnSchemaBuilderFromPB(pb, &bld);
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "found BOOL instead of NESTED in the 'type' field");
+  }
+  {
+    ColumnSchemaPB pb;
+    pb.set_name("col");
+    pb.set_type(NESTED);
+    pb.set_is_nullable(true);
+    auto* array_info = pb.mutable_nested_type()->mutable_array();
+    array_info->set_type(NESTED);
+    // Nested (multi-dimensional) arrays aren't supported yet.
+    ColumnSchemaBuilder bld;
+    const auto s = ColumnSchemaBuilderFromPB(pb, &bld);
+    ASSERT_TRUE(s.IsNotSupported()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "only 1d-arrays of scalar types are supported yet");
+  }
+}
+
 TEST_F(WireProtocolTest, TestColumnPredicateInList) {
   ColumnSchema col1("col1", INT32);
   vector<ColumnSchema> cols = { col1 };

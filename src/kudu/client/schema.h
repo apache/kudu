@@ -230,7 +230,70 @@ class KUDU_EXPORT KuduColumnSchema {
     VARCHAR = 11,
     TIMESTAMP = UNIXTIME_MICROS, //!< deprecated, use UNIXTIME_MICROS
     DATE = 12,
-    SERIAL = 13
+    SERIAL = 13,
+    NESTED = 14,  //<! A nested (non-scalar) type: comes with extra info
+  };
+
+  /// @brief Enumeration for supported nested types.
+  enum KuduNestedType {
+    ARRAY = 0,
+  };
+
+  // forward declaration needed for KuduArrayTypeDescriptor
+  class KuduNestedTypeDescriptor;
+
+  /// @brief ArrayTypeDescriptor encapsulates information for array data types.
+  class KuduArrayTypeDescriptor {
+   public:
+    /// @param [in] element_type
+    ///   Array element type.
+    ///
+    explicit KuduArrayTypeDescriptor(KuduColumnSchema::DataType element_type);
+
+    /// @return Array element type; if it's @c DataType::NESTED, then additional
+    ///   information on the type is provided by the descriptor returned by
+    ///   @c KuduArrayTypeDescriptor::nested_type()
+    KuduColumnSchema::DataType type() const;
+
+    /// @brief Get information on the array elements' nested type.
+    ///
+    /// @return pointer to the descriptor of the array elements' nested type
+    ///   (i.e. @c DataType::NESTED type details); @c NULL if the array's
+    ///   elements are of a scalar (i.e. other than @c DataType::NESTED) type
+    const KuduNestedTypeDescriptor* nested_type() const;
+
+  private:
+    KuduColumnSchema::DataType type_;
+  };
+
+  /// @brief This class provides additional information for NESTED data type
+  class KuduNestedTypeDescriptor {
+   public:
+    /// @brief Produce a descriptor for an array.
+    ///
+    /// @param [in] desc
+    ///   Array-specific descriptor
+    explicit KuduNestedTypeDescriptor(const KuduArrayTypeDescriptor& desc);
+
+    ~KuduNestedTypeDescriptor();
+
+    /// @return @c true if the NESTED type is an array, @c false otherwise
+    bool is_array() const;
+
+    /// @return descriptor if the NESTED type is an array, @c NULL otherwise
+    const KuduArrayTypeDescriptor* array() const;
+
+    KuduNestedTypeDescriptor(const KuduNestedTypeDescriptor& other);
+    KuduNestedTypeDescriptor& operator=(const KuduNestedTypeDescriptor& desc);
+#if __cplusplus >= 201103
+    KuduNestedTypeDescriptor(KuduNestedTypeDescriptor&& other) noexcept;
+    KuduNestedTypeDescriptor& operator=(KuduNestedTypeDescriptor&& other) noexcept;
+#endif
+
+   private:
+    class KUDU_NO_EXPORT Data;
+    // Owned.
+    Data* data_;
   };
 
   /// @param [in] type
@@ -302,6 +365,12 @@ class KUDU_EXPORT KuduColumnSchema {
   /// @return Type of the column schema.
   DataType type() const;
 
+  /// Get information on the column's nested type.
+  ///
+  /// @return nested type information for a scalar column;
+  ///   @c NULL if the column isn't of a nested type.
+  const KuduNestedTypeDescriptor* nested_type() const;
+
   /// @return @c true iff the column schema has the nullable attribute set.
   bool is_nullable() const;
 
@@ -346,6 +415,7 @@ class KUDU_EXPORT KuduColumnSchema {
       bool is_nullable = false,
       bool is_immutable = false,
       bool is_auto_incrementing = false,
+      bool is_array = false,
       const void* default_value = NULL, //NOLINT(modernize-use-nullptr)
       const KuduColumnStorageAttributes& storage_attributes = KuduColumnStorageAttributes(),
       const KuduColumnTypeAttributes& type_attributes = KuduColumnTypeAttributes(),
@@ -357,6 +427,7 @@ class KUDU_EXPORT KuduColumnSchema {
 
   // Owned.
   ColumnSchema* col_;
+  KuduNestedTypeDescriptor* ndesc_;
 };
 
 /// @brief Builder API for specifying or altering a column
@@ -546,6 +617,16 @@ class KUDU_EXPORT KuduColumnSpec {
   ///   The data type to set.
   /// @return Pointer to the modified object.
   KuduColumnSpec* Type(KuduColumnSchema::DataType type);
+  ///@}
+
+  /// Specify information on the column of a nested (non-scalar) type.
+  ///
+  /// @note Column data types may not be changed once a table is created.
+  ///
+  /// @param [in] type_info
+  ///   The information on the nested data type.
+  /// @return Pointer to the modified object.
+  KuduColumnSpec* NestedType(const KuduColumnSchema::KuduNestedTypeDescriptor& type_info);
   ///@}
 
   /// @name Operations only relevant for Alter Table

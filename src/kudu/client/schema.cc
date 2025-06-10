@@ -140,6 +140,7 @@ kudu::DataType ToInternalDataType(KuduColumnSchema::DataType type,
     case KuduColumnSchema::STRING: return kudu::STRING;
     case KuduColumnSchema::BINARY: return kudu::BINARY;
     case KuduColumnSchema::BOOL: return kudu::BOOL;
+    case KuduColumnSchema::NESTED: return kudu::NESTED;
     case KuduColumnSchema::DECIMAL:
       if (attributes.precision() <= kMaxDecimal32Precision) {
         return kudu::DECIMAL32;
@@ -173,6 +174,7 @@ KuduColumnSchema::DataType FromInternalDataType(kudu::DataType type) {
     case kudu::DECIMAL64:
     case kudu::DECIMAL128:
       return KuduColumnSchema::DECIMAL;
+    case kudu::NESTED: return KuduColumnSchema::NESTED;
     default: LOG(FATAL) << "Unexpected internal data type: " << type;
   }
 }
@@ -293,6 +295,13 @@ KuduColumnSpec::~KuduColumnSpec() {
 
 KuduColumnSpec* KuduColumnSpec::Type(KuduColumnSchema::DataType type) {
   data_->type = type;
+  return this;
+}
+
+KuduColumnSpec* KuduColumnSpec::NestedType(
+    const KuduColumnSchema::KuduNestedTypeDescriptor& type_info) {
+  data_->type = KuduColumnSchema::DataType::NESTED;
+  data_->nested_type.emplace(type_info);
   return this;
 }
 
@@ -467,6 +476,24 @@ Status KuduColumnSpec::ToColumnSchema(KuduColumnSchema* col) const {
     case KuduColumnSchema::VARCHAR:
       RETURN_NOT_OK(validate_varchar());
       break;
+    case KuduColumnSchema::NESTED:
+      if (!data_->nested_type.has_value()) {
+        return Status::InvalidArgument("missing information on a NESTED type for column",
+                                       data_->name);
+      }
+      if (const auto& desc = data_->nested_type.value(); desc.is_array()) {
+        const auto* array_info = desc.array();
+        DCHECK(array_info);
+        if (array_info->type() == KuduColumnSchema::DECIMAL) {
+          RETURN_NOT_OK(validate_decimal());
+          break;
+        }
+        if (array_info->type() == KuduColumnSchema::VARCHAR) {
+          RETURN_NOT_OK(validate_varchar());
+          break;
+        }
+      }
+      [[fallthrough]];  // rest of NESTED are validated in the 'default' case
     default:
       if (data_->precision) {
         return Status::InvalidArgument(
@@ -516,13 +543,30 @@ Status KuduColumnSpec::ToColumnSchema(KuduColumnSchema* col) const {
   // BlockSize: '0' signifies server-side default.
   const int32_t block_size = data_->block_size ? data_->block_size.value() : 0;
 
+  KuduColumnSchema::DataType type = data_->type.value();
+  if (type == KuduColumnSchema::DataType::NESTED) {
+    DCHECK(data_->nested_type.has_value());
+    const auto& nested_descriptor = data_->nested_type.value();
+    if (!nested_descriptor.is_array()) {
+      return Status::NotSupported("only scalar arrays supported yet");
+    }
+    const auto* array_descriptor = nested_descriptor.array();
+    DCHECK(array_descriptor);
+    // Only 1D scalar array are supported yet.
+    DCHECK(!array_descriptor->nested_type());
+    // Use array element type for KuduColumnSchema constructor below
+    // in case of arrays.
+    type = array_descriptor->type();
+  }
+
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
   *col = KuduColumnSchema(data_->name,
-                          column_type,
+                          type,
                           nullable,
                           immutable,
                           data_->auto_incrementing,
+                          data_->nested_type.has_value(),
                           default_val,
                           KuduColumnStorageAttributes(encoding, compression, block_size),
                           type_attrs,
@@ -795,6 +839,8 @@ string KuduColumnSchema::DataTypeToString(DataType type) {
       return "VARCHAR";
     case SERIAL:
       return "SERIAL";
+    case NESTED:
+      return "NESTED";
   }
   LOG(FATAL) << "Unhandled type " << type;
 }
@@ -831,6 +877,8 @@ string KuduColumnSchema::DataTypeToString(DataType type) {
     *type = DATE;
   } else if (type_uc == "SERIAL") {
     *type = SERIAL;
+  } else if (type_uc == "NESTED") {
+    *type = NESTED;
   } else {
     return Status::InvalidArgument(Substitute(
         "data type $0 is not supported", type_str));
@@ -843,6 +891,7 @@ KuduColumnSchema::KuduColumnSchema(const string &name,
                                    bool is_nullable,
                                    bool is_immutable,
                                    bool is_auto_incrementing,
+                                   bool is_array,
                                    const void* default_value,
                                    const KuduColumnStorageAttributes& storage_attributes,
                                    const KuduColumnTypeAttributes& type_attributes,
@@ -855,29 +904,43 @@ KuduColumnSchema::KuduColumnSchema(const string &name,
   type_attr_private.precision = type_attributes.precision();
   type_attr_private.scale = type_attributes.scale();
   type_attr_private.length = type_attributes.length();
+  const kudu::DataType internal_type = ToInternalDataType(type, type_attributes);
   col_ = ColumnSchemaBuilder()
              .name(name)
-             .type(ToInternalDataType(type, type_attributes))
+             .type(internal_type)
              .nullable(is_nullable)
              .immutable(is_immutable)
              .auto_incrementing(is_auto_incrementing)
+             .array(is_array)
              .read_default(default_value)
              .write_default(default_value)
              .storage_attributes(attr_private)
              .type_attributes(type_attr_private)
              .comment(comment)
              .New().release();
+  // Construct an instance of KuduNestedTypeDescriptor for 'ndesc_'.
+  if (!is_array) {
+    ndesc_ = nullptr;
+  } else {
+    // Only 1D arrays are supported yet.
+    DCHECK_NE(KuduColumnSchema::NESTED, type);
+    ndesc_ = new KuduNestedTypeDescriptor(KuduArrayTypeDescriptor(type));
+  }
 }
 
 KuduColumnSchema::KuduColumnSchema(const KuduColumnSchema& other)
-  : col_(nullptr) {
+    : col_(nullptr),
+      ndesc_(nullptr) {
   CopyFrom(other);
 }
 
-KuduColumnSchema::KuduColumnSchema() : col_(nullptr) {
+KuduColumnSchema::KuduColumnSchema()
+    : col_(nullptr),
+      ndesc_(nullptr) {
 }
 
 KuduColumnSchema::~KuduColumnSchema() {
+  delete ndesc_;
   delete col_;
 }
 
@@ -895,6 +958,12 @@ void KuduColumnSchema::CopyFrom(const KuduColumnSchema& other) {
   } else {
     col_ = nullptr;
   }
+  delete ndesc_;
+  if (other.ndesc_) {
+    ndesc_ = new KuduNestedTypeDescriptor(*other.ndesc_);
+  } else {
+    ndesc_ = nullptr;
+  }
 }
 
 bool KuduColumnSchema::Equals(const KuduColumnSchema& other) const {
@@ -902,8 +971,12 @@ bool KuduColumnSchema::Equals(const KuduColumnSchema& other) const {
 }
 
 bool KuduColumnSchema::operator==(const KuduColumnSchema& rhs) const {
-  return this == &rhs || col_ == rhs.col_ ||
-    (col_ != nullptr && col_->Equals(*rhs.col_, ColumnSchema::COMPARE_ALL));
+  return this == &rhs || (col_ == rhs.col_ && ndesc_ == rhs.ndesc_) || (
+    (col_ != nullptr && col_->Equals(*rhs.col_, ColumnSchema::COMPARE_ALL)) &&
+    ((ndesc_ == nullptr && rhs.ndesc_ == nullptr) ||
+     (ndesc_ != nullptr && rhs.ndesc_ != nullptr &&
+      ndesc_->is_array() && rhs.ndesc_->is_array() &&
+      ndesc_->array()->type() == rhs.ndesc_->array()->type())));
 }
 
 bool KuduColumnSchema::operator!=(const KuduColumnSchema& rhs) const {
@@ -924,6 +997,10 @@ bool KuduColumnSchema::is_immutable() const {
 
 KuduColumnSchema::DataType KuduColumnSchema::type() const {
   return FromInternalDataType(DCHECK_NOTNULL(col_)->type_info()->type());
+}
+
+const KuduColumnSchema::KuduNestedTypeDescriptor* KuduColumnSchema::nested_type() const {
+  return ndesc_;
 }
 
 KuduColumnTypeAttributes KuduColumnSchema::type_attributes() const {
@@ -952,6 +1029,92 @@ KuduColumnStorageAttributes KuduColumnSchema::storage_attributes() const {
 
 const string& KuduColumnSchema::comment() const {
   return DCHECK_NOTNULL(col_)->comment();
+}
+
+KuduColumnSchema::KuduArrayTypeDescriptor::KuduArrayTypeDescriptor(
+    KuduColumnSchema::DataType element_type)
+    : type_(element_type) {
+}
+
+KuduColumnSchema::DataType
+KuduColumnSchema::KuduArrayTypeDescriptor::type() const {
+  return type_;
+}
+
+const KuduColumnSchema::KuduNestedTypeDescriptor*
+KuduColumnSchema::KuduArrayTypeDescriptor::nested_type() const {
+  // This version supports only scalar one-dimensional arrays.
+  return nullptr;
+}
+
+KuduColumnSchema::KuduNestedTypeDescriptor::KuduNestedTypeDescriptor(
+    const KuduArrayTypeDescriptor& desc)
+    : data_(new Data(desc)) {
+}
+
+KuduColumnSchema::KuduNestedTypeDescriptor::~KuduNestedTypeDescriptor() {
+  if (data_) {
+    delete data_;
+  }
+}
+
+KuduColumnSchema::KuduNestedTypeDescriptor::KuduNestedTypeDescriptor(
+    const KuduColumnSchema::KuduNestedTypeDescriptor& other) {
+  DCHECK(other.is_array());
+  if (other.is_array()) {
+    data_ = new Data(*other.array());
+  }
+}
+
+KuduColumnSchema::KuduNestedTypeDescriptor&
+KuduColumnSchema::KuduNestedTypeDescriptor::operator=(
+    const KuduColumnSchema::KuduNestedTypeDescriptor& other) {
+  if (this == &other) {
+    return *this;
+  }
+  delete data_;
+  data_ = nullptr;
+  DCHECK(other.is_array());
+  if (other.is_array()) {
+    data_ = new Data(*other.array());
+  }
+  return *this;
+}
+
+KuduColumnSchema::KuduNestedTypeDescriptor::KuduNestedTypeDescriptor(
+    KuduColumnSchema::KuduNestedTypeDescriptor&& other) noexcept {
+  DCHECK(other.data_);
+  DCHECK(other.is_array());
+  data_ = other.data_;
+  other.data_ = nullptr;
+}
+
+KuduColumnSchema::KuduNestedTypeDescriptor&
+KuduColumnSchema::KuduNestedTypeDescriptor::operator=(
+    KuduColumnSchema::KuduNestedTypeDescriptor&& other) noexcept {
+  if (this == &other) {
+    return *this;
+  }
+  delete data_;
+  data_ = nullptr;
+
+  DCHECK(other.data_);
+  data_ = other.data_;
+  other.data_ = nullptr;
+  return *this;
+}
+
+bool KuduColumnSchema::KuduNestedTypeDescriptor::is_array() const {
+  return data_->kind_ == ARRAY;
+}
+
+const KuduColumnSchema::KuduArrayTypeDescriptor*
+KuduColumnSchema::KuduNestedTypeDescriptor::array() const {
+  if (is_array()) {
+    DCHECK(data_);
+    return &data_->descriptor.array;
+  }
+  return nullptr;
 }
 
 ////////////////////////////////////////////////////////////
@@ -1026,9 +1189,25 @@ KuduColumnSchema KuduSchema::Column(size_t idx) const {
 #pragma GCC diagnostic pop
   KuduColumnTypeAttributes type_attrs(col.type_attributes().precision, col.type_attributes().scale,
                                       col.type_attributes().length);
-  return KuduColumnSchema(col.name(), FromInternalDataType(col.type_info()->type()),
-                          col.is_nullable(), col.is_immutable(), col.is_auto_incrementing(),
-                          col.read_default_value(), attrs, type_attrs, col.comment());
+
+  KuduColumnSchema::DataType col_type = FromInternalDataType(col.type_info()->type());
+  if (const auto* type_info = col.type_info(); type_info->is_array()) {
+    const auto* nested_type_info = type_info->nested_type_info();
+    DCHECK(nested_type_info);
+    DCHECK(nested_type_info->is_array());
+    const auto& array_info = nested_type_info->array();
+    col_type = FromInternalDataType(array_info.elem_type_info()->type());
+  }
+  return KuduColumnSchema(col.name(),
+                          col_type,
+                          col.is_nullable(),
+                          col.is_immutable(),
+                          col.is_auto_incrementing(),
+                          col.is_array(),
+                          col.read_default_value(),
+                          attrs,
+                          type_attrs,
+                          col.comment());
 }
 
 bool KuduSchema::HasColumn(const std::string& col_name, KuduColumnSchema* col_schema) const {

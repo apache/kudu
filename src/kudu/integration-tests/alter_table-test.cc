@@ -276,6 +276,39 @@ class AlterTableTest : public KuduTest {
     return table_alterer->timeout(timeout)->Alter();
   }
 
+  Status AddNewNullableArrayColumn(
+      const string& table_name,
+      const string& column_name,
+      KuduColumnSchema::DataType array_elem_type,
+      const MonoDelta& timeout = MonoDelta::FromSeconds(30)) {
+    unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(table_name));
+    KuduColumnSchema::KuduArrayTypeDescriptor desc(array_elem_type);
+    auto* spec = alterer->
+        AddColumn(column_name)->
+        NestedType(KuduColumnSchema::KuduNestedTypeDescriptor(desc))->
+        Nullable();
+    switch (array_elem_type) {
+      case KuduColumnSchema::DECIMAL:
+        spec->Precision(18)->Scale(2);
+        break;
+      case KuduColumnSchema::VARCHAR:
+        spec->Length(42);
+        break;
+      default:
+        break;
+    }
+    return alterer->timeout(timeout)->Alter();
+  }
+
+  Status DropColumn(
+      const string& table_name,
+      const string& column_name,
+      const MonoDelta& timeout = MonoDelta::FromSeconds(30)) {
+    unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(table_name));
+    alterer->DropColumn(column_name);
+    return alterer->timeout(timeout)->Alter();
+  }
+
   Status SetReplicationFactor(const string& table_name,
                               int32_t replication_factor) {
     unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(table_name));
@@ -420,9 +453,38 @@ const char* const AlterTableTest::kTableName = "fake-table";
 // on the TS handling the tablet of the altered table.
 // TODO: create and verify multiple tablets when the client will support that.
 TEST_F(AlterTableTest, TestTabletReports) {
-  ASSERT_EQ(0, tablet_replica_->tablet()->metadata()->schema_version());
+  uint32_t schema_version = 0;
+  ASSERT_EQ(schema_version++, tablet_replica_->tablet()->metadata()->schema_version());
   ASSERT_OK(AddNewI32Column(kTableName, "new-i32", 0));
-  ASSERT_EQ(1, tablet_replica_->tablet()->metadata()->schema_version());
+  ASSERT_EQ(schema_version++, tablet_replica_->tablet()->metadata()->schema_version());
+
+  constexpr const KuduColumnSchema::DataType kArrayElemTypes[] = {
+    KuduColumnSchema::INT8,
+    KuduColumnSchema::INT16,
+    KuduColumnSchema::INT32,
+    KuduColumnSchema::INT64,
+    KuduColumnSchema::STRING,
+    KuduColumnSchema::BOOL,
+    KuduColumnSchema::FLOAT,
+    KuduColumnSchema::DOUBLE,
+    KuduColumnSchema::BINARY,
+    KuduColumnSchema::UNIXTIME_MICROS,
+    KuduColumnSchema::DECIMAL,
+    KuduColumnSchema::VARCHAR,
+    KuduColumnSchema::DATE,
+  };
+  for (auto elem_type : kArrayElemTypes) {
+    const string col_name = "arr_" + KuduColumnSchema::DataTypeToString(elem_type);
+    SCOPED_TRACE(Substitute("column_name: $0", col_name));
+    ASSERT_OK(AddNewNullableArrayColumn(kTableName, col_name, elem_type));
+    ASSERT_EQ(schema_version++, tablet_replica_->tablet()->metadata()->schema_version());
+  }
+  for (auto elem_type : kArrayElemTypes) {
+    const string col_name = "arr_" + KuduColumnSchema::DataTypeToString(elem_type);
+    SCOPED_TRACE(Substitute("column_name: $0", col_name));
+    ASSERT_OK(DropColumn(kTableName, col_name));
+    ASSERT_EQ(schema_version++, tablet_replica_->tablet()->metadata()->schema_version());
+  }
 }
 
 // Verify that adding an existing column will return an "already present" error

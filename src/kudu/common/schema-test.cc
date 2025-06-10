@@ -100,7 +100,32 @@ static Status CopyRowToArena(const Slice& row,
   return RelocateIndirectDataToArena(copied, dst_arena);
 }
 
-class TestSchema : public KuduTest {};
+class TestSchema : public KuduTest {
+ public:
+  // Scalar data types for non-virtual columns.
+  static constexpr const DataType kScalarTypes[] = {
+     DataType::UINT8,
+     DataType::INT8,
+     DataType::UINT16,
+     DataType::INT16,
+     DataType::UINT32,
+     DataType::INT32,
+     DataType::UINT64,
+     DataType::INT64,
+     DataType::STRING,
+     DataType::BOOL,
+     DataType::FLOAT,
+     DataType::DOUBLE,
+     DataType::BINARY,
+     DataType::UNIXTIME_MICROS,
+     DataType::INT128,
+     DataType::DECIMAL32,
+     DataType::DECIMAL64,
+     DataType::DECIMAL128,
+     DataType::VARCHAR,
+     DataType::DATE
+   };
+};
 
 // Test basic functionality of Schema definition
 TEST_F(TestSchema, TestSchema) {
@@ -301,6 +326,150 @@ TEST_F(TestSchema, TestSchemaEqualsWithDecimal) {
   EXPECT_NE(schema_18_10, schema_18_9);
   EXPECT_NE(schema_18_10, schema_17_10);
   EXPECT_NE(schema_18_10, schema_17_9);
+}
+
+TEST_F(TestSchema, ArrayAndNonArrayColumnComparison) {
+  for (auto scalar_type : kScalarTypes) {
+    SCOPED_TRACE(DataType_Name(scalar_type));
+    const auto col_array = ColumnSchemaBuilder()
+                             .name("col")
+                             .type(scalar_type)
+                             .Build();
+    const auto col_scalar = ColumnSchemaBuilder()
+                             .name("col")
+                             .type(scalar_type)
+                             .array(true)
+                             .Build();
+    ASSERT_FALSE(col_array.Equals(col_scalar, ColumnSchema::COMPARE_TYPE));
+    ASSERT_FALSE(col_array.Equals(col_scalar, ColumnSchema::COMPARE_ALL));
+    ASSERT_TRUE(col_array.Equals(col_scalar, ColumnSchema::COMPARE_NAME));
+    ASSERT_TRUE(col_array.Equals(col_scalar, ColumnSchema::COMPARE_OTHER));
+  }
+}
+
+TEST_F(TestSchema, ColumnSchemaForScalarType) {
+  for (auto scalar_type : kScalarTypes) {
+    SCOPED_TRACE(DataType_Name(scalar_type));
+    const auto schema = ColumnSchemaBuilder()
+                            .name("col")
+                            .type(scalar_type)
+                            .Build();
+    ASSERT_FALSE(schema.is_array());
+    const auto* type_info = schema.type_info();
+    ASSERT_FALSE(type_info->is_array());
+    ASSERT_EQ(scalar_type, type_info->type());
+    const auto* descriptor = type_info->nested_type_info();
+    ASSERT_EQ(nullptr, descriptor);
+  }
+}
+
+TEST_F(TestSchema, ColumnSchemaForScalarArrays) {
+  for (auto scalar_type : kScalarTypes) {
+    SCOPED_TRACE(DataType_Name(scalar_type));
+    const auto schema = ColumnSchemaBuilder()
+                            .name("col")
+                            .type(scalar_type)
+                            .array(true)
+                            .Build();
+    ASSERT_TRUE(schema.is_array());
+    const auto* type_info = schema.type_info();
+    ASSERT_TRUE(type_info->is_array());
+    ASSERT_EQ(DataType::NESTED, type_info->type());
+    const auto* descriptor = type_info->nested_type_info();
+    ASSERT_TRUE(descriptor->is_array());
+    const auto& array_info = descriptor->array();
+    const TypeInfo* elem_info = array_info.elem_type_info();
+    ASSERT_EQ(scalar_type, elem_info->type());
+    ASSERT_FALSE(elem_info->is_array());
+  }
+}
+
+TEST_F(TestSchema, SimpleSchemaWithScalarArrays) {
+  ColumnSchema col0("key", STRING);
+  ColumnSchema col1(ColumnSchemaBuilder()
+                        .name("int32_array")
+                        .type(INT32)
+                        .array(true));
+  ColumnSchema col2(ColumnSchemaBuilder()
+                        .name("int64_array")
+                        .type(INT64)
+                        .array(true)
+                        .nullable(true));
+  ColumnSchema col3(ColumnSchemaBuilder()
+                        .name("string_array")
+                        .type(STRING)
+                        .array(true)
+                        .nullable(true));
+
+  vector<ColumnSchema> cols = { col0, col1, col2, col3 };
+  Schema schema(cols, 1);
+
+  ASSERT_EQ((1 + 3) * sizeof(Slice), schema.byte_size());
+
+  EXPECT_EQ("(\n"
+            "    key STRING NOT NULL,\n"
+            "    int32_array INT32 1D-ARRAY NOT NULL,\n"
+            "    int64_array INT64 1D-ARRAY NULLABLE,\n"
+            "    string_array STRING 1D-ARRAY NULLABLE,\n"
+            "    PRIMARY KEY (key)\n"
+            ")",
+            schema.ToString());
+
+  EXPECT_EQ("INT32 1D-ARRAY NOT NULL", schema.column(1).TypeToString());
+  EXPECT_EQ("INT64 1D-ARRAY NULLABLE", schema.column(2).TypeToString());
+  EXPECT_EQ("STRING 1D-ARRAY NULLABLE", schema.column(3).TypeToString());
+}
+
+TEST_F(TestSchema, SchemaWithScalarArraysEquals) {
+  ColumnSchema col0(ColumnSchemaBuilder()
+                        .name("int_array")
+                        .type(INT32)
+                        .array(true));
+  ColumnSchema col1(ColumnSchemaBuilder()
+                        .name("int_array")
+                        .type(INT64)
+                        .array(true)
+                        .nullable(true));
+  ColumnSchema col2(ColumnSchemaBuilder()
+                        .name("int64_vec")
+                        .type(INT64)
+                        .array(true)
+                        .nullable(true));
+  ColumnSchema col3(ColumnSchemaBuilder()
+                        .name("string_array")
+                        .type(STRING)
+                        .array(true)
+                        .nullable(true));
+  ColumnSchema col4(ColumnSchemaBuilder()
+                        .name("str_array")
+                        .type(STRING)
+                        .array(true));
+  ColumnSchema col5(ColumnSchemaBuilder()
+                        .name("str")
+                        .type(STRING));
+  ColumnSchema col6(ColumnSchemaBuilder()
+                        .name("int64_scalar")
+                        .type(INT64)
+                        .nullable(true));
+  ColumnSchema col7(ColumnSchemaBuilder()
+                        .name("int_array")  // intentionally misleading name
+                        .type(INT32));
+  ASSERT_TRUE(col0.Equals(col0));
+  ASSERT_TRUE(col1.Equals(col1));
+  ASSERT_TRUE(col2.Equals(col2));
+  ASSERT_TRUE(col3.Equals(col3));
+  ASSERT_TRUE(col4.Equals(col4));
+  ASSERT_TRUE(col0.Equals(col1, ColumnSchema::COMPARE_NAME));
+  ASSERT_FALSE(col0.Equals(col1, ColumnSchema::COMPARE_TYPE));
+  ASSERT_TRUE(col1.Equals(col2, ColumnSchema::COMPARE_OTHER));
+  ASSERT_TRUE(col1.Equals(col2, ColumnSchema::COMPARE_TYPE));
+  ASSERT_FALSE(col3.Equals(col4, ColumnSchema::COMPARE_TYPE));  // nullability matters
+  ASSERT_TRUE(col3.Equals(col4, ColumnSchema::COMPARE_OTHER));
+  ASSERT_FALSE(col3.Equals(col5, ColumnSchema::COMPARE_TYPE));
+  ASSERT_FALSE(col4.Equals(col5, ColumnSchema::COMPARE_TYPE));
+  ASSERT_FALSE(col6.Equals(col1, ColumnSchema::COMPARE_TYPE));
+  ASSERT_TRUE(col7.Equals(col0, ColumnSchema::COMPARE_NAME));
+  ASSERT_FALSE(col7.Equals(col0, ColumnSchema::COMPARE_TYPE));
 }
 
 TEST_F(TestSchema, TestColumnSchemaEquals) {

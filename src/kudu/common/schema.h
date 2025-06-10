@@ -212,9 +212,9 @@ class ColumnSchema final {
      NULLABLE,
   };
 
-  // A minimalistic constructor with only name, type, and nullability of
-  // the column to specify: the latter parameter is optional and by default
-  // is set to Nullability::NOT_NULL.
+  // A minimalistic constructor for ColumnSchema of scalar data types
+  // with only name, type, and nullability of the column to specify. The latter
+  // parameter is optional and by default is set to Nullability::NOT_NULL.
   //
   // name: column name
   // type: column type (e.g. UINT8, INT32, STRING, ...)
@@ -224,8 +224,9 @@ class ColumnSchema final {
   //   ColumnSchema col_a("a", UINT32);
   //   ColumnSchema col_b("b", STRING, ColumnSchema::NULLABLE);
   //
-  // Don't use this constructor if there are more column parameters to specify.
-  // Instead, switch to ColumnSchemaBuilder():
+  // Use ColumnSchemaBuilder() if there are more parameters/attributes
+  // to specify, for example:
+  //
   //   uint32_t default_i32 = -15;
   //   ColumnSchema col_c(ColumnSchemaBuilder()
   //                          .name("c")
@@ -261,6 +262,13 @@ class ColumnSchema final {
 
   bool is_auto_incrementing() const {
     return is_auto_incrementing_;
+  }
+
+  // Whether the column is a one-dimensional array of a scalar type set by
+  // calling ColumnSchemaBuiler::type() method on the corresponding
+  // ColumnSchemaBuilder instance.
+  bool is_array() const {
+    return is_array_;
   }
 
   const std::string& name() const {
@@ -338,10 +346,14 @@ class ColumnSchema final {
   }
 
   bool EqualsType(const ColumnSchema& other) const {
-    if (this == &other) return true;
+    if (this == &other) {
+      return true;
+    }
     return is_nullable_ == other.is_nullable_ &&
            type_info()->type() == other.type_info()->type() &&
-           type_attributes().EqualsForType(other.type_attributes(), type_info()->type());
+           type_info()->is_array() == other.type_info()->is_array() &&
+           type_attributes().EqualsForType(other.type_attributes(),
+                                           type_info()->type());
   }
 
   // compare types in Equals function
@@ -462,6 +474,8 @@ class ColumnSchema final {
   //    Auto-incrementing column cannot be updated but written to by a client and is auto
   //    filled in by Kudu by incrementing the previous highest written value to the tablet.
   //    There can only be a single auto-incrementing column per table.
+  // is_array: true if the column is one-dimensional array of a scalar type
+  //    NOTE: the 'type' parameter in this case corresponds to the element type
   // read_default: default value used on read if the column was not present before alter.
   //    The value will be copied and released on ColumnSchema destruction.
   // write_default: default value added to the row if the column value was
@@ -479,16 +493,18 @@ class ColumnSchema final {
                bool is_nullable,
                bool is_immutable,
                bool is_auto_incrementing,
+               bool is_array,
                std::shared_ptr<Variant> read_default,
                std::shared_ptr<Variant> write_default,
                ColumnStorageAttributes storage_attributes,
                ColumnTypeAttributes type_attributes,
                std::string comment)
       : name_(std::move(name)),
-        type_info_(GetTypeInfo(type)),
+        type_info_(is_array ? GetArrayTypeInfo(type) : GetTypeInfo(type)),
         is_nullable_(is_nullable),
         is_immutable_(is_immutable),
         is_auto_incrementing_(is_auto_incrementing),
+        is_array_(is_array),
         read_default_(std::move(read_default)),
         write_default_(std::move(write_default)),
         storage_attributes_(storage_attributes),
@@ -505,6 +521,7 @@ class ColumnSchema final {
   bool is_nullable_ = false;
   bool is_immutable_ = false;
   bool is_auto_incrementing_ = false;
+  bool is_array_ = false;
   // use shared_ptr since the ColumnSchema is always copied around.
   std::shared_ptr<Variant> read_default_{};
   std::shared_ptr<Variant> write_default_{};
@@ -536,6 +553,7 @@ class ColumnSchemaBuilder final {
         is_nullable_,
         is_immutable_,
         is_auto_incrementing_,
+        is_array_,
         read_default_,
         write_default_,
         storage_attributes_,
@@ -553,6 +571,7 @@ class ColumnSchemaBuilder final {
         is_nullable_,
         is_immutable_,
         is_auto_incrementing_,
+        is_array_,
         read_default_,
         write_default_,
         storage_attributes_,
@@ -590,6 +609,13 @@ class ColumnSchemaBuilder final {
       type_ = DataType::INT64;
     }
     is_auto_incrementing_ = auto_incrementing;
+    return *this;
+  }
+
+  // Whether the column is an array of scalar elements; the type of the elements
+  // is set by calling the ColumnSchemaBuiler::type() method.
+  ColumnSchemaBuilder& array(bool is_array) {
+    is_array_ = is_array;
     return *this;
   }
 
@@ -649,6 +675,7 @@ class ColumnSchemaBuilder final {
     // At least name and type should be set for a column.
     DCHECK(!name_.empty());
     DCHECK(type_ != DataType::UNKNOWN_DATA);
+    DCHECK(type_ != DataType::NESTED) << "arbitrary type nesting isn't supported yet";
 
     // Make sure the specified Variant data is consistent with the data type.
     DCHECK(!read_default_ || type_ == read_default_->type());
@@ -659,17 +686,23 @@ class ColumnSchemaBuilder final {
       DCHECK_EQ(INT64, type_);
       DCHECK(!is_nullable_);
       DCHECK(!is_immutable_);
+      DCHECK(!is_array_);
       DCHECK(!read_default_);
       DCHECK(!write_default_);
     }
   }
 #endif // #if DCHECK_IS_ON() ...
 
+  // NOTE: in case of 1D arrays, 'type_' describes the type of array's elements
+  //
+  // TODO(aserbin): consolidate this one-off case with more generic approach
+  //                when introducing support for other nested types
   std::string name_{};
   DataType type_ = DataType::UNKNOWN_DATA;
   bool is_nullable_ = false;
   bool is_immutable_ = false;
   bool is_auto_incrementing_ = false;
+  bool is_array_ = false;
   std::shared_ptr<Variant> read_default_{};
   std::shared_ptr<Variant> write_default_{};
   ColumnStorageAttributes storage_attributes_{};
@@ -897,6 +930,20 @@ class Schema {
     const void* val = col_schema.is_nullable() ? row.nullable_cell_ptr(idx)
                                                : row.cell_ptr(idx);
     return reinterpret_cast<const typename DataTypeTraits<Type>::cpp_type*>(val);
+  }
+
+  template<class RowType>
+  const Slice*
+  ExtractColumnFromRow(const RowType& row, size_t idx) const {
+    DCHECK_SCHEMA_EQ(*this, *row.schema());
+    DCHECK_LT(idx, cols_.size());
+    const ColumnSchema& col_schema = cols_[idx];
+    DCHECK_EQ(DataType::NESTED, col_schema.type_info()->type());
+    DCHECK(col_schema.type_info()->is_array());
+
+    const void* val = col_schema.is_nullable() ? row.nullable_cell_ptr(idx)
+                                               : row.cell_ptr(idx);
+    return reinterpret_cast<const Slice*>(val);
   }
 
   // Stringify the given row, which conforms to this schema,

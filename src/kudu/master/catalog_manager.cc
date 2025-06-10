@@ -1886,6 +1886,23 @@ Status ValidateClientSchema(const optional<string>& name,
           ti->name(), col.name()));
     }
 
+    // An artificial constraint: disallow creating tables with array columns
+    // of 128-bit integers (INT128 and DECIMAL128) since on-the-wire
+    // ser/des-ing of such arrays isn't yet supported
+    //
+    // TODO(aserbin): remove this artificial restriction once handling 128-bit
+    //                integer arrays is implemented
+    if (ti->is_array()) {
+      const auto* nti = ti->nested_type_info();
+      DCHECK(ti);
+      const auto* eti = nti->array().elem_type_info();
+      if (PREDICT_FALSE(eti->type() == INT128 || eti->type() == DECIMAL128)) {
+        return Status::NotSupported(Substitute(
+            "columns of '$0' type are not yet supported (column '$1')",
+            ti->name(), col.name()));
+      }
+    }
+
     // Check that the encodings are valid for the specified types.
     const TypeEncodingInfo* dummy;
     if (const auto s = TypeEncodingInfo::Get(ti, col.attributes().encoding, &dummy);

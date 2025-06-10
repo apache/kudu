@@ -599,10 +599,57 @@ TEST(KuduColumnSchemaTest, TestEquals) {
   ASSERT_NE(a32, a16);
 
   const int kDefaultOf7 = 7;
-  KuduColumnSchema a32_dflt("a", KuduColumnSchema::INT32, /*is_nullable=*/false,
-                            /*is_immutable=*/false, /*is_auto_incrementing=*/false,
+  KuduColumnSchema a32_dflt("a",
+                            KuduColumnSchema::INT32,
+                            /*is_nullable=*/false,
+                            /*is_immutable=*/false,
+                            /*is_auto_incrementing=*/false,
+                            /*is_array=*/false,
                             /*default_value=*/&kDefaultOf7);
   ASSERT_NE(a32, a32_dflt);
+}
+
+TEST(ClientUnitTest, NestedTypeColumnBasic) {
+  const KuduColumnSchema::KuduArrayTypeDescriptor desc(KuduColumnSchema::STRING);
+
+  // Specifying just NestedType() for a nested type column is OK.
+  KuduSchema schema_a;
+  {
+    KuduSchemaBuilder b;
+    b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+    b.AddColumn("nested")->
+        NestedType(KuduColumnSchema::KuduNestedTypeDescriptor(desc));
+    ASSERT_OK(b.Build(&schema_a));
+  }
+
+  // Calling Type(NESTED) with follow-up NestedType(...) is equivalent to
+  // calling just NestedType(...).
+  KuduSchema schema_b;
+  {
+    //      Type(KuduColumnSchema::NESTED)->
+    KuduSchemaBuilder b;
+    b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+    b.AddColumn("nested")->
+        Type(KuduColumnSchema::NESTED)->
+        NestedType(KuduColumnSchema::KuduNestedTypeDescriptor(desc));
+    ASSERT_OK(b.Build(&schema_b));
+  }
+  ASSERT_EQ(schema_a, schema_b);
+}
+
+
+// Verify that omitted nested type information leads to an error when trying
+// to build Kudu schema out of such column specification.
+TEST(ClientUnitTest, MissingNestedTypeColumnInfo) {
+  KuduSchemaBuilder b;
+  b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+  b.AddColumn("nested")->Type(KuduColumnSchema::NESTED);
+
+  KuduSchema schema;
+  const auto s = b.Build(&schema);
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(),
+                      "missing information on a NESTED type for column: nested");
 }
 
 } // namespace client

@@ -232,8 +232,19 @@ void ColumnSchemaToPB(const ColumnSchema& col_schema, ColumnSchemaPB *pb, int fl
   pb->set_name(col_schema.name());
   pb->set_is_nullable(col_schema.is_nullable());
   pb->set_immutable(col_schema.is_immutable());
-  DataType type = col_schema.type_info()->type();
+  const auto* type_info = col_schema.type_info();
+  const DataType type = type_info->type();
   pb->set_type(type);
+  // Set information on the nested type, if necessary.
+  if (type == DataType::NESTED) {
+    const auto* nested_type_info = type_info->nested_type_info();
+    DCHECK(nested_type_info);
+    // Only arrays are supported yet.
+    DCHECK(nested_type_info->is_array());
+    const auto& array_info = nested_type_info->array();
+    pb->mutable_nested_type()->mutable_array()->set_type(
+        array_info.elem_type_info()->type());
+  }
   // Only serialize precision and scale for decimal types.
   if (type == DataType::DECIMAL32 ||
       type == DataType::DECIMAL64 ||
@@ -249,21 +260,21 @@ void ColumnSchemaToPB(const ColumnSchema& col_schema, ColumnSchemaPB *pb, int fl
     pb->set_cfile_block_size(col_schema.attributes().cfile_block_size);
   }
   if (col_schema.has_read_default()) {
-    if (col_schema.type_info()->physical_type() == BINARY) {
+    if (type_info->physical_type() == BINARY) {
       const Slice *read_slice = static_cast<const Slice *>(col_schema.read_default_value());
       pb->set_read_default_value(read_slice->data(), read_slice->size());
     } else {
       const void *read_value = col_schema.read_default_value();
-      pb->set_read_default_value(read_value, col_schema.type_info()->size());
+      pb->set_read_default_value(read_value, type_info->size());
     }
   }
   if (col_schema.has_write_default() && !(flags & SCHEMA_PB_WITHOUT_WRITE_DEFAULT)) {
-    if (col_schema.type_info()->physical_type() == BINARY) {
+    if (type_info->physical_type() == BINARY) {
       const Slice *write_slice = static_cast<const Slice *>(col_schema.write_default_value());
       pb->set_write_default_value(write_slice->data(), write_slice->size());
     } else {
       const void *write_value = col_schema.write_default_value();
-      pb->set_write_default_value(write_value, col_schema.type_info()->size());
+      pb->set_write_default_value(write_value, type_info->size());
     }
   }
   if (!col_schema.comment().empty() && !(flags & SCHEMA_PB_WITHOUT_COMMENT)) {
@@ -277,9 +288,48 @@ void ColumnSchemaToPB(const ColumnSchema& col_schema, ColumnSchemaPB *pb, int fl
 Status ColumnSchemaBuilderFromPB(const ColumnSchemaPB& pb,
                                  ColumnSchemaBuilder* csb) {
   ColumnSchemaBuilder builder;
-  builder.name(pb.name())
-         .type(pb.type())
-         .nullable(pb.is_nullable());
+  builder.name(pb.name()).nullable(pb.is_nullable());
+
+  if (PREDICT_FALSE(!pb.has_type())) {
+    return Status::InvalidArgument("'type' field is missing");
+  }
+  if (!pb.has_nested_type()) {
+    if (PREDICT_FALSE(pb.type() == DataType::NESTED)) {
+      return Status::InvalidArgument("missing 'nested_type' field for NESTED type");
+    }
+    builder.type(pb.type());
+  } else {
+    if (PREDICT_FALSE(pb.type() != DataType::NESTED)) {
+      return Status::InvalidArgument(Substitute(
+          "nested types: found $0 instead of NESTED in the 'type' field",
+          DataType_Name(pb.type())));
+    }
+    builder.type(DataType::NESTED);
+    const auto& nested_type = pb.nested_type();
+    if (PREDICT_FALSE(!nested_type.has_array())) {
+      // As of now, only 1d-arrays of primitive types are supported.
+      return Status::NotSupported(
+          "nested types: only arrays of scalar types are supported yet");
+    }
+    const auto& descriptor = nested_type.array();
+    if (PREDICT_FALSE(!descriptor.has_type())) {
+      return Status::InvalidArgument("nested types: missing array element type info");
+    }
+    const DataType elem_type = descriptor.type();
+    switch (elem_type) {
+      case DataType::NESTED:
+        return Status::NotSupported(
+            "nested types: only 1d-arrays of scalar types are supported yet");
+      case DataType::IS_DELETED:
+      case DataType::UNKNOWN_DATA:
+        return Status::InvalidArgument(Substitute(
+            "nested types: invalid scalar type '$0' for array elements",
+            DataType_Name(elem_type)));
+      default:
+        break;
+    }
+    builder.array(true).type(elem_type);
+  }
 
   if (pb.has_read_default_value()) {
     Slice read_default(pb.read_default_value());

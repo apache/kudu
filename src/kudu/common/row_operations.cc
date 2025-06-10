@@ -261,18 +261,21 @@ Status RowOperationsPBDecoder::ReadNonNullBitmap(const uint8_t** bitmap) {
 Status RowOperationsPBDecoder::GetColumnSlice(const ColumnSchema& col,
                                               Slice* slice,
                                               Status* row_status) {
-  size_t size = col.type_info()->size();
+  const size_t size = col.type_info()->size();
   if (PREDICT_FALSE(src_.size() < size)) {
     return Status::Corruption("Not enough data for column", col.ToString());
   }
   // Find the data
-  if (col.type_info()->physical_type() == BINARY) {
+  if (col.type_info()->physical_type() != BINARY) {
+    *slice = Slice(src_.data(), size);
+  } else {
     // The Slice in the protobuf has a pointer relative to the indirect data,
     // not a real pointer. Need to fix that.
-    auto ptr_slice = reinterpret_cast<const Slice*>(src_.data());
+    auto* ptr_slice = reinterpret_cast<const Slice*>(src_.data());
     auto offset_in_indirect = reinterpret_cast<uintptr_t>(ptr_slice->data());
     bool overflowed = false;
-    size_t max_offset = AddWithOverflowCheck(offset_in_indirect, ptr_slice->size(), &overflowed);
+    const size_t max_offset = AddWithOverflowCheck(
+        offset_in_indirect, ptr_slice->size(), &overflowed);
     if (PREDICT_FALSE(overflowed || max_offset > pb_->indirect_data().size())) {
       return Status::Corruption("Bad indirect slice");
     }
@@ -287,8 +290,6 @@ Status RowOperationsPBDecoder::GetColumnSlice(const ColumnSchema& col,
       // validate subsequent columns and rows.
     }
     *slice = Slice(&pb_->indirect_data()[offset_in_indirect], ptr_slice->size());
-  } else {
-    *slice = Slice(src_.data(), size);
   }
   src_.remove_prefix(size);
   return Status::OK();

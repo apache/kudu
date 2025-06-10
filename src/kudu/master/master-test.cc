@@ -858,6 +858,103 @@ TEST_F(MasterTest, TestCatalog) {
   }
 }
 
+TEST_F(MasterTest, CreateTableWithArrayColumns) {
+  static constexpr const char* const kTableName = "array_columns_0";
+
+  const Schema table_schema({ ColumnSchema("key", INT32),
+                              ColumnSchema("str", STRING),
+                              ColumnSchemaBuilder()
+                                  .type(INT32)
+                                  .array(true)
+                                  .name("arr0")
+                                  .nullable(true),
+                              ColumnSchemaBuilder()
+                                  .type(INT64)
+                                  .array(true)
+                                  .name("arr1"),
+                            }, 1);
+
+  ASSERT_OK(CreateTable(kTableName, table_schema));
+
+  ListTablesResponsePB tables;
+  NO_FATALS(DoListAllTables(&tables));
+  ASSERT_EQ(1, tables.tables_size());
+  ASSERT_EQ(kTableName, tables.tables(0).name());
+
+  // Drop the table.
+  {
+    DeleteTableRequestPB req;
+    DeleteTableResponsePB resp;
+    RpcController controller;
+    req.mutable_table()->set_table_name(kTableName);
+    ASSERT_OK(proxy_->DeleteTable(req, &resp, &controller));
+    SCOPED_TRACE(SecureDebugString(resp));
+    ASSERT_FALSE(resp.has_error());
+  }
+
+  // List tables: there should be no tables.
+  NO_FATALS(DoListAllTables(&tables));
+  ASSERT_EQ(0, tables.tables_size());
+}
+
+// Arrays of 128-bit integers (INT128, DECIMAL128) aren't supported yet due to
+// limitations of the framework used for on-the-wire data ser/des-ing.
+//
+// TODO(aserbin): remove this test once the limitation is addressed
+TEST_F(MasterTest, TableNonSupportedArrayTypeColumns) {
+  static constexpr const char* const kTableName = "array_128bit_int_columns";
+
+  // INT128 array columns aren't supported yet.
+  {
+    const Schema table_schema({ ColumnSchema("key", INT32),
+                                ColumnSchemaBuilder()
+                                    .type(BOOL)
+                                    .array(true)
+                                    .name("arr_0")
+                                    .nullable(true),
+                                ColumnSchemaBuilder()
+                                    .type(INT128)
+                                    .array(true)
+                                    .name("arr_1")
+                                    .nullable(true),
+                                ColumnSchemaBuilder()
+                                    .type(INT128)
+                                    .array(true)
+                                    .name("arr_2"),
+                              }, 1);
+
+    const auto s = CreateTable(kTableName, table_schema);
+    ASSERT_TRUE(s.IsNotSupported()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "columns of 'int128 1d-array' type are "
+                                      "not yet supported (column 'arr_1')");
+  }
+
+  // DECIMAL128 array columns aren't supported yet.
+  {
+    const Schema table_schema({ ColumnSchema("key", INT32),
+                                ColumnSchemaBuilder()
+                                    .type(DECIMAL128)
+                                    .array(true)
+                                    .name("arr_0"),
+                                ColumnSchemaBuilder()
+                                    .type(DECIMAL128)
+                                    .array(true)
+                                    .name("arr_1")
+                                    .nullable(true),
+                                ColumnSchemaBuilder()
+                                    .type(INT64)
+                                    .array(true)
+                                    .name("arr_2")
+                                    .nullable(true),
+                              }, 1);
+
+    const auto s = CreateTable(kTableName, table_schema);
+    ASSERT_TRUE(s.IsNotSupported()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "columns of 'decimal (128 bit) 1d-array' type are "
+                                      "not yet supported (column 'arr_0')");
+  }
+}
+
 TEST_F(MasterTest, ListTablesWithTableFilter) {
   static const char* const kUserTableName = "user_table";
   static const char* const kSystemTableName = "system_table";

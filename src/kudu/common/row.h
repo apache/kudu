@@ -564,7 +564,6 @@ void* ContiguousRowCell<ConstContiguousRow>::mutable_ptr() const;
 template<>
 void ContiguousRowCell<ConstContiguousRow>::set_null(bool null) const;
 
-
 // Utility class for building rows corresponding to a given schema.
 // This is used only by tests.
 // TODO(todd): move it into a test utility.

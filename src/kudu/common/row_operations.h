@@ -131,9 +131,9 @@ class RowOperationsPBDecoder {
   Status ReadNonNullBitmap(const uint8_t** bitmap);
   // Read one row's column data from 'src_', read result is stored in 'slice'.
   // Return bad Status if data is corrupt.
-  // NOTE: If 'row_status' is not nullptr, column data validate will be performed,
-  // and if column data validate error (i.e. column size exceed the limit), only
-  // set bad Status to 'row_status', and return Status::OK.
+  // NOTE: If 'row_status' is not nullptr, column data validation is performed,
+  // and if the data is invalid (i.e. column size exceeds the limit),
+  // the 'row_status' is set to non-OK, and the function returns Status::OK.
   Status GetColumnSlice(const ColumnSchema& col, Slice* slice, Status* row_status);
   // Same as above, but store result in 'dst'.
   Status ReadColumn(const ColumnSchema& col, uint8_t* dst, Status* row_status);

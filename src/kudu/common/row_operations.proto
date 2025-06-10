@@ -76,7 +76,7 @@ message RowOperationsPB {
   // [column data]
   //   For each column which is set and not NULL, the column's data follows. The data
   //   format of each cell is the canonical in-memory format (eg little endian).
-  //   For string data, the pointers are relative to 'indirect_data'.
+  //   For string/binary and nested type columns, the pointers are relative to 'indirect_data'.
   //
   // The rows are concatenated end-to-end with no padding/alignment.
   optional bytes rows = 2 [(kudu.REDACT) = true];
