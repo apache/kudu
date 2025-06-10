@@ -17,8 +17,8 @@
 
 #include "kudu/common/types.h"
 
-#include <cstddef>
 #include <memory>
+#include <optional>
 #include <unordered_map>
 #include <utility>
 
@@ -27,6 +27,8 @@
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/logging.h"
 
+using std::pair;
+using std::optional;
 using std::string;
 using std::unique_ptr;
 using std::unordered_map;
@@ -36,7 +38,8 @@ namespace kudu {
 using strings::Substitute;
 
 template<typename TypeTraitsClass>
-TypeInfo::TypeInfo(TypeTraitsClass /*t*/)
+TypeInfo::TypeInfo(TypeTraitsClass /*unused*/,
+                   optional<NestedTypeDescriptor> nt_info)
     : type_(TypeTraitsClass::type),
       physical_type_(TypeTraitsClass::physical_type),
       name_(TypeTraitsClass::name()),
@@ -44,6 +47,7 @@ TypeInfo::TypeInfo(TypeTraitsClass /*t*/)
       min_value_(TypeTraitsClass::min_value()),
       max_value_(TypeTraitsClass::max_value()),
       is_virtual_(TypeTraitsClass::IsVirtual()),
+      nested_type_info_(std::move(nt_info)),
       append_func_(TypeTraitsClass::AppendDebugStringForValue),
       compare_func_(TypeTraitsClass::Compare),
       are_consecutive_func_(TypeTraitsClass::AreConsecutive) {
@@ -67,8 +71,8 @@ bool TypeInfo::AreConsecutive(const void* a, const void* b) const {
 
 class TypeInfoResolver {
  public:
-  const TypeInfo* GetTypeInfo(DataType t) {
-    const TypeInfo* type_info = mapping_[t].get();
+  const TypeInfo* GetTypeInfo(DataType t, bool is_nested) {
+    const TypeInfo* type_info = mapping_[pair<DataType, bool>(t, is_nested)].get();
     return CHECK_NOTNULL(type_info);
   }
 
@@ -95,24 +99,53 @@ class TypeInfoResolver {
     AddMapping<DECIMAL32>();
     AddMapping<DECIMAL64>();
     AddMapping<DECIMAL128>();
-    AddMapping<IS_DELETED>();
     AddMapping<VARCHAR>();
+    AddScalarMapping<IS_DELETED>();
   }
 
   template<DataType type> void AddMapping() {
-    TypeTraits<type> traits;
-    mapping_.emplace(type, new TypeInfo(traits));
+    // Add mappings for the scalar type and for one-dimensional array
+    // of elements of the same type.
+    unique_ptr<TypeInfo> type_info(new TypeInfo(TypeTraits<type>()));
+    const auto* type_info_raw = type_info.get();
+    const auto ins_info = mapping_.emplace(
+        std::make_pair(type, /*is_nested*/false), std::move(type_info));
+    DCHECK(ins_info.second);
+
+    ArrayTypeDescriptor array_desc(type_info_raw);
+    NestedTypeDescriptor desc(array_desc);
+    const auto array_ins_info = mapping_.emplace(
+        std::make_pair(type, /*is_nested*/true),
+        new TypeInfo(ArrayTypeTraits<type>(), desc));
+    DCHECK(array_ins_info.second);
   }
 
-  unordered_map<DataType,
+  template<DataType type> void AddScalarMapping() {
+    mapping_.emplace(std::make_pair(type, /*is_nested*/false),
+                     new TypeInfo(TypeTraits<type>()));
+  }
+
+  struct DataTypeMapHash {
+    // Hashing operator for the 'mapping_' container.
+    constexpr size_t operator()(const pair<DataType, bool>& p) const {
+      static_assert(DataType_MAX < 65536, "too many types");
+      return (p.second << 16) + p.first;
+    }
+  };
+  unordered_map<pair<DataType, bool>,
                 unique_ptr<const TypeInfo>,
-                std::hash<size_t>> mapping_;
+                DataTypeMapHash> mapping_;
 
   DISALLOW_COPY_AND_ASSIGN(TypeInfoResolver);
 };
 
 const TypeInfo* GetTypeInfo(DataType type) {
-  return Singleton<TypeInfoResolver>::get()->GetTypeInfo(type);
+  return Singleton<TypeInfoResolver>::get()->GetTypeInfo(type,
+                                                         /*is_nested=*/false);
+}
+const TypeInfo* GetArrayTypeInfo(DataType element_type) {
+  return Singleton<TypeInfoResolver>::get()->GetTypeInfo(element_type,
+                                                         /*is_nested=*/true);
 }
 
 void DataTypeTraits<DATE>::AppendDebugStringForValue(const void* val, string* str) {

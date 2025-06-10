@@ -23,8 +23,10 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <optional>
 #include <ostream>
 #include <string>
+#include <type_traits>
 
 #include <glog/logging.h>
 
@@ -51,16 +53,93 @@ class TypeInfo;
 // given a type enum, get the TypeInfo about it.
 extern const TypeInfo* GetTypeInfo(DataType type);
 
+// Similar to GetTypeInfo() above, but for one-dimensional arrays  with elements
+// of the specified scalar type.
+extern const TypeInfo* GetArrayTypeInfo(DataType element_type);
+
+// ArrayTypeDescriptor provides information on array data types. This descriptor
+// is capable of representing arrays of primitive (e.g., 1D arrays) and nested
+// types with the arbitrary level of nesting by a means it's encapsulated into
+// the NestedTypeDescriptor and TypeInfo constructs below.
+class ArrayTypeDescriptor {
+ public:
+  explicit ArrayTypeDescriptor(const TypeInfo* elem_type_info)
+      : elem_type_info_(elem_type_info) {
+    DCHECK(elem_type_info_);
+  }
+  const TypeInfo* elem_type_info() const {
+    return elem_type_info_;
+  }
+
+ private:
+  const TypeInfo* elem_type_info_;
+};
+
+// NestedTypeDescriptor adds information on non-scalar data types into TypeInfo.
+class NestedTypeDescriptor {
+ public:
+  // Enumeration of nested (non-scalar) data types that NestedTypeDescriptor
+  // is used to reprsent.
+  enum Type {
+    ARRAY,
+    //MAP,
+    //STRUCT,
+  };
+
+  // NestedTypeDescriptor for an array.
+  explicit NestedTypeDescriptor(ArrayTypeDescriptor desc)
+      : type_(Type::ARRAY),
+        descriptor_(desc)  {
+    descriptor_.array = desc;
+  }
+
+  bool is_array() const {
+    return type_ == Type::ARRAY;
+  }
+
+  const ArrayTypeDescriptor& array() const {
+    DCHECK_EQ(Type::ARRAY, type_);
+    return descriptor_.array;
+  }
+
+ private:
+  // The nested type (array, map, struct, etc.) that the descriptor represents.
+  const Type type_;
+
+  // A union to store the information on a descriptor of given type type_'.
+  union Descriptor {
+    explicit Descriptor(ArrayTypeDescriptor desc)
+        : array(desc) {
+    }
+    ~Descriptor() = default;
+
+    ArrayTypeDescriptor array;
+  } descriptor_;
+};
+
 // Information about a given type.
 // This is a runtime equivalent of the DataTypeTraits template below.
 class TypeInfo {
  public:
+  static bool is_array(const TypeInfo& tinfo) {
+    if (tinfo.type_ != NESTED) {
+      DCHECK(!tinfo.nested_type_info_.has_value());
+      return false;
+    }
+    const auto& desc = tinfo.nested_type_info_;
+    DCHECK(desc.has_value());
+    return desc.has_value() && desc->is_array();
+  }
+
   // Returns the type mentioned in the schema.
   DataType type() const { return type_; }
   // Returns the type used to actually store the data.
   DataType physical_type() const { return physical_type_; }
   const std::string& name() const { return name_; }
   size_t size() const { return size_; }
+  const NestedTypeDescriptor* nested_type_info() const {
+    return nested_type_info_.has_value() ? &nested_type_info_.value() : nullptr;
+  }
   void AppendDebugStringForValue(const void* ptr, std::string* str) const;
   int Compare(const void* lhs, const void* rhs) const;
   // Returns true if increment(a) is equal to b.
@@ -74,11 +153,19 @@ class TypeInfo {
   bool IsMaxValue(const void* value) const {
     return max_value_ != nullptr && Compare(value, max_value_) == 0;
   }
-  bool is_virtual() const { return is_virtual_; }
+  bool is_virtual() const {
+    return is_virtual_;
+  }
+  bool is_array() const {
+    return is_array(*this);
+  }
 
  private:
   friend class TypeInfoResolver;
-  template<typename Type> explicit TypeInfo(Type t);
+
+  template<typename TypeTraitsClass>
+  explicit TypeInfo(TypeTraitsClass unused,
+                    std::optional<NestedTypeDescriptor> nt_info = std::nullopt);
 
   const DataType type_;
   const DataType physical_type_;
@@ -89,6 +176,8 @@ class TypeInfo {
   const void* const max_value_;
   // Whether or not the type may only be used in projections, not tablet schemas.
   const bool is_virtual_;
+  // Nested type information: present if any only if type_ == NESTED.
+  std::optional<NestedTypeDescriptor> nested_type_info_;
 
   typedef void (*AppendDebugFunc)(const void*, std::string*);
   const AppendDebugFunc append_func_;
@@ -100,7 +189,11 @@ class TypeInfo {
   const AreConsecutiveFunc are_consecutive_func_;
 };
 
-template<DataType Type> struct DataTypeTraits {};
+template<DataType Type>
+struct DataTypeTraits {};
+
+template<DataType Type>
+struct ArrayDataTypeTraits {};
 
 template<DataType Type>
 static int GenericCompare(const void* lhs, const void* rhs) {
@@ -667,6 +760,146 @@ struct DataTypeTraits<VARCHAR> : public DerivedTypeTraits<BINARY>{
   }
 };
 
+template<>
+struct ArrayDataTypeTraits<UINT8> {
+  static const char* name() {
+    return "uint8 1d-array";
+  }
+};
+
+template<>
+struct ArrayDataTypeTraits<INT8> {
+  static const char* name() {
+    return "int8 1d-array";
+  }
+};
+
+template<>
+struct ArrayDataTypeTraits<UINT16> {
+  static const char* name() {
+    return "uint16 1d-array";
+  }
+};
+
+template<>
+struct ArrayDataTypeTraits<INT16> {
+  static const char* name() {
+    return "int16 1d-array";
+  }
+};
+
+template<>
+struct ArrayDataTypeTraits<UINT32> {
+  static const char* name() {
+    return "uint32 1d-array";
+  }
+};
+
+template<>
+struct ArrayDataTypeTraits<INT32> {
+  static const char* name() {
+    return "int32 1d-array";
+  }
+};
+
+template<>
+struct ArrayDataTypeTraits<UINT64> {
+  static const char* name() {
+    return "uint64 1d-array";
+  }
+};
+
+template<>
+struct ArrayDataTypeTraits<INT64> {
+  static const char* name() {
+    return "int64 1d-array";
+  }
+};
+
+template<>
+struct ArrayDataTypeTraits<INT128> {
+  static const char* name() {
+    return "int128 1d-array";
+  }
+};
+
+template<>
+struct ArrayDataTypeTraits<FLOAT> {
+  static const char* name() {
+    return "float 1d-array";
+  }
+};
+
+template<>
+struct ArrayDataTypeTraits<DOUBLE> {
+  static const char* name() {
+    return "double 1d-array";
+  }
+};
+
+template<>
+struct ArrayDataTypeTraits<BOOL> {
+  static const char* name() {
+    return "bool 1d-array";
+  }
+};
+
+template<>
+struct ArrayDataTypeTraits<BINARY> {
+  static const char* name() {
+    return "binary 1d-array";
+  }
+};
+
+template<>
+struct ArrayDataTypeTraits<STRING> {
+  static const char* name() {
+    return "string 1d-array";
+  }
+};
+
+template<>
+struct ArrayDataTypeTraits<UNIXTIME_MICROS> {
+  static const char* name() {
+    return "unixtime_micros 1d-array";
+  }
+};
+
+template<>
+struct ArrayDataTypeTraits<DATE> {
+  static const char* name() {
+    return "date 1d-array";
+  }
+};
+
+template<>
+struct ArrayDataTypeTraits<DECIMAL32> {
+  static const char* name() {
+    return "decimal (32 bit) 1d-array";
+  }
+};
+
+template<>
+struct ArrayDataTypeTraits<DECIMAL64> {
+  static const char* name() {
+    return "decimal (64 bit) 1d-array";
+  }
+};
+
+template<>
+struct ArrayDataTypeTraits<DECIMAL128> {
+  static const char* name() {
+    return "decimal (128 bit) 1d-array";
+  }
+};
+
+template<>
+struct ArrayDataTypeTraits<VARCHAR> {
+  static const char* name() {
+    return "varchar 1d-array";
+  }
+};
+
 // Instantiate this template to get static access to the type traits.
 template<DataType datatype>
 struct TypeTraits : public DataTypeTraits<datatype> {
@@ -674,6 +907,40 @@ struct TypeTraits : public DataTypeTraits<datatype> {
 
   static constexpr const DataType type = datatype;
   static constexpr const size_t size = sizeof(cpp_type);
+};
+
+template<DataType ARRAY_ELEMENT_TYPE>
+struct ArrayTypeTraits : public ArrayDataTypeTraits<ARRAY_ELEMENT_TYPE> {
+  typedef Slice cpp_type;
+
+  static const DataType type = DataType::NESTED;
+  static const DataType physical_type = DataType::BINARY;
+
+  static const size_t size = sizeof(Slice);
+
+  static void AppendDebugStringForValue(const void* val, std::string* str) {
+    // TODO(aserbin): implement once ArrayCellMetadataView is available
+    str->append("not implemented yet for ");
+    str->append(ArrayDataTypeTraits<ARRAY_ELEMENT_TYPE>::name());
+  }
+  static int Compare(const void* lhs, const void* rhs) {
+    // TODO(aserbin): implement once ArrayCellMetadataView is available
+    return -1;
+  }
+  static bool AreConsecutive(const void* a, const void* b) {
+    // TODO(aserbin): implement once ArrayCellMetadataView is available
+    return false;
+  }
+  static const cpp_type* min_value() {
+    static const cpp_type kMinVal{};
+    return &kMinVal;
+  }
+  static const cpp_type* max_value() {
+    return nullptr;
+  }
+  static bool IsVirtual() {
+    return false;
+  }
 };
 
 class Variant final {
@@ -754,6 +1021,7 @@ class Variant final {
       case STRING:
       case VARCHAR:
       case BINARY:
+      case NESTED:
         if (const Slice* str = static_cast<const Slice*>(value); !str->empty()) {
           // If str->empty(), the 'Clear()' above has already
           // set vstr_ to Slice(""). Otherwise, we need to allocate and copy the
@@ -834,6 +1102,7 @@ class Variant final {
       case STRING:
       case VARCHAR:
       case BINARY:
+      case NESTED:
         return &vstr_;
       default:
         LOG(FATAL) << "Unknown data type: " << type_;
