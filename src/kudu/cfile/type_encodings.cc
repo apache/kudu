@@ -16,10 +16,13 @@
 // under the License.
 #include "kudu/cfile/type_encodings.h"
 
+#include <array>
 #include <cstddef>
 #include <memory>
 #include <unordered_map>
 #include <utility>
+
+#include <glog/logging.h>
 
 #include "kudu/cfile/binary_dict_block.h" // IWYU pragma: keep
 #include "kudu/cfile/binary_plain_block.h" // IWYU pragma: keep
@@ -31,12 +34,15 @@
 #include "kudu/cfile/plain_block.h" // IWYU pragma: keep
 #include "kudu/cfile/rle_block.h" // IWYU pragma: keep
 #include "kudu/common/types.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/singleton.h"
 #include "kudu/gutil/strings/substitute.h"
 
+using std::array;
 using std::make_pair;
+using std::make_unique;
 using std::pair;
 using std::unique_ptr;
 using std::unordered_map;
@@ -48,18 +54,16 @@ namespace cfile {
 // classes.
 template<class Builder, class Decoder>
 struct EncodingTraits {
-  static Status CreateBlockBuilder(unique_ptr<BlockBuilder>* bb, const WriterOptions* options) {
-    bb->reset(new Builder(options));
-    return Status::OK();
+  static unique_ptr<BlockBuilder> CreateBlockBuilder(const WriterOptions* options) {
+    return make_unique<Builder>(options);
   }
 
-  static Status CreateBlockDecoder(unique_ptr<BlockDecoder>* bd,
+  static unique_ptr<BlockDecoder> CreateBlockDecoder(
                                    // https://bugs.llvm.org/show_bug.cgi?id=44598
                                    // NOLINTNEXTLINE(performance-unnecessary-value-param)
                                    scoped_refptr<BlockHandle> block,
                                    CFileIterator* /*parent_cfile_iter*/) {
-    bd->reset(new Decoder(std::move(block)));
-    return Status::OK();
+    return make_unique<Decoder>(std::move(block));
   }
 };
 
@@ -68,9 +72,9 @@ struct DataTypeEncodingTraits {};
 
 // Instantiate this template to get static access to the type traits.
 template<DataType Type, EncodingType Encoding> struct TypeEncodingTraits
-  : public DataTypeEncodingTraits<Type, Encoding> {
+    : public DataTypeEncodingTraits<Type, Encoding> {
 
-  static const EncodingType kEncodingType = Encoding;
+  static constexpr const EncodingType kEncodingType = Encoding;
 };
 
 // Generic, fallback, partial specialization that should work for all
@@ -111,11 +115,9 @@ struct DataTypeEncodingTraits<BINARY, PREFIX_ENCODING>
 template<>
 struct DataTypeEncodingTraits<BINARY, DICT_ENCODING>
     : public EncodingTraits<BinaryDictBlockBuilder, BinaryDictBlockDecoder> {
-  static Status CreateBlockDecoder(unique_ptr<BlockDecoder>* bd,
-                                   scoped_refptr<BlockHandle> block,
-                                   CFileIterator* parent_cfile_iter) {
-    bd->reset(new BinaryDictBlockDecoder(std::move(block), parent_cfile_iter));
-    return Status::OK();
+  static unique_ptr<BlockDecoder> CreateBlockDecoder(
+      scoped_refptr<BlockHandle> block, CFileIterator* parent_cfile_iter) {
+    return make_unique<BinaryDictBlockDecoder>(std::move(block), parent_cfile_iter);
   }
 };
 
@@ -124,25 +126,24 @@ struct DataTypeEncodingTraits<IntType, RLE>
     : public EncodingTraits<RleIntBlockBuilder<IntType>, RleIntBlockDecoder<IntType>> {};
 
 template<typename TypeEncodingTraitsClass>
-TypeEncodingInfo::TypeEncodingInfo(TypeEncodingTraitsClass /*t*/)
+TypeEncodingInfo::TypeEncodingInfo(TypeEncodingTraitsClass /*unused*/)
     : encoding_type_(TypeEncodingTraitsClass::kEncodingType),
       create_builder_func_(TypeEncodingTraitsClass::CreateBlockBuilder),
       create_decoder_func_(TypeEncodingTraitsClass::CreateBlockDecoder) {
 }
 
-Status TypeEncodingInfo::CreateBlockDecoder(unique_ptr<BlockDecoder>* bd,
-                                            scoped_refptr<BlockHandle> block,
-                                            CFileIterator* parent_cfile_iter) const {
-  return create_decoder_func_(bd, std::move(block), parent_cfile_iter);
+unique_ptr<BlockDecoder> TypeEncodingInfo::CreateBlockDecoder(
+    scoped_refptr<BlockHandle> block, CFileIterator* parent_cfile_iter) const {
+  return create_decoder_func_(std::move(block), parent_cfile_iter);
 }
 
-Status TypeEncodingInfo::CreateBlockBuilder(
-    unique_ptr<BlockBuilder>* bb, const WriterOptions* options) const {
-  return create_builder_func_(bb, options);
+unique_ptr<BlockBuilder> TypeEncodingInfo::CreateBlockBuilder(
+    const WriterOptions* options) const {
+  return create_builder_func_(options);
 }
 
 struct EncodingMapHash {
-  size_t operator()(pair<DataType, EncodingType> pair) const {
+  size_t operator()(const pair<DataType, EncodingType>& pair) const noexcept {
     return (pair.first << 5) + pair.second;
   }
 };
@@ -152,23 +153,25 @@ struct EncodingMapHash {
 // becomes the default encoding for the type.
 class TypeEncodingResolver {
  public:
-  Status GetTypeEncodingInfo(DataType t, EncodingType e,
-                             const TypeEncodingInfo** out) {
+  Status GetTypeEncodingInfo(DataType t,
+                             EncodingType e,
+                             const TypeEncodingInfo** out) const {
     if (e == AUTO_ENCODING) {
       e = GetDefaultEncoding(t);
     }
-    const TypeEncodingInfo *type_info = mapping_[make_pair(t, e)].get();
-    if (PREDICT_FALSE(type_info == nullptr)) {
+    const TypeEncodingInfo* info = FindPointeeOrNull(mapping_, make_pair(t, e));
+    if (PREDICT_FALSE(info == nullptr)) {
       return Status::NotSupported(
           strings::Substitute("encoding $1 not supported for type $0",
                               DataType_Name(t),
                               EncodingType_Name(e)));
     }
-    *out = type_info;
+    *out = info;
     return Status::OK();
   }
 
-  const EncodingType GetDefaultEncoding(DataType t) {
+  EncodingType GetDefaultEncoding(DataType t) const {
+    DCHECK_LE(t, kDataTypeMaxIdx);
     return default_mapping_[t];
   }
 
@@ -176,7 +179,10 @@ class TypeEncodingResolver {
   // the first encoder/decoder to be
   // added to the mapping becomes the default
  private:
+  friend class Singleton<TypeEncodingResolver>;
+
   TypeEncodingResolver() {
+    default_mapping_.fill(UNKNOWN_ENCODING);
     AddMapping<UINT8, BIT_SHUFFLE>();
     AddMapping<UINT8, PLAIN_ENCODING>();
     AddMapping<UINT8, RLE>();
@@ -216,36 +222,38 @@ class TypeEncodingResolver {
     // AddMapping<INT128, RLE>();
   }
 
-  template<DataType type, EncodingType encoding> void AddMapping() {
-    TypeEncodingTraits<type, encoding> traits;
-    // The first call to AddMapping() for a given data-type is always the default one.
-    // emplace() will no-op if the data-type is already present, so we can blindly
-    // call emplace() here(i.e. no need to call find() to check before inserting)
-    default_mapping_.emplace(type, encoding);
-    mapping_.emplace(make_pair(type, encoding),
-                     unique_ptr<TypeEncodingInfo>(new TypeEncodingInfo(traits)));
+  template<DataType type, EncodingType encoding>
+  void AddMapping() {
+    static_assert(type <= kDataTypeMaxIdx, "unexpected type for encoder mapping");
+    if (default_mapping_[type] == UNKNOWN_ENCODING) {
+      default_mapping_[type] = encoding;
+    }
+    const auto ins_info = mapping_.emplace(
+        make_pair(type, encoding),
+        new TypeEncodingInfo(TypeEncodingTraits<type, encoding>()));
+    DCHECK(ins_info.second);
   }
 
+  static constexpr const size_t kDataTypeMaxIdx = DataType::INT128;
+  array<EncodingType, kDataTypeMaxIdx + 1> default_mapping_;
+
   unordered_map<pair<DataType, EncodingType>,
-      unique_ptr<const TypeEncodingInfo>,
-      EncodingMapHash > mapping_;
+                unique_ptr<const TypeEncodingInfo>,
+                EncodingMapHash> mapping_;
 
-  unordered_map<DataType, EncodingType, std::hash<size_t> > default_mapping_;
-
-  friend class Singleton<TypeEncodingResolver>;
   DISALLOW_COPY_AND_ASSIGN(TypeEncodingResolver);
 };
 
 Status TypeEncodingInfo::Get(const TypeInfo* typeinfo,
                              EncodingType encoding,
                              const TypeEncodingInfo** out) {
-  return Singleton<TypeEncodingResolver>::get()->GetTypeEncodingInfo(typeinfo->physical_type(),
-                                                                     encoding,
-                                                                     out);
+  return Singleton<TypeEncodingResolver>::get()->GetTypeEncodingInfo(
+      typeinfo->physical_type(), encoding, out);
 }
 
-const EncodingType TypeEncodingInfo::GetDefaultEncoding(const TypeInfo* typeinfo) {
-  return Singleton<TypeEncodingResolver>::get()->GetDefaultEncoding(typeinfo->physical_type());
+EncodingType TypeEncodingInfo::GetDefaultEncoding(const TypeInfo* typeinfo) {
+  return Singleton<TypeEncodingResolver>::get()->GetDefaultEncoding(
+      typeinfo->physical_type());
 }
 
 }  // namespace cfile

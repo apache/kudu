@@ -133,13 +133,13 @@ CFileWriter::CFileWriter(WriterOptions options,
       is_nullable_(is_nullable),
       typeinfo_(typeinfo),
       state_(kWriterInitialized) {
-  EncodingType encoding = options_.storage_attributes.encoding;
-  Status s = TypeEncodingInfo::Get(typeinfo_, encoding, &type_encoding_info_);
-  if (PREDICT_FALSE(!s.ok())) {
+  const EncodingType encoding = options_.storage_attributes.encoding;
+  if (auto s = TypeEncodingInfo::Get(typeinfo_, encoding, &type_encoding_info_);
+      PREDICT_FALSE(!s.ok())) {
     // TODO(af): we should somehow pass some contextual info about the
     // tablet here.
     WARN_NOT_OK(s, "Falling back to default encoding");
-    s = TypeEncodingInfo::Get(typeinfo,
+    s = TypeEncodingInfo::Get(typeinfo_,
                               TypeEncodingInfo::GetDefaultEncoding(typeinfo_),
                               &type_encoding_info_);
     CHECK_OK(s);
@@ -212,8 +212,7 @@ Status CFileWriter::Start() {
   }
 
   RETURN_NOT_OK_PREPEND(WriteRawData(header_slices), "Couldn't write header");
-
-  RETURN_NOT_OK(type_encoding_info_->CreateBlockBuilder(&data_block_, &options_));
+  data_block_ = type_encoding_info_->CreateBlockBuilder(&options_);
 
   if (is_nullable_) {
     size_t nrows = ((options_.storage_attributes.cfile_block_size + typeinfo_->size() - 1) /

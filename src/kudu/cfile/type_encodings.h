@@ -39,41 +39,40 @@ struct WriterOptions;
 // Mimicked after common::TypeInfo et al
 class TypeEncodingInfo {
  public:
-  static Status Get(const TypeInfo* typeinfo, EncodingType encoding, const TypeEncodingInfo** out);
+  static Status Get(const TypeInfo* typeinfo,
+                    EncodingType encoding,
+                    const TypeEncodingInfo** out);
 
-  static const EncodingType GetDefaultEncoding(const TypeInfo* typeinfo);
+  static EncodingType GetDefaultEncoding(const TypeInfo* typeinfo);
 
-  EncodingType encoding_type() const { return encoding_type_; }
+  EncodingType encoding_type() const {
+    return encoding_type_;
+  }
 
-  Status CreateBlockBuilder(std::unique_ptr<BlockBuilder>* bb, const WriterOptions* options) const;
+  std::unique_ptr<BlockBuilder> CreateBlockBuilder(const WriterOptions* options) const;
 
-  // Create a BlockDecoder. Sets *bd to the newly created decoder,
-  // if successful, otherwise returns a non-OK Status.
-  //
-  // Input parent_cfile_iter parameter will only be used in case of dictionary encoding.
-  Status CreateBlockDecoder(std::unique_ptr<BlockDecoder>* bd,
-                            scoped_refptr<BlockHandle> block,
-                            CFileIterator* parent_cfile_iter) const;
+  // Create a BlockDecoder. Returns the newly created decoder.
+  // The 'parent_cfile_iter' parameter is only used in case of dictionary encoding.
+  std::unique_ptr<BlockDecoder> CreateBlockDecoder(scoped_refptr<BlockHandle> block,
+                                                   CFileIterator* parent_cfile_iter) const;
 
  private:
   friend class TypeEncodingResolver;
 
   template<typename TypeEncodingTraitsClass>
-  explicit TypeEncodingInfo(TypeEncodingTraitsClass t);
+  explicit TypeEncodingInfo(TypeEncodingTraitsClass unused);
 
-  EncodingType encoding_type_;
+  const EncodingType encoding_type_;
 
-  typedef Status (*CreateBlockBuilderFunc)(std::unique_ptr<BlockBuilder>*, const WriterOptions*);
+  typedef std::unique_ptr<BlockBuilder> (*CreateBlockBuilderFunc)(const WriterOptions*);
   const CreateBlockBuilderFunc create_builder_func_;
 
-  typedef Status (*CreateBlockDecoderFunc)(std::unique_ptr<BlockDecoder>*,
-                                           scoped_refptr<BlockHandle>,
-                                           CFileIterator*);
+  typedef std::unique_ptr<BlockDecoder> (*CreateBlockDecoderFunc)(
+      scoped_refptr<BlockHandle>, CFileIterator*);
   const CreateBlockDecoderFunc create_decoder_func_;
 
   DISALLOW_COPY_AND_ASSIGN(TypeEncodingInfo);
 };
-
 
 } // namespace cfile
 } // namespace kudu

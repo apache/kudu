@@ -978,8 +978,8 @@ Status CFileIterator::ReadCurrentDataBlock(const IndexTreeIterator& idx_iter,
                                                    prep_block->rle_bitmap.size());
   }
 
-  RETURN_NOT_OK(reader_->type_encoding_info()->CreateBlockDecoder(
-      &prep_block->dblk_, std::move(data_block), this));
+  prep_block->dblk_ = reader_->type_encoding_info()->CreateBlockDecoder(
+      std::move(data_block), this);
 
   RETURN_NOT_OK_PREPEND(prep_block->dblk_->ParseHeader(),
                         Substitute("unable to decode data block header in block $0 ($1)",

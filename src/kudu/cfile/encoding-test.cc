@@ -99,9 +99,7 @@ class TestEncoding : public KuduTest {
                                                    EncodingType encoding) {
     const TypeEncodingInfo* tei;
     CHECK_OK(TypeEncodingInfo::Get(GetTypeInfo(type), encoding, &tei));
-    unique_ptr<BlockBuilder> bb;
-    CHECK_OK(tei->CreateBlockBuilder(&bb, &default_write_options_));
-    return bb;
+    return tei->CreateBlockBuilder(&default_write_options_);
   }
 
   static unique_ptr<BlockDecoder> CreateBlockDecoderOrDie(DataType type,
@@ -109,9 +107,7 @@ class TestEncoding : public KuduTest {
                                                           scoped_refptr<BlockHandle> block) {
     const TypeEncodingInfo* tei;
     CHECK_OK(TypeEncodingInfo::Get(GetTypeInfo(type), encoding, &tei));
-    unique_ptr<BlockDecoder> bd;
-    CHECK_OK(tei->CreateBlockDecoder(&bd, std::move(block), /*parent_cfile_iter=*/nullptr));
-    return bd;
+    return tei->CreateBlockDecoder(std::move(block), /*parent_cfile_iter=*/nullptr);
   }
 
   // Insert a given number of strings into the provided BlockBuilder.

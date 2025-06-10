@@ -1887,9 +1887,9 @@ Status ValidateClientSchema(const optional<string>& name,
     }
 
     // Check that the encodings are valid for the specified types.
-    const TypeEncodingInfo *dummy;
-    Status s = TypeEncodingInfo::Get(ti, col.attributes().encoding, &dummy);
-    if (!s.ok()) {
+    const TypeEncodingInfo* dummy;
+    if (const auto s = TypeEncodingInfo::Get(ti, col.attributes().encoding, &dummy);
+        PREDICT_FALSE(!s.ok())) {
       return s.CloneAndPrepend(Substitute("invalid encoding for column '$0'", col.name()));
     }
   }
