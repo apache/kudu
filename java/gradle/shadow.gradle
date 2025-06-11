@@ -92,7 +92,7 @@ shadowJar {
 // By default shadow assumes all dependencies are shaded.
 configurations.create("compileUnshaded")
 configurations.shadow.extendsFrom(configurations.compileUnshaded)
-configurations.implementation.extendsFrom(configurations.compileUnshaded)
+configurations.compileOnly.extendsFrom(configurations.compileUnshaded)
 
 // We use afterEvaluate to add additional configuration once all the definitions
 // in the projects build script have been applied

@@ -16,11 +16,12 @@
 // under the License.
 
 apply plugin: "scala"
+apply plugin: "java-library"
 apply from: "$rootDir/gradle/shadow.gradle"
 
 dependencies {
   implementation project(path: ":kudu-client", configuration: "shadow")
-  implementation project(':kudu-spark')
+  compileOnlyApi project(':kudu-spark')
   // TODO(KUDU-2500): Spark uses reflection which requires the annotations at runtime.
   implementation libs.yetusAnnotations
   implementation (libs.scopt)  {
@@ -28,11 +29,12 @@ dependencies {
     exclude group: "org.scala-lang", module: "scala-library"
   }
 
-  implementation libs.sparkCore
-  implementation libs.sparkSql
+  compileOnlyApi libs.sparkAvro
+  compileOnlyApi libs.sparkCore
+  compileOnlyApi libs.sparkSql
 
-  compileOnly libs.scalaLibrary
-  compileOnly libs.slf4jApi
+  compileOnlyApi libs.scalaLibrary
+  compileOnlyApi libs.slf4jApi
 
   testImplementation project(path: ":kudu-test-utils", configuration: "shadow")
   testImplementation project(path: ":kudu-spark", configuration: "test")
@@ -42,6 +44,14 @@ dependencies {
   testImplementation libs.log4jSlf4jImpl
   testImplementation libs.scalatest
   testImplementation libs.sparkAvro
+
+  // Have to re-define some dependencies here, as compile-only dependencies
+  // are not inherited by the test classpath.
+  // See: https://blog.gradle.org/introducing-compile-only-dependencies
+  // Note: compileUnshaded is extended from the compileOnly dependency scope.
+  testImplementation project(':kudu-spark')
+  testImplementation libs.sparkCore
+  testImplementation libs.sparkSql
 }
 
 shadowJar {

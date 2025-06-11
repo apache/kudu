@@ -16,6 +16,7 @@
 // under the License.
 
 apply plugin: "scala"
+apply plugin: "java-library"
 apply from: "$rootDir/gradle/shadow.gradle"
 
 dependencies {
@@ -27,11 +28,11 @@ dependencies {
     exclude group: "org.scala-lang", module: "scala-library"
   }
   implementation libs.scalaLibrary
-  implementation libs.slf4jApi
+  compileOnlyApi libs.slf4jApi
 
-  compileOnly libs.hadoopClient
+  compileOnlyApi libs.hadoopClient
 
-  implementation libs.yetusAnnotations
+  compileOnlyApi libs.yetusAnnotations
   // MiniDFSCluster needs mockito package to be present in the classpath.
   // See: https://issues.apache.org/jira/browse/MAPREDUCE-7471 and
   // https://issues.apache.org/jira/browse/HADOOP-19164 for more details.

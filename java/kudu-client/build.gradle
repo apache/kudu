@@ -24,7 +24,7 @@ apply from: "$rootDir/gradle/benchmarks.gradle"
 
 dependencies {
   implementation project(path: ":kudu-proto")
-  api libs.protobufJava
+  compileOnly libs.protobufJava
 
   // Not shaded in the client JAR because it's part of the public API.
   compileUnshaded (libs.async) {
@@ -41,8 +41,8 @@ dependencies {
   implementation libs.murmur
   implementation libs.netty
 
-  compileOnly libs.jsr305
-  compileOnly libs.yetusAnnotations
+  compileOnlyApi libs.jsr305
+  compileOnlyApi libs.yetusAnnotations
 
   testImplementation project(":kudu-test-utils")
   testImplementation libs.junit
@@ -50,6 +50,13 @@ dependencies {
   testImplementation libs.log4jCore
   testImplementation libs.log4jSlf4jImpl
   testImplementation libs.mockitoCore
+
+  // Have to re-define some dependencies here, as compile-only dependencies
+  // are not inherited by the test classpath.
+  // See: https://blog.gradle.org/introducing-compile-only-dependencies
+  // Note: compileUnshaded is extended from the compileOnly dependency scope.
+  testImplementation libs.protobufJava
+  testImplementation libs.async
 
   shadowJar {
     dependencies {

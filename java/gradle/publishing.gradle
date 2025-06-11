@@ -48,6 +48,15 @@ publishing {
       groupId "org.apache.kudu"
       version "${project.version}"
 
+      // Adjust the artifact names to include the spark and scala base versions.
+      if (["kudu-backup", "kudu-spark"].contains(project.name)) {
+        artifactId = "${project.archivesBaseName}${versions.sparkBase}_${versions.scalaBase}"
+      }
+
+      if (project.name.equals("kudu-spark-tools")) {
+        artifactId = "kudu-spark${versions.sparkBase}-tools_${versions.scalaBase}"
+      }
+
       artifact(sourcesJar) {
         classifier = "sources"
       }
@@ -71,9 +80,16 @@ publishing {
 
       // Remove the shaded dependencies from the generated pom.
       pom.withXml {
-        def apiDeps = project.configurations.api.allDependencies
-        def shadedDeps = project.configurations.shadow.allDependencies
-        def finalDeps = apiDeps - shadedDeps
+        def implementationDeps  = []
+        def shadedDeps = []
+        if (project.configurations.hasProperty("implementation")) {
+          implementationDeps = project.configurations.implementation.allDependencies
+        }
+        if (project.configurations.hasProperty("shadow")) {
+          shadedDeps = project.configurations.shadow.allDependencies
+        }
+
+        def finalDeps = implementationDeps - shadedDeps
         asNode().dependencies.dependency.findAll{
           finalDeps.findAll{ dep ->
             dep.name == it.artifactId*.value()[0][0]

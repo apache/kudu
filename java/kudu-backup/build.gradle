@@ -16,6 +16,7 @@
 // under the License.
 
 apply plugin: "scala"
+apply plugin: "java-library"
 apply from: "$rootDir/gradle/shadow.gradle"
 
 dependencies {
@@ -27,7 +28,7 @@ dependencies {
     exclude group: "org.scala-lang", module: "scala-library"
   }
   implementation project(path: ":kudu-client", configuration: "shadow")
-  implementation project(path: ":kudu-spark", configuration: "shadow")
+  compileOnlyApi project(path: ":kudu-spark", configuration: "shadow")
   implementation libs.protobufJava
   implementation (libs.scopt)  {
     // Make sure wrong Scala version is not pulled in.
@@ -36,20 +37,32 @@ dependencies {
   // TODO(KUDU-2500): Spark uses reflection which requires the annotations at runtime.
   implementation libs.yetusAnnotations
 
-  implementation libs.scalaLibrary
-  implementation libs.sparkAvro
-  implementation libs.sparkCore
-  implementation libs.sparkSql
-  implementation libs.slf4jApi
+  compileOnlyApi libs.scalaLibrary
+  compileOnlyApi libs.sparkAvro
+  compileOnlyApi libs.sparkCore
+  compileOnlyApi libs.sparkSql
+  compileOnlyApi libs.slf4jApi
 
   testImplementation project(path: ":kudu-test-utils", configuration: "shadow")
   testImplementation project(path: ":kudu-spark", configuration: "test")
+  // Note: both configurations are needed to ensure that the classpath is correct
+  testImplementation project(path: ":kudu-spark")
   testImplementation libs.junit
   testImplementation libs.log4jApi
   testImplementation libs.log4jCore
   testImplementation libs.log4jSlf4jImpl
   testImplementation libs.scalatest
   testImplementation libs.logCaptor
+
+  // Have to re-define some dependencies here, as compile-only dependencies
+  // are not inherited by the test classpath.
+  // See: https://blog.gradle.org/introducing-compile-only-dependencies
+  // Note: compileUnshaded is extended from the compileOnly dependency scope.
+  testImplementation libs.scalaLibrary
+  testImplementation libs.sparkAvro
+  testImplementation libs.sparkCore
+  testImplementation libs.sparkSql
+  testImplementation libs.slf4jApi
 }
 
 shadowJar {
