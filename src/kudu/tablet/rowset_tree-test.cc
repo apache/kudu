@@ -307,6 +307,7 @@ TEST_P(TestRowSetTreePerformance, TestPerformance) {
     ASSERT_OK(tree.Reset(vec));
 
     vector<string> queries;
+    queries.reserve(kNumQueries);
     for (int i = 0; i < kNumQueries; i++) {
       int query = rand() % 10000;
       queries.emplace_back(StringPrintf("%04d", query));
@@ -325,15 +326,17 @@ TEST_P(TestRowSetTreePerformance, TestPerformance) {
     one_at_time_timer.stop();
 
     vector<Slice> query_slices;
+    query_slices.reserve(queries.size());
     for (const auto& q : queries) {
       query_slices.emplace_back(q);
     }
 
     batch_timer.resume();
-    std::sort(query_slices.begin(), query_slices.end(), Slice::Comparator());
+    // Using std::stable_sort() to match how the row presence check in bulk
+    // is implemented in Tablet::BulkCheckPresence().
+    std::stable_sort(query_slices.begin(), query_slices.end(), Slice::Comparator());
     int bulk_matches = 0;
     {
-      vector<RowSet *> out;
       tree.ForEachRowSetContainingKeys(
           query_slices, [&](RowSet* rs, int slice_idx) {
             bulk_matches++;

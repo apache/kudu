@@ -2485,9 +2485,27 @@ Status Tablet::CaptureConsistentIterators(
   shared_lock l(component_lock_);
   RETURN_IF_STOPPED_OR_CHECK_STATE(kOpen);
 
+  // Cull row-sets in the case of key-range queries.
+  const bool is_range_query = spec != nullptr &&
+      (spec->lower_bound_key() || spec->exclusive_upper_bound_key());
+  vector<RowSet*> interval_sets;
+  if (is_range_query) {
+    optional<Slice> lower_bound = spec->lower_bound_key() ?
+        optional<Slice>(spec->lower_bound_key()->encoded_key()) : nullopt;
+    optional<Slice> upper_bound = spec->exclusive_upper_bound_key() ?
+        optional<Slice>(spec->exclusive_upper_bound_key()->encoded_key()) : nullopt;
+    components_->rowsets->FindRowSetsIntersectingInterval(
+        lower_bound, upper_bound, &interval_sets);
+  }
+
+  const size_t ret_size =
+      (is_range_query ? interval_sets.size() : components_->rowsets->all_rowsets().size()) +
+      components_->txn_memrowsets.size() + 1;
+
   // Construct all the iterators locally first, so that if we fail
   // in the middle, we don't modify the output arguments.
   vector<IterWithBounds> ret;
+  ret.reserve(ret_size);
 
   // Grab the memrowset iterator.
   {
@@ -2508,14 +2526,7 @@ Status Tablet::CaptureConsistentIterators(
     ret.emplace_back(std::move(txn_mrs_iwb));
   }
 
-  // Cull row-sets in the case of key-range queries.
-  if (spec != nullptr && (spec->lower_bound_key() || spec->exclusive_upper_bound_key())) {
-    optional<Slice> lower_bound = spec->lower_bound_key() ?
-        optional<Slice>(spec->lower_bound_key()->encoded_key()) : nullopt;
-    optional<Slice> upper_bound = spec->exclusive_upper_bound_key() ?
-        optional<Slice>(spec->exclusive_upper_bound_key()->encoded_key()) : nullopt;
-    vector<RowSet*> interval_sets;
-    components_->rowsets->FindRowSetsIntersectingInterval(lower_bound, upper_bound, &interval_sets);
+  if (is_range_query) {
     for (const auto* rs : interval_sets) {
       IterWithBounds iwb;
       RETURN_NOT_OK_PREPEND(rs->NewRowIteratorWithBounds(opts, &iwb),
@@ -3341,8 +3352,7 @@ Status Tablet::Iterator::Init(ScanSpec *spec) {
       break;
   }
 
-  RETURN_NOT_OK(iter_->Init(spec));
-  return Status::OK();
+  return iter_->Init(spec);
 }
 
 bool Tablet::Iterator::HasNext() const {

@@ -126,7 +126,11 @@ struct RowSetIntervalTraits {
 };
 
 RowSetTree::RowSetTree()
-  : initted_(false) {
+    : initted_(false) {
+}
+
+RowSetTree::~RowSetTree() {
+  STLDeleteElements(&entries_);
 }
 
 Status RowSetTree::Reset(const RowSetVector &rowsets) {
@@ -201,36 +205,38 @@ void RowSetTree::FindRowSetsIntersectingInterval(const optional<Slice>& lower_bo
                                                  vector<RowSet*>* rowsets) const {
   DCHECK(initted_);
 
-  // All rowsets with unknown bounds need to be checked.
-  for (const shared_ptr<RowSet> &rs : unbounded_rowsets_) {
-    rowsets->push_back(rs.get());
-  }
-
-  vector<RowSetWithBounds *> from_tree;
+  vector<RowSetWithBounds*> from_tree;
   from_tree.reserve(all_rowsets_.size());
   tree_->FindIntersectingInterval(lower_bound, upper_bound, &from_tree);
-  rowsets->reserve(rowsets->size() + from_tree.size());
-  for (RowSetWithBounds *rs : from_tree) {
+
+  rowsets->reserve(rowsets->size() + unbounded_rowsets_.size() + from_tree.size());
+
+  // All rowsets with unknown bounds need to be checked.
+  for (const auto& rs : unbounded_rowsets_) {
+    rowsets->push_back(rs.get());
+  }
+  for (auto* rs : from_tree) {
     rowsets->push_back(rs->rowset);
   }
 }
 
-void RowSetTree::FindRowSetsWithKeyInRange(const Slice &encoded_key,
-                                           vector<RowSet *> *rowsets) const {
+void RowSetTree::FindRowSetsWithKeyInRange(const Slice& encoded_key,
+                                           vector<RowSet*>* rowsets) const {
   DCHECK(initted_);
-
-  // All rowsets with unknown bounds need to be checked.
-  for (const shared_ptr<RowSet> &rs : unbounded_rowsets_) {
-    rowsets->push_back(rs.get());
-  }
 
   // Query the interval tree to efficiently find rowsets with known bounds
   // whose ranges overlap the probe key.
-  vector<RowSetWithBounds *> from_tree;
+  vector<RowSetWithBounds*> from_tree;
   from_tree.reserve(all_rowsets_.size());
   tree_->FindContainingPoint(encoded_key, &from_tree);
-  rowsets->reserve(rowsets->size() + from_tree.size());
-  for (RowSetWithBounds *rs : from_tree) {
+
+  rowsets->reserve(rowsets->size() + unbounded_rowsets_.size() + from_tree.size());
+
+  // All rowsets with unknown bounds need to be checked.
+  for (const auto& rs : unbounded_rowsets_) {
+    rowsets->push_back(rs.get());
+  }
+  for (auto* rs : from_tree) {
     rowsets->push_back(rs->rowset);
   }
 }
@@ -262,11 +268,6 @@ void RowSetTree::ForEachRowSetContainingKeys(
       [&](const QueryStruct& qs, RowSetWithBounds* rs) {
         cb(rs->rowset, qs.idx);
       });
-}
-
-
-RowSetTree::~RowSetTree() {
-  STLDeleteElements(&entries_);
 }
 
 } // namespace tablet
