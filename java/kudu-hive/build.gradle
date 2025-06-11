@@ -14,16 +14,18 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+apply plugin: "java-library"
 apply from: "$rootDir/gradle/shadow.gradle"
 
 dependencies {
   implementation project(path: ":kudu-client", configuration: "shadow")
 
-  implementation libs.hiveMetastore
-  compileOnly libs.slf4jApi
+  compileOnlyApi libs.hiveMetastore
+  compileOnlyApi libs.slf4jApi
   // Transitively required through hive-metastore,
   // which has marked it as an optional dependency.
-  implementation libs.hadoopCommon
+  compileOnlyApi libs.hadoopCommon
+  compileOnlyApi libs.hadoopMRClientCommon
   testImplementation libs.hadoopMRClientCommon
 
   testImplementation project(path: ":kudu-test-utils", configuration: "shadow")
@@ -32,6 +34,10 @@ dependencies {
   testImplementation libs.log4jApi
   testImplementation libs.log4jCore
   testImplementation libs.log4jSlf4jImpl
+
+  testImplementation libs.hiveMetastore
+  testImplementation libs.hadoopCommon
+  testImplementation libs.hadoopMRClientCommon
 }
 
 shadowJar {

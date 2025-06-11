@@ -15,6 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
+plugins {
+  id("java-library")
+}
+
 apply from: "$rootDir/gradle/shadow.gradle"
 
 dependencies {
@@ -36,7 +40,7 @@ dependencies {
     exclude group: "org.slf4j", module: "slf4j-api"
   }
 
-  implementation libs.hamcrest
+  compileOnlyApi libs.hamcrest
   compileUnshaded(libs.junit) {
     // Use the Kudu specified hamcrest.
     exclude group: "org.hamcrest"
@@ -51,15 +55,26 @@ dependencies {
   }
 
   // Needed for CapturingLogAppender. Optional otherwise.
-  implementation libs.log4jApi
-  implementation libs.log4jCore
-  implementation libs.log4jSlf4jImpl
+  compileOnlyApi libs.log4jApi
+  compileOnlyApi libs.log4jCore
+  compileOnlyApi libs.log4jSlf4jImpl
 
-  compileOnly libs.jsr305
-  compileOnly libs.yetusAnnotations
+  compileOnlyApi libs.jsr305
+  compileOnlyApi libs.yetusAnnotations
 
   testImplementation libs.jetty
   testImplementation libs.jettyServlet
+
+  // Have to re-define some dependencies here, as compile-only dependencies
+  // are not inherited by the test classpath.
+  // See: https://blog.gradle.org/introducing-compile-only-dependencies
+  // Note: compileUnshaded is extended from the compileOnly dependency scope.
+  testImplementation libs.junit
+  testImplementation libs.async
+  testImplementation libs.hamcrest
+  testImplementation libs.log4jApi
+  testImplementation libs.log4jCore
+  testImplementation libs.log4jSlf4jImpl
 }
 
 shadowJar {
