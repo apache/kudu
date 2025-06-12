@@ -47,8 +47,10 @@ only tolerate a single failure; two-master deployments cannot tolerate any failu
 
 .Operating System Requirements
 Linux::
-    - RHEL 7, RHEL 8, CentOS 7, CentOS 8,
-      Ubuntu 18.04 (bionic), Ubuntu 20.04 (focal)
+    - RHEL 7, RHEL 8, RHEL 9, CentOS 7, CentOS 8,
+      Ubuntu 18.04 (bionic), Ubuntu 20.04 (focal),
+      Ubuntu 22.04 (jammy), Ubuntu 24.04 (noble),
+      SLES 15
     - A kernel and filesystem that support _hole punching_. Hole punching is the use of the
       `fallocate(2)` system call with the `FALLOC_FL_PUNCH_HOLE` option set. See
       link:troubleshooting.html#req_hole_punching[troubleshooting hole punching] for more
@@ -60,7 +62,8 @@ Linux::
       link:troubleshooting.html#slow_dns_nscd[troubleshooting slow DNS lookups]
       for more information.
 macOS::
-    - macOS 11 (Big Sur), macOS 12 (Monterey), macOS 13 (Ventura)
+    - macOS 11 (Big Sur), macOS 12 (Monterey),
+      macOS 13 (Ventura), macOS 14 (Sonoma)
 
 Windows::
     - Microsoft Windows is unsupported.
@@ -83,14 +86,14 @@ Below are the steps for each supported operating system to build Kudu from  sour
 .Known Build Issues
 ====
 * It is not possible to build Kudu on Microsoft Windows.
-* A C++17 capable compiler (GCC 7.0+) is required.
+* A {cpp}-17 capable compiler (e.g., GCC 7.0 and newer) is required.
 ====
 
 [[rhel_from_source]]
 === RHEL or CentOS
 RHEL or CentOS 7.0 or later is required to build Kudu from source. To build
 on a version older than 8.0, the Red Hat Developer Toolset must be installed
-(in order to have access to a C++17 capable compiler).
+(in order to have access to a {cpp}-17 capable compiler).
 
 . Install the prerequisite libraries, if they are not installed.
 +
@@ -719,7 +722,7 @@ make -j4
 ====
 
 [[build_cpp_client]]
-== Installing the C++ Client Libraries
+== Installing the {cpp} Client Libraries
 
 See the Kudu client install section at the bottom of <<build_from_source>> above.
 
