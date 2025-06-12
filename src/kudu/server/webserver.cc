@@ -506,7 +506,7 @@ Status Webserver::GetBoundAddresses(std::vector<Sockaddr>* addrs) const {
     return Status::ServiceUnavailable("Not started");
   }
 
-  struct sockaddr_in** sockaddrs;
+  struct sockaddr_storage** sockaddrs;
   int num_addrs;
 
   if (sq_get_bound_addresses(context_, &sockaddrs, &num_addrs)) {
@@ -516,7 +516,7 @@ Status Webserver::GetBoundAddresses(std::vector<Sockaddr>* addrs) const {
   addrs->reserve(num_addrs);
 
   for (int i = 0; i < num_addrs; i++) {
-    addrs->push_back(Sockaddr(*sockaddrs[i]));
+    addrs->emplace_back(*reinterpret_cast<struct sockaddr_in*>(sockaddrs[i]));
     free(sockaddrs[i]);
   }
   free(sockaddrs);

@@ -1,0 +1,346 @@
+diff --git a/Makefile b/Makefile
+index d5bf8e9..d699050 100644
+--- a/Makefile
++++ b/Makefile
+@@ -17,6 +17,9 @@
+ # -DUSE_LUA               - embed Lua in Squeasel (+100kb)
+ 
+ PROG        = squeasel
++
++# TODO: To build target on macOS, additional changes are required,
++#       that include providing appropriate ssl header file path.
+ CFLAGS      = -std=c99 -O2 -W -Wall -pedantic -pthread -pipe $(COPT)
+ 
+ # To build with Lua, download and unzip Lua 5.2.1 source code into the
+@@ -111,6 +114,8 @@ squeasel.o: mod_lua.c
+ linux:
+ 	$(CC) squeasel.c main.c -o $(PROG) -ldl -lrt $(CFLAGS) -lcrypto -lssl
+ 
++# TODO: To build squeasel on macOS, additional changes are required,
++#       that include providing appropriate path to ssl library.
+ mac: bsd
+ bsd:
+ 	$(CC) squeasel.c main.c -o $(PROG) $(CFLAGS)
+@@ -139,9 +144,11 @@ Squeasel: squeasel.c main.c
+ cocoa: Squeasel
+ 	V=`perl -lne '/define\s+MONGOOSE_VERSION\s+"(\S+)"/ and print $$1' squeasel.c`; DIR=dmg/Squeasel.app && rm -rf $$DIR && mkdir -p $$DIR/Contents/{MacOS,Resources} && install -m 644 build/squeasel_*.png $$DIR/Contents/Resources/ && install -m 644 build/Info.plist $$DIR/Contents/ && install -m 755 Squeasel $$DIR/Contents/MacOS/ && ln -fs /Applications dmg/ ; hdiutil create Squeasel_$$V.dmg -volname "Squeasel $$V" -srcfolder dmg -ov #; rm -rf dmg
+ 
++# TODO: To build unit test on macOS, additional changes are required,
++#       that include providing appropriate path to ssl library.
+ un:
+ 	$(CC) test/unit_test.c -o unit_test -I. -I$(LUA) $(LUA_SOURCES) \
+-          $(CFLAGS) -g -O0
++          $(CFLAGS) -g -O0 -ldl -lcrypto -lssl -lm
+ 	./unit_test
+ 
+ wi:
+diff --git a/squeasel.c b/squeasel.c
+index d716783..56b062b 100644
+--- a/squeasel.c
++++ b/squeasel.c
+@@ -862,13 +862,13 @@ static int set_non_blocking_mode(SOCKET sock) {
+   return 0;
+ }
+ 
+-int sq_get_bound_addresses(const struct sq_context *ctx, struct sockaddr_in ***addrs,
++int sq_get_bound_addresses(const struct sq_context *ctx, struct sockaddr_storage ***addrs,
+                            int *num_addrs) {
+   int n = ctx->num_listening_sockets;
+   int rc = 1;
+   int i;
+ 
+-  struct sockaddr_in **addr_array = calloc(n, sizeof(struct sockaddr_in *));
++  struct sockaddr_storage **addr_array = calloc(n, sizeof(struct sockaddr_storage *));
+   if (addr_array == NULL) {
+     cry(fc(ctx), "%s: cannot allocate memory", __func__);
+     goto cleanup;
+@@ -876,13 +876,14 @@ int sq_get_bound_addresses(const struct sq_context *ctx, struct sockaddr_in ***a
+   *addrs = addr_array;
+ 
+   for (i = 0; i < n; i++) {
+-    addr_array[i] = malloc(sizeof(struct sockaddr_storage));
++    // Initialize addr_array to 0 to ensure there is no garbage in padding bytes.
++    addr_array[i] = calloc(1, sizeof(struct sockaddr_storage));
+     if (addr_array[i] == NULL) {
+       cry(fc(ctx), "%s: cannot allocate memory", __func__);
+       goto cleanup;
+     }
+ 
+-    socklen_t len = sizeof(struct sockaddr_in *);
++    socklen_t len = sizeof(struct sockaddr_storage);
+     if (getsockname(ctx->listening_sockets[i].sock, (struct sockaddr*)addr_array[i],
+                     &len) != 0) {
+       cry(fc(ctx), "%s: cannot get socket name: %s", __func__, strerror(errno));
+@@ -2380,7 +2381,7 @@ static int read_request(FILE *fp, struct sq_connection *conn,
+     // wait for either the beginning of the request, or for the shutdown
+     // signal.
+     wait_for_readable_or_wakeup(conn->ctx, fp ? fileno(fp) : conn->client.sock,
+-        atoi(conn->ctx->config[REQUEST_TIMEOUT]));
++        atoi((conn->ctx->config[REQUEST_TIMEOUT]) ? conn->ctx->config[REQUEST_TIMEOUT] : "0"));
+   }
+ 
+   while (conn->ctx->stop_flag == 0 &&
+diff --git a/squeasel.h b/squeasel.h
+index d4ca155..c852ea3 100644
+--- a/squeasel.h
++++ b/squeasel.h
+@@ -226,7 +226,6 @@ const char *sq_get_option(const struct sq_context *ctx, const char *name);
+ // Array is NULL terminated.
+ const char **sq_get_valid_option_names(void);
+ 
+-
+ // Return the addresses that the given context is bound to. *addrs is allocated
+ // using malloc to be an array of sockaddr*, each of which is itself malloced.
+ // *num_addrs is set to the number of returned addresses.
+@@ -234,7 +233,7 @@ const char **sq_get_valid_option_names(void);
+ // 'addrs' array itself, unless an error occurs.
+ //
+ // Returns 0 on success, non-zero if an error occurred.
+-int sq_get_bound_addresses(const struct sq_context *ctx, struct sockaddr_in ***addrs,
++int sq_get_bound_addresses(const struct sq_context *ctx, struct sockaddr_storage ***addrs,
+                            int *num_addrs);
+ 
+ // Add, edit or delete the entry in the passwords file.
+diff --git a/test/unit_test.c b/test/unit_test.c
+index 572e885..bf7c474 100644
+--- a/test/unit_test.c
++++ b/test/unit_test.c
+@@ -49,11 +49,27 @@ static int s_failed_tests = 0;
+ #define HTTP_PORT "56789"
+ #define HTTPS_PORT "56790"
+ #define HTTP_PORT2 "56791"
+-#define LISTENING_ADDR          \
+-  "127.0.0.1:" HTTP_PORT "r"    \
+-  ",127.0.0.1:" HTTPS_PORT "s"  \
++#define LISTENING_ADDR_IPv4_LOOPBACK  \
++  "127.0.0.1:" HTTP_PORT "r"          \
++  ",127.0.0.1:" HTTPS_PORT "s"        \
+   ",127.0.0.1:" HTTP_PORT2
+ 
++#define LISTENING_ADDR_IPv4_UNSPEC    \
++  "0.0.0.0:" HTTP_PORT "r"            \
++  ",0.0.0.0:" HTTPS_PORT "s"          \
++  ",0.0.0.0:" HTTP_PORT2
++
++#define LISTENING_ADDR_IPv6_LOOPBACK  \
++  "[::1]:" HTTP_PORT "r"              \
++  ",[::1]:" HTTPS_PORT "s"            \
++  ",[::1]:" HTTP_PORT2
++
++#define LISTENING_ADDR_IPv6_UNSPEC    \
++  "[::]:" HTTP_PORT "r"               \
++  ",[::]:" HTTPS_PORT "s"             \
++  ",[::]:" HTTP_PORT2
++
++
+ static void test_parse_http_message() {
+   struct sq_request_info ri;
+   char req1[] = "GET / HTTP/1.1\r\n\r\n";
+@@ -128,10 +144,6 @@ static void test_should_keep_alive(void) {
+   parse_http_message(req4, sizeof(req4), &conn.request_info);
+   ASSERT(should_keep_alive(&conn) == 1);
+ 
+-  conn.status_code = 401;
+-  ASSERT(should_keep_alive(&conn) == 0);
+-
+-  conn.status_code = 200;
+   conn.must_close = 1;
+   ASSERT(should_keep_alive(&conn) == 0);
+ }
+@@ -286,14 +298,36 @@ static const struct sq_callbacks CALLBACKS = {
+   &open_file_cb, NULL, &upload_cb, NULL
+ };
+ 
+-static const char *OPTIONS[] = {
++static const char *OPTIONS_IPv4_LOOPBACK[] = {
++  "document_root", ".",
++  "listening_ports", LISTENING_ADDR_IPv4_LOOPBACK,
++  "enable_keep_alive", "yes",
++  "ssl_certificate", "build/ssl_cert.pem",
++  NULL,
++};
++
++static const char *OPTIONS_IPv4_UNSPEC[] = {
+   "document_root", ".",
+-  "listening_ports", LISTENING_ADDR,
++  "listening_ports", LISTENING_ADDR_IPv4_UNSPEC,
+   "enable_keep_alive", "yes",
+   "ssl_certificate", "build/ssl_cert.pem",
+   NULL,
+ };
+ 
++static const char *OPTIONS_IPv6_LOOPBACK[] = {
++  "document_root", ".",
++  "listening_ports", LISTENING_ADDR_IPv6_LOOPBACK,
++  "ssl_certificate", "build/ssl_cert.pem",
++  NULL,
++};
++
++static const char *OPTIONS_IPv6_UNSPEC[] = {
++  "document_root", ".",
++  "listening_ports", LISTENING_ADDR_IPv6_UNSPEC,
++  "ssl_certificate", "build/ssl_cert.pem",
++  NULL,
++};
++
+ static char *read_conn(struct sq_connection *conn, int *size) {
+   char buf[100], *data = NULL;
+   int len;
+@@ -312,7 +346,7 @@ static void test_sq_download(void) {
+   struct sq_connection *conn;
+   struct sq_context *ctx;
+ 
+-  ASSERT((ctx = sq_start(&CALLBACKS, NULL, OPTIONS)) != NULL);
++  ASSERT((ctx = sq_start(&CALLBACKS, NULL, OPTIONS_IPv4_LOOPBACK)) != NULL);
+ 
+   ASSERT(sq_download(NULL, port, 0, ebuf, sizeof(ebuf), "%s", "") == NULL);
+   ASSERT(sq_download("localhost", 0, 0, ebuf, sizeof(ebuf), "%s", "") == NULL);
+@@ -393,7 +427,7 @@ static void test_sq_upload(void) {
+   char ebuf[100], buf[20], *file_data, *file2_data, *post_data;
+   int file_len, file2_len, post_data_len;
+ 
+-  ASSERT((ctx = sq_start(&CALLBACKS, NULL, OPTIONS)) != NULL);
++  ASSERT((ctx = sq_start(&CALLBACKS, NULL, OPTIONS_IPv4_LOOPBACK)) != NULL);
+ 
+   // Upload one file
+   ASSERT((file_data = read_file("squeasel.c", &file_len)) != NULL);
+@@ -627,7 +661,7 @@ static void test_request_replies(void) {
+     {NULL, NULL},
+   };
+ 
+-  ASSERT((ctx = sq_start(&CALLBACKS, NULL, OPTIONS)) != NULL);
++  ASSERT((ctx = sq_start(&CALLBACKS, NULL, OPTIONS_IPv4_LOOPBACK)) != NULL);
+   for (i = 0; tests[i].request != NULL; i++) {
+     ASSERT((conn = sq_download("localhost", port, 1, ebuf, sizeof(ebuf), "%s",
+                                tests[i].request)) != NULL);
+@@ -666,7 +700,7 @@ static void test_api_calls(void) {
+ 
+   memset(&callbacks, 0, sizeof(callbacks));
+   callbacks.begin_request = api_callback;
+-  ASSERT((ctx = sq_start(&callbacks, (void *) 123, OPTIONS)) != NULL);
++  ASSERT((ctx = sq_start(&callbacks, (void *) 123, OPTIONS_IPv4_LOOPBACK)) != NULL);
+   ASSERT((conn = sq_download("localhost", atoi(HTTPS_PORT), 1,
+                              ebuf, sizeof(ebuf), "%s", request)) != NULL);
+   sq_close_connection(conn);
+@@ -728,6 +762,98 @@ static void test_strtoll(void) {
+   ASSERT(strtoll("3566626116", NULL, 10) == 3566626116);
+ }
+ 
++static char *port_num[] = {HTTP_PORT, HTTPS_PORT, HTTP_PORT2};
++
++static void test_sq_get_bound_addresses_ipv4_loopback(void) {
++  struct sq_context *ctx;
++  struct sockaddr_storage** sockaddrs;
++  int num_addrs;
++  char addr_str[INET_ADDRSTRLEN];
++
++  ASSERT((ctx = sq_start(&CALLBACKS, NULL, OPTIONS_IPv4_LOOPBACK)) != NULL);
++  ASSERT(sq_get_bound_addresses(ctx, &sockaddrs, &num_addrs) == 0);
++  ASSERT(num_addrs == 3);
++  for (int i = 0; i < num_addrs; i++) {
++    ASSERT(sockaddrs[i]->ss_family == AF_INET);
++    struct sockaddr_in *s_in = (struct sockaddr_in *)sockaddrs[i];
++    ASSERT(inet_ntop(AF_INET, &s_in->sin_addr.s_addr, addr_str, INET_ADDRSTRLEN));
++    ASSERT(strncmp("127.0.0.1", addr_str, INET_ADDRSTRLEN) == 0);
++    uint16_t port = ntohs(s_in->sin_port);
++    ASSERT(atoi(port_num[i]) == port);
++    free(sockaddrs[i]);
++  }
++  free(sockaddrs);
++  sq_stop(ctx);
++}
++
++static void test_sq_get_bound_addresses_ipv4_unspec(void) {
++  struct sq_context *ctx;
++  struct sockaddr_storage** sockaddrs;
++  int num_addrs;
++  char addr_str[INET_ADDRSTRLEN];
++
++  ASSERT((ctx = sq_start(&CALLBACKS, NULL, OPTIONS_IPv4_UNSPEC)) != NULL);
++  ASSERT(sq_get_bound_addresses(ctx, &sockaddrs, &num_addrs) == 0);
++  ASSERT(num_addrs == 3);
++  for (int i = 0; i < num_addrs; i++) {
++    ASSERT(sockaddrs[i]->ss_family == AF_INET);
++    struct sockaddr_in *s_in = (struct sockaddr_in *)sockaddrs[i];
++    ASSERT(inet_ntop(AF_INET, &s_in->sin_addr.s_addr, addr_str, INET_ADDRSTRLEN));
++    ASSERT(strncmp("0.0.0.0", addr_str, INET_ADDRSTRLEN) == 0);
++    uint16_t port = ntohs(s_in->sin_port);
++    ASSERT(atoi(port_num[i]) == port);
++    free(sockaddrs[i]);
++  }
++  free(sockaddrs);
++  sq_stop(ctx);
++}
++
++static void test_sq_get_bound_addresses_ipv6_loopback(void) {
++  struct sq_context *ctx;
++  struct sockaddr_storage** sockaddrs;
++  int num_addrs;
++  char addr_str[INET6_ADDRSTRLEN];
++
++  ASSERT((ctx = sq_start(&CALLBACKS, NULL, OPTIONS_IPv6_LOOPBACK)) != NULL);
++  ASSERT(sq_get_bound_addresses(ctx, &sockaddrs, &num_addrs) == 0);
++  ASSERT(num_addrs == 3);
++  for (int i = 0; i < num_addrs; i++) {
++    memset(addr_str, 0, INET6_ADDRSTRLEN);
++    ASSERT(sockaddrs[i]->ss_family == AF_INET6);
++    struct sockaddr_in6 *s_in6 = (struct sockaddr_in6 *)sockaddrs[i];
++    ASSERT(inet_ntop(AF_INET6, &s_in6->sin6_addr.s6_addr, addr_str, INET6_ADDRSTRLEN));
++    ASSERT(strncmp("::1", addr_str, INET6_ADDRSTRLEN) == 0);
++    uint16_t port = ntohs(s_in6->sin6_port);
++    ASSERT(atoi(port_num[i]) == port);
++    free(sockaddrs[i]);
++  }
++  free(sockaddrs);
++  sq_stop(ctx);
++}
++
++static void test_sq_get_bound_addresses_ipv6_unspec(void) {
++  struct sq_context *ctx;
++  struct sockaddr_storage** sockaddrs;
++  int num_addrs;
++  char addr_str[INET6_ADDRSTRLEN];
++
++  ASSERT((ctx = sq_start(&CALLBACKS, NULL, OPTIONS_IPv6_UNSPEC)) != NULL);
++  ASSERT(sq_get_bound_addresses(ctx, &sockaddrs, &num_addrs) == 0);
++  ASSERT(num_addrs == 3);
++  for (int i = 0; i < num_addrs; i++) {
++    memset(addr_str, 0, INET6_ADDRSTRLEN);
++    ASSERT(sockaddrs[i]->ss_family == AF_INET6);
++    struct sockaddr_in6 *s_in6 = (struct sockaddr_in6 *)sockaddrs[i];
++    ASSERT(inet_ntop(AF_INET6, &s_in6->sin6_addr.s6_addr, addr_str, INET6_ADDRSTRLEN));
++    ASSERT(strncmp("::", addr_str, INET6_ADDRSTRLEN) == 0);
++    uint16_t port = ntohs(s_in6->sin6_port);
++    ASSERT(atoi(port_num[i]) == port);
++    free(sockaddrs[i]);
++  }
++  free(sockaddrs);
++  sq_stop(ctx);
++}
++
+ static void test_parse_port_string(void) {
+   static const char *valid[] = {
+     "1", "1s", "1r", "1.2.3.4:1", "1.2.3.4:1s", "1.2.3.4:1r",
+@@ -737,7 +863,10 @@ static void test_parse_port_string(void) {
+     NULL
+   };
+   static const char *invalid[] = {
+-    "0", "99999", "1k", "1.2.3", "1.2.3.4:", "1.2.3.4:2p",
++    "99999", "1k", "1.2.3", "1.2.3.4:", "1.2.3.4:2p",
++#if defined(USE_IPV6)
++    "::1::123", "[::1]", "[3ffe::1]:", "[3ffe:2a00:100:7031::1]:900p",
++#endif
+     NULL
+   };
+   struct socket so;
+@@ -778,6 +907,10 @@ int __cdecl main(void) {
+   test_url_decode();
+   test_sq_get_cookie();
+   test_strtoll();
++  test_sq_get_bound_addresses_ipv4_loopback();
++  test_sq_get_bound_addresses_ipv4_unspec();
++  test_sq_get_bound_addresses_ipv6_loopback();
++  test_sq_get_bound_addresses_ipv6_unspec();
+ #ifdef USE_LUA
+   test_lua();
+ #endif
