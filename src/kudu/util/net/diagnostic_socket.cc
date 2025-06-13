@@ -21,13 +21,13 @@
 #include <linux/netlink.h>
 #include <linux/sock_diag.h>
 #include <linux/types.h>
-
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
 #include <array>
 #include <cerrno>
+#include <cstring>
 #include <ostream>
 #include <string>
 #include <utility>
@@ -47,8 +47,8 @@ using strings::Substitute;
 
 namespace kudu {
 
-static constexpr const char* const kNonIpV4ErrMsg =
-    "netlink diagnostics is currently supported only on IPv4 TCP sockets";
+static constexpr const char* const kNonIpErrMsg =
+    "netlink diagnostics is currently supported only on IPv4 and IPv6 TCP sockets";
 
 const DiagnosticSocket::SocketStates& DiagnosticSocket::SocketStateWildcard() {
   static constexpr const SocketStates kSocketStateWildcard {
@@ -133,7 +133,7 @@ Status DiagnosticSocket::Query(const Socket& socket,
   vector<TcpSocketInfo> result;
   RETURN_NOT_OK(ReceiveResponse(&result));
   if (result.empty()) {
-    return Status::NotFound("no matching IPv4 TCP socket found");
+    return Status::NotFound("no matching IPv4 or IPv6 TCP socket found");
   }
   if (PREDICT_FALSE(result.size() > 1)) {
     return Status::InvalidArgument("socket address is ambiguous");
@@ -149,20 +149,21 @@ Status DiagnosticSocket::SendRequest(const Socket& socket) const {
 
   Sockaddr src_addr;
   RETURN_NOT_OK(socket.GetSocketAddress(&src_addr));
-  if (PREDICT_FALSE(src_addr.family() != AF_INET)) {
-    return Status::NotSupported(kNonIpV4ErrMsg);
+  if (PREDICT_FALSE(!src_addr.is_ip())) {
+    return Status::NotSupported(kNonIpErrMsg);
   }
 
   Sockaddr dst_addr;
   auto s = socket.GetPeerAddress(&dst_addr);
   if (s.ok()) {
-    if (PREDICT_FALSE(dst_addr.family() != AF_INET)) {
-      return Status::NotSupported(kNonIpV4ErrMsg);
+    DCHECK(src_addr.family() == dst_addr.family());
+    if (PREDICT_FALSE(!dst_addr.is_ip())) {
+      return Status::NotSupported(kNonIpErrMsg);
     }
   } else {
     if (PREDICT_TRUE(s.IsNetworkError() && s.posix_code() == ENOTCONN)) {
       // Assuming it's a listened socket if there isn't a peer at the other side.
-      dst_addr = Sockaddr::Wildcard();
+      dst_addr = Sockaddr::Wildcard(src_addr.family());
     } else {
       return s;
     }
@@ -176,27 +177,46 @@ Status DiagnosticSocket::SendRequest(const Socket& socket) const {
 Status DiagnosticSocket::SendRequest(const Sockaddr& socket_src_addr,
                                      const Sockaddr& socket_dst_addr,
                                      uint32_t socket_states_bitmask) const {
-  // TODO(araina): Remove this once diagnostic socket handling is added for IPv6.
-  if (socket_src_addr.family() == AF_INET6 || socket_dst_addr.family() == AF_INET6) {
-    return Status::NotSupported(kNonIpV4ErrMsg);
-  }
-
+  // Communication is supported between same address family socket interfaces.
+  DCHECK((socket_src_addr.family() == AF_INET && socket_dst_addr.family() == AF_INET) ||
+         (socket_src_addr.family() == AF_INET6 && socket_dst_addr.family() == AF_INET6));
   DCHECK_GE(fd_, 0);
-  const in_addr& src_ipv4 = socket_src_addr.ipv4_addr().sin_addr;
-  const auto src_port = socket_src_addr.port();
-  const in_addr& dst_ipv4 = socket_dst_addr.ipv4_addr().sin_addr;
-  const auto dst_port = socket_dst_addr.port();
 
   constexpr uint32_t kWildcard = static_cast<uint32_t>(-1);
+  struct inet_diag_sockid sock_id;
+
   // All values in inet_diag_sockid are in network byte order.
-  const struct inet_diag_sockid sock_id = {
-    .idiag_sport = htons(src_port),
-    .idiag_dport = htons(dst_port),
-    .idiag_src = { src_ipv4.s_addr, 0, 0, 0, },
-    .idiag_dst = { dst_ipv4.s_addr, 0, 0, 0, },
+  sock_id = {
+    .idiag_sport = htons(socket_src_addr.port()),
+    .idiag_dport = htons(socket_dst_addr.port()),
+    .idiag_src = {0, 0, 0, 0},
+    .idiag_dst = {0, 0, 0, 0},
     .idiag_if = kWildcard,
-    .idiag_cookie = { kWildcard, kWildcard },
+    .idiag_cookie = {kWildcard, kWildcard},
   };
+
+  if (socket_src_addr.family() == AF_INET && socket_dst_addr.family() == AF_INET) {
+    // All values in inet_diag_sockid and in_addr are in network byte order.
+    const auto& src_ipv4 = socket_src_addr.ipv4_addr().sin_addr;
+    const auto& dst_ipv4 = socket_dst_addr.ipv4_addr().sin_addr;
+
+    // For IPv4, only the first element of idiag_src/idiag_dst array is used.
+    // It's already zero-initialized above, so we just set the first element.
+    sock_id.idiag_src[0] = src_ipv4.s_addr;
+    sock_id.idiag_dst[0] = dst_ipv4.s_addr;
+  } else if (socket_src_addr.family() == AF_INET6 && socket_dst_addr.family() == AF_INET6) {
+    // All values in inet_diag_sockid and in6_addr are in network byte order.
+    const auto& src_ipv6 = socket_src_addr.ipv6_addr().sin6_addr;
+    const auto& dst_ipv6 = socket_dst_addr.ipv6_addr().sin6_addr;
+
+    // For IPv6, copy the entire 128-bit address (4 x 32-bit words) using memcpy.
+    // This is more robust than individual assignments for arrays.
+    memcpy(sock_id.idiag_src, src_ipv6.s6_addr32, sizeof(sock_id.idiag_src));
+    memcpy(sock_id.idiag_dst, dst_ipv6.s6_addr32, sizeof(sock_id.idiag_dst));
+  } else {
+    return Status::NotSupported(
+        "Source and destination sockets belong to different protocol families");
+  }
 
   struct TcpSocketRequest {
     struct nlmsghdr nlh;
@@ -208,7 +228,7 @@ Status DiagnosticSocket::SendRequest(const Sockaddr& socket_src_addr,
       .nlmsg_flags = NLM_F_REQUEST | NLM_F_MATCH,
     },
     .idr = {
-      .sdiag_family = AF_INET,
+      .sdiag_family = static_cast<__u8>(socket_src_addr.family()),
       .sdiag_protocol = IPPROTO_TCP,
       .idiag_ext = INET_DIAG_MEMINFO,
       .pad = 0,
@@ -309,8 +329,9 @@ Status DiagnosticSocket::ReceiveResponse(vector<TcpSocketInfo>* result) const {
         return Status::Corruption(Substitute(
             "$0: netlink response is too short", msg_size));
       }
-      // Only IPv4 addresses are expected due to the query pattern.
-      if (PREDICT_FALSE(msg_data->idiag_family != AF_INET)) {
+      // Only IPv4 or IPv6 addresses are expected due to the query pattern.
+      if (PREDICT_FALSE(msg_data->idiag_family != AF_INET &&
+                        msg_data->idiag_family != AF_INET6)) {
         return Status::Corruption(Substitute(
             "$0: unexpected address family in netlink response",
             static_cast<uint32_t>(msg_data->idiag_family)));
@@ -321,8 +342,11 @@ Status DiagnosticSocket::ReceiveResponse(vector<TcpSocketInfo>* result) const {
 
       TcpSocketInfo info;
       info.state = static_cast<SocketState>(msg_data->idiag_state);
-      info.src_addr = msg_data->id.idiag_src[0];  // IPv4 address, network byte order
-      info.dst_addr = msg_data->id.idiag_dst[0];  // IPv4 address, network byte order
+
+      // IPv4 or IPv6 address, network byte order
+      memcpy(info.src_addr, msg_data->id.idiag_src, sizeof(info.src_addr));
+      memcpy(info.dst_addr, msg_data->id.idiag_dst, sizeof(info.dst_addr));
+
       info.src_port = msg_data->id.idiag_sport;
       info.dst_port = msg_data->id.idiag_dport;
       info.rx_queue_size = msg_data->idiag_rqueue;

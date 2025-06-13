@@ -31,7 +31,7 @@ class Sockaddr;
 class Socket;
 
 // A wrapper around Linux-specific sock_diag() API [1] based on the
-// netlink facility [2] to fetch information on IPv4 TCP sockets.
+// netlink facility [2] to fetch information on IPv4 or IPv6 TCP sockets.
 //
 // [1] https://man7.org/linux/man-pages/man7/sock_diag.7.html
 // [2] https://man7.org/linux/man-pages/man7/netlink.7.html
@@ -59,7 +59,7 @@ class DiagnosticSocket final {
 
   typedef std::array<SocketState, SocketState::SS_MAX> SocketStates;
 
-  // Diagnostic information on a TCP IPv4 socket. That's a subset of the
+  // Diagnostic information on a TCP IPv4 or IPv6 socket. That's a subset of the
   // information available via the netlink data structures.
   //
   // TODO(aserbin): if using this API more broadly than fetching information on
@@ -67,12 +67,22 @@ class DiagnosticSocket final {
   //                the source and the destination with Sockaddr class fields.
   struct TcpSocketInfo {
     SocketState state;      // current state of the socket
-    uint32_t src_addr;      // IPv4 source address (network byte order)
-    uint32_t dst_addr;      // IPv4 destination address (network byte order)
+    uint32_t src_addr[4];   // IPv4 or IPv6 source address (network byte order)
+    uint32_t dst_addr[4];   // IPv4 or IPv6 destination address (network byte order)
     uint16_t src_port;      // source port number (network byte order)
     uint16_t dst_port;      // destination port number (network byte order)
     uint32_t rx_queue_size; // RX queue size
     uint32_t tx_queue_size; // TX queue size
+
+    TcpSocketInfo() :
+      state(SS_UNKNOWN),
+      src_addr{},
+      dst_addr{},
+      src_port(0),
+      dst_port(0),
+      rx_queue_size(0),
+      tx_queue_size(0) {
+    }
   };
 
   // Return wildcard for all valid socket states.
@@ -96,7 +106,7 @@ class DiagnosticSocket final {
   // Close the Socket, checking for errors.
   Status Close();
 
-  // Get diagnostic information on IPv4 TCP sockets of the specified states
+  // Get diagnostic information on IPv4 or IPv6 TCP sockets of the specified states
   // having the specified source and the destination address. Wildcard addresses
   // are supported.
   Status Query(const Sockaddr& socket_src_addr,
