@@ -890,17 +890,12 @@ class Schema {
   const typename DataTypeTraits<Type>::cpp_type*
   ExtractColumnFromRow(const RowType& row, size_t idx) const {
     DCHECK_SCHEMA_EQ(*this, *row.schema());
-    const ColumnSchema& col_schema = cols_[idx];
     DCHECK_LT(idx, cols_.size());
+    const ColumnSchema& col_schema = cols_[idx];
     DCHECK_EQ(col_schema.type_info()->type(), Type);
 
-    const void* val;
-    if (col_schema.is_nullable()) {
-      val = row.nullable_cell_ptr(idx);
-    } else {
-      val = row.cell_ptr(idx);
-    }
-
+    const void* val = col_schema.is_nullable() ? row.nullable_cell_ptr(idx)
+                                               : row.cell_ptr(idx);
     return reinterpret_cast<const typename DataTypeTraits<Type>::cpp_type*>(val);
   }
 
