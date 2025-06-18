@@ -89,11 +89,21 @@ fixup_libtool() {
 }
 
 build_cmake() {
-  # Use system curl if it is available: this shortens build times a bit.
-  local use_system_curl=""
-  if pkg-config --exists libcurl; then
-    use_system_curl="--system-curl"
-  fi
+  # It would be nice to use system curl if it is available to shorten build
+  # times, but with curl v8.13.0 and newer some of the CURL_NETRC_OPTION
+  # enumerators were made constants of type long [1], and compiling
+  # cmake v3.25.3 fails when trying to assign those constants to strings.
+  #
+  # [1] https://github.com/curl/curl/commit/2ec00372a
+  local use_system_curl="--no-system-curl"
+
+  # TODO(aserbin): switch to using system curl when migrating to newer
+  #                cmake version that's able to build with curl v8.13.0
+  #                and newer
+  #if pkg-config --exists libcurl; then
+  #  use_system_curl="--system-curl"
+  #fi
+
   CMAKE_BDIR=$TP_BUILD_DIR/$CMAKE_NAME$MODE_SUFFIX
   mkdir -p $CMAKE_BDIR
   pushd $CMAKE_BDIR
