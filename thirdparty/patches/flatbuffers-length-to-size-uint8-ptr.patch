@@ -1,0 +1,58 @@
+--- a/include/flatbuffers/flatbuffer_builder.h	2025-06-18 11:24:45
++++ b/include/flatbuffers/flatbuffer_builder.h	2025-08-22 21:06:24
+@@ -538,6 +538,13 @@
+         CalculateOffset<typename OffsetT<String>::offset_type>());
+   }
+ 
++  template<template<typename> class OffsetT = Offset>
++  OffsetT<String> CreateString(const uint8_t *str, size_t len) {
++    CreateStringImpl(str, len);
++    return OffsetT<String>(
++        CalculateOffset<typename OffsetT<String>::offset_type>());
++  }
++
+   /// @brief Store a string in the buffer, which is null-terminated.
+   /// @param[in] str A const char pointer to a C-string to add to the buffer.
+   /// @return Returns the offset in the buffer where the string starts.
+@@ -559,7 +566,7 @@
+   /// @return Returns the offset in the buffer where the string starts.
+   template<template<typename> class OffsetT = Offset>
+   OffsetT<String> CreateString(const std::string &str) {
+-    return CreateString<OffsetT>(str.c_str(), str.length());
++    return CreateString<OffsetT>(str.c_str(), str.size());
+   }
+ 
+   // clang-format off
+@@ -591,7 +598,7 @@
+            // it.
+            int &...ExplicitArgumentBarrier, typename T>
+   OffsetT<String> CreateString(const T &str) {
+-    return CreateString<OffsetT>(str.data(), str.length());
++    return CreateString<OffsetT>(str.data(), str.size());
+   }
+ 
+   /// @brief Store a string in the buffer, which can contain any binary data.
+@@ -651,7 +658,7 @@
+   /// @param[in] str A const reference to a std::string to store in the buffer.
+   /// @return Returns the offset in the buffer where the string starts.
+   Offset<String> CreateSharedString(const std::string &str) {
+-    return CreateSharedString(str.c_str(), str.length());
++    return CreateSharedString(str.c_str(), str.size());
+   }
+ #endif
+ 
+@@ -1377,6 +1384,14 @@
+     PreAlign<uoffset_t>(len + 1);  // Always 0-terminated.
+     buf_.fill(1);
+     PushBytes(reinterpret_cast<const uint8_t *>(str), len);
++    PushElement(static_cast<uoffset_t>(len));
++  }
++
++  void CreateStringImpl(const uint8_t *str, size_t len) {
++    NotNested();
++    PreAlign<uoffset_t>(len + 1);  // Always 0-terminated.
++    buf_.fill(1);
++    PushBytes(str, len);
+     PushElement(static_cast<uoffset_t>(len));
+   }
+ 

@@ -398,6 +398,10 @@ if [ -n "$F_UNINSTRUMENTED" -o -n "$F_GMOCK" ]; then
   build_gmock_gtest
 fi
 
+if [ -n "$F_UNINSTRUMENTED" -o -n "$F_FLATBUFFERS" ]; then
+  build_flatbuffers
+fi
+
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_PROTOBUF" ]; then
   build_protobuf
 fi
@@ -575,6 +579,10 @@ EXTRA_LDFLAGS="-stdlib=libc++ $EXTRA_LDFLAGS"
 # take up more than 20GiB of disk space.
 EXTRA_CFLAGS="-g $EXTRA_CFLAGS"
 EXTRA_CXXFLAGS="-g $EXTRA_CXXFLAGS"
+
+if [ -n "$F_TSAN" -o -n "$F_FLATBUFFERS" ]; then
+  build_flatbuffers
+fi
 
 if [ -n "$F_TSAN" -o -n "$F_PROTOBUF" ]; then
   build_protobuf

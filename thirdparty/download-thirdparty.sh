@@ -199,6 +199,13 @@ fetch_and_patch \
  "patch -p1 < $TP_DIR/patches/gperftools-Replace-namespace-base-with-namespace-tcmalloc.patch" \
  "autoreconf -fvi"
 
+FLATBUFFERS_PATCHLEVEL=1
+fetch_and_patch \
+ flatbuffers-${FLATBUFFERS_VERSION}.tar.gz \
+ $FLATBUFFERS_SOURCE \
+ $FLATBUFFERS_PATCHLEVEL \
+ "patch -p1 < $TP_DIR/patches/flatbuffers-length-to-size-uint8-ptr.patch"
+
 # NOTE: creating an empty 'third_party/googletest/m4' subdir is a recipe from
 # the $PROTOBUF_SOURCE/autogen.sh file:
 #

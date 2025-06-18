@@ -73,3 +73,29 @@ if(NOT NO_ROCKSDB)
     rocksdb)
 endif()
 ADD_KUDU_TEST(tpch/rpc_line_item_dao-test)
+
+#######################################
+# serdes-test
+#######################################
+PROTOBUF_GENERATE_CPP(
+  ARRAYS_PROTO_SRCS ARRAYS_PROTO_HDRS ARRAYS_PROTO_TGTS
+  SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
+  BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
+  PROTO_FILES serdes/arrays.proto)
+ADD_EXPORTABLE_LIBRARY(serdes_arrays
+  SRCS ${ARRAYS_PROTO_SRCS}
+  DEPS protobuf
+  NONLINK_DEPS ${ARRAYS_PROTO_TGTS})
+
+FLATBUFFERS_GENERATE_CPP(ARRAYS_FBS_HDRS ARRAYS_FBS_TGTS
+  SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
+  BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
+  FBS_FILES serdes/arrays.fbs)
+
+ADD_KUDU_TEST(serdes/serdes-test)
+ADD_KUDU_TEST_DEPENDENCIES(serdes/serdes-test ${ARRAYS_FBS_TGTS})
+if(NOT NO_TESTS)
+  target_link_libraries(serdes-test
+    flatbuffers
+    serdes_arrays)
+endif()

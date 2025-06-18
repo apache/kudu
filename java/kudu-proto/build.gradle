@@ -26,8 +26,10 @@ sourceSets {
   main {
     proto {
       srcDir "${project.rootDir}/../src"
-      // Excluded any test proto files
+      // Exclude any test proto files
       exclude "**/*test*.proto"
+      // Exclude specific .proto files under src/kudu/benchmarks
+      exclude "**/benchmarks/serdes/arrays.proto"
     }
   }
 }

@@ -1,0 +1,67 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+// This is a pair IDL file for arrays.proto in the same directory.
+
+namespace arrays.test;
+
+// These represent one-dimensional arrays of a particular scalar type
+// containing an arbitrary number of elements.
+table Int8 { values:[int8]; }
+table UInt8 { values:[uint8]; }
+table Int16 { values:[int16]; }
+table UInt16 { values:[uint16]; }
+table Int32 { values:[int32]; }
+table UInt32 { values:[uint32]; }
+table Int64 { values:[int64]; }
+table UInt64 { values:[uint64]; }
+table Float { values:[float]; }
+table Double { values:[double]; }
+table String { values:[string]; }
+table Binary { values:[ubyte]; }
+
+// A wrapper to represent one-dimensional arrays of various scalar types
+// under the umbrella of a single field.
+union ScalarArray {
+  Int8,
+  UInt8,
+  Int16,
+  UInt16,
+  Int32,
+  UInt32,
+  Int64,
+  UInt64,
+  Float,
+  Double,
+  String,
+  Binary
+}
+
+// This is to represent a one-dimensional array of a particular scalar type
+// where some of the array's elements might be null/non-valid. The 'data'
+// field is a placeholder for the array's elements, and the 'validity' field
+// contains information on their validity/non-nullness: 'true' means 'valid',
+// 'false' means 'non-valid' (a.k.a. 'null').
+//
+// TODO(aserbin): consider storing 1 bit per data element in the 'validity'
+//                field instead of using whole 'ubyte/uint8'
+table Content {
+  data:ScalarArray;
+  validity:[bool];
+}
+
+root_type Content;

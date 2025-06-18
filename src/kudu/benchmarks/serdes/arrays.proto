@@ -1,0 +1,87 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+// This is a pair IDL file for arrays.fbs in the same directory.
+
+syntax = "proto2";
+package arrays.test;
+
+// This message is to represent a one-dimensional array of the same
+// scalar type where some of the array's elements might be null/non-valid.
+//
+// It's mirroring the 'Content' Flatbuffers table from the arrays.fbs file.
+message ArrayPB {
+  message Bool {
+    repeated bool values = 1;
+  };
+  message Int8 {
+    repeated bytes values = 1;
+  };
+  message UInt8 {
+    repeated bytes values = 1;
+  };
+  message Int32 {
+    repeated int32 values = 1;
+  };
+  message UInt32 {
+    repeated uint32 values = 1;
+  };
+  message Int64 {
+    repeated int64 values = 1;
+  };
+  message UInt64 {
+    repeated uint64 values = 1;
+  };
+  message Float {
+    repeated float values = 1;
+  };
+  message Double {
+    repeated double values = 1;
+  };
+  message String {
+    repeated string values = 1;
+  };
+  message Binary {
+    repeated bytes values = 1;
+  };
+
+  // The 'validity' field contains information on the validity/non-nullness
+  // of the elements in the 'value' union field below: 'true' means 'valid',
+  // 'false' means 'non-valid' (a.k.a. 'null').
+  //
+  // TODO(aserbin): consider storing 1 bit per data element in the 'validity'
+  //                field instead of using 'bool'
+  repeated bool validity = 1;
+
+  // The 'value' union field is the placeholder for the array's elements. For
+  // the sake of simplicity of the logic that uses serialized/de-serialized
+  // data, non-valid/null data elements are always present, but their value
+  // might be arbitrary and should be discarded.
+  oneof value {
+    Bool val_bool = 2;
+    Int8 val_int8 = 3;
+    UInt8 val_uint8 = 4;
+    Int32 val_int32 = 5;
+    UInt32 val_uint32 = 6;
+    Int64 val_int64 = 7;
+    UInt64 val_uint64 = 8;
+    Float val_float = 9;
+    Double val_double = 10;
+    String val_string = 11;
+    Binary val_binary = 12;
+  }
+};

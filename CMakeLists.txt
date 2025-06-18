@@ -1086,6 +1086,13 @@ ADD_THIRDPARTY_LIB(gtest
   STATIC_LIB "${GTEST_STATIC_LIBRARY}"
   SHARED_LIB "${GTEST_SHARED_LIBRARY}")
 
+## Flatbuffers
+find_package(Flatbuffers REQUIRED)
+include_directories(SYSTEM ${FLATBUFFERS_INCLUDE_DIR})
+ADD_THIRDPARTY_LIB(flatbuffers
+  STATIC_LIB "${FLATBUFFERS_STATIC_LIBRARY}"
+  SHARED_LIB "${FLATBUFFERS_SHARED_LIBRARY}")
+
 ## Protobuf
 find_package(Protobuf REQUIRED)
 include_directories(SYSTEM ${PROTOBUF_INCLUDE_DIR})
@@ -1468,11 +1475,18 @@ if (UNIX)
 endif (UNIX)
 
 ############################################################
+# "make fb-gen": generate all Flatbuffers source/header files
+############################################################
+if (UNIX)
+  add_custom_target(fb-gen)
+endif (UNIX)
+
+############################################################
 # "generated-headers" target
 ############################################################
 if (UNIX)
   add_custom_target(generated-headers
-    DEPENDS pb-gen krpc-gen hms_thrift gen_version_info)
+    DEPENDS pb-gen krpc-gen fb-gen hms_thrift gen_version_info)
 endif (UNIX)
 
 ############################################################
