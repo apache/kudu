@@ -441,6 +441,12 @@ if [ "$BUILD_TYPE" = "LINT" ]; then
       LINT_FAILURES="$LINT_FAILURES"$'Java Gradle check failed\n'
     fi
 
+    # Make sure every module generates JARs, that we need to verify.
+    if ! ./gradlew $EXTRA_GRADLE_FLAGS assemble; then
+      LINT_RESULT=1
+      LINT_FAILURES="$LINT_FAILURES"$'Java Gradle assemble failed\n'
+    fi
+
     # Verify the contents of the JARs to ensure the shading and
     # packaging is correct.
     if ! $SOURCE_ROOT/build-support/verify_jars.pl .; then
