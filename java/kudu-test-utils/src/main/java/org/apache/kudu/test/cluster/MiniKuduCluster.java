@@ -793,6 +793,20 @@ public final class MiniKuduCluster implements AutoCloseable {
      */
     public MiniKuduClusterBuilder enableKerberos() {
       enableKerberos = true;
+      // By default, tests do not rely on SPNEGO-protected HTTP endpoints, yet the
+      // C++ ExternalMiniCluster automatically turns SPNEGO on when Kerberos is
+      // enabled. That breaks Java tests which fetch data (e.g. the cluster IPKI
+      // CA certificate) over the masters' web UI without providing Kerberos
+      // credentials. Adding explicit flags to disable SPNEGO for the webservers
+      // during testing. Individual tests that want to
+      // exercise SPNEGO can override this by specifying
+      // '--webserver_require_spnego=true' via @MasterServerConfig or
+      // addMasterServerFlag().
+      // SPNEGO support for Java tests is tracked in JIRA ticket
+      // https://issues.apache.org/jira/browse/KUDU-3673 and may be implemented in the future.
+      // TODO: Implement SPNEGO support for Java tests.
+      addMasterServerFlag("--webserver_require_spnego=false");
+      addTabletServerFlag("--webserver_require_spnego=false");
       return this;
     }
 

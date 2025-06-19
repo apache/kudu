@@ -158,7 +158,8 @@ ExternalMiniClusterOptions::ExternalMiniClusterOptions()
       num_ntp_servers(1),
       ntp_config_mode(BuiltinNtpConfigMode::ALL_SERVERS),
 #endif // #if !defined(NO_CHRONY) ...
-      enable_client_jwt(false) {}
+      enable_client_jwt(false),
+      enable_rest_api(false) {}
 
 ExternalMiniCluster::ExternalMiniCluster()
   : opts_(ExternalMiniClusterOptions()) {
@@ -750,6 +751,9 @@ Status ExternalMiniCluster::CreateMaster(const vector<HostPort>& master_rpc_addr
     flags.emplace_back("--enable_jwt_token_auth=true");
     flags.emplace_back(Substitute("--jwks_url=$0",
                        (opts_.start_jwks) ? oidc_->jwks_url() : "default.url"));
+  }
+  if (opts_.enable_rest_api) {
+    flags.emplace_back("--enable_rest_api=true");
   }
   if (!opts_.master_alias_prefix.empty()) {
     flags.emplace_back(Substitute("--host_for_tests=$0.$1",
@@ -1473,17 +1477,40 @@ Status ExternalDaemon::CreateKerberosConfig(MiniKdc* kdc,
                                             const string& bind_host,
                                             vector<string>* flags,
                                             map<string, string>* env_vars) {
-  string spn = principal_base + "/" + bind_host;
-  string ktpath;
-  RETURN_NOT_OK_PREPEND(kdc->CreateServiceKeytab(spn, &ktpath),
-                        "could not create keytab");
+  // 1. Create ONE keytab file that contains **both** the RPC (kudu/host)
+  //    and the HTTP (HTTP/host) service principals. This mirrors production
+  //    where a single kudu.keytab holds both entries.
+  const string kt_name = principal_base;  // e.g. "kudu"
+  const string spn = Substitute("$0/$1", principal_base, bind_host);
+  const string http_spn = Substitute("HTTP/$0", bind_host);
+  string kt_path;
+
+  // First create/add the RPC principal, which also creates the keytab file.
+  RETURN_NOT_OK_PREPEND(kdc->CreateServiceKeytabWithName(spn, kt_name, &kt_path),
+                        "could not create keytab with RPC principal");
+
+  // Add the HTTP principal into the same keytab file so the WebServer can
+  // authenticate via SPNEGO.
+  RETURN_NOT_OK_PREPEND(kdc->CreateServiceKeytabWithName(http_spn, kt_name, &kt_path),
+                        "could not add HTTP principal to keytab");
+
+  // 2. Propagate the KDC's environment variables (krb5.conf, kdc.conf, etc.).
   *env_vars = kdc->GetEnvVars();
-  *flags =  {
-      Substitute("--keytab_file=$0", ktpath),
+
+  // 3. Append Kerberos‑related gflags so the daemon knows where to find the
+  //    credentials and what level of SASL protection to enforce.
+  *flags = {
+      Substitute("--keytab_file=$0", kt_path),
       Substitute("--principal=$0", spn),
       "--rpc_authentication=required",
       "--superuser_acl=test-admin",
       "--user_acl=test-user",
+      // Enable SPNEGO on the WebServer.
+      // The embedded webserver looks for its HTTP service credentials in the
+      // keytab file referenced by KRB5_KTNAME. InitKerberosForServer sets that
+      // env-var automatically from --keytab_file, so the single keytab we created
+      // above is picked up transparently.
+      "--webserver_require_spnego=true",
   };
 
   return Status::OK();

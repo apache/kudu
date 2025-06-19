@@ -1248,7 +1248,8 @@ Status GetInt64Metric(const HostPort& http_hp,
                       const char* entity_id,
                       const MetricPrototype* metric_proto,
                       const char* value_field,
-                      int64_t* value) {
+                      int64_t* value,
+                      bool is_secure) {
   *value = 0;
   bool found = false;
   // Fetch metrics whose name matches the given prototype.
@@ -1256,6 +1257,9 @@ Status GetInt64Metric(const HostPort& http_hp,
       "http://$0/jsonmetricz?metrics=$1",
       http_hp.ToString(), metric_proto->name());
   EasyCurl curl;
+  if (is_secure) {
+    curl.set_auth(CurlAuthType::SPNEGO);
+  }
   faststring dst;
   RETURN_NOT_OK(curl.FetchURL(url, &dst));
 

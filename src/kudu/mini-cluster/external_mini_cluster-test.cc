@@ -41,6 +41,8 @@
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
+#include "kudu/util/curl_util.h"
+#include "kudu/util/faststring.h"
 
 using std::string;
 using std::tuple;
@@ -341,6 +343,31 @@ TEST_P(ExternalMiniClusterTest, TestAddMaster) {
   // Shutdown the cluster explicitly on top of the one in the cluster's
   // destructor to test repeated calls to Shutdown().
   cluster->Shutdown();
+}
+
+TEST_P(ExternalMiniClusterTest, TestRestApiSpnegoConnectionThroughCurl) {
+  ExternalMiniClusterOptions opts;
+  opts.enable_kerberos = true;
+  opts.enable_rest_api = true;
+  ExternalMiniCluster cluster(std::move(opts));
+  ASSERT_OK(cluster.Start());
+
+  {
+    EasyCurl curl;
+    faststring buf;
+    Status s = curl.FetchURL(
+        Substitute("$0/api/v1/tables", cluster.master(0)->bound_http_hostport().ToString()), &buf);
+    ASSERT_STR_CONTAINS(s.ToString(), "HTTP 401");
+  }
+
+  ASSERT_OK(cluster.kdc()->Kinit("test-admin"));
+  {
+    EasyCurl curl;
+    faststring buf;
+    curl.set_auth(CurlAuthType::SPNEGO);
+    ASSERT_OK(curl.FetchURL(
+        Substitute("$0/api/v1/tables", cluster.master(0)->bound_http_hostport().ToString()), &buf));
+  }
 }
 
 } // namespace cluster

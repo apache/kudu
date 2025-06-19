@@ -1089,6 +1089,7 @@ TEST_F(SecurityITest, IPKICACert) {
   cluster_opts_.num_tablet_servers = 0;
 
   ASSERT_OK(StartCluster());
+  ASSERT_OK(cluster_->kdc()->Kinit("test-admin"));
 
   shared_ptr<KuduClient> client;
   ASSERT_OK(cluster_->CreateClient(nullptr, &client));
@@ -1110,6 +1111,7 @@ TEST_F(SecurityITest, IPKICACert) {
     const auto& http_hp = c->master(master_idx)->bound_http_hostport();
     string url = Substitute("http://$0/ipki-ca-cert", http_hp.ToString());
     EasyCurl curl;
+    curl.set_auth(CurlAuthType::SPNEGO);
     faststring dst;
     auto res = curl.FetchURL(url, &dst);
     *out = dst.ToString();
@@ -1180,11 +1182,13 @@ TEST_F(SecurityITest, IPKICACertWebServerEndPoints) {
   cluster_opts_.num_tablet_servers = 0;
 
   ASSERT_OK(StartCluster());
+  ASSERT_OK(cluster_->kdc()->Kinit("test-admin"));
 
   const auto fetch = [c = cluster_.get()](const string& path, string* out) {
     const auto& http_hp = c->master()->bound_http_hostport();
     string url = Substitute("http://$0/$1", http_hp.ToString(), path);
     EasyCurl curl;
+    curl.set_auth(CurlAuthType::SPNEGO);
     faststring dst;
     auto res = curl.FetchURL(url, &dst);
     *out = dst.ToString();

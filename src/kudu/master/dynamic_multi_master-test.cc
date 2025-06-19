@@ -336,7 +336,8 @@ class DynamicMultiMasterTest : public KuduTest {
                                      master::SysCatalogTable::kSysCatalogTabletId,
                                      &METRIC_log_gc_duration,
                                      "total_count",
-                                     &sys_catalog_wal_gc_count));
+                                     &sys_catalog_wal_gc_count,
+                                     true));
       return sys_catalog_wal_gc_count;
     };
 
