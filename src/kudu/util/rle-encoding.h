@@ -17,6 +17,8 @@
 
 #pragma once
 
+#include <type_traits>
+
 #include <glog/logging.h>
 
 #include "kudu/gutil/port.h"
@@ -382,7 +384,9 @@ inline size_t RleDecoder<T, BIT_WIDTH>::Skip(size_t to_skip) {
 // it decides whether they should be encoded as a literal or repeated run.
 template<typename T, uint8_t BIT_WIDTH>
 inline void RleEncoder<T, BIT_WIDTH>::Put(T value, size_t run_length) {
-  DCHECK(BIT_WIDTH == 64 || value < (1LL << BIT_WIDTH));
+  if constexpr (BIT_WIDTH < 64 && BIT_WIDTH > 1) {
+    DCHECK(value < (1LL << BIT_WIDTH));
+  }
 
   // TODO(perf): remove the loop and use the repeat_count_
   for (; run_length > 0; run_length--) {
