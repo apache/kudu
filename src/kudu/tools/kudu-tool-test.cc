@@ -33,6 +33,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <string_view>
 #include <tuple>  // IWYU pragma: keep
 #include <type_traits>
 #include <unordered_map>
@@ -242,6 +243,7 @@ using std::ostringstream;
 using std::pair;
 using std::set;
 using std::string;
+using std::string_view;
 using std::to_string;
 using std::unique_ptr;
 using std::unordered_map;
@@ -7502,7 +7504,7 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
 
   ASSERT_TRUE(inconsistent_tables.empty());
 
-  for (const string& table : {
+  for (const auto* const table : {
     "control",
     "control_external",
     "uppercase",
@@ -7816,7 +7818,7 @@ TEST_F(ToolTest, TestHmsPrecheck) {
   ASSERT_OK(cluster_->CreateClient(nullptr, &client));
 
   // Create test tables.
-  for (const string& table_name : {
+  for (const auto* const table_name : {
       "a.b",
       "foo.bar",
       "FOO.bar",
@@ -9169,7 +9171,7 @@ TEST_P(GetFlagsTest, TestGetFlags) {
   // CSV formatting is easiest to match against.
   // It seems safe to assume that -help and -logemaillevel will not be
   // set, and that fs_wal_dir will be set to a non-default value.
-  for (const string& daemon_type : { "master", "tserver" }) {
+  for (const string_view daemon_type : { "master", "tserver" }) {
     const string& daemon_addr = daemon_type == "master" ?
                                 cluster_->master()->bound_rpc_addr().ToString() :
                                 cluster_->tablet_server(0)->bound_rpc_addr().ToString();

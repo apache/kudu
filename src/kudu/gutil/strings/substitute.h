@@ -2,6 +2,7 @@
 
 #include <cstring>
 #include <string>
+#include <string_view>
 
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/stringpiece.h"
@@ -75,6 +76,9 @@ class SubstituteArg {
   inline SubstituteArg(const std::string& value)  // NOLINT(runtime/explicit)
     : text_(value.data()), size_(value.size()) {}
   inline SubstituteArg(const StringPiece& value)  // NOLINT(runtime/explicit)
+    : text_(value.data()), size_(value.size()) {}
+
+  inline SubstituteArg(const std::string_view& value)  // NOLINT(runtime/explicit)
     : text_(value.data()), size_(value.size()) {}
 
   // Primitives
