@@ -1520,7 +1520,7 @@ TEST(QuorumUtilTest, MultipleReplicasWithReplaceAttribute) {
     AddPeer(&config, "E", V, '+');
     AddPeer(&config, "F", V, '+');
 
-    for (const string& leader_replica : { "A", "B", "C", "D", "E", "F" }) {
+    for (const string leader_replica : { "A", "B", "C", "D", "E", "F" }) {
       string to_evict;
       ASSERT_TRUE(ShouldEvictReplica(config, leader_replica, 3, &to_evict));
       EXPECT_TRUE(to_evict == "A" || to_evict == "B" || to_evict == "C");
@@ -1539,7 +1539,7 @@ TEST(QuorumUtilTest, MultipleReplicasWithReplaceAttribute) {
     AddPeer(&config, "E", N, '+', {{"PROMOTE", true}});
     AddPeer(&config, "F", N, '+', {{"PROMOTE", true}});
 
-    for (const string& leader_replica : { "A", "B", "C" }) {
+    for (const auto* const leader_replica : { "A", "B", "C" }) {
       // All non-voters are in good shape and not a single one has been
       // promoted yet.
       ASSERT_FALSE(ShouldEvictReplica(config, leader_replica, 3));

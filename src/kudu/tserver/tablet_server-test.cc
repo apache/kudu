@@ -5008,7 +5008,7 @@ TEST_F(TabletServerTest, TestScannerCheckMatchingUser) {
     ASSERT_STR_CONTAINS(s.ToString(), "Not authorized");
   };
 
-  for (const string& other : { "", "bad-guy" }) {
+  for (const string other : { "", "bad-guy" }) {
     TabletServerServiceProxy bad_proxy(
         client_messenger_, mini_server_->bound_rpc_addr(),
         mini_server_->bound_rpc_addr().host());
@@ -5038,7 +5038,7 @@ TEST_F(TabletServerTest, TestScannerCheckMatchingUser) {
       SCOPED_TRACE(resp.DebugString());
       NO_FATALS(verify_authz_error(s));
     }
-    for (const string& id : { scanner_id, checksum_scanner_id }) {
+    for (const auto& id : { scanner_id, checksum_scanner_id }) {
       ScannerKeepAliveRequestPB req;
       req.set_scanner_id(id);
       ScannerKeepAliveResponsePB resp;
