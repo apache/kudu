@@ -299,6 +299,18 @@ class BoundCalculator {
     top_density_ = top->density();
   }
 
+
+// Suppress -Wpsabi warning triggered when returning std::pair<double, double>
+// on GCC 10.1+ in C++17 mode. This function is internal and not part of Kudu's ABI,
+// and all Kudu binaries statically link intermediate libraries, so there is no
+// risk of ABI mismatch.
+//
+// See: https://gcc.gnu.org/gcc-10/changes.html
+#if defined(__GNUC__) && !defined(__clang__) && \
+    (__GNUC__ > 10 || (__GNUC__ == 10 && __GNUC_MINOR__ >= 1))
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpsabi"
+#endif
   // Compute the lower and upper bounds to the 0-1 knapsack problem for the
   // current state.
   std::pair<double, double> ComputeLowerAndUpperBound() const {
@@ -332,6 +344,10 @@ class BoundCalculator {
 
     return {lower_bound, upper_bound};
   }
+#if defined(__GNUC__) && !defined(__clang__) && \
+    (__GNUC__ > 10 || (__GNUC__ == 10 && __GNUC_MINOR__ >= 1))
+#pragma GCC diagnostic pop
+#endif
 
   // Return the items which make up the current lower-bound solution.
   void GetLowerBoundSolution(vector<const RowSetInfo*>* solution) {
