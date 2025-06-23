@@ -837,9 +837,9 @@ Status DoIsOnXfsFilesystem(const string& path, bool* result) {
 
 Status ReadEncryptionHeader(int fd, const string& filename, const EncryptionHeader& server_key,
                             EncryptionHeader* eh) {
-  char magic[7];
-  uint8_t algorithm[1];
-  char file_key[32];
+  char magic[7] = {};
+  uint8_t algorithm[1] = {0};
+  char file_key[32] = {};
   vector<Slice> headerv({ Slice(magic, 7), Slice(algorithm, 1), Slice(file_key, 32) });
   RETURN_NOT_OK(DoReadV(fd, filename, 0, headerv, nullptr));
   if (strncmp(magic, kEncryptionHeaderMagic, 7) != 0) {

@@ -58,15 +58,14 @@ void BloomFileTestBase::SetUp() {
 }
 
 void BloomFileTestBase::AppendBlooms(BloomFileWriter* bfw) {
-  uint64_t key_buf;
-  Slice key_slice(reinterpret_cast<const uint8_t*>(&key_buf),
-                  sizeof(key_buf));
-
   for (uint64_t i = 0; i < FLAGS_n_keys; i++) {
     // Shift the key left a bit so that while querying, we can
     // get a good mix of hits and misses while still staying within
     // the real key range.
-    key_buf = BigEndian::FromHost64(i << kKeyShift);
+    uint64_t key_buf = BigEndian::FromHost64(i << kKeyShift);
+
+    Slice key_slice(reinterpret_cast<const uint8_t*>(&key_buf),
+                    sizeof(key_buf));
     ASSERT_OK_FAST(bfw->AppendKeys(&key_slice, 1));
   }
 }
