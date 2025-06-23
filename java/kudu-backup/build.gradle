@@ -68,13 +68,13 @@ dependencies {
 shadowJar {
   dependencies {
     exclude(dependency(libs.jsr305))
-    exclude(dependency("log4j:log4j:.*"))
+    exclude(dependency("log4j:log4j::.*"))
     exclude(dependency("org.apache.arrow::.*"))
     exclude(dependency("org.apache.avro::.*"))
     exclude(dependency("org.apache.curator::.*"))
     exclude(dependency("org.apache.hadoop::.*"))
     exclude(dependency("org.apache.ivy:ivy::.*"))
-    exclude(dependency("org.apache.parquet:.*"))
+    exclude(dependency("org.apache.parquet::.*"))
     exclude(dependency("org.apache.spark::.*"))
     exclude(dependency("org.codehaus.janino::.*"))
     exclude(dependency("org.glassfish.jersey.core::.*"))

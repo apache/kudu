@@ -42,45 +42,50 @@ dependencies {
 
 shadowJar {
   dependencies {
-    exclude(dependency("log4j::.*"))
-    exclude(dependency("org.apache.hadoop::.*"))
-    exclude(dependency("org.apache.hive::.*"))
-    exclude(dependency("org.apache.hbase::.*"))
-    exclude(dependency("org.apache.hbase.thirdparty::.*"))
-    exclude(dependency("junit::.*"))
-    exclude(dependency("javax.servlet.jsp::.*"))
-    exclude(dependency("javax.jdo::.*"))
-    exclude(dependency("com.fasterxml.woodstox:::.*"))
-    exclude(dependency("org.fusesource.leveldbjni::.*"))
-    exclude(dependency("org.apache.parquet:.*"))
+    exclude(dependency("ch.qos.reload4j::.*"))
     exclude(dependency("com.fasterxml.jackson.core::.*"))
-    exclude(dependency("org.codehaus.jackson::.*"))
     exclude(dependency("com.fasterxml.jackson.jaxrs::.*"))
     exclude(dependency("com.fasterxml.jackson.module::.*"))
-    exclude(dependency("commons-dbcp::.*"))
-    exclude(dependency("org.apache.kerby:.*"))
-    exclude(dependency("org.apache.commons::.*"))
-    exclude(dependency("org.eclipse.jetty::.*"))
+    exclude(dependency("com.fasterxml.woodstox:::.*"))
     exclude(dependency("com.nimbusds::.*"))
-    exclude(dependency("org.apache.curator::.*"))
+    exclude(dependency("com.sun.jersey::.*"))
+    exclude(dependency("com.sun.xml.bind::.*"))
+    exclude(dependency("commons-dbcp::.*"))
+    exclude(dependency("javax.jdo::.*"))
+    exclude(dependency("javax.servlet.jsp::.*"))
     exclude(dependency("joda-time::.*"))
+    exclude(dependency("junit::.*"))
+    exclude(dependency("org.apache.commons::.*"))
+    exclude(dependency("org.apache.curator::.*"))
+    exclude(dependency("org.apache.hadoop::.*"))
+    exclude(dependency("org.apache.hbase.thirdparty::.*"))
+    exclude(dependency("org.apache.hbase::.*"))
+    exclude(dependency("org.apache.hive::.*"))
     exclude(dependency("org.apache.logging.log4j::.*"))
     exclude(dependency("org.apache.orc::.*"))
-    exclude(dependency("org.xerial.snappy::.*"))
-    exclude(dependency("org.datanucleus::.*"))
-    exclude(dependency("com.sun.jersey::.*"))
-    exclude(dependency("sqlline::.*"))
+    exclude(dependency("org.apache.parquet::.*"))
     exclude(dependency("org.apache.thrift::.*"))
+    exclude(dependency("org.codehaus.jackson::.*"))
+    exclude(dependency("org.datanucleus::.*"))
+    exclude(dependency("org.eclipse.jetty::.*"))
     exclude(dependency("org.ehcache::.*"))
-    exclude(dependency("com.sun.xml.bind::.*"))
+    exclude(dependency("org.fusesource.leveldbjni::.*"))
+    exclude(dependency("org.xerial.snappy::.*"))
+    exclude(dependency("sqlline::.*"))
   }
-  exclude 'META-INF/services/**'
-  exclude 'tables/**'
-  exclude 'codegen/**'
-  exclude 'javax/**'
   exclude '**/*.dll'
+  exclude '**/*.sql'
+  exclude '**/package-info.class'
+  exclude '**/*.md'
+  exclude 'META-INF/services/**'
+  exclude 'META-INF/NOTICE-binary'
+  exclude 'META-INF/jersey-module-version'
+  exclude 'codegen/**'
   exclude 'images/**'
+  exclude 'javax/**'
   exclude 'org/apache/tools/ant/**'
+  exclude 'tables/**'
+  exclude 'org/apache/log4j/**'
 
   minimize()
 }

@@ -58,6 +58,7 @@ my $pat_allow_kudu_unshaded = qr{^org/apache/kudu/.*};
 my $pat_allow_nonkudu_unshaded = qr{^(?:com/databricks/spark/avro|
                                         com/stumbleupon/async/|
                                         org/apache/parquet/|
+                                        org/apache/flink/|
                                         org/apache/yetus/)}x;
 
 if (scalar @ARGV != 1) {

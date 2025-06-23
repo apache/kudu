@@ -79,7 +79,6 @@ dependencies {
 
 shadowJar {
   dependencies {
-    exclude(dependency("log4j:log4j:.*"))
     exclude(dependency(libs.jsr305))
     exclude(dependency(libs.log4jApi))
     exclude(dependency(libs.log4jCore))

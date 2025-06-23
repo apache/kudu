@@ -35,6 +35,28 @@ dependencies {
     testImplementation libs.log4jSlf4jImpl
 }
 
+shadowJar {
+    dependencies {
+        exclude(dependency("com.twitter::.*"))
+        exclude(dependency("org.javassist::.*"))
+        exclude(dependency("org.lz4::.*"))
+        exclude(dependency("org.objenesis::.*"))
+        exclude(dependency("org.xerial.snappy::.*"))
+        exclude(dependency("org.yaml::.*"))
+        exclude "META-INF/licenses/**"
+        exclude "META-INF/services/org.apache.flink.*"
+        exclude "assets/**"
+        exclude "com/esotericsoftware/**"
+        exclude "flink-jaas.conf"
+        exclude "flink-rpc-akka.jar"
+        exclude "javax/annotation/**"
+        exclude "one/profiler/**"
+        exclude "org/snakeyaml/**"
+    }
+
+    minimize()
+}
+
 // kudu-replication has no public Javadoc.
 javadoc {
     enabled = false
