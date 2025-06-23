@@ -63,7 +63,7 @@ function(THRIFT_GENERATE_CPP SRCS HDRS TGTS)
 
   set(options FB303)
   set(one_value_args SOURCE_ROOT BINARY_ROOT)
-  set(multi_value_args EXTRA_THRIFT_PATHS THRIFT_FILES)
+  set(multi_value_args EXTRA_THRIFT_PATHS THRIFT_FILES EXTRA_OPTIONS)
   cmake_parse_arguments(ARG "${options}" "${one_value_args}" "${multi_value_args}" ${ARGN})
   if(ARG_UNPARSED_ARGUMENTS)
     message(SEND_ERROR "Error: unrecognized arguments: ${ARG_UNPARSED_ARGUMENTS}")
@@ -112,6 +112,12 @@ function(THRIFT_GENERATE_CPP SRCS HDRS TGTS)
       list(APPEND ${HDRS} fb303_types.h FacebookService.h)
     endif()
 
+    # The `EXTRA_OPTIONS` argument allows passing additional flags to the Thrift compiler
+    # for specific invocations. This is useful to suppress warnings only for selected files.
+    #
+    # For example, the `-nowarn` flag is used with `hive_metastore.thrift`, which is copied
+    # from the Hive project and cannot be modified. This avoids noisy warnings about missing
+    # field IDs without globally muting all warnings in unrelated Thrift files.
     add_custom_command(
       OUTPUT ${THRIFT_CC_OUT} ${THRIFT_H_OUT}
       DEPENDS ${ABS_FIL}
@@ -123,6 +129,7 @@ function(THRIFT_GENERATE_CPP SRCS HDRS TGTS)
         -I ${ARG_SOURCE_ROOT}
         # Used to find built-in .thrift files (e.g. fb303.thrift)
         -I ${THIRDPARTY_INSTALL_CURRENT_DIR}
+        ${ARG_EXTRA_OPTIONS}
         ${EXTRA_THRIFT_PATH_ARGS} ${ABS_FIL}
       COMMENT "Running C++ thrift compiler on ${FIL}"
       VERBATIM )

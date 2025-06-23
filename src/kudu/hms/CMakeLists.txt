@@ -22,6 +22,7 @@
 THRIFT_GENERATE_CPP(
   HMS_THRIFT_SRCS HMS_THRIFT_HDRS HMS_THRIFT_TGTS
   THRIFT_FILES hive_metastore.thrift
+  EXTRA_OPTIONS -nowarn
   FB303)
 
 add_library(hms_thrift ${HMS_THRIFT_SRCS})
