@@ -16,6 +16,7 @@
 // under the License.
 
 #include <cstdint>
+#include <cstdlib>
 #include <cstdio>
 #include <cstring>
 #include <memory>
@@ -40,6 +41,7 @@
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
+#include "kudu/util/test_util.h"
 
 using std::string;
 using std::unique_ptr;
@@ -423,9 +425,20 @@ TEST(TestIndexBlock, EmptyKeys) {
 
 // Corrupt the trailer or its size in the block and try to parse the block.
 TEST(TestIndexBlock, CorruptedTrailer) {
+  // Seed the random number generator once at the beginning of the test.
+  SeedRandom();  // Ensures pseudo-randomness across runs
+
   // Data chunk is too small.
   {
-    uint8_t buf[3];
+    // Generate a single random integer
+    int r = rand();
+
+    // Extract 3 bytes from the random int
+    uint8_t buf[3] = {
+      static_cast<uint8_t>(r & 0xFF),
+      static_cast<uint8_t>((r >> 8) & 0xFF),
+      static_cast<uint8_t>((r >> 16) & 0xFF)
+    };
     Slice b(buf, sizeof(buf));
     IndexBlockReader reader;
     const auto s = reader.Parse(b);
