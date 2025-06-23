@@ -464,7 +464,7 @@ Status ReadableLogSegment::ReadHeader() {
 
 
 Status ReadableLogSegment::ReadHeaderMagicAndHeaderLength(uint32_t *len) const {
-  uint8_t scratch[kLogSegmentHeaderMagicAndHeaderLength];
+  uint8_t scratch[kLogSegmentHeaderMagicAndHeaderLength] = {};
   Slice slice(scratch, kLogSegmentHeaderMagicAndHeaderLength);
   RETURN_NOT_OK(file_->Read(file_->GetEncryptionHeaderSize(), slice));
   RETURN_NOT_OK(ParseHeaderMagicAndHeaderLength(slice, len));
@@ -537,7 +537,7 @@ Status ReadableLogSegment::ReadFooter() {
 }
 
 Status ReadableLogSegment::ReadFooterMagicAndFooterLength(uint32_t *len) const {
-  uint8_t scratch[kLogSegmentFooterMagicAndFooterLength];
+  uint8_t scratch[kLogSegmentFooterMagicAndFooterLength] = {};
   Slice slice(scratch, kLogSegmentFooterMagicAndFooterLength);
 
   CHECK_GT(file_size(), kLogSegmentFooterMagicAndFooterLength);
