@@ -18,6 +18,7 @@
 #include "kudu/server/default_path_handlers.h"
 
 #include <sys/stat.h>
+// IWYU pragma: no_include <bits/struct_stat.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -31,6 +32,7 @@
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
+
 #include "kudu/util/prometheus_writer.h"
 #include "kudu/util/version_info.h"
 #include "kudu/util/version_info.pb.h"
@@ -85,11 +87,12 @@ TAG_FLAG(web_log_bytes, advanced);
 TAG_FLAG(web_log_bytes, runtime);
 
 DEFINE_string(metrics_default_level, "debug",
-              "The default severity level to use when filtering the metrics. "
-              "Valid choices are 'debug', 'info', and 'warn'. "
-              "The levels are ordered and lower levels include the levels above them. "
-              "This value can be overridden by passing the level query parameter to the "
-              "'/metrics' endpoint.");
+              "The default severity level to use when filtering the metrics, "
+              "both in JSON and Prometheus formats. Valid choices are 'debug', "
+              "'info', and 'warn'. The levels are ordered and lower levels "
+              "include the levels above them. This value can be overridden "
+              "by passing the level query parameter to the '/metrics' endpoint "
+              "when fetching metrics in JSON format.");
 TAG_FLAG(metrics_default_level, advanced);
 TAG_FLAG(metrics_default_level, runtime);
 TAG_FLAG(metrics_default_level, evolving);
@@ -523,8 +526,12 @@ static void WriteMetricsAsJson(const MetricRegistry* const metrics,
 static void WriteMetricsAsPrometheus(const MetricRegistry* const metrics,
                                      const Webserver::WebRequest& /*req*/,
                                      Webserver::PrerenderedWebResponse* resp) {
+  MetricPrometheusOptions opts;
+  opts.filters.entity_level = FLAGS_metrics_default_level;
+
   PrometheusWriter writer(&resp->output);
-  WARN_NOT_OK(metrics->WriteAsPrometheus(&writer), "Couldn't write Prometheus metrics over HTTP");
+  WARN_NOT_OK(metrics->WriteAsPrometheus(&writer, opts),
+              "couldn't write Prometheus metrics over HTTP");
 }
 
 void RegisterMetricsJsonHandler(Webserver* webserver, const MetricRegistry* const metrics) {

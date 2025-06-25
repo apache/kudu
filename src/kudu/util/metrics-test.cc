@@ -56,8 +56,6 @@ using std::vector;
 
 DECLARE_int32(metrics_retirement_age_ms);
 
-DECLARE_string(metrics_default_level);
-
 namespace kudu {
 
 METRIC_DEFINE_entity(test_entity);
@@ -174,7 +172,7 @@ TEST_F(MetricsTest, TableAndTabletPrometheusTest) {
 
   ostringstream output;
   PrometheusWriter writer(&output);
-  ASSERT_OK(registry_.WriteAsPrometheus(&writer));
+  ASSERT_OK(registry_.WriteAsPrometheus(&writer, {}));
 
   // The order of elements in the output depends on the ordering in hash-map
   // of metric entities and might be different in different STL implementations.
