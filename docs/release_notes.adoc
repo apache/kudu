@@ -138,6 +138,9 @@ Support for Python versions 3.0 to 3.5 (inclusive) has been discontinued.
   https://issues.apache.org/jira/browse/KUDU-3629[KUDU-3629])
 * Upgraded Gradle to version 7.6.4
   (see https://issues.apache.org/jira/browse/KUDU-3551[KUDU-3551]).
+* Kudu now uses x509_get_signature_info() (OpenSSL 1.1.1+) to correctly detect hash algorithms
+  for RSASSA-PSS certificate signatures, fixing a limitation in the previous approach.
+  (see https://issues.apache.org/jira/browse/KUDU-3663[KUDU-3663]).
 
 [[rn_1.18.0_fixed_issues]]
 == Fixed issues
@@ -229,7 +232,6 @@ Support for Python versions 3.0 to 3.5 (inclusive) has been discontinued.
   (see https://issues.apache.org/jira/browse/KUDU-3633[KUDU-3633]).
 * Fixed crash of Kudu CLI tool namely kudu table copy in cases of invalid inputs
   (see https://issues.apache.org/jira/browse/KUDU-3623[KUDU-3623]).
-
 [[rn_1.18.0_wire_compatibility]]
 == Wire Protocol compatibility
 
