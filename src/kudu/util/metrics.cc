@@ -404,19 +404,14 @@ Status MetricEntity::WriteAsJson(JsonWriter* writer, const MetricJsonOptions& op
   return Status::OK();
 }
 
-Status MetricEntity::WriteAsPrometheus(PrometheusWriter* writer) const {
+Status MetricEntity::WriteAsPrometheus(
+    PrometheusWriter* writer, const MetricPrometheusOptions& opts) const {
   static const string kIdMaster = "kudu.master";
   static const string kIdTabletServer = "kudu.tabletserver";
 
-  // Empty filters result in getting all the metrics for this MetricEntity.
-  //
-  // TODO(aserbin): instead of hard-coding, pass MetricFilters as a parameter
-  MetricFilters filters;
-  filters.entity_level = "debug";
-
   MetricMap metrics;
   AttributeMap attrs;
-  const auto s = GetMetricsAndAttrs(filters, &metrics, &attrs);
+  const auto s = GetMetricsAndAttrs(opts.filters, &metrics, &attrs);
   if (s.IsNotFound()) {
     // Status::NotFound is returned when this entity has been filtered, treat it
     // as OK, and skip printing it.
@@ -591,14 +586,15 @@ Status MetricRegistry::WriteAsJson(JsonWriter* writer, const MetricJsonOptions& 
   return Status::OK();
 }
 
-Status MetricRegistry::WriteAsPrometheus(PrometheusWriter* writer) const {
+Status MetricRegistry::WriteAsPrometheus(
+    PrometheusWriter* writer, const MetricPrometheusOptions& opts) const {
   EntityMap entities;
   {
     std::lock_guard l(lock_);
     entities = entities_;
   }
   for (const auto& e : entities) {
-    WARN_NOT_OK(e.second->WriteAsPrometheus(writer),
+    WARN_NOT_OK(e.second->WriteAsPrometheus(writer, opts),
                 Substitute("Failed to write entity $0 as Prometheus", e.second->id()));
   }
 

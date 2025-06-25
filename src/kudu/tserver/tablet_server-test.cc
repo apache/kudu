@@ -216,6 +216,7 @@ DECLARE_int32(workload_stats_metric_collection_interval_ms);
 DECLARE_string(block_manager);
 DECLARE_string(env_inject_eio_globs);
 DECLARE_string(env_inject_full_globs);
+DECLARE_string(metrics_default_level);
 DECLARE_string(webserver_doc_root);
 DECLARE_uint32(tablet_apply_pool_overload_threshold_ms);
 
@@ -4366,7 +4367,52 @@ TEST_F(TabletServerTest, SmokeTestPrometheusMetrics) {
   ASSERT_OK(c.FetchURL(Substitute("http://$0/metrics_prometheus",
                                   mini_server_->bound_http_addr().ToString()),
                        &buf));
-  CheckPrometheusOutput(buf.ToString());
+  const auto& str = buf.ToString();
+  NO_FATALS(CheckPrometheusOutput(str));
+
+  // Since the defaut severity level for metrics is 'debug', there should
+  // be metrics of 'debug', 'info', and 'warn' levels in the output.
+  ASSERT_STR_MATCHES(str, "raft_term ");            // level: debug
+  ASSERT_STR_MATCHES(str, "threads_running ");      // level: info
+  ASSERT_STR_MATCHES(str, "rpcs_queue_overflow ");  // level: warn
+}
+
+// Verify that Prometheus format Kudu metrics for tablet servers are output
+// in accordance with the severity level filtering controlled by the
+// --metrics_default_level flag. This isn't an exhaustive scenario in the sense
+// of checking for the presense or the absense of _all_ the metrics
+// of a particular severity level, but rather a smoke test scenario
+// to check for the presence and absense of just a few metrics,
+// aiming to detect regressions.
+TEST_F(TabletServerTest, PrometheusMetricsLevelFiltering) {
+  const auto url = Substitute("http://$0/metrics_prometheus",
+                              mini_server_->bound_http_addr().ToString());
+  {
+    FLAGS_metrics_default_level = "info";
+    EasyCurl c;
+    faststring buf;
+    ASSERT_OK(c.FetchURL(url, &buf));
+    const auto& str = buf.ToString();
+    NO_FATALS(CheckPrometheusOutput(str));
+    // There should be no metrics of 'debug' level in the output.
+    ASSERT_STR_NOT_MATCHES(str, "raft_term ");      // level: debug
+    // There should be metrics of both 'info' and 'warn' levels.
+    ASSERT_STR_MATCHES(str, "threads_running ");    // level: info
+    ASSERT_STR_MATCHES(str, "rpcs_queue_overflow ");// level: warn
+  }
+  {
+    FLAGS_metrics_default_level = "warn";
+    EasyCurl c;
+    faststring buf;
+    ASSERT_OK(c.FetchURL(url, &buf));
+    const auto& str = buf.ToString();
+    NO_FATALS(CheckPrometheusOutput(str));
+    // There should be no metrics of 'debug' or 'info' level in the output.
+    ASSERT_STR_NOT_MATCHES(str, "raft_term ");        // level: debug
+    ASSERT_STR_NOT_MATCHES(str, "threads_running ");  // level: info
+    // There should be metrics only of the 'warn' level.
+    ASSERT_STR_MATCHES(str, "rpcs_queue_overflow ");  // level: warn
+  }
 }
 
 // Test that hostname is set properly for TabletServer's Messenger.

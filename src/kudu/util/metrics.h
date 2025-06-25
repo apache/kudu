@@ -512,6 +512,17 @@ struct MetricJsonOptions {
   MetricMergeRules merge_rules;
 };
 
+// Options to control the behavior of the metric end-points producing Kudu
+// metrics in the Prometheus format.
+struct MetricPrometheusOptions {
+  // Metrics are filtered per information in the 'filters' field,
+  // see the in-line MetricFilters's documentation for more details.
+  //
+  // NOTE: for Prometheus format metrics, the only applicable filtering
+  //       is by 'MetricFilters::entity_level' field.
+  MetricFilters filters;
+};
+
 class MetricEntityPrototype {
  public:
   explicit MetricEntityPrototype(const char* name);
@@ -667,7 +678,8 @@ class MetricEntity : public RefCountedThreadSafe<MetricEntity> {
   // See MetricRegistry::WriteAsJson()
   Status WriteAsJson(JsonWriter* writer, const MetricJsonOptions& opts) const;
 
-  Status WriteAsPrometheus(PrometheusWriter* writer) const;
+  Status WriteAsPrometheus(PrometheusWriter* writer,
+                           const MetricPrometheusOptions& opts) const;
 
   // Collect metrics of this entity to 'collections'. Metrics will be filtered by 'filters',
   // and will be merged under the rule of 'merge_rules'.
@@ -884,7 +896,8 @@ class MetricRegistry {
   Status WriteAsJson(JsonWriter* writer, const MetricJsonOptions& opts) const;
 
   // Writes metrics in this registry to given Prometheus 'writer'.
-  Status WriteAsPrometheus(PrometheusWriter* writer) const;
+  Status WriteAsPrometheus(PrometheusWriter* writer,
+                           const MetricPrometheusOptions& opts) const;
   // For each registered entity, retires orphaned metrics. If an entity has no more
   // metrics and there are no external references, entities are removed as well.
   //
@@ -898,7 +911,7 @@ class MetricRegistry {
   }
 
  private:
-  typedef std::unordered_map<std::string, scoped_refptr<MetricEntity> > EntityMap;
+  typedef std::unordered_map<std::string, scoped_refptr<MetricEntity>> EntityMap;
   EntityMap entities_;
 
   mutable simple_spinlock lock_;

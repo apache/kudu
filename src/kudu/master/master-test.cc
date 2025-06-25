@@ -150,6 +150,7 @@ DECLARE_int64(on_disk_size_for_testing);
 DECLARE_string(ipki_private_key_password_cmd);
 DECLARE_string(location_mapping_cmd);
 DECLARE_string(log_filename);
+DECLARE_string(metrics_default_level);
 DECLARE_string(tsk_private_key_password_cmd);
 DECLARE_string(webserver_doc_root);
 
@@ -3850,7 +3851,57 @@ TEST_F(MasterTest, SmokeTestPrometheusMetrics) {
   ASSERT_OK(c.FetchURL(Substitute("http://$0/metrics_prometheus",
                                   mini_master_->bound_http_addr().ToString()),
                        &buf));
-  CheckPrometheusOutput(buf.ToString());
+  const auto& str = buf.ToString();
+  NO_FATALS(CheckPrometheusOutput(str));
+
+  // Since the defaut severity level for metrics is 'debug', there should
+  // be metrics of 'debug', 'info', and 'warn' levels in the output.
+  ASSERT_STR_MATCHES(str, "raft_term ");            // level: debug
+  ASSERT_STR_MATCHES(str, "threads_running ");      // level: info
+  ASSERT_STR_MATCHES(str, "rpcs_queue_overflow ");  // level: warn
+}
+
+// Verify that Prometheus format metrics for Kudu masters are output
+// in accordance with the severity level filtering controlled by
+// the --metrics_default_level flag. This isn't an exhaustive scenario
+// in the sense of checking for the presense or absense of _all_ the metrics
+// of a particular severity level, but rather a smoke test scenario
+// to check for the presence and absense of just a few metrics,
+// aiming to detect regressions.
+TEST_F(MasterTest, PrometheusMetricsLevelFiltering) {
+  constexpr char kTableName[] = "prom_metrics_level_filterting";
+  const Schema kTableSchema(
+      { ColumnSchema("key", INT32), ColumnSchema("v1", UINT64) }, 1);
+  ASSERT_OK(CreateTable(kTableName, kTableSchema));
+
+  const auto url = Substitute("http://$0/metrics_prometheus",
+                              mini_master_->bound_http_addr().ToString());
+  {
+    FLAGS_metrics_default_level = "info";
+    EasyCurl c;
+    faststring buf;
+    ASSERT_OK(c.FetchURL(url, &buf));
+    const auto& str = buf.ToString();
+    NO_FATALS(CheckPrometheusOutput(str));
+    // There should be no metrics of 'debug' level in the output.
+    ASSERT_STR_NOT_MATCHES(str, "raft_term ");      // level: debug
+    // There should be metrics of both 'info' and 'warn' levels.
+    ASSERT_STR_MATCHES(str, "threads_running ");    // level: info
+    ASSERT_STR_MATCHES(str, "rpcs_queue_overflow ");// level: warn
+  }
+  {
+    FLAGS_metrics_default_level = "warn";
+    EasyCurl c;
+    faststring buf;
+    ASSERT_OK(c.FetchURL(url, &buf));
+    const auto& str = buf.ToString();
+    NO_FATALS(CheckPrometheusOutput(str));
+    // There should be no metrics of 'debug' or 'info' level in the output.
+    ASSERT_STR_NOT_MATCHES(str, "raft_term ");        // level: debug
+    ASSERT_STR_NOT_MATCHES(str, "threads_running ");  // level: info
+    // There should be metrics only of the 'warn' level.
+    ASSERT_STR_MATCHES(str, "rpcs_queue_overflow ");  // level: warn
+  }
 }
 
 } // namespace master
