@@ -65,11 +65,13 @@ TAG_FLAG(raft_get_node_instance_timeout_ms, hidden);
 DEFINE_double(fault_crash_on_leader_request_fraction, 0.0,
               "Fraction of the time when the leader will crash just before sending an "
               "UpdateConsensus RPC. (For testing only!)");
+TAG_FLAG(fault_crash_on_leader_request_fraction, runtime);
 TAG_FLAG(fault_crash_on_leader_request_fraction, unsafe);
 
 DEFINE_double(fault_crash_after_leader_request_fraction, 0.0,
               "Fraction of the time when the leader will crash on getting a response for an "
               "UpdateConsensus RPC. (For testing only!)");
+TAG_FLAG(fault_crash_after_leader_request_fraction, runtime);
 TAG_FLAG(fault_crash_after_leader_request_fraction, unsafe);
 
 

@@ -60,6 +60,7 @@ DECLARE_int32(consensus_rpc_timeout_ms);
 DECLARE_int32(num_replicas);
 DECLARE_int32(num_tablet_servers);
 
+using std::pair;
 using std::string;
 using std::thread;
 using std::unique_ptr;
@@ -83,6 +84,7 @@ class ExactlyOnceSemanticsITest : public TabletServerIntegrationTestBase {
     FLAGS_consensus_rpc_timeout_ms = kConsensusRpcTimeoutForTests;
   }
 
+ protected:
   // Writes rows to the tablet server listening on 'address' and collects all
   // successful responses.
   //
@@ -92,28 +94,30 @@ class ExactlyOnceSemanticsITest : public TabletServerIntegrationTestBase {
   //
   // Uses a PRNG to generate the rows to write so that multiple threads try to
   // write the same rows.
-  void WriteRowsAndCollectResponses(Sockaddr address,
+  void WriteRowsAndCollectResponses(const Sockaddr& address,
                                     int thread_idx,
                                     int num_batches,
                                     Barrier* barrier,
                                     vector<WriteResponsePB>* responses);
 
-  void DoTestWritesWithExactlyOnceSemantics(const vector<string>& ts_flags,
-                                            const vector<string>& master_flags,
-                                            int num_batches,
-                                            bool allow_crashes);
+  void DoTestWritesWithExactlyOnceSemantics(
+      const vector<string>& master_flags,
+      const vector<string>& ts_flags,
+      const vector<pair<string, string>>& ts_flags_after_start,
+      int num_batches,
+      bool allow_crashes);
 
- protected:
-  const int kBatchSize = 10;
+  static constexpr const int kBatchSize = 10;
 
-  int seed_;
+  const int seed_;
 };
 
-void ExactlyOnceSemanticsITest::WriteRowsAndCollectResponses(Sockaddr address,
-                                                             int thread_idx,
-                                                             int num_batches,
-                                                             Barrier* barrier,
-                                                             vector<WriteResponsePB>* responses) {
+void ExactlyOnceSemanticsITest::WriteRowsAndCollectResponses(
+    const Sockaddr& address,
+    int thread_idx,
+    int num_batches,
+    Barrier* barrier,
+    vector<WriteResponsePB>* responses) {
 
   const int64_t kMaxAttempts = 100000;
   // Set the same seed in all threads so that they generate the same requests.
@@ -199,13 +203,23 @@ void ExactlyOnceSemanticsITest::WriteRowsAndCollectResponses(Sockaddr address,
 }
 
 void ExactlyOnceSemanticsITest::DoTestWritesWithExactlyOnceSemantics(
-    const vector<string>& ts_flags,
     const vector<string>& master_flags,
+    const vector<string>& ts_flags,
+    const vector<pair<string, string>>& ts_flags_after_start,
     int num_batches,
     bool allow_crashes) {
-  const int kNumThreadsPerReplica = 2;
+  constexpr const int kNumThreadsPerReplica = 2;
 
   NO_FATALS(BuildAndStart(ts_flags, master_flags));
+
+  // Set extra flags for tablet servers once the cluster has started.
+  for (auto i = 0; i < cluster_->num_tablet_servers(); ++i) {
+    auto* ets = cluster_->tablet_server(i);
+    for (const auto& [flag, value] : ts_flags_after_start) {
+      ets->mutable_flags()->emplace_back(Substitute("--$0=$1", flag, value));
+      ASSERT_OK(cluster_->SetFlag(ets, flag, value));
+    }
+  }
 
   vector<itest::TServerDetails*> tservers;
   AppendValuesFromMap(tablet_servers_, &tservers);
@@ -289,20 +303,15 @@ void ExactlyOnceSemanticsITest::DoTestWritesWithExactlyOnceSemantics(
 // Finally this crashes nodes and uses a very small election timeout to trigger rare paths that
 // only happen on leader change.
 TEST_F(ExactlyOnceSemanticsITest, TestWritesWithExactlyOnceSemanticsWithCrashyNodes) {
-  vector<string> ts_flags, master_flags;
+  const vector<string> ts_flags = {
+    // Make leader elections faster so we get through more cycles of leaders.
+    "--raft_heartbeat_interval_ms=200",
 
-  // Crash 2.5% of the time right after sending an RPC. This makes sure we stress the path
-  // where there are duplicate handlers for an op as a leader crashes right
-  // after sending requests to followers.
-  ts_flags.emplace_back("--fault_crash_after_leader_request_fraction=0.025");
-
-  // Make leader elections faster so we get through more cycles of leaders.
-  ts_flags.emplace_back("--raft_heartbeat_interval_ms=200");
-
-  // Avoid preallocating segments since bootstrap is a little bit
-  // faster if it doesn't have to scan forward through the preallocated
-  // log area.
-  ts_flags.emplace_back("--log_preallocate_segments=false");
+    // Avoid preallocating segments since bootstrap is a little bit
+    // faster if it doesn't have to scan forward through the preallocated
+    // log area.
+    "--log_preallocate_segments=false",
+  };
 
   int num_batches = 10;
   if (AllowSlowTests()) {
@@ -311,16 +320,23 @@ TEST_F(ExactlyOnceSemanticsITest, TestWritesWithExactlyOnceSemanticsWithCrashyNo
     FLAGS_num_replicas = 7;
   }
 
-  DoTestWritesWithExactlyOnceSemantics(ts_flags,
-                                       master_flags,
+  // Crash 2.5% of the time right after sending an RPC. This stresses the path
+  // where there are duplicate handlers for an op as a leader crashes right
+  // after sending requests to followers. To avoid test flakiness, this flag is
+  // set using SetFlag() after the cluster harness is initialized, so crashes
+  // happen only where it's needed to avoid test flakiness.
+  const vector<pair<string, string>> ts_runtime_flags_to_set = {
+    { "fault_crash_after_leader_request_fraction", "0.025" }
+  };
+  DoTestWritesWithExactlyOnceSemantics({},
+                                       ts_flags,
+                                       ts_runtime_flags_to_set,
                                        num_batches,
                                        true /* Allow crashes */);
 }
 
 // Like the test above but instead of crashing nodes makes sure elections are churny.
 TEST_F(ExactlyOnceSemanticsITest, TestWritesWithExactlyOnceSemanticsWithChurnyElections) {
-  vector<string> ts_flags, master_flags;
-
   int raft_heartbeat_interval;
 #if defined(THREAD_SANITIZER) || defined(ADDRESS_SANITIZER)
   // On TSAN/ASAN builds, we need to be a little bit less churny in order to make
@@ -331,7 +347,7 @@ TEST_F(ExactlyOnceSemanticsITest, TestWritesWithExactlyOnceSemanticsWithChurnyEl
 #endif
   // Inject random latency of up to the Raft heartbeat interval to ensure there
   // will be missed heartbeats, triggering actual elections.
-  ts_flags = {
+  const vector<string> ts_flags = {
     Substitute("--raft_heartbeat_interval_ms=$0", raft_heartbeat_interval),
     Substitute("--consensus_inject_latency_ms_in_notifications=$0", raft_heartbeat_interval),
     "--raft_enable_pre_election=false",
@@ -347,8 +363,9 @@ TEST_F(ExactlyOnceSemanticsITest, TestWritesWithExactlyOnceSemanticsWithChurnyEl
     FLAGS_num_replicas = 5;
   }
 
-  DoTestWritesWithExactlyOnceSemantics(ts_flags,
-                                       master_flags,
+  DoTestWritesWithExactlyOnceSemantics({},
+                                       ts_flags,
+                                       {},
                                        num_batches,
                                        false /* No crashes */);
 }
