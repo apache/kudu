@@ -80,6 +80,32 @@ custom_run_at_sles() {
   $@
 }
 
+custom_run_at_rocky() {
+  # On Rocky Linux, prefer using the system's default GCC compiler.
+  # Typically /usr/bin/gcc and /usr/bin/g++ should point to the default version.
+  if ! /usr/bin/gcc -v > /dev/null 2>&1 || ! /usr/bin/g++ -v > /dev/null 2>&1; then
+    echo "ERROR: system gcc or g++ not found in /usr/bin"
+    exit 2
+  fi
+
+  # Use ccache wrappers if available
+  if which ccache > /dev/null 2>&1 && [ -z "$CC" ] && [ -z "$CXX" ]; then
+    if [ -x /usr/lib64/ccache/gcc ] && [ -x /usr/lib64/ccache/g++ ]; then
+      export CC="/usr/lib64/ccache/gcc"
+      export CXX="/usr/lib64/ccache/g++"
+    fi
+  fi
+
+  # If CC/CXX still haven't been set, use the system compilers directly.
+  if [ -z "$CC" ] && [ -z "$CXX" ]; then
+    export CC="/usr/bin/gcc"
+    export CXX="/usr/bin/g++"
+  fi
+
+  # Execute the passed-in command(s)
+  "$@"
+}
+
 if [[ "$OSTYPE" =~ ^linux ]]; then
   # It is not practical to require the presence of the 'lsb_release' utility
   # on RHEL/CentOS/OracleLinux 9, so this script uses /etc/os-release instead
@@ -102,6 +128,8 @@ if [[ "$OSTYPE" =~ ^linux ]]; then
       custom_run_at_rhel $@
     elif [[ "$LSB_INFO" =~ (SUSE)[[:space:]]+1[25](\.[[:digit:]]+)* ]]; then
       custom_run_at_sles $@
+    elif [[ "$LSB_INFO" =~ ^Rocky ]]; then
+      custom_run_at_rocky $@
     else
       # Run as-is
       $@
@@ -113,6 +141,8 @@ if [[ "$OSTYPE" =~ ^linux ]]; then
     elif grep -Eq 'ID=["]?sles["]?' $OS_REL_FILE && \
         grep -Eq 'VERSION_ID=["]?1[25](\.[[:digit:]])*["]?' $OS_REL_FILE; then
       custom_run_at_sles $@
+    elif grep -Eq 'ID=["]?rocky["]?' $OS_REL_FILE; then
+      custom_run_at_rocky $@
     else
       # Run as-is
       $@
