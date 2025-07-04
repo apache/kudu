@@ -16,6 +16,11 @@
 package org.apache.kudu.replication;
 
 import org.apache.flink.api.java.utils.ParameterTool;
+import org.apache.flink.connector.kudu.connector.reader.KuduReaderConfig;
+import org.apache.flink.connector.kudu.connector.writer.KuduWriterConfig;
+
+import org.apache.kudu.client.ReplicaSelection;
+import org.apache.kudu.client.SessionConfiguration;
 
 /**
  * Utility class for parsing replication-related configuration parameters from
@@ -73,8 +78,106 @@ public class ReplicationConfigParser {
     return builder.build();
   }
 
-  //TODO(mgreber): add parseReaderConfig()
+  /**
+   * Parses reader-specific parameters and constructs a {@link KuduReaderConfig} instance.
+   * <p>
+   * The following parameters are recognized under the {@code reader.} prefix:
+   * <ul>
+   *   <li>{@code reader.batchSizeBytes} (optional) – maximum number of bytes to fetch in a single
+   *   batch when reading from Kudu</li>
+   *   <li>{@code reader.splitSizeBytes} (optional) – target size in bytes for each scan split
+   *   when parallelising input</li>
+   *   <li>{@code reader.scanRequestTimeout} (optional) – timeout in milliseconds for individual
+   *   scan RPCs</li>
+   *   <li>{@code reader.prefetching} (optional) – whether to enable pre-fetching of data blocks
+   *   (default: {@code false})</li>
+   *   <li>{@code reader.keepAlivePeriodMs} (optional) – period in milliseconds after which an
+   *   inactive scanner sends a keep-alive message</li>
+   *   <li>{@code reader.replicaSelection} (optional) – replica selection strategy, must be one of
+   *   the constants defined in {@link org.apache.kudu.client.ReplicaSelection}</li>
+   * </ul>
+   *
+   * @param params  the Flink {@link ParameterTool} containing command-line parameters
+   * @param masters comma-separated list of Kudu master addresses for the source cluster
+   * @return a fully-constructed {@link KuduReaderConfig} instance
+   */
+  public static KuduReaderConfig parseReaderConfig(ParameterTool params, String masters) {
+    KuduReaderConfig.Builder builder = KuduReaderConfig.Builder.setMasters(masters);
 
-  //TODO(mgreber): add parseWriterConfig()
+    if (params.has("reader.batchSizeBytes")) {
+      builder.setBatchSizeBytes(params.getInt("reader.batchSizeBytes"));
+    }
+    if (params.has("reader.splitSizeBytes")) {
+      builder.setSplitSizeBytes(params.getLong("reader.splitSizeBytes"));
+    }
+    if (params.has("reader.scanRequestTimeout")) {
+      builder.setScanRequestTimeout(params.getLong("reader.scanRequestTimeout"));
+    }
+    if (params.has("reader.prefetching")) {
+      builder.setPrefetching(params.getBoolean("reader.prefetching"));
+    }
+    if (params.has("reader.keepAlivePeriodMs")) {
+      builder.setKeepAlivePeriodMs(params.getLong("reader.keepAlivePeriodMs"));
+    }
+    if (params.has("reader.replicaSelection")) {
+      builder.setReplicaSelection(ReplicaSelection.valueOf(params.get("reader.replicaSelection")));
+    }
+
+    return builder.build();
+  }
+
+  /**
+   * Parses writer-specific parameters and constructs a {@link KuduWriterConfig} instance.
+   * <p>
+   * The following parameters are recognized under the {@code writer.} prefix:
+   * <ul>
+   *   <li>{@code writer.flushMode} (optional) – flush consistency mode, one of the values of
+   *   {@link org.apache.kudu.client.SessionConfiguration.FlushMode}</li>
+   *   <li>{@code writer.operationTimeout} (optional) – timeout in milliseconds for write
+   *   operations</li>
+   *   <li>{@code writer.maxBufferSize} (optional) – maximum size in bytes of the client-side write
+   *   buffer</li>
+   *   <li>{@code writer.flushInterval} (optional) – interval in milliseconds at which buffered
+   *   operations are flushed automatically</li>
+   *   <li>{@code writer.ignoreNotFound} (optional) – whether to ignore NOT_FOUND errors during
+   *   deletes/updates (default: {@code false})</li>
+   *   <li>{@code writer.ignoreDuplicate} (optional) – whether to ignore duplicate row errors
+   *   during inserts (default: {@code false})</li>
+   * </ul>
+   *
+   * @param params  the Flink {@link ParameterTool} containing command-line parameters
+   * @param masters comma-separated list of Kudu master addresses for the sink cluster
+   * @return a fully-constructed {@link KuduWriterConfig} instance
+   */
+  public static KuduWriterConfig parseWriterConfig(ParameterTool params, String masters) {
+    KuduWriterConfig.Builder builder = KuduWriterConfig.Builder.setMasters(masters);
+
+    if (params.has("writer.flushMode")) {
+      builder.setConsistency(
+              SessionConfiguration.FlushMode.valueOf(params.get("writer.flushMode")));
+    }
+
+    if (params.has("writer.operationTimeout")) {
+      builder.setOperationTimeout(params.getLong("writer.operationTimeout"));
+    }
+
+    if (params.has("writer.maxBufferSize")) {
+      builder.setMaxBufferSize(params.getInt("writer.maxBufferSize"));
+    }
+
+    if (params.has("writer.flushInterval")) {
+      builder.setFlushInterval(params.getInt("writer.flushInterval"));
+    }
+
+    if (params.has("writer.ignoreNotFound")) {
+      builder.setIgnoreNotFound(params.getBoolean("writer.ignoreNotFound"));
+    }
+
+    if (params.has("writer.ignoreDuplicate")) {
+      builder.setIgnoreDuplicate(params.getBoolean("writer.ignoreDuplicate"));
+    }
+
+    return builder.build();
+  }
 
 }

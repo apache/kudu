@@ -35,9 +35,15 @@ import org.apache.flink.types.Row;
  */
 public class ReplicationEnvProvider {
   private final ReplicationJobConfig jobConfig;
+  private final KuduReaderConfig readerConfig;
+  private final KuduWriterConfig writerConfig;
 
-  ReplicationEnvProvider(ReplicationJobConfig jobConfig) {
+  ReplicationEnvProvider(ReplicationJobConfig jobConfig,
+                         KuduReaderConfig readerConfig,
+                         KuduWriterConfig writerConfig) {
     this.jobConfig = jobConfig;
+    this.readerConfig = readerConfig;
+    this.writerConfig = writerConfig;
   }
 
   /**
@@ -49,20 +55,16 @@ public class ReplicationEnvProvider {
   public StreamExecutionEnvironment getEnv() throws Exception {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 
-    // TODO(mgreber): implement and use reader config parsed from the command line.
     KuduSource<Row> kuduSource = KuduSource.<Row>builder()
-            .setReaderConfig(KuduReaderConfig.Builder
-                  .setMasters(jobConfig.getSourceMasterAddresses()).build())
+            .setReaderConfig(readerConfig)
             .setTableInfo(KuduTableInfo.forTable(jobConfig.getTableName()))
             .setRowResultConverter(new CustomReplicationRowRestultConverter())
             .setBoundedness(Boundedness.CONTINUOUS_UNBOUNDED)
             .setDiscoveryPeriod(Duration.ofSeconds(jobConfig.getDiscoveryIntervalSeconds()))
             .build();
 
-    // TODO(mgreber): implement and use writer config parsed from command line.
     KuduSink<Row> kuduSink = new KuduSinkBuilder<Row>()
-            .setWriterConfig(KuduWriterConfig.Builder
-                    .setMasters(jobConfig.getSinkMasterAddresses()).build())
+            .setWriterConfig(writerConfig)
             .setTableInfo(KuduTableInfo.forTable(jobConfig.getSinkTableName()))
             .setOperationMapper(new CustomReplicationOperationMapper())
             .build();

@@ -16,6 +16,8 @@
 package org.apache.kudu.replication;
 
 import org.apache.flink.api.java.utils.ParameterTool;
+import org.apache.flink.connector.kudu.connector.reader.KuduReaderConfig;
+import org.apache.flink.connector.kudu.connector.writer.KuduWriterConfig;
 
 /**
  * This class is used to submit Kudu Replication Jobs into a Flink Cluster.
@@ -33,8 +35,13 @@ public class ReplicationJob {
     ParameterTool parameters = ParameterTool.fromArgs(args);
 
     ReplicationJobConfig jobConfig = ReplicationConfigParser.parseJobConfig(parameters);
+    KuduReaderConfig readerConfig = ReplicationConfigParser.parseReaderConfig(parameters,
+        jobConfig.getSourceMasterAddresses());
+    KuduWriterConfig writerConfig = ReplicationConfigParser.parseWriterConfig(parameters,
+        jobConfig.getSinkMasterAddresses());
 
-    ReplicationEnvProvider provider = new ReplicationEnvProvider(jobConfig);
+    ReplicationEnvProvider provider = new ReplicationEnvProvider(jobConfig,
+        readerConfig, writerConfig);
     provider.getEnv().execute();
   }
 }

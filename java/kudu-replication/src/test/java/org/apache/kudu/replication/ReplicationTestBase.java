@@ -22,6 +22,8 @@ import static org.apache.kudu.test.ClientTestUtil.getSchemaWithAllTypes;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.apache.flink.connector.kudu.connector.reader.KuduReaderConfig;
+import org.apache.flink.connector.kudu.connector.writer.KuduWriterConfig;
 import org.junit.Before;
 import org.junit.Rule;
 
@@ -47,11 +49,16 @@ public class ReplicationTestBase {
 
   protected KuduClient sourceClient;
   protected KuduClient sinkClient;
+  protected ReplicationEnvProvider envProvider;
 
   @Before
-  public void setupClients() {
+  public void setupClientsAndEnvProvider() {
     this.sourceClient = sourceHarness.getClient();
     this.sinkClient = sinkHarness.getClient();
+    this.envProvider = new ReplicationEnvProvider(
+            createDefaultJobConfig(),
+            createDefaultReaderConfig(),
+            createDefaultWriterConfig());
   }
 
 
@@ -63,6 +70,20 @@ public class ReplicationTestBase {
             .setDiscoveryIntervalSeconds(2)
             .build();
     return jobConfig;
+  }
+
+  protected KuduReaderConfig createDefaultReaderConfig() {
+    KuduReaderConfig readerConfig = KuduReaderConfig.Builder
+            .setMasters(sourceHarness.getMasterAddressesAsString())
+            .build();
+    return readerConfig;
+  }
+
+  protected KuduWriterConfig createDefaultWriterConfig() {
+    KuduWriterConfig writerConfig = KuduWriterConfig.Builder
+            .setMasters(sinkHarness.getMasterAddressesAsString())
+            .build();
+    return writerConfig;
   }
 
   protected void createAllTypesTable(KuduClient client) throws Exception {
