@@ -159,6 +159,7 @@ ExternalMiniClusterOptions::ExternalMiniClusterOptions()
       ntp_config_mode(BuiltinNtpConfigMode::ALL_SERVERS),
 #endif // #if !defined(NO_CHRONY) ...
       enable_client_jwt(false),
+      start_jwks(true),
       enable_rest_api(false) {}
 
 ExternalMiniCluster::ExternalMiniCluster()

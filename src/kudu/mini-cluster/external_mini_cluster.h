@@ -332,7 +332,7 @@ struct ExternalMiniClusterOptions {
   // Only effective if enable_client_jwt is set to true.
   //
   // Default: true
-  bool start_jwks = true;
+  bool start_jwks;
 
   // If true, the REST API is enabled on the webserver.
   //
