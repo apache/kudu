@@ -83,8 +83,13 @@ typedef struct x509_st X509;
 //      SCOPED_OPENSSL_NO_PENDING_ERRORS;
 //      ... use OpenSSL APIs ...
 //    }
-#define SCOPED_OPENSSL_NO_PENDING_ERRORS \
-  kudu::security::internal::ScopedCheckNoPendingSSLErrors _no_ssl_errors(__PRETTY_FUNCTION__)
+#if DCHECK_IS_ON()
+  #define SCOPED_OPENSSL_NO_PENDING_ERRORS \
+    const kudu::security::internal::ScopedCheckNoPendingSSLErrors \
+        _no_ssl_errors(__PRETTY_FUNCTION__)
+#else   // #if DCHECK_IS_ON() ...
+  #define SCOPED_OPENSSL_NO_PENDING_ERRORS  (void)0
+#endif  // #if DCHECK_IS_ON() ... #else ...
 
 namespace kudu {
 namespace security {
@@ -223,7 +228,7 @@ namespace internal {
 
 // Implementation of SCOPED_OPENSSL_NO_PENDING_ERRORS. Use the macro form
 // instead of directly instantiating the implementation class.
-struct ScopedCheckNoPendingSSLErrors {
+struct ScopedCheckNoPendingSSLErrors final {
  public:
   explicit ScopedCheckNoPendingSSLErrors(const char* func)
       : func_(func) {
