@@ -337,6 +337,8 @@ Status Webserver::Start() {
     options.emplace_back(opts_.tls_ciphers);
     options.emplace_back("ssl_min_version");
     options.emplace_back(opts_.tls_min_protocol);
+    options.emplace_back("ssl_ciphersuites");
+    options.emplace_back(opts_.tls_ciphersuites);
   }
 
   if (!opts_.authentication_domain.empty()) {

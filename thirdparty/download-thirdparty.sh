@@ -277,12 +277,13 @@ fetch_and_patch \
  "patch -p1 < $TP_DIR/patches/rapidjson-document-assignment-operator-00.patch" \
  "patch -p1 < $TP_DIR/patches/rapidjson-document-assignment-operator-01.patch"
 
-SQUEASEL_PATCHLEVEL=1
+SQUEASEL_PATCHLEVEL=2
 fetch_and_patch \
  squeasel-${SQUEASEL_VERSION}.tar.gz \
  $SQUEASEL_SOURCE \
  $SQUEASEL_PATCHLEVEL \
- "patch -p1 < $TP_DIR/patches/squeasel-handle-openssl-errors.patch"
+ "patch -p1 < $TP_DIR/patches/squeasel-handle-openssl-errors.patch" \
+ "patch -p1 < $TP_DIR/patches/squeasel-tls-min-version.patch"
 
 MUSTACHE_PATCHLEVEL=0
 fetch_and_patch \
@@ -501,3 +502,4 @@ fetch_and_patch \
 
 echo "---------------"
 echo "Thirdparty dependencies downloaded successfully"
+

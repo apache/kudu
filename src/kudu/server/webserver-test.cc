@@ -124,6 +124,9 @@ class WebserverTest : public KuduTest {
     if (use_ssl()) {
       SetSslOptions(&opts);
       cert_path_ = opts.certificate_file;
+      if (use_tls1_3()) {
+        opts.tls_min_protocol = "TLSv1.3";
+      }
     }
     if (use_htpasswd()) SetHTPasswdOptions(&opts);
     MaybeSetupSpnego(&opts);
@@ -161,6 +164,7 @@ class WebserverTest : public KuduTest {
   virtual bool enable_doc_root() const { return true; }
   virtual bool use_ssl() const { return false; }
   virtual bool use_htpasswd() const { return false; }
+  virtual bool use_tls1_3() const { return false; }
 
   EasyCurl curl_;
   faststring buf_;
@@ -174,6 +178,11 @@ class WebserverTest : public KuduTest {
 class SslWebserverTest : public WebserverTest {
  protected:
   bool use_ssl() const override { return true; }
+};
+
+class Tls13WebserverTest : public SslWebserverTest {
+ protected:
+  bool use_tls1_3() const override { return true; }
 };
 
 class PasswdWebserverTest : public WebserverTest {
@@ -510,6 +519,20 @@ TEST_F(SslWebserverTest, TestSSL) {
   ASSERT_OK(curl_.FetchURL(url_, &buf_));
   // Should have expected title.
   ASSERT_STR_CONTAINS(buf_.ToString(), "Kudu");
+}
+
+TEST_F(Tls13WebserverTest, TestTlsMinVersion) {
+  FLAGS_trusted_certificate_file = cert_path_;
+  curl_.set_tls_max_version(TlsVersion::TLSv1_2);
+
+  Status s = curl_.FetchURL(url_, &buf_);
+  ASSERT_TRUE(s.IsNetworkError()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "TLS connect error");
+
+  curl_.set_tls_min_version(TlsVersion::TLSv1_3);
+  curl_.set_tls_max_version(TlsVersion::ANY);
+
+  ASSERT_OK(curl_.FetchURL(url_, &buf_));
 }
 
 TEST_F(SslWebserverTest, StrictTransportSecurtyPolicyHeaders) {
