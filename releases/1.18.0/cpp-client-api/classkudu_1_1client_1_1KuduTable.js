@@ -1,0 +1,26 @@
+var classkudu_1_1client_1_1KuduTable =
+[
+    [ "client", "classkudu_1_1client_1_1KuduTable.html#ac53748a25dc8c6b9bd117a3ade55e940", null ],
+    [ "comment", "classkudu_1_1client_1_1KuduTable.html#af4fbede2c0b6fd9eecfcde56dd9e8ddc", null ],
+    [ "extra_configs", "classkudu_1_1client_1_1KuduTable.html#a606a7f29781e713df80f9fc3af8089fc", null ],
+    [ "id", "classkudu_1_1client_1_1KuduTable.html#aac07b78c0a4b84f7df1677b6d846cfc0", null ],
+    [ "name", "classkudu_1_1client_1_1KuduTable.html#a816d70798552321e64e3c97d6a472466", null ],
+    [ "NewComparisonPredicate", "classkudu_1_1client_1_1KuduTable.html#ac4594b4a9d033e2f300cdfabfec88d81", null ],
+    [ "NewDelete", "classkudu_1_1client_1_1KuduTable.html#a00a9a43b3b6a178ded2abfa67220aaa4", null ],
+    [ "NewDeleteIgnore", "classkudu_1_1client_1_1KuduTable.html#a37476e1d651011f8aa1b4aca4c291701", null ],
+    [ "NewInBloomFilterPredicate", "classkudu_1_1client_1_1KuduTable.html#a92786804299b4738d4d71c9889c07b54", null ],
+    [ "NewInBloomFilterPredicate", "classkudu_1_1client_1_1KuduTable.html#a2daf78f5f0596fa5bfd234e86e2c002a", null ],
+    [ "NewInListPredicate", "classkudu_1_1client_1_1KuduTable.html#aa9ef70df3ad0ef87b073f97fc2ee6fca", null ],
+    [ "NewInsert", "classkudu_1_1client_1_1KuduTable.html#ac61fe45d858b9aadf9b061900cab5d95", null ],
+    [ "NewInsertIgnore", "classkudu_1_1client_1_1KuduTable.html#a64abe9e4851b17081ddf148ea51fdaab", null ],
+    [ "NewIsNotNullPredicate", "classkudu_1_1client_1_1KuduTable.html#abde91558c2c17fd164556647242bfc65", null ],
+    [ "NewIsNullPredicate", "classkudu_1_1client_1_1KuduTable.html#a5d500c8e386214da54c5579c9516ebfd", null ],
+    [ "NewUpdate", "classkudu_1_1client_1_1KuduTable.html#a51209b4335520051f36b3d728495aad1", null ],
+    [ "NewUpdateIgnore", "classkudu_1_1client_1_1KuduTable.html#a6c764610ab8e6c144bb4c6f284a03f0f", null ],
+    [ "NewUpsert", "classkudu_1_1client_1_1KuduTable.html#a13eb40460f264b4ca5ce79166b9404a7", null ],
+    [ "NewUpsertIgnore", "classkudu_1_1client_1_1KuduTable.html#a20ad3993c49b0fa4b133358cedcde5af", null ],
+    [ "num_replicas", "classkudu_1_1client_1_1KuduTable.html#ac8f62fdc5c12af06fc9cec0f1d006fed", null ],
+    [ "owner", "classkudu_1_1client_1_1KuduTable.html#afb579b6aa680abc970c39f9075d05398", null ],
+    [ "partition_schema", "classkudu_1_1client_1_1KuduTable.html#ab4bd0a2c45ad58d25bcc59e8f6d4360c", null ],
+    [ "schema", "classkudu_1_1client_1_1KuduTable.html#acd1bb7da3b5e8cfb348335968bd4052f", null ]
+];

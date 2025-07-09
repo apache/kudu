@@ -8,31 +8,22 @@ single_col_extra_classes: releases
 ## Apache Kudu releases
 
 ### Latest release
+* **[Kudu 1.18.0](1.18.0/)** was released on July 14, 2025. <!-- LATREL: DO NOT REMOVE -->
+    * [Kudu 1.18.0 Documentation](1.18.0/docs/)
+    * [Kudu 1.18.0 Java API docs](1.18.0/apidocs/)
+    * [Kudu 1.18.0 C++ API docs](1.18.0/cpp-client-api/)
 
-* **[Kudu 1.17.1](1.17.1/)** was released on Nov 15, 2024. <!-- LATREL: DO NOT REMOVE -->
+### Previous releases (ongoing support)
+* **[Kudu 1.17.1](1.17.1/)** was released on Nov 15, 2024. <!-- PREVREL: DO NOT REMOVE -->
     * [Kudu 1.17.1 Documentation](1.17.1/docs/)
     * [Kudu 1.17.1 Java API docs](1.17.1/apidocs/)
     * [Kudu 1.17.1 C++ API docs](1.17.1/cpp-client-api/)
 
-### Previous releases (ongoing support)
-
-* **[Kudu 1.17.0](1.17.0/)** was released on Sep 1st, 2023. <!-- LATREL: DO NOT REMOVE -->
-    * [Kudu 1.17.0 Documentation](1.17.0/docs/)
-    * [Kudu 1.17.0 Java API docs](1.17.0/apidocs/)
-    * [Kudu 1.17.0 C++ API docs](1.17.0/cpp-client-api/)
-
-* **[Kudu 1.16.0](1.16.0/)** was released on Apr 11, 2022. <!-- PREVREL: DO NOT REMOVE -->
-    * [Kudu 1.16.0 Documentation](1.16.0/docs/)
-    * [Kudu 1.16.0 Java API docs](1.16.0/apidocs/)
-    * [Kudu 1.16.0 C++ API docs](1.16.0/cpp-client-api/)
-
-* **[Kudu 1.15.0](1.15.0/)** was released on Jun 22, 2021. <!-- PREVREL: DO NOT REMOVE -->
-    * [Kudu 1.15.0 Documentation](1.15.0/docs/)
-    * [Kudu 1.15.0 Java API docs](1.15.0/apidocs/)
-    * [Kudu 1.15.0 C++ API docs](1.15.0/cpp-client-api/)
-
 ### Archived releases
-* [Kudu 1.14.0](1.14.0/) was released on Jan 28, 2021.  <!--ARCHREL: DO NOT REMOVE -->
+* [Kudu 1.17.0](1.17.0/) was released on Sept 01, 2023. <!--ARCHREL: DO NOT REMOVE -->
+* [Kudu 1.16.0](1.16.0/) was released on Apr 11, 2022.
+* [Kudu 1.15.0](1.15.0/) was released on Jun 22, 2021.
+* [Kudu 1.14.0](1.14.0/) was released on Jan 28, 2021.
 * [Kudu 1.13.0](1.13.0/) was released on Sep 17, 2020.
 * [Kudu 1.12.0](1.12.0/) was released on May 11, 2020.
 * [Kudu 1.11.1](1.11.1/)was released on November 20, 2019.
