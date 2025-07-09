@@ -39,6 +39,14 @@ enum class CurlAuthType {
   SPNEGO,
 };
 
+enum class TlsVersion {
+  ANY,
+  TLSv1,
+  TLSv1_1,
+  TLSv1_2,
+  TLSv1_3,
+};
+
 // Simple wrapper around curl's "easy" interface, allowing the user to
 // fetch web pages into memory using a blocking API.
 //
@@ -107,6 +115,14 @@ class EasyCurl {
     auth_type_ = auth_type;
     username_ = std::move(username);
     password_ = std::move(password);
+  }
+
+  void set_tls_min_version(TlsVersion tls_min_version) {
+    tls_min_version_ = tls_min_version;
+  }
+
+  void set_tls_max_version(TlsVersion tls_max_version) {
+    tls_max_version_ = tls_max_version;
   }
 
   // Enable verbose mode for curl. This dumps debugging output to stderr, so
@@ -195,6 +211,10 @@ class EasyCurl {
   std::string password_;
 
   CurlAuthType auth_type_ = CurlAuthType::NONE;
+
+  TlsVersion tls_min_version_ = TlsVersion::ANY;
+
+  TlsVersion tls_max_version_ = TlsVersion::ANY;
 
   DISALLOW_COPY_AND_ASSIGN(EasyCurl);
 };

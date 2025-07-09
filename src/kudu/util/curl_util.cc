@@ -233,6 +233,47 @@ Status EasyCurl::DoRequest(const string& url,
     CURL_RETURN_NOT_OK(curl_easy_setopt(curl_, CURLOPT_FAILONERROR, 1));
   }
 
+  uint16_t tls_min_version;
+  switch (tls_min_version_) {
+    case TlsVersion::TLSv1:
+      tls_min_version = CURL_SSLVERSION_TLSv1_0;
+      break;
+    case TlsVersion::TLSv1_1:
+      tls_min_version = CURL_SSLVERSION_TLSv1_1;
+      break;
+    case TlsVersion::TLSv1_2:
+      tls_min_version = CURL_SSLVERSION_TLSv1_2;
+      break;
+    case TlsVersion::TLSv1_3:
+      tls_min_version = CURL_SSLVERSION_TLSv1_3;
+      break;
+    case TlsVersion::ANY:
+      tls_min_version = CURL_SSLVERSION_DEFAULT;
+      break;
+  }
+  CURL_RETURN_NOT_OK(curl_easy_setopt(curl_, CURLOPT_SSLVERSION, tls_min_version));
+
+  uint64_t tls_max_version;
+  switch (tls_max_version_) {
+    case TlsVersion::TLSv1:
+      tls_max_version = CURL_SSLVERSION_MAX_TLSv1_0;
+      break;
+    case TlsVersion::TLSv1_1:
+      tls_max_version = CURL_SSLVERSION_MAX_TLSv1_1;
+      break;
+    case TlsVersion::TLSv1_2:
+      tls_max_version = CURL_SSLVERSION_MAX_TLSv1_2;
+      break;
+    case TlsVersion::TLSv1_3:
+      tls_max_version = CURL_SSLVERSION_MAX_TLSv1_3;
+      break;
+    case TlsVersion::ANY:
+      tls_max_version = CURL_SSLVERSION_MAX_DEFAULT;
+      break;
+  }
+  CURL_RETURN_NOT_OK(curl_easy_setopt(curl_, CURLOPT_SSLVERSION, tls_max_version));
+
+
   // Add headers if specified.
   struct curl_slist* curl_headers = nullptr;
   auto clean_up_curl_slist = MakeScopedCleanup([&]() {

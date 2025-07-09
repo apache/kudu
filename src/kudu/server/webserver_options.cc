@@ -29,6 +29,7 @@
 #include "kudu/security/security_flags.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/flag_validators.h"
+#include "kudu/util/string_case.h"
 
 using std::string;
 
@@ -115,9 +116,16 @@ DEFINE_string(webserver_tls_ciphers,
               "for more information.");
 TAG_FLAG(webserver_tls_ciphers, advanced);
 
+DEFINE_string(webserver_tls_ciphersuites,
+              kudu::security::SecurityDefaults::kDefaultTlsCipherSuites,
+              "The cipher suite preferences to use for TLSv1.3 webserver HTTPS connections. "
+              "Uses the OpenSSL cipher preference list format. See man (1) ciphers "
+              "for more information.");
+TAG_FLAG(webserver_tls_ciphersuites, advanced);
+
 DEFINE_string(webserver_tls_min_protocol, kudu::security::SecurityDefaults::kDefaultTlsMinVersion,
               "The minimum protocol version to allow when for webserver HTTPS "
-              "connections. May be one of 'TLSv1', 'TLSv1.1', or 'TLSv1.2'.");
+              "connections. May be one of 'TLSv1', 'TLSv1.1', 'TLSv1.2', or 'TLSv1.3'.");
 TAG_FLAG(webserver_tls_min_protocol, advanced);
 
 DEFINE_bool(webserver_require_spnego, false,
@@ -125,9 +133,9 @@ DEFINE_bool(webserver_require_spnego, false,
             "using SPNEGO.");
 TAG_FLAG(webserver_require_spnego, stable);
 
-namespace kudu {
+namespace {
 
-static bool ValidateTlsFlags() {
+bool ValidateTlsFlags() {
   bool has_cert = !FLAGS_webserver_certificate_file.empty();
   bool has_key = !FLAGS_webserver_private_key_file.empty();
   bool has_passwd = !FLAGS_webserver_private_key_password_cmd.empty();
@@ -146,6 +154,18 @@ static bool ValidateTlsFlags() {
   return true;
 }
 GROUP_FLAG_VALIDATOR(webserver_tls_options, ValidateTlsFlags);
+
+bool ValidateTlsMinVersion(const char* /* flagname */, const string& ver) {
+  return kudu::iequals(ver, "TLSv1") ||
+    kudu::iequals(ver, "TLSv1.1") ||
+    kudu::iequals(ver, "TLSv1.2") ||
+    kudu::iequals(ver, "TLSv1.3");
+}
+DEFINE_validator(webserver_tls_min_protocol, &ValidateTlsMinVersion);
+
+}; // anonymous namespace
+
+namespace kudu {
 
 // Returns KUDU_HOME if set, otherwise we won't serve any static files.
 static string GetDefaultDocumentRoot() {
@@ -166,6 +186,7 @@ WebserverOptions::WebserverOptions()
       authentication_domain(FLAGS_webserver_authentication_domain),
       password_file(FLAGS_webserver_password_file),
       tls_ciphers(FLAGS_webserver_tls_ciphers),
+      tls_ciphersuites(FLAGS_webserver_tls_ciphersuites),
       tls_min_protocol(FLAGS_webserver_tls_min_protocol),
       num_worker_threads(FLAGS_webserver_num_worker_threads),
       require_spnego(FLAGS_webserver_require_spnego) {
