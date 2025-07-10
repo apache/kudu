@@ -224,7 +224,7 @@ void RestCatalogPathHandlers::HandleGetTables(std::ostringstream* output,
                                               HttpStatusCode* status_code) {
   ListTablesRequestPB request;
   ListTablesResponsePB response;
-  optional<string> user = req.authn_principal.empty() ? "default" : req.authn_principal;
+  optional<string> user = req.username.empty() ? "default" : req.username;
   Status status = master_->catalog_manager()->ListTables(&request, &response, user);
   JsonWriter jw(output, JsonWriter::COMPACT);
 
@@ -266,7 +266,7 @@ void RestCatalogPathHandlers::HandlePostTables(ostringstream* output,
                       *status_code,
                       HttpStatusCode::BadRequest);
   }
-  optional<string> user = req.authn_principal.empty() ? "default" : req.authn_principal;
+  optional<string> user = req.username.empty() ? "default" : req.username;
   Status status = master_->catalog_manager()->CreateTableWithUser(&request, &response, user);
 
   if (!status.ok()) {
@@ -335,7 +335,7 @@ void RestCatalogPathHandlers::HandlePutTable(ostringstream* output,
                       HttpStatusCode::BadRequest);
   }
 
-  optional<string> user = req.authn_principal.empty() ? "default" : req.authn_principal;
+  optional<string> user = req.username.empty() ? "default" : req.username;
   Status status = master_->catalog_manager()->AlterTableWithUser(request, &response, user);
 
   if (!status.ok()) {
@@ -383,7 +383,7 @@ void RestCatalogPathHandlers::HandleDeleteTable(ostringstream* output,
   DeleteTableResponsePB response;
   request.mutable_table()->set_table_id(table_id);
   JsonWriter jw(output, JsonWriter::COMPACT);
-  optional<string> user = req.authn_principal.empty() ? "default" : req.authn_principal;
+  optional<string> user = req.username.empty() ? "default" : req.username;
   Status status = master_->catalog_manager()->DeleteTableWithUser(request, &response, user);
 
   if (status.ok()) {

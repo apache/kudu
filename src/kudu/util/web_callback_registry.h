@@ -75,8 +75,8 @@ class WebCallbackRegistry {
     // The HTTP request headers.
     ArgumentMap request_headers;
 
-    // The authenticated principal, if any.
-    std::string authn_principal;
+    // The authenticated username, if any.
+    std::string username;
 
     // The raw query string passed in the URL. May be empty.
     std::string query_string;

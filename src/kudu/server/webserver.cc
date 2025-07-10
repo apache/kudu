@@ -57,6 +57,7 @@
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/security/init.h"
 #include "kudu/security/gssapi.h"
 #include "kudu/util/easy_json.h"
 #include "kudu/util/env.h"
@@ -616,7 +617,17 @@ sq_callback_result_t Webserver::BeginRequestCallback(
       opts_.spnego_post_authn_callback(authn_princ);
     }
 
-    request_info->remote_user = strdup(authn_princ.c_str());
+    string local_user;
+    s = security::MapPrincipalToLocalName(authn_princ, &local_user);
+    if (!s.ok()) {
+      LOG(WARNING) << "Failed to map Kerberos principal '" << authn_princ
+                   << "' to local name: " << s.ToString();
+      resp.output << s.ToString();
+      resp.status_code = HttpStatusCode::InternalServerError;
+      SendResponse(connection, &resp);
+      return SQ_HANDLED_OK;
+    }
+    request_info->remote_user = strdup(local_user.c_str());
   }
 
   PathHandler* handler = nullptr;
@@ -699,9 +710,9 @@ sq_callback_result_t Webserver::RunPathHandler(
   }
   req.path_params = path_params;
   if (request_info->remote_user != nullptr) {
-    req.authn_principal = request_info->remote_user;
+    req.username = request_info->remote_user;
   } else {
-    req.authn_principal = "";
+    req.username = "";
   }
   for (int i = 0; i < request_info->num_headers; i++) {
     const auto& h = request_info->http_headers[i];

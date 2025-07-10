@@ -678,7 +678,7 @@ TEST_F(WebserverTest, TestPutMethodNotAllowed) {
 
 // Test that authenticated principal is correctly passed to the handler.
 static void Handler(const Webserver::WebRequest& req, Webserver::PrerenderedWebResponse* resp) {
-  resp->output << req.authn_principal;
+  resp->output << req.username;
 }
 
 class AuthnWebserverTest : public SpnegoWebserverTest {
@@ -713,7 +713,7 @@ TEST_F(AuthnWebserverTest, TestAuthenticatedUserPassedToHandler) {
   ASSERT_OK(kdc_->Kinit("alice"));
   curl_.set_auth(CurlAuthType::SPNEGO);
   ASSERT_OK(curl_.FetchURL(Substitute("$0/authn", url_), &buf_));
-  ASSERT_STR_CONTAINS(buf_.ToString(), "alice@KRBTEST.COM");
+  ASSERT_STR_CONTAINS(buf_.ToString(), "alice");
 }
 
 TEST_F(AuthnWebserverTest, TestUnauthenticatedBadKeytab) {
