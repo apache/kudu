@@ -149,38 +149,55 @@ namespace {
 // about this. Clean this up.
 string kWebserverLastErrMsg; // NOLINT(runtime/string)
 
-string HttpStatusCodeToString(kudu::HttpStatusCode code) {
+const char* HttpStatusCodeToString(kudu::HttpStatusCode code) {
+  static constexpr const char* const k200 = "200 OK";
+  static constexpr const char* const k201 = "201 Created";
+  static constexpr const char* const k204 = "204 No Content";
+  static constexpr const char* const k307 = "307 Temporary Redirect";
+  static constexpr const char* const k400 = "400 Bad Request";
+  static constexpr const char* const k401 = "401 Authentication Required";
+  static constexpr const char* const k403 = "403 Forbidden";
+  static constexpr const char* const k404 = "404 Not Found";
+  static constexpr const char* const k405 = "405 Method Not Allowed";
+  static constexpr const char* const k411 = "411 Length Required";
+  static constexpr const char* const k413 = "413 Request Entity Too Large";
+  static constexpr const char* const k500 = "500 Internal Server Error";
+  static constexpr const char* const k503 = "503 Service Unavailable";
+  static constexpr const char* const k504 = "504 Gateway Timeout";
+
   switch (code) {
     case kudu::HttpStatusCode::Ok:
-      return "200 OK";
+      return k200;
     case kudu::HttpStatusCode::Created:
-      return "201 Created";
+      return k201;
     case kudu::HttpStatusCode::NoContent:
-      return "204 No Content";
+      return k204;
     case kudu::HttpStatusCode::TemporaryRedirect:
-      return "307 Temporary Redirect";
+      return k307;
     case kudu::HttpStatusCode::BadRequest:
-      return "400 Bad Request";
+      return k400;
     case kudu::HttpStatusCode::AuthenticationRequired:
-      return "401 Authentication Required";
+      return k401;
     case kudu::HttpStatusCode::Forbidden:
-      return "403 Forbidden";
+      return k403;
     case kudu::HttpStatusCode::NotFound:
-      return "404 Not Found";
+      return k404;
     case kudu::HttpStatusCode::MethodNotAllowed:
-      return "405 Method Not Allowed";
+      return k405;
     case kudu::HttpStatusCode::LengthRequired:
-      return "411 Length Required";
+      return k411;
     case kudu::HttpStatusCode::RequestEntityTooLarge:
-      return "413 Request Entity Too Large";
+      return k413;
     case kudu::HttpStatusCode::InternalServerError:
-      return "500 Internal Server Error";
+      return k500;
     case kudu::HttpStatusCode::ServiceUnavailable:
-      return "503 Service Unavailable";
+      return k503;
     case kudu::HttpStatusCode::GatewayTimeout:
-      return "504 Gateway Timeout";
+      return k504;
   }
-  LOG(FATAL) << "Unexpected HTTP response code";
+
+  LOG(DFATAL) << "unexpected HTTP response code: " << static_cast<uint16_t>(code);
+  return k500;
 }
 
 // Return the address of the remote user from the squeasel request info.
