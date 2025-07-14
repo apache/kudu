@@ -28,7 +28,7 @@
   <name>Kudu Spark Examples</name>
 
   <properties>
-    <kudu-version>1.17.0</kudu-version>
+    <kudu-version>1.18.0</kudu-version>
   </properties>
 
   <build>
@@ -95,20 +95,20 @@
   <dependencies>
     <dependency>
       <groupId>org.apache.kudu</groupId>
-      <artifactId>kudu-spark2_2.11</artifactId>
+      <artifactId>kudu-spark3_2.12</artifactId>
       <version>${kudu-version}</version>
     </dependency>
 
     <!-- The Spark dependencies are provided. -->
     <dependency>
         <groupId>org.apache.spark</groupId>
-        <artifactId>spark-core_2.11</artifactId>
-        <version>2.4.7</version>
+        <artifactId>spark-core_2.12</artifactId>
+        <version>3.2.4</version>
     </dependency>
     <dependency>
         <groupId>org.apache.spark</groupId>
-        <artifactId>spark-sql_2.11</artifactId>
-        <version>2.4.7</version>
+        <artifactId>spark-sql_2.12</artifactId>
+        <version>3.2.4</version>
     </dependency>
 
     <!-- For logging messages. -->
