@@ -79,17 +79,43 @@ publishing {
       }
 
       // Remove the shaded dependencies from the generated pom.
-      pom.withXml {
-        def implementationDeps  = []
-        def shadedDeps = []
-        if (project.configurations.hasProperty("implementation")) {
-          implementationDeps = project.configurations.implementation.allDependencies
-        }
-        if (project.configurations.hasProperty("shadow")) {
-          shadedDeps = project.configurations.shadow.allDependencies
-        }
 
-        def finalDeps = implementationDeps - shadedDeps
+      pom.withXml {
+        def implementationDeps = []
+        def shadedDeps = []
+        def unshadedDeps = []
+
+        def implConfig = project.configurations.findByName("implementation")
+        def shadowConfig = project.configurations.findByName("shadow")
+        def unshadedConfig = project.configurations.findByName("compileUnshaded")
+
+        if (implConfig) {
+          implementationDeps = implConfig.allDependencies
+        }
+        if (shadowConfig) {
+          shadedDeps = shadowConfig.allDependencies
+        }
+        if (unshadedConfig) {
+          unshadedDeps = unshadedConfig.allDependencies
+        }
+       // Explanation for the below logic of excluding and including unshadedDeps:
+       // Given the following sets:
+       //   implDeps     = {A, B, C, D}
+       //   shadowDeps   = {D, E, F}
+       //   unshadedDeps = {C, D, G}
+       //
+       // The logic here computes:
+       //   filteredImplDeps = implDeps - shadowDeps - unshadedDeps = {A, B}
+       //   finalDeps = filteredImplDeps + unshadedDeps = {A, B, C, D, G}
+       //
+       // This approach avoids inadvertently excluding dependencies like 'C' and 'G'
+       // that may appear in unshadedDeps but are not in implDeps.
+       // While in our current setup `unshadedDeps ⊆ shadowDeps` due to:
+       //   configurations.shadow.extendsFrom(configurations.compileUnshaded)
+       // this logic ensures correctness in future scenarios where that might not hold.
+       // It also improves clarity and maintainability for future readers.
+        def filteredImplDeps = implementationDeps - shadedDeps - unshadedDeps
+        def finalDeps = filteredImplDeps + unshadedDeps
         asNode().dependencies.dependency.findAll{
           finalDeps.findAll{ dep ->
             dep.name == it.artifactId*.value()[0][0]
@@ -97,6 +123,30 @@ publishing {
         }.each() {
           logger.info "Removing: ${it.artifactId*.value()[0][0]} from pom"
           assert it.parent().remove(it)
+        }
+        // Ensure <dependencies> node exists
+        def dependenciesNode = asNode().dependencies?.getAt(0)
+        if (!dependenciesNode) {
+          dependenciesNode = asNode().appendNode("dependencies")
+        }
+
+        // Add back unshaded dependencies manually with <scope>compile</scope> (to get proper exclusions)
+        unshadedDeps.findAll { it.group && it.name && it.version }.each { dep ->
+          logger.info "Adding compileUnshaded: ${dep.group}:${dep.name}:${dep.version}"
+          def depNode = dependenciesNode.appendNode("dependency")
+          depNode.appendNode("groupId", dep.group)
+          depNode.appendNode("artifactId", dep.name)
+          depNode.appendNode("version", dep.version)
+          depNode.appendNode("scope", "compile")
+
+          if (!dep.excludeRules.isEmpty()) {
+            def exclusionsNode = depNode.appendNode("exclusions")
+            dep.excludeRules.each { ex ->
+              def exclusion = exclusionsNode.appendNode("exclusion")
+              exclusion.appendNode("groupId", ex.group ?: "*")
+              exclusion.appendNode("artifactId", ex.module ?: "*")
+            }
+          }
         }
       }
     }
