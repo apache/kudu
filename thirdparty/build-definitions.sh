@@ -791,7 +791,6 @@ build_curl() {
     --disable-gopher \
     --disable-imap \
     --disable-ipfs \
-    --disable-ipv6 \
     --disable-ldap \
     --disable-ldaps \
     --disable-libcurl-option \
@@ -816,6 +815,7 @@ build_curl() {
     --enable-bearer-auth \
     --enable-digest-auth \
     --enable-http-auth \
+    --enable-ipv6 \
     --enable-kerberos-auth \
     --enable-negotiate-auth \
     --without-apple-idn \
