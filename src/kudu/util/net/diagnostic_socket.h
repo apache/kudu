@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <vector>
 
@@ -42,7 +43,7 @@ class DiagnosticSocket final {
   // of this class.
   enum SocketState {
     SS_UNKNOWN = 0,
-    SS_ESTABLISHED,
+    SS_ESTABLISHED = 1,
     SS_SYN_SENT,
     SS_SYN_RECV,
     SS_FIN_WAIT1,
@@ -53,8 +54,10 @@ class DiagnosticSocket final {
     SS_LAST_ACK,
     SS_LISTEN,
     SS_CLOSING,
-    SS_MAX,
+    SS_MAX = SS_CLOSING,
   };
+
+  typedef std::array<SocketState, SocketState::SS_MAX> SocketStates;
 
   // Diagnostic information on a TCP IPv4 socket. That's a subset of the
   // information available via the netlink data structures.
@@ -72,8 +75,8 @@ class DiagnosticSocket final {
     uint32_t tx_queue_size; // TX queue size
   };
 
-  // Return wildcard for all the available socket states.
-  static const std::vector<SocketState>& SocketStateWildcard();
+  // Return wildcard for all valid socket states.
+  static const SocketStates& SocketStateWildcard();
 
   // Construct an object.
   DiagnosticSocket();
@@ -98,7 +101,7 @@ class DiagnosticSocket final {
   // are supported.
   Status Query(const Sockaddr& socket_src_addr,
                const Sockaddr& socket_dst_addr,
-               const std::vector<SocketState>& socket_states,
+               const SocketStates& matching_socket_states,
                std::vector<TcpSocketInfo>* info) const;
 
   // Get diagnostic information on the specified socket. This is a handy

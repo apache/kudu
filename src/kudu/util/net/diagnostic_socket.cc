@@ -26,6 +26,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <array>
 #include <cerrno>
 #include <ostream>
 #include <string>
@@ -46,8 +47,8 @@ using strings::Substitute;
 
 namespace kudu {
 
-const vector<DiagnosticSocket::SocketState>& DiagnosticSocket::SocketStateWildcard() {
-  static const vector<DiagnosticSocket::SocketState> kSocketStateWildcard {
+const DiagnosticSocket::SocketStates& DiagnosticSocket::SocketStateWildcard() {
+  static constexpr const SocketStates kSocketStateWildcard {
     SS_ESTABLISHED,
     SS_SYN_SENT,
     SS_SYN_RECV,
@@ -60,6 +61,7 @@ const vector<DiagnosticSocket::SocketState>& DiagnosticSocket::SocketStateWildca
     SS_LISTEN,
     SS_CLOSING,
   };
+  static_assert(kSocketStateWildcard.size() == SocketState::SS_MAX);
   return kSocketStateWildcard;
 }
 
@@ -100,13 +102,14 @@ Status DiagnosticSocket::Close() {
 
 Status DiagnosticSocket::Query(const Sockaddr& socket_src_addr,
                                const Sockaddr& socket_dst_addr,
-                               const vector<SocketState>& socket_states,
+                               const SocketStates& matching_socket_states,
                                vector<TcpSocketInfo>* info) const {
   DCHECK_GE(fd_, 0) << "requires calling Init() first";
   DCHECK(info);
 
   uint32_t socket_states_bitmask = 0;
-  for (auto state : socket_states) {
+  for (auto state : matching_socket_states) {
+    DCHECK_LT(state, 8 * sizeof(decltype(socket_states_bitmask)));
     socket_states_bitmask |= (1U << state);
   }
 

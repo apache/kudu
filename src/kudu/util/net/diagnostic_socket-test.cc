@@ -100,7 +100,7 @@ TEST_F(DiagnosticSocketTest, SimplePattern) {
 
   const auto& src_addr = listen_addr_;
   const auto& dst_addr = Sockaddr::Wildcard();
-  const vector<DiagnosticSocket::SocketState> socket_states{ DiagnosticSocket::SS_LISTEN };
+  const DiagnosticSocket::SocketStates socket_states{ DiagnosticSocket::SS_LISTEN };
 
   DiagnosticSocket ds;
   ASSERT_OK(ds.Init());
