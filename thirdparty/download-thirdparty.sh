@@ -311,11 +311,12 @@ fetch_and_patch \
  "patch -p1 < $TP_DIR/patches/curl-handle-openssl-errors.patch" \
  "autoreconf -fvi"
 
-CRCUTIL_PATCHLEVEL=0
+CRCUTIL_PATCHLEVEL=1
 fetch_and_patch \
  crcutil-${CRCUTIL_VERSION}.tar.gz \
  $CRCUTIL_SOURCE \
- $CRCUTIL_PATCHLEVEL
+ $CRCUTIL_PATCHLEVEL \
+ "patch -p1 < $TP_DIR/patches/crcutil-fix-macos-arm64-flags.patch"
 
 LIBUNWIND_PATCHLEVEL=1
 fetch_and_patch \
