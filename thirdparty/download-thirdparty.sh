@@ -235,18 +235,19 @@ needs_patched_cmake() {
   fi
   return 0
 }
-
-CMAKE_PATCHLEVEL=1
 CMAKE_PATCHES=""
+CMAKE_PATCHLEVEL=2
 if needs_patched_cmake; then \
  CMAKE_PATCHES="patch -p1 < $TP_DIR/patches/cmake-issue-15873-dont-use-select.patch"
 fi
 
+# cmake-fix-macos-compilation should be removed once cmake is upgraded to version 3.30 or later
 fetch_and_patch \
  cmake-${CMAKE_VERSION}.tar.gz \
  $CMAKE_SOURCE \
  $CMAKE_PATCHLEVEL \
- "$CMAKE_PATCHES"
+ "$CMAKE_PATCHES" \
+ "patch -p1 < $TP_DIR/patches/cmake-fix-macos-compilation.patch"
 
 SNAPPY_PATCHLEVEL=0
 fetch_and_patch \
