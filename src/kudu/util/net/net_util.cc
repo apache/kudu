@@ -497,6 +497,7 @@ Status GetFQDN(string* hostname) {
   struct addrinfo hints;
   memset(&hints, 0, sizeof(hints));
   hints.ai_socktype = SOCK_DGRAM;
+  hints.ai_family = AF_INET;
   hints.ai_flags = AI_CANONNAME;
   AddrInfo result;
   const string op_description =
