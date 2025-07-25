@@ -877,9 +877,9 @@ class ColumnarResultSerializer : public ResultSerializer {
   }
 
   size_t ResponseSize() const override {
-    CHECK(!done_);
+    DCHECK(!done_);
 
-    int total = 0;
+    size_t total = 0;
     for (const auto& col : results_.columns()) {
       total += col.data.size();
       if (col.varlen_data) {
@@ -3057,7 +3057,7 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
   TRACE_EVENT2("tserver", "TabletServiceImpl::HandleContinueScanRequest",
                "scanner_id", req->scanner_id(),
                "query_id", req->query_id());
-  size_t batch_size_bytes = GetMaxBatchSizeBytesHint(req);
+  const size_t batch_size_bytes = GetMaxBatchSizeBytesHint(req);
 
   SharedScanner scanner;
   TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
@@ -3127,19 +3127,20 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
 
   // TODO(todd): in the future, use the client timeout to set a budget. For now,
   // just use a half second, which should be plenty to amortize call overhead.
-  int budget_ms = 500;
-  MonoTime deadline = MonoTime::Now() + MonoDelta::FromMilliseconds(budget_ms);
+  constexpr const int budget_ms = 500;
+  const MonoTime deadline = MonoTime::Now() + MonoDelta::FromMilliseconds(budget_ms);
 
-  int64_t rows_scanned = 0;
+  size_t rows_scanned = 0;
   while (iter->HasNext() && !scanner->has_fulfilled_limit()) {
     if (PREDICT_FALSE(FLAGS_scanner_inject_latency_on_each_batch_ms > 0)) {
       SleepFor(MonoDelta::FromMilliseconds(FLAGS_scanner_inject_latency_on_each_batch_ms));
     }
 
-    Status s = iter->NextBlock(&block);
-    if (PREDICT_FALSE(!s.ok())) {
-      LOG(WARNING) << "Copying rows from internal iterator for request "
-                   << SecureShortDebugString(*req);
+    if (auto s = iter->NextBlock(&block); PREDICT_FALSE(!s.ok())) {
+      TRACE("Failed copying row data - responding with UNKNOWN_ERROR");
+      LOG(ERROR) << Substitute(
+          "scan '$0': could not copy row data from iterator after scanning $1 rows: $2",
+          SecureShortDebugString(*req), rows_scanned, s.ToString());
       *error_code = TabletServerErrorPB::UNKNOWN_ERROR;
       return s;
     }
@@ -3157,16 +3158,16 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
       result_collector->HandleRowBlock(scanner.get(), block);
     }
 
-    int64_t response_size = result_collector->ResponseSize();
-
+    const int64_t response_size = result_collector->ResponseSize();
     if (VLOG_IS_ON(2)) {
       // This may be fairly expensive if row block size is small
       TRACE("Copied block (nrows=$0), new size=$1", block.nrows(), response_size);
     }
 
     // TODO: should check if RPC got cancelled, once we implement RPC cancellation.
-    if (PREDICT_FALSE(MonoTime::Now() >= deadline)) {
-      TRACE("Deadline expired - responding early");
+    if (MonoTime::Now() >= deadline) {
+      TRACE("Deadline expired after scanning $0 rows: responding with $1 bytes "
+            "(batch size $2)", rows_scanned, response_size, batch_size_bytes);
       break;
     }
 
