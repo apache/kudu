@@ -513,6 +513,10 @@ build_gperftools() {
     $GPERFTOOLS_SOURCE/configure $cfg_options
   fixup_libtool
   make -j$PARALLEL $EXTRA_MAKEFLAGS install
+  # Add tcmalloc_guard.h because TCMallocGuard is useful for fine-grained
+  # control over the initialization of libtcmalloc internals, and that's
+  # helpful in the context of addressing KUDU-2439 and KUDU-3635.
+  install --backup=none --mode=0444 $GPERFTOOLS_SOURCE/src/tcmalloc_guard.h $PREFIX/include/gperftools
   popd
 }
 

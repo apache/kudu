@@ -25,6 +25,10 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/status.h"
 
+// Code for proper sequencing of tcmalloc and OpenSSL initialization/shutdown
+// that runs before/after main().
+#include "kudu/util/before_and_after_main.h"  // IWYU pragma: keep
+
 namespace kudu {
 namespace tserver {
 
