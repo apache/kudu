@@ -22,6 +22,7 @@
 #endif
 
 #include <algorithm>
+#include <atomic>
 #include <cerrno> // IWYU pragma: keep
 #include <cstdint>
 #include <functional>
@@ -77,7 +78,6 @@
 #include "kudu/server/tcmalloc_metrics.h"
 #include "kudu/server/tracing_path_handlers.h"
 #include "kudu/server/webserver.h"
-#include "kudu/util/atomic.h"
 #include "kudu/util/cloud/instance_detector.h"
 #include "kudu/util/cloud/instance_metadata.h"
 #include "kudu/util/env.h"
@@ -611,14 +611,13 @@ GROUP_FLAG_VALIDATOR(external_pki_flags, ValidateExternalPkiFlags);
 
 namespace {
 
-// Disambiguates between servers when in a minicluster.
-AtomicInt<int32_t> mem_tracker_id_counter(-1);
-
 shared_ptr<MemTracker> CreateMemTrackerForServer() {
-  int32_t id = mem_tracker_id_counter.Increment();
+  // Disambiguates between servers when in a minicluster.
+  static std::atomic<int32_t> mem_tracker_id_counter(-1);
+
   string id_str = "server";
-  if (id != 0) {
-    StrAppend(&id_str, " ", id);
+  if (const int32_t mt_id = ++mem_tracker_id_counter; mt_id != 0) {
+    StrAppend(&id_str, " ", mt_id);
   }
   return MemTracker::CreateTracker(-1, id_str);
 }
