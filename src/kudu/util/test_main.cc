@@ -32,6 +32,12 @@
 #include "kudu/util/status.h"
 #include "kudu/util/test_util.h"
 
+#define KUDU_TEST_MAIN
+
+// Code for proper sequencing of tcmalloc and OpenSSL initialization/shutdown
+// that runs before/after main().
+#include "kudu/util/before_and_after_main.h"  // IWYU pragma: keep
+
 DEFINE_int32(test_timeout_after, 0,
              "Maximum total seconds allowed for all unit tests in the suite. Default: disabled");
 

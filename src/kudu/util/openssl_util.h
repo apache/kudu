@@ -95,11 +95,27 @@ using PasswordCallback = std::function<Status(std::string*)>;
 // any call to InitializeOpenSSL().
 Status DisableOpenSSLInitialization() WARN_UNUSED_RESULT;
 
+// Set whether the OpenSSL library is initialized in the context of a standalone
+// application. This should be called only once during static initialization.
+void SetStandaloneInit(bool is_standalone);
+
 // Initializes static state required by the OpenSSL library.
 // This is a no-op if DisableOpenSSLInitialization() has been called.
 //
 // Safe to call multiple times.
 void InitializeOpenSSL();
+
+// Clean up the OpenSSL's library global state. This function essentially calls
+// OPENSSL_cleanup() with OpenSSL 1.1.1 and newer versions. This function
+// should be called called only by a standalone application right after exiting
+// its main() function.
+void FinalizeOpenSSL();
+
+// Check if the Kudu's runtime has already initialized the OpenSSL library.
+// This function is not thread safe, and its only expected use cases are:
+//   ** calls from DisableOpenSSLInitialization()
+//   ** calls from global's initializers before main()
+bool IsOpenSSLInitialized();
 
 // Fetches errors from the OpenSSL error error queue, and stringifies them.
 //

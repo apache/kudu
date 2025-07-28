@@ -22,6 +22,7 @@
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
+#include <glog/raw_logging.h>
 #ifdef TCMALLOC_ENABLED
 #include <gperftools/malloc_extension.h>  // IWYU pragma: keep
 #endif
@@ -134,9 +135,9 @@ DEFINE_validator(tcmalloc_max_free_bytes_percentage, &ValidatePercentage);
 // ------------------------------------------------------------
 #ifdef TCMALLOC_ENABLED
 static int64_t GetTCMallocProperty(const char* prop) {
-  size_t value;
+  size_t value = 0;
   if (!MallocExtension::instance()->GetNumericProperty(prop, &value)) {
-    LOG(DFATAL) << "Failed to get tcmalloc property " << prop;
+    RAW_LOG(ERROR, "failed to get tcmalloc property '%s'; returning 0", prop);
   }
   return value;
 }
