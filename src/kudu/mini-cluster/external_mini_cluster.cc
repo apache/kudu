@@ -170,6 +170,16 @@ ExternalMiniCluster::ExternalMiniCluster(ExternalMiniClusterOptions opts)
 
 ExternalMiniCluster::~ExternalMiniCluster() {
   Shutdown();
+
+  // Shut down the messenger to make sure no tasks are running, scheduled,
+  // or yet to be scheduled to run on the messenger's reactor threads.
+  // This at least helps reducing the number of outstanding references
+  // to the messenger and stopping any pending activity related to the reactor
+  // threads. With that, there are fewer surprises when finalizing the runtime
+  // of the process which encapsulates an instance of ExternalMiniCluster.
+  if (messenger_) {
+    messenger_->Shutdown();
+  }
 }
 
 Env* ExternalMiniCluster::env() const {
