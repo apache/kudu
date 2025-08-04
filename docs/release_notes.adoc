@@ -28,6 +28,30 @@
 :sectlinks:
 :experimental:
 
+[[rn_1.18.1]]
+Apache Kudu 1.18.1 is a bug-fix release that addresses one critical Java client
+dependency issue introduced in Kudu 1.18.0 along with other fixes/improvements listed
+below.
+
+[[rn_1.18.1_upgrade_notes]]
+== Upgrade Notes
+
+[[rn_1.18.1_fixed_issues]]
+== Fixed Issues
+
+* The Kudu Java dependencies published in compileUnshaded dependency scope are no longer marked
+  optional (see https://issues.apache.org/jira/browse/KUDU-3677[KUDU-3677]).
+* Kudu CLI tools no longer crash on exit, as the global state of the OpenSSL library is
+  cleaned up explicitly (see https://issues.apache.org/jira/browse/KUDU-3635[KUDU-3635]).
+
+[[rn_1.18.1_improvements]]
+== Optimizations and improvements
+
+* Kudu's embedded webserver now supports setting the minimum required TLS version up to TLSv1.3.
+* It is now possible to control TLSv1.3-specific cipher suites used by Kudu's embedded webserver
+  via the newly introduced --webserver_tls_ciphersuites flag.
+* Upgraded the Apache Spark dependency from 3.2.4 to 3.5.
+
 [[rn_1.18.0_upgrade_notes]]
 == Upgrade Notes
 
