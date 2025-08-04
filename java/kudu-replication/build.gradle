@@ -28,11 +28,11 @@ dependencies {
 
     testImplementation libs.junit
     testImplementation libs.assertj
-    testImplementation libs.junit
     testImplementation project(path: ":kudu-test-utils", configuration: "shadow")
     testImplementation libs.log4jApi
     testImplementation libs.log4jCore
     testImplementation libs.log4jSlf4jImpl
+    testImplementation libs.flinkTestUtils
 }
 
 shadowJar {

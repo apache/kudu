@@ -20,14 +20,19 @@ import java.time.Duration;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.connector.source.Boundedness;
+import org.apache.flink.api.connector.source.Source;
 import org.apache.flink.connector.kudu.connector.KuduTableInfo;
 import org.apache.flink.connector.kudu.connector.reader.KuduReaderConfig;
 import org.apache.flink.connector.kudu.connector.writer.KuduWriterConfig;
 import org.apache.flink.connector.kudu.sink.KuduSink;
 import org.apache.flink.connector.kudu.sink.KuduSinkBuilder;
 import org.apache.flink.connector.kudu.source.KuduSource;
+import org.apache.flink.connector.kudu.source.enumerator.KuduSourceEnumeratorState;
+import org.apache.flink.connector.kudu.source.split.KuduSourceSplit;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.types.Row;
+
+import org.apache.kudu.replication.wrappedsource.MetricWrappedKuduSource;
 
 /**
  * Provides a configured {@link StreamExecutionEnvironment} for the replication job.
@@ -63,13 +68,17 @@ public class ReplicationEnvProvider {
             .setDiscoveryPeriod(Duration.ofSeconds(jobConfig.getDiscoveryIntervalSeconds()))
             .build();
 
+    // TODO(mgreber): remove this line once FLINK-38187 is resolved.
+    Source<Row, KuduSourceSplit, KuduSourceEnumeratorState> wrappedSource =
+            new MetricWrappedKuduSource<>(kuduSource);
+
     KuduSink<Row> kuduSink = new KuduSinkBuilder<Row>()
             .setWriterConfig(writerConfig)
             .setTableInfo(KuduTableInfo.forTable(jobConfig.getSinkTableName()))
             .setOperationMapper(new CustomReplicationOperationMapper())
             .build();
 
-    env.fromSource(kuduSource, WatermarkStrategy.noWatermarks(), "KuduSource")
+    env.fromSource(wrappedSource, WatermarkStrategy.noWatermarks(), "KuduSource")
             .returns(TypeInformation.of(Row.class))
             .sinkTo(kuduSink);
 

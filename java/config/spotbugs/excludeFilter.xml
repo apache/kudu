@@ -375,4 +375,14 @@
         <Class name="org.apache.kudu.test.cluster.FakeDNS"/>
         <Bug pattern="DP_DO_INSIDE_DO_PRIVILEGED" />
     </Match>
+
+    <!-- kudu-replication exclusions -->
+    <Match>
+        <!-- SerialVersionUID is not needed as the original Flink source classes
+             also don't define it, and these are wrapper classes. -->
+        <Class name="~org\.apache\.kudu\.replication\.wrappedsource\..*"/>
+        <Or>
+            <Bug pattern="SE_NO_SERIALVERSIONID" />
+        </Or>
+    </Match>
 </FindBugsFilter>
