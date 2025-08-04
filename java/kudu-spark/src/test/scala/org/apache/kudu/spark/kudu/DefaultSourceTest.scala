@@ -31,6 +31,7 @@ import org.apache.spark.sql.types.StructField
 import org.apache.spark.sql.types.StructType
 import org.junit.Assert._
 import org.apache.kudu.client.CreateTableOptions
+import org.apache.kudu.client.KuduException
 import org.apache.kudu.test.KuduTestHarness
 import org.apache.kudu.test.RandomUtils
 import org.apache.kudu.spark.kudu.SparkListenerUtil.withJobTaskCounter
@@ -966,7 +967,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
       val df = sqlContext.read.options(kuduOptions).format("kudu").load
       df.count()
     }
-    assertTrue(exception.getCause.getMessage.contains("this client is not authenticated"))
+    assertTrue(exception.getMessage.contains("this client is not authenticated"))
 
     KuduClientCache.clearCacheForTests()
     kuduOptions = Map(
@@ -992,7 +993,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
       df.count
     }
     assertTrue(
-      exception.getCause.getMessage
+      exception.getMessage
         .contains("client requires authentication, but server does not have Kerberos enabled"))
   }
 
@@ -1010,8 +1011,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
       val df = sqlContext.read.options(kuduOptions).format("kudu").load
       df.count
     }
-    assertTrue(
-      exception.getCause.getMessage.contains("server does not support required TLS encryption"))
+    assertTrue(exception.getMessage.contains("server does not support required TLS encryption"))
   }
 
   @Test

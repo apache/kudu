@@ -130,6 +130,8 @@
             <Bug pattern="RV_RETURN_VALUE_IGNORED_NO_SIDE_EFFECT" />
             <!-- Tests often cast to a known class. -->
             <Bug pattern="BC_UNCONFIRMED_CAST_OF_RETURN_VALUE" />
+            <!-- In tests, instanceof assertions are often intentional for readability. -->
+            <Bug pattern="JUA_DONT_ASSERT_INSTANCEOF_IN_TESTS" />
             <!-- Tests don't need to worry about serialization compatibility. -->
             <Bug pattern="SE_NO_SERIALVERSIONID" />
             <!-- Often tests testing exceptions have "exception" in the name. -->

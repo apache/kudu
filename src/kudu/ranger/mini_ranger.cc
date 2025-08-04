@@ -194,6 +194,18 @@ Status MiniRanger::StartRanger() {
     std::vector<string> args({
         JoinPathSegments(java_home_, "bin/java"),
         "-Djava.net.preferIPv4Stack=true",      // ensure IPv4 is used
+        // Ranger and its dependencies use deep reflection that is restricted by
+        // the Java module system in JDK 9+ (including JDK 17).
+        // Keep Java 8 compatibility by ignoring unknown options there.
+        "-XX:+IgnoreUnrecognizedVMOptions",
+        "--add-opens=java.base/java.lang=ALL-UNNAMED",
+        "--add-opens=java.base/java.lang.reflect=ALL-UNNAMED",
+        "--add-opens=java.base/java.io=ALL-UNNAMED",
+        "--add-opens=java.base/java.net=ALL-UNNAMED",
+        "--add-opens=java.base/java.util=ALL-UNNAMED",
+        "--add-opens=java.base/java.util.concurrent=ALL-UNNAMED",
+        "--add-opens=java.base/sun.security.action=ALL-UNNAMED",
+        "--add-opens=java.security.jgss/sun.security.krb5=ALL-UNNAMED",
         "-Dproc_rangeradmin",
         Substitute("-Dhostname=$0", host_),
         Substitute("-Dlog4j.configuration=file:$0",

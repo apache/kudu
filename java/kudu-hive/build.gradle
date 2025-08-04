@@ -37,6 +37,7 @@ dependencies {
 
   testImplementation libs.hiveMetastore
   testImplementation libs.hadoopCommon
+  testImplementation libs.hadoopHdfs
   testImplementation libs.hadoopMRClientCommon
 }
 

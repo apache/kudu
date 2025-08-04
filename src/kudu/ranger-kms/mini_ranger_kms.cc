@@ -243,6 +243,22 @@ Status MiniRangerKMS::StartRangerKMS() {
     std::vector<string> args({
       JoinPathSegments(java_home_, "bin/java"),
       "-Djava.net.preferIPv4Stack=true",      // ensure IPv4 is used
+      // Ranger KMS and its dependencies use deep reflection that is restricted
+      // by the Java module system in JDK 9+ (including JDK 17).
+      // Keep Java 8 compatibility by ignoring unknown options there.
+      "-XX:+IgnoreUnrecognizedVMOptions",
+      "--add-opens=java.base/java.lang=ALL-UNNAMED",
+      "--add-opens=java.base/java.lang.reflect=ALL-UNNAMED",
+      "--add-opens=java.base/java.io=ALL-UNNAMED",
+      "--add-opens=java.base/java.net=ALL-UNNAMED",
+      "--add-opens=java.base/java.util=ALL-UNNAMED",
+      "--add-opens=java.base/java.util.concurrent=ALL-UNNAMED",
+      "--add-opens=java.base/sun.security.action=ALL-UNNAMED",
+      "--add-opens=java.security.jgss/sun.security.krb5=ALL-UNNAMED",
+      "--add-opens=java.base/com.sun.crypto.provider=ALL-UNNAMED",
+      // RangerMasterKey directly uses com.sun.org.apache.xml.internal.security.utils.Base64
+      // from the java.xml.crypto module to encode/decode the encrypted master key.
+      "--add-exports=java.xml.crypto/com.sun.org.apache.xml.internal.security.utils=ALL-UNNAMED",
       "-Dproc_rangerkms",
       Substitute("-Dhostname=$0", host_),
       Substitute("-Dlog4j.configuration=file:$0",

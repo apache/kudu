@@ -32,6 +32,8 @@ dependencies {
 
   implementation libs.yetusAnnotations
 
+  compileOnly libs.annotations
+
   testImplementation project(path: ":kudu-test-utils", configuration: "shadow")
   testImplementation libs.junit
   testImplementation libs.log4jApi

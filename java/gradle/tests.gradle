@@ -46,16 +46,20 @@ tasks.withType(Test) {
   jvmArgs += "-Xmx1g"
   // Hide the Java 9+ warnings about illegal reflective access
   if (JavaVersion.current().isJava9Compatible()) {
-    jvmArgs += "--illegal-access=permit"
     def reflectionModules = [
         "java.base/java.io",   // java.io reflection is used by Spark
         "java.base/java.lang", // java.lang reflection is used by TestUtils
+        "java.base/java.lang.reflect", // java.io reflection is used by Spark
         "java.base/java.net",  // java.net reflection is used by FakeDNS
         "java.base/java.nio",  // java.nio reflection is used by Protobuf
         "java.base/java.util", // java.util reflection is used by Spark
         "java.base/java.util.concurrent", // java.util.concurrent reflection is used by Spark
+        "java.base/java.util.concurrent.atomic", // java.io reflection is used by Spark
         "java.base/sun.nio.ch", // sun.nio.ch reflection is used by Netty
-        "java.security.jgss/sun.security.krb5" // sun.security.krb5 reflection is used by Hadoop's KerberosUtil
+        "java.base/sun.nio.cs", // java.io reflection is used by Spark
+        "java.base/sun.security.action", // java.io reflection is used by Spark
+        "java.base/sun.util.calendar", // java.io reflection is used by Spark
+        "java.security.jgss/sun.security.krb5", // sun.security.krb5 reflection is used by Hadoop's KerberosUtil
     ]
     reflectionModules.forEach { module ->
       jvmArgs += "--add-opens=$module=ALL-UNNAMED"

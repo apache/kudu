@@ -19,6 +19,7 @@ apply from: "$rootDir/gradle/protobuf.gradle"
 
 dependencies {
   implementation libs.protobufJava
+  compileOnly libs.annotations
 }
 
 // Add protobuf files to the proto source set.

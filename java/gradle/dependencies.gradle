@@ -25,6 +25,7 @@ ext {
 }
 
 versions += [
+    annotations         : "6.0.53",
     assertj             : "3.27.3",
     async               : "1.4.1",
     checkstyle          : "8.36.1",
@@ -41,9 +42,9 @@ versions += [
     hadoop              : "3.4.1",
     hamcrest            : "3.0",
     hdrhistogram        : "2.2.2",
-    hive                : "3.1.2",
+    hive                : "4.1.0",
     httpClient          : "4.5.14",
-    jacoco              : "0.8.6",
+    jacoco              : "0.8.8",
     jepsen              : "0.1.5",
     jetty               : "9.4.57.v20241219",
     jmh                 : "1.37",
@@ -65,7 +66,7 @@ versions += [
     slf4j               : "1.7.36",
     spark2              : "2.4.8",
     spark               : "3.5.5",
-    spotBugs            : "4.1.1",
+    spotBugs            : "4.2.2",
     yetus               : "0.13.0"
 ]
 
@@ -89,6 +90,7 @@ versions["sparkBase"] = versions.spark.substring(0, versions.spark.indexOf("."))
 
 libs += [
     assertj              : "org.assertj:assertj-core:$versions.assertj",
+    annotations          : "org.apache.tomcat:annotations-api:$versions.annotations",
     async                : "com.stumbleupon:async:$versions.async",
     clojure              : "org.clojure:clojure:$versions.clojure",
     clojureToolsCli      : "org.clojure:tools.cli:$versions.clojureToolsCli",
@@ -108,12 +110,13 @@ libs += [
     guava                : "com.google.guava:guava:$versions.guava",
     hadoopClient         : "org.apache.hadoop:hadoop-client:$versions.hadoop",
     hadoopCommon         : "org.apache.hadoop:hadoop-common:$versions.hadoop",
+    hadoopHdfs           : "org.apache.hadoop:hadoop-hdfs:$versions.hadoop",
     hadoopMiniCluster    : "org.apache.hadoop:hadoop-minicluster:$versions.hadoop",
     hadoopMRClientCommon : "org.apache.hadoop:hadoop-mapreduce-client-common:$versions.hadoop",
     hadoopMRClientCore   : "org.apache.hadoop:hadoop-mapreduce-client-core:$versions.hadoop",
     hamcrest             : "org.hamcrest:hamcrest:$versions.hamcrest",
     hdrhistogram         : "org.hdrhistogram:HdrHistogram:$versions.hdrhistogram",
-    hiveMetastore        : "org.apache.hive:hive-metastore:$versions.hive",
+    hiveMetastore        : "org.apache.hive:hive-standalone-metastore-server:$versions.hive",
     hiveTestUtils        : "org.apache.hive:hive-testutils:$versions.hive",
     httpClient           : "org.apache.httpcomponents:httpclient:$versions.httpClient",
     httpMime             : "org.apache.httpcomponents:httpmime:$versions.httpClient",
