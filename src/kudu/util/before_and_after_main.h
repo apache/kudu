@@ -76,6 +76,31 @@ static void module_init_openssl() {
 }
 
 static void module_fini_openssl() {
+#if !defined(KUDU_TEST_MAIN)
+  // This is a stop-gap to work around KUDU-2439. For the kudu CLI and
+  // kudu-{master,tserver} binaries, wait a bit for all Messenger instances
+  // to be shut down. Otherwise, if the asynchronous Messenger's shutdown
+  // process is still in progress, it might issue calls to the OpenSSL's runtime
+  // when destructing the Messenger::tls_context_ field. Meanwhile, the OpenSSL
+  // library could be shut down already or in the process of doing so,
+  // and a data race like that would often end up in undefined behavior or
+  // a crash with SIGSEGV/SIGFPE/SIGABRT. Introducing a bit of latency into
+  // the kudu-{master,tserver} shutdown isn't a bit deal. Also, in the vast
+  // majority of the kudu CLI's use cases, it's better to incur an extra second
+  // of latency compared with a crash and inability to tell whether the tool
+  // succeeded or not by analyzing its exit code.
+  if (const auto mc = kudu::rpc::Messenger::GetInstanceCount(); mc != 0) {
+    RAW_VLOG(2, "waiting for %d Messengers to shut down", mc);
+    const auto deadline = kudu::MonoTime::Now() + kudu::MonoDelta::FromSeconds(1);
+    while (kudu::MonoTime::Now() < deadline) {
+      SleepFor(kudu::MonoDelta::FromMilliseconds(50));
+      if (kudu::rpc::Messenger::GetInstanceCount() == 0) {
+        break;
+      }
+    }
+  }
+#endif // #if !defined(KUDU_TEST_MAIN) ...
+
   // Call OPENSSL_cleanup() to release resources and clean up the global state
   // of the library: it's applicable to OpenSSL 1.1.1 and newer versions.
   // At this point, tcmalloc must still be operational.

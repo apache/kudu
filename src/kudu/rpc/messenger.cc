@@ -151,6 +151,8 @@ Status MessengerBuilder::Build(shared_ptr<Messenger>* msgr) {
   return Status::OK();
 }
 
+std::atomic<uint32_t> Messenger::kInstanceCount_ = 0;
+
 // See comment on Messenger::retain_self_ member.
 void Messenger::AllExternalReferencesDropped() {
   // The last external ref may have been dropped in the context of a task
@@ -393,6 +395,7 @@ Messenger::Messenger(const MessengerBuilder& bld)
       reuseport_(bld.reuseport_),
       acceptor_listen_backlog_(bld.acceptor_listen_backlog_),
       retain_self_(this) {
+  kInstanceCount_.fetch_add(1, std::memory_order_release);
   for (int i = 0; i < bld.num_reactors_; i++) {
     reactors_.push_back(new Reactor(retain_self_, i, bld));
   }
@@ -406,9 +409,14 @@ Messenger::Messenger(const MessengerBuilder& bld)
       .Build(&server_negotiation_pool_));
 }
 
+uint32_t Messenger::GetInstanceCount() {
+  return kInstanceCount_.load(std::memory_order_acquire);
+}
+
 Messenger::~Messenger() {
   CHECK_EQ(state_, kClosing) << "Should have already shut down";
   STLDeleteElements(&reactors_);
+  kInstanceCount_.fetch_sub(1, std::memory_order_release);
 }
 
 Reactor* Messenger::RemoteToReactor(const Sockaddr& remote) const {
