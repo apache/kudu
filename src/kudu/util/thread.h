@@ -26,6 +26,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <string>
 #include <utility>
 
@@ -53,7 +54,7 @@ class WebCallbackRegistry;
 // dump the stack trace of the thread we're trying to join on if it
 // gets stuck. But, after looking for 20 minutes or so, it seems
 // pretty complicated to get right.
-class ThreadJoiner {
+class ThreadJoiner final {
  public:
   explicit ThreadJoiner(Thread* thread);
 
@@ -112,7 +113,7 @@ class ThreadJoiner {
 // (Join() and the destructor) are constrained: the child may not Join() on
 // itself, and the destructor is only run when there's one referent left.
 // These constraints allow us to access thread internals without any locks.
-class Thread : public RefCountedThreadSafe<Thread> {
+class Thread final : public RefCountedThreadSafe<Thread> {
  public:
 
   // Flags passed to Thread::CreateWithFlags().
@@ -237,14 +238,7 @@ class Thread : public RefCountedThreadSafe<Thread> {
     PARENT_WAITING_TID = -2,
   };
 
-  Thread(std::string category, std::string name, std::function<void()> functor)
-      : thread_(0),
-        category_(std::move(category)),
-        name_(std::move(name)),
-        tid_(INVALID_TID),
-        functor_(std::move(functor)),
-        done_(1),
-        joinable_(false) {}
+  Thread(std::string category, std::string name, std::function<void()> functor);
 
   // Library-specific thread ID.
   pthread_t thread_;
@@ -274,6 +268,7 @@ class Thread : public RefCountedThreadSafe<Thread> {
   CountDownLatch done_;
 
   bool joinable_;
+  std::shared_ptr<class ThreadMgr> thread_manager_;
 
   // Thread local pointer to the current thread of execution. Will be NULL if the current
   // thread is not a Thread.
