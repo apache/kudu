@@ -287,9 +287,9 @@ CertSigner::CertSigner(const Cert* ca_cert,
 }
 
 Status CertSigner::Sign(const CertSignRequest& req, Cert* ret) const {
-  SCOPED_OPENSSL_NO_PENDING_ERRORS;
-  InitializeOpenSSL();
   CHECK(ret);
+  InitializeOpenSSL();
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
 
   // If we are not self-signing, then make sure that the provided CA
   // cert and key match each other. Technically this would be programmer
