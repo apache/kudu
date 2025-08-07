@@ -16,6 +16,7 @@
 // under the License.
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -319,16 +320,15 @@ class MessengerBuilder {
 // one as a singleton, and then make calls using Proxy objects.
 //
 // See rpc-test.cc and rpc-bench.cc for example usages.
-class Messenger {
+class Messenger final {
  public:
-  friend class MessengerBuilder;
-  friend class Proxy;
-  friend class Reactor;
-  friend class ReactorThread;
   typedef std::vector<std::shared_ptr<AcceptorPool> > acceptor_vec_t;
   typedef std::unordered_map<std::string, scoped_refptr<RpcService> > RpcServicesMap;
 
-  static const uint64_t UNKNOWN_CALL_ID = 0;
+  static constexpr const uint64_t UNKNOWN_CALL_ID = 0;
+
+  // TODO(KUDU-2439): remove this stop-gap method once the issue is addressed
+  static uint32_t GetInstanceCount();
 
   ~Messenger();
 
@@ -474,6 +474,10 @@ class Messenger {
   const scoped_refptr<RpcService> rpc_service(const std::string& service_name) const;
 
  private:
+  friend class MessengerBuilder;
+  friend class Proxy;
+  friend class Reactor;
+  friend class ReactorThread;
   FRIEND_TEST(TestRpc, TestConnectionKeepalive);
   FRIEND_TEST(TestRpc, TestConnectionAlwaysKeepalive);
   FRIEND_TEST(TestRpc, TestClientConnectionsMetrics);
@@ -500,6 +504,9 @@ class Messenger {
   // Called by external-facing shared_ptr when the user no longer holds
   // any references. See 'retain_self_' for more info.
   void AllExternalReferencesDropped();
+
+  // TODO(KUDU-2439): remove this stop-gap field once the issue is addressed
+  static std::atomic<uint32_t> kInstanceCount_;
 
   // Get the total number of currently pending connections across all the RPC
   // endpoints this messenger is bound to. This utility method returns -1
