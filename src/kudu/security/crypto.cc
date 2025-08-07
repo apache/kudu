@@ -301,9 +301,9 @@ Status PrivateKey::MakeSignature(DigestType digest,
 }
 
 Status GeneratePrivateKey(int num_bits, PrivateKey* ret) {
-  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   CHECK(ret);
   InitializeOpenSSL();
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   auto key = ssl_make_unique(EVP_PKEY_new());
   {
     auto bn = ssl_make_unique(BN_new());
