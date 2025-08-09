@@ -16,6 +16,7 @@
 // under the License.
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <iterator>
@@ -70,7 +71,6 @@
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tserver/tserver.pb.h"
-#include "kudu/util/atomic.h"
 #include "kudu/util/env.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
@@ -108,6 +108,7 @@ using kudu::log::Log;
 using kudu::log::LogOptions;
 using kudu::tablet::TabletMetadata;
 using kudu::tablet::TabletSuperBlockPB;
+using std::atomic;
 using std::string;
 using std::thread;
 using std::unique_ptr;
@@ -723,7 +724,7 @@ class UpdaterThreads {
 
   // 'inserted' is an atomic integer which stores the number of rows
   // which have been inserted up to that point.
-  UpdaterThreads(AtomicInt<int32_t>* inserted,
+  UpdaterThreads(atomic<int32_t>* inserted,
                  shared_ptr<KuduClient> client,
                  shared_ptr<KuduTable> table)
     : should_run_(false),
@@ -734,8 +735,8 @@ class UpdaterThreads {
 
   // Start running the updater threads.
   void Start() {
-    CHECK(!should_run_.Load());
-    should_run_.Store(true);
+    DCHECK(!should_run_);
+    should_run_ = true;
     threads_.reserve(kNumThreads);
     for (int i = 0; i < kNumThreads; i++) {
       threads_.emplace_back([this]() { this->Run(); });
@@ -744,8 +745,8 @@ class UpdaterThreads {
 
   // Stop running the updater threads, and wait for them to exit.
   void StopAndJoin() {
-    CHECK(should_run_.Load());
-    should_run_.Store(false);
+    CHECK(should_run_.load(std::memory_order_relaxed));
+    should_run_.store(false, std::memory_order_relaxed);
 
     for (auto& t : threads_) {
       t.join();
@@ -758,9 +759,11 @@ class UpdaterThreads {
     shared_ptr<KuduSession> session = client_->NewSession();
     session->SetTimeoutMillis(2000);
     CHECK_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
-    while (should_run_.Load()) {
-      int i = inserted_->Load();
-      if (i == 0) continue;
+    while (should_run_.load(std::memory_order_relaxed)) {
+      int32_t i = inserted_->load(std::memory_order_relaxed);
+      if (i == 0) {
+        continue;
+      }
 
       unique_ptr<KuduUpdate> up(table_->NewUpdate());
       CHECK_OK(up->mutable_row()->SetInt32("key", IntToKey(rng.Uniform(i) + 1)));
@@ -772,8 +775,8 @@ class UpdaterThreads {
     }
   }
 
-  AtomicBool should_run_;
-  AtomicInt<int32_t>* inserted_;
+  atomic<bool> should_run_;
+  atomic<int32_t>* inserted_;
   shared_ptr<KuduClient> client_;
   shared_ptr<KuduTable> table_;
   vector<thread> threads_;
@@ -834,7 +837,7 @@ TEST_P(Kudu969Test, Test) {
   CHECK_OK(client->OpenTable(work.table_name(), &table));
 
   // Keep track of how many rows have been inserted.
-  AtomicInt<int32_t> inserted(0);
+  atomic<int32_t> inserted(0);
 
   // Start updater threads.
   UpdaterThreads updater(&inserted, client, table);
@@ -856,7 +859,7 @@ TEST_P(Kudu969Test, Test) {
     ASSERT_OK(session->Apply(ins.release()));
     if (i % 100 == 0) {
       WARN_NOT_OK(session->Flush(), "could not flush session");
-      inserted.Store(i);
+      inserted.store(i, std::memory_order_relaxed);
     }
   }
   LOG(INFO) << "successfully detected TS crash!";

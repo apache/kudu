@@ -130,7 +130,7 @@ void TestWorkload::OpenTable(shared_ptr<KuduTable>* table) {
   // Loop trying to open up the table. In some tests we set up very
   // low RPC timeouts to test those behaviors, so this might fail and
   // need retrying.
-  while (should_run_.Load()) {
+  while (should_run_.load(std::memory_order_relaxed)) {
     Status s = client_->OpenTable(table_name_, table);
     if (s.ok()) {
       break;
@@ -165,7 +165,7 @@ void TestWorkload::WriteThread() {
   session->SetTimeoutMillis(write_timeout_millis_);
   CHECK_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
 
-  while (should_run_.Load()) {
+  while (should_run_.load(std::memory_order_relaxed)) {
     int inserted = 0;
     int deleted = 0;
     vector<int32_t> keys;
@@ -183,7 +183,8 @@ void TestWorkload::WriteThread() {
           int32_t key;
           if (write_pattern_ == INSERT_SEQUENTIAL_ROWS ||
               write_pattern_ == INSERT_SEQUENTIAL_ROWS_WITH_DELETE) {
-            key = sequential_key_gen_.Increment();
+            // std::atomic::fetch_add() performs post-increment.
+            key = 1 + sequential_key_gen_.fetch_add(1, std::memory_order_relaxed);
           } else {
             key = rng_.Next();
             if (write_pattern_ == INSERT_WITH_MANY_DUP_KEYS) {
@@ -208,8 +209,8 @@ void TestWorkload::WriteThread() {
         inserted -= GetNumberOfErrors(session.get());
       }
       if (inserted > 0) {
-        rows_inserted_.IncrementBy(inserted);
-        batches_completed_.Increment();
+        rows_inserted_.fetch_add(inserted, std::memory_order_relaxed);
+        batches_completed_.fetch_add(1, std::memory_order_relaxed);
       }
     }
     if (PREDICT_FALSE(write_interval_millis_ > 0)) {
@@ -230,7 +231,7 @@ void TestWorkload::WriteThread() {
         deleted -= GetNumberOfErrors(session.get());
       }
       if (deleted > 0) {
-        rows_deleted_.IncrementBy(deleted);
+        rows_deleted_.fetch_add(deleted, std::memory_order_relaxed);
       }
     }
   }
@@ -253,7 +254,7 @@ void TestWorkload::ReadThread() {
   shared_ptr<KuduTable> table;
   OpenTable(&table);
 
-  while (should_run_.Load()) {
+  while (should_run_.load(std::memory_order_relaxed)) {
     // Slow the scanners down to avoid imposing too much stress on already stressful tests.
     SleepFor(MonoDelta::FromMilliseconds(150));
 
@@ -269,7 +270,7 @@ void TestWorkload::ReadThread() {
     int64_t expected_min_rows = 0;
     if (write_pattern_ != INSERT_RANDOM_ROWS_WITH_DELETE && verify_num_rows_ &&
         !begin_txn_ && !txn_id_.IsValid()) {
-      expected_min_rows = rows_inserted_.Load();
+      expected_min_rows = rows_inserted_.load(std::memory_order_relaxed);
     }
     size_t row_count = 0;
 
@@ -418,13 +419,13 @@ void TestWorkload::Setup() {
     Random r(rng_.Next32());
     GenerateDataForRow(schema_, 0, &r, row);
     CHECK_OK(session->Apply(insert.release()));
-    rows_inserted_.Store(1);
+    rows_inserted_.store(1, std::memory_order_relaxed);
   }
 }
 
 void TestWorkload::Start() {
-  CHECK(!should_run_.Load()) << "Already started";
-  should_run_.Store(true);
+  CHECK(!should_run_.load(std::memory_order_relaxed)) << "Already started";
+  should_run_.store(true, std::memory_order_relaxed);
   start_latch_.Reset(num_write_threads_ + num_read_threads_);
   if (txn_id_.IsValid()) {
     // TODO(awong): add an API to set the keepalive. For now just use an
@@ -461,7 +462,7 @@ void TestWorkload::Start() {
 
 Status TestWorkload::Cleanup() {
   // Should be run only when workload is inactive.
-  CHECK(!should_run_.Load() && threads_.empty());
+  CHECK(!should_run_.load(std::memory_order_relaxed) && threads_.empty());
   if (!client_) {
     CHECK_OK(cluster_->CreateClient(&client_builder_, &client_));
   }
@@ -469,7 +470,7 @@ Status TestWorkload::Cleanup() {
 }
 
 void TestWorkload::StopAndJoin() {
-  should_run_.Store(false);
+  should_run_.store(false, std::memory_order_relaxed);
   start_latch_.Reset(0);
   for (auto& t : threads_) {
     t.join();

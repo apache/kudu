@@ -16,6 +16,7 @@
 // under the License.
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -32,7 +33,6 @@
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/common/txn_id.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/util/atomic.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
@@ -312,13 +312,13 @@ class TestWorkload {
   // during or after the write workload. If writing as a part of a transaction,
   // these rows may have not been committed.
   int64_t rows_inserted() const {
-    return rows_inserted_.Load();
+    return rows_inserted_.load(std::memory_order_relaxed);
   }
 
   // Return the number of rows deleted so far. This may be called either
   // during or after the write workload.
   int64_t rows_deleted() const {
-    return rows_deleted_.Load();
+    return rows_deleted_.load(std::memory_order_relaxed);
   }
 
   // Return the number of batches in which we have successfully inserted at
@@ -327,7 +327,7 @@ class TestWorkload {
   // of log operations generated on the TS side. The client may split a single
   // Flush() call into multiple batches.
   int64_t batches_completed() const {
-    return batches_completed_.Load();
+    return batches_completed_.load(std::memory_order_relaxed);
   }
 
   // Returns a copy of the errors seen by the read threads so far.
@@ -380,11 +380,11 @@ class TestWorkload {
   std::string table_name_;
 
   CountDownLatch start_latch_;
-  AtomicBool should_run_;
-  AtomicInt<int64_t> rows_inserted_;
-  AtomicInt<int64_t> rows_deleted_;
-  AtomicInt<int64_t> batches_completed_;
-  AtomicInt<int32_t> sequential_key_gen_;
+  std::atomic<bool> should_run_;
+  std::atomic<int64_t> rows_inserted_;
+  std::atomic<int64_t> rows_deleted_;
+  std::atomic<int64_t> batches_completed_;
+  std::atomic<int32_t> sequential_key_gen_;
 
   client::sp::shared_ptr<client::KuduTransaction> txn_;
 

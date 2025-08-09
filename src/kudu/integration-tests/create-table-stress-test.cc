@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <atomic>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
@@ -48,7 +49,6 @@
 #include "kudu/master/mini_master.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/rpc/messenger.h"
-#include "kudu/util/atomic.h"
 #include "kudu/util/cow_object.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
@@ -354,10 +354,10 @@ TEST_F(CreateTableStressTest, TestGetTableLocationsOptions) {
 // Creates tables and reloads on-disk metadata concurrently to test for races
 // between the two operations.
 TEST_F(CreateTableStressTest, TestConcurrentCreateTableAndReloadMetadata) {
-  AtomicBool stop(false);
+  std::atomic<bool> stop(false);
 
   thread reload_metadata_thread([&]() {
-    while (!stop.Load()) {
+    while (!stop.load(std::memory_order_relaxed)) {
       CHECK_OK(cluster_->mini_master()->master()->catalog_manager()->
           VisitTablesAndTablets());
 
@@ -372,7 +372,7 @@ TEST_F(CreateTableStressTest, TestConcurrentCreateTableAndReloadMetadata) {
     }
   });
   SCOPED_CLEANUP({
-    stop.Store(true);
+    stop.store(true, std::memory_order_relaxed);
     reload_metadata_thread.join();
   });
 

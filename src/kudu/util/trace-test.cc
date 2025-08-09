@@ -17,6 +17,7 @@
 
 #include "kudu/util/trace.h"
 
+#include <atomic>
 #include <cctype>
 #include <cstdint>
 #include <cstring>
@@ -35,7 +36,6 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/walltime.h"
-#include "kudu/util/atomic.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/debug/trace_event_impl.h"
@@ -55,6 +55,7 @@ using kudu::debug::TraceResultBuffer;
 using kudu::debug::CategoryFilter;
 using rapidjson::Document;
 using rapidjson::Value;
+using std::atomic;
 using std::ostringstream;
 using std::string;
 using std::thread;
@@ -263,7 +264,7 @@ TEST_F(TraceTest, TestJsonEncodingString) {
 
 // Generate trace events continuously until 'latch' fires.
 // Increment *num_events_generated for each event generated.
-void GenerateTracesUntilLatch(AtomicInt<int64_t>* num_events_generated,
+void GenerateTracesUntilLatch(atomic<int64_t>* num_events_generated,
                               CountDownLatch* latch) {
   while (latch->count()) {
     {
@@ -271,7 +272,7 @@ void GenerateTracesUntilLatch(AtomicInt<int64_t>* num_events_generated,
       // both its START and END times) before we do the counter increment below.
       TRACE_EVENT0("test", "GenerateTracesUntilLatch");
     }
-    num_events_generated->Increment();
+    num_events_generated->fetch_add(1, std::memory_order_release);
   }
 }
 
@@ -282,7 +283,7 @@ TEST_F(TraceTest, TestStartAndStopCollection) {
   TraceLog* tl = TraceLog::GetInstance();
 
   CountDownLatch latch(1);
-  AtomicInt<int64_t> num_events_generated(0);
+  atomic<int64_t> num_events_generated(0);
   scoped_refptr<Thread> t;
   CHECK_OK(Thread::CreateWithFlags(
       "test", "gen-traces",
@@ -295,9 +296,11 @@ TEST_F(TraceTest, TestStartAndStopCollection) {
                    TraceLog::RECORDING_MODE,
                    TraceLog::RECORD_CONTINUOUSLY);
 
-    const int64_t num_events_before = num_events_generated.Load();
+    const int64_t num_events_before =
+        num_events_generated.load(std::memory_order_acquire);
     SleepFor(MonoDelta::FromMilliseconds(10));
-    const int64_t num_events_after = num_events_generated.Load();
+    const int64_t num_events_after =
+        num_events_generated.load(std::memory_order_acquire);
     tl->SetDisabled();
 
     string trace_json = TraceResultBuffer::FlushTraceLogToString();

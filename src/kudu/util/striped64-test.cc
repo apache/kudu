@@ -15,9 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
-
 #include "kudu/util/striped64.h"
 
+#include <atomic>
 #include <cstdint>
 #include <ostream>
 #include <thread>
@@ -28,7 +28,6 @@
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/atomic.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/test_util.h"
 
@@ -36,6 +35,7 @@
 DEFINE_int32(num_operations, 10*1000, "Number of operations to perform");
 DEFINE_int32(num_threads, 2, "Number of worker threads");
 
+using std::atomic;
 using std::thread;
 using std::vector;
 
@@ -110,16 +110,16 @@ class MultiThreadTest {
   vector<thread> threads_;
 };
 
-// Test adder implemented by a single AtomicInt for comparison
+// Test adder implemented by a single std::atomic<int64_t> for comparison
 class BasicAdder {
  public:
   BasicAdder() : value_(0) {}
-  void IncrementBy(int64_t x) { value_.IncrementBy(x); }
+  void IncrementBy(int64_t x) { value_.fetch_add(x, std::memory_order_relaxed); }
   inline void Increment() { IncrementBy(1); }
   inline void Decrement() { IncrementBy(-1); }
-  int64_t Value() { return value_.Load(); }
+  int64_t Value() const { return value_.load(std::memory_order_relaxed); }
  private:
-  AtomicInt<int64_t> value_;
+  atomic<int64_t> value_;
 };
 
 void RunMultiTest(int64_t num_operations, int64_t num_threads) {
@@ -136,7 +136,8 @@ void RunMultiTest(int64_t num_operations, int64_t num_threads) {
   LOG(INFO) << "Striped counter took " << striped.ToMilliseconds() << "ms.";
 }
 
-// Compare a single-thread workload. Demonstrates the overhead of LongAdder over AtomicInt.
+// Compare a single-thread workload. Demonstrates the overhead of LongAdder
+// over std::atomic<int64_t>
 TEST(Striped64Test, TestSingleIncrDecr) {
   OverrideFlagForSlowTests(
       "num_operations",

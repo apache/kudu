@@ -40,7 +40,9 @@
 // TODO(KUDU-629) Make the inserts multi-threaded.
 
 #include <sys/stat.h>
+// IWYU pragma: no_include <bits/struct_stat.h>
 
+#include <atomic>
 #include <cerrno>
 #include <cinttypes>
 #include <csignal>
@@ -68,7 +70,6 @@
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
-#include "kudu/util/atomic.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/env.h"
 #include "kudu/util/errno.h"
@@ -123,6 +124,7 @@ using kudu::client::KuduRowResult;
 using kudu::client::KuduSchema;
 using kudu::cluster::ExternalMiniCluster;
 using kudu::cluster::ExternalMiniClusterOptions;
+using std::atomic;
 using std::string;
 using std::thread;
 using std::unique_ptr;
@@ -169,9 +171,9 @@ class TpchRealWorld {
   }
 
   unique_ptr<ExternalMiniCluster> cluster_;
-  AtomicInt<int64_t> rows_inserted_;
+  atomic<int64_t> rows_inserted_;
   string master_addresses_;
-  AtomicBool stop_threads_;
+  atomic<bool> stop_threads_;
   CountDownLatch dbgen_processes_finished_;
 
   vector<Subprocess*> dbgen_processes_;
@@ -314,22 +316,24 @@ void TpchRealWorld::LoadLineItemsThread(int i) {
   const string time_spent_msg = Substitute(
         "by thread $0 to load generated data into the database", i);
   LOG_TIMING(INFO, time_spent_msg) {
-    while (importer.HasNextLine() && !stop_threads_.Load()) {
+    while (importer.HasNextLine() && !stop_threads_.load(std::memory_order_relaxed)) {
       dao->WriteLine(f);
-      int64_t current_count = rows_inserted_.Increment();
-      if (current_count % 250000 == 0) {
-        LOG(INFO) << "Inserted " << current_count << " rows";
+      int64_t current_count = rows_inserted_.fetch_add(1, std::memory_order_relaxed);
+      // std::atomic<>::fetch_add() returns the value immediately preceding
+      // the effects of the fetch_add() function.
+      if ((current_count + 1) % 250000 == 0) {
+        LOG(INFO) << "Inserted " << (current_count + 1) << " rows";
       }
     }
     dao->FinishWriting();
   }
   LOG(INFO) << Substitute("Thread $0 inserted ", i)
-            << rows_inserted_.Load() << " rows in total";
+            << rows_inserted_ << " rows in total";
 }
 
 void TpchRealWorld::MonitorDbgenThread(int i) {
   Subprocess* dbgen_proc = dbgen_processes_[i];
-  while (!stop_threads_.Load()) {
+  while (!stop_threads_.load(std::memory_order_relaxed)) {
     Status s = dbgen_proc->WaitNoBlock();
     if (s.ok()) {
       int exit_status;
@@ -357,10 +361,11 @@ void TpchRealWorld::MonitorDbgenThread(int i) {
 
 void TpchRealWorld::RunQueriesThread() {
   unique_ptr<RpcLineItemDAO> dao = GetInittedDAO();
-  while (!stop_threads_.Load()) {
+  while (!stop_threads_.load(std::memory_order_relaxed)) {
     string log;
     if (FLAGS_tpch_load_data) {
-      log = StringPrintf("querying %" PRId64 " rows", rows_inserted_.Load());
+      log = StringPrintf("querying %" PRId64 " rows",
+                         rows_inserted_.load(std::memory_order_relaxed));
     } else {
       log = "querying data in cluster";
     }
@@ -370,7 +375,7 @@ void TpchRealWorld::RunQueriesThread() {
       vector<KuduRowResult> rows;
       // We check stop_threads_ even while scanning since it can takes tens of seconds to query.
       // This means that the last timing cannot be used for reporting.
-      while (scanner->HasMore() && !stop_threads_.Load()) {
+      while (scanner->HasMore() && !stop_threads_.load(std::memory_order_relaxed)) {
         scanner->GetNext(&rows);
       }
     }
@@ -378,7 +383,7 @@ void TpchRealWorld::RunQueriesThread() {
 }
 
 void TpchRealWorld::WaitForRowCount(int64_t row_count) {
-  while (rows_inserted_.Load() < row_count) {
+  while (rows_inserted_.load(std::memory_order_relaxed) < row_count) {
     SleepFor(MonoDelta::FromMilliseconds(100));
   }
 }
@@ -416,7 +421,7 @@ void TpchRealWorld::Run() {
     SleepFor(MonoDelta::FromSeconds(100));
   }
 
-  stop_threads_.Store(true);
+  stop_threads_.store(true, std::memory_order_relaxed);
 
   for (auto& t : threads) {
     t.join();

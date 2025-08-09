@@ -16,6 +16,7 @@
 // under the License.
 
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -57,7 +58,6 @@
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tools/tool_test_util.h"
 #include "kudu/tserver/tserver.pb.h"
-#include "kudu/util/atomic.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
@@ -72,11 +72,13 @@ using kudu::client::KuduSchema;
 using kudu::client::sp::shared_ptr;
 using kudu::cluster::ClusterNodes;
 using kudu::tools::RunKuduTool;
+using std::atomic;
 using std::multimap;
 using std::set;
 using std::string;
 using std::thread;
 using std::unique_ptr;
+using std::unordered_map;
 using std::vector;
 using strings::Split;
 using strings::Substitute;
@@ -162,7 +164,7 @@ TEST_F(CreateTableITest, TestCreateWhenMajorityOfReplicasFailCreation) {
   // not processed yet.
 
   // map of tablet id and count of replicas found.
-  std::unordered_map<string, int> tablet_num_replica_map;
+  unordered_map<string, int> tablet_num_replica_map;
   ASSERT_EVENTUALLY([&] {
     tablet_num_replica_map.clear();
     for (int i = 0; i < kNumReplicas; i++) {
@@ -456,8 +458,8 @@ TEST_F(CreateTableITest, TestSpreadReplicas) {
   }
 
   // Stats of number of replicas per range per table per tserver.
-  typedef std::unordered_map<string, std::unordered_map<string, int>> replicas_per_range_per_table;
-  std::unordered_map<int, replicas_per_range_per_table> stats;
+  typedef unordered_map<string, unordered_map<string, int>> replicas_per_range_per_table;
+  unordered_map<int, replicas_per_range_per_table> stats;
   for (int ts_idx = 0; ts_idx < kNumServers; ts_idx++) {
     rpc::RpcController rpc;
     tserver::ListTabletsRequestPB req;
@@ -501,12 +503,12 @@ TEST_F(CreateTableITest, TestSpreadReplicas) {
 
 static void LookUpRandomKeysLoop(const std::shared_ptr<master::MasterServiceProxy>& master,
                                  const char* table_name,
-                                 AtomicBool* quit) {
+                                 atomic<bool>* quit) {
   Schema schema(GetSimpleTestSchema());
   auto client_schema = KuduSchema::FromSchema(GetSimpleTestSchema());
   unique_ptr<KuduPartialRow> r(client_schema.NewRow());
 
-  while (!quit->Load()) {
+  while (!quit->load(std::memory_order_relaxed)) {
     master::GetTableLocationsRequestPB req;
     master::GetTableLocationsResponsePB resp;
     req.mutable_table()->set_table_name(table_name);
@@ -581,7 +583,7 @@ TEST_F(CreateTableITest, TestCreateTableWithDeadTServers) {
 
   // Spin off a bunch of threads that repeatedly look up random key ranges in the table.
   constexpr int kNumThreads = 16;
-  AtomicBool quit(false);
+  atomic<bool> quit(false);
   vector<thread> threads;
   threads.reserve(kNumThreads);
   for (int i = 0; i < kNumThreads; i++) {
@@ -591,7 +593,7 @@ TEST_F(CreateTableITest, TestCreateTableWithDeadTServers) {
     });
   }
   SCOPED_CLEANUP({
-    quit.Store(true);
+    quit.store(true, std::memory_order_relaxed);
     for (auto& t : threads) {
       t.join();
     }

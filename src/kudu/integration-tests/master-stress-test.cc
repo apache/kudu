@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -54,7 +55,6 @@
 #include "kudu/thrift/client.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/tserver/tserver.pb.h"
-#include "kudu/util/atomic.h"
 #include "kudu/util/condition_variable.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/monotime.h"
@@ -101,7 +101,7 @@ using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
 using kudu::tools::LeaderMasterProxy;
-using std::pair;
+using std::atomic;
 using std::shared_ptr;
 using std::string;
 using std::thread;
@@ -297,7 +297,7 @@ class MasterStressTest : public ExternalMiniClusterITestBase,
         continue;
       }
       CHECK_OK(s);
-      num_tables_created_.Increment();
+      num_tables_created_.fetch_add(1, std::memory_order_relaxed);
       PutTableName(to_create);
 
       done_.WaitFor(MonoDelta::FromMilliseconds(200));
@@ -328,7 +328,7 @@ class MasterStressTest : public ExternalMiniClusterITestBase,
         continue;
       }
       CHECK_OK(s);
-      num_tables_altered_.Increment();
+      num_tables_altered_.fetch_add(1, std::memory_order_relaxed);
       PutTableName(new_table_name);
 
       done_.WaitFor(MonoDelta::FromMilliseconds(200));
@@ -351,7 +351,7 @@ class MasterStressTest : public ExternalMiniClusterITestBase,
         continue;
       }
       CHECK_OK(s);
-      num_tables_deleted_.Increment();
+      num_tables_deleted_.fetch_add(1, std::memory_order_relaxed);
 
       done_.WaitFor(MonoDelta::FromMilliseconds(200));
     }
@@ -391,7 +391,7 @@ class MasterStressTest : public ExternalMiniClusterITestBase,
       // NotFound is OK because it means the tablet was already replaced or deleted.
       if (!s.IsNotFound()) {
         CHECK_OK(s);
-        num_tablets_replaced_.Increment();
+        num_tablets_replaced_.fetch_add(1, std::memory_order_relaxed);
       }
       done_.WaitFor(MonoDelta::FromMilliseconds(200));
     }
@@ -459,7 +459,7 @@ class MasterStressTest : public ExternalMiniClusterITestBase,
       // enough uptime so that they can actually make forward progress on
       // client requests.
       CHECK_OK(WaitForMasterUpAndRunning(messenger, master));
-      num_masters_restarted_.Increment();
+      num_masters_restarted_.fetch_add(1, std::memory_order_relaxed);
 
       // Allow the tablet servers to send in heartbeats and clients to connect.
       // Due to the way how Kudu client and AsyncLeaderMasterRpc perform
@@ -480,11 +480,11 @@ class MasterStressTest : public ExternalMiniClusterITestBase,
   static constexpr int kTsToMasterHbIntervalMs = 500;
 
   CountDownLatch done_;
-  AtomicInt<uint64_t> num_tables_created_;
-  AtomicInt<uint64_t> num_tables_altered_;
-  AtomicInt<uint64_t> num_tables_deleted_;
-  AtomicInt<uint64_t> num_tablets_replaced_;
-  AtomicInt<uint64_t> num_masters_restarted_;
+  atomic<uint64_t> num_tables_created_;
+  atomic<uint64_t> num_tables_altered_;
+  atomic<uint64_t> num_tables_deleted_;
+  atomic<uint64_t> num_tablets_replaced_;
+  atomic<uint64_t> num_masters_restarted_;
 
   Mutex table_names_lock_;
   ConditionVariable table_names_condvar_;
@@ -584,10 +584,10 @@ TEST_P(MasterStressTest, Test) {
   // Shut down now so that the log messages below are more visible.
   Shutdown();
 
-  LOG(INFO) << "Tables created: " << num_tables_created_.Load();
-  LOG(INFO) << "Tables altered: " << num_tables_altered_.Load();
-  LOG(INFO) << "Tables deleted: " << num_tables_deleted_.Load();
-  LOG(INFO) << "Tablets replaced: " << num_tablets_replaced_.Load();
-  LOG(INFO) << "Masters restarted: " << num_masters_restarted_.Load();
+  LOG(INFO) << "Tables created: " << num_tables_created_;
+  LOG(INFO) << "Tables altered: " << num_tables_altered_;
+  LOG(INFO) << "Tables deleted: " << num_tables_deleted_;
+  LOG(INFO) << "Tablets replaced: " << num_tablets_replaced_;
+  LOG(INFO) << "Masters restarted: " << num_masters_restarted_;
 }
 } // namespace kudu

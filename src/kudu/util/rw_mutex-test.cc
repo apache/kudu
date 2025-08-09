@@ -17,6 +17,7 @@
 
 #include "kudu/util/rw_mutex.h"
 
+#include <atomic>
 #include <cstdint>
 #include <mutex>
 #include <ostream>
@@ -27,10 +28,10 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/util/atomic.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/test_util.h"
 
+using std::atomic;
 using std::lock_guard;
 using std::shared_lock;
 using std::thread;
@@ -58,21 +59,21 @@ INSTANTIATE_TEST_SUITE_P(Priorities, RWMutexTest,
 // Multi-threaded test that tries to find deadlocks in the RWMutex wrapper.
 TEST_P(RWMutexTest, TestDeadlocks) {
   uint64_t number_of_writes = 0;
-  AtomicInt<uint64_t> number_of_reads(0);
+  atomic<uint64_t> number_of_reads(0);
 
-  AtomicBool done(false);
+  atomic<bool> done(false);
   vector<thread> threads;
 
   // Start several blocking and non-blocking read-write workloads.
   for (int i = 0; i < 2; i++) {
     threads.emplace_back([&](){
-      while (!done.Load()) {
+      while (!done.load(std::memory_order_relaxed)) {
         lock_guard l(lock_);
         number_of_writes++;
       }
     });
     threads.emplace_back([&](){
-      while (!done.Load()) {
+      while (!done.load(std::memory_order_relaxed)) {
         unique_lock l(lock_, try_to_lock);
         if (l.owns_lock()) {
           number_of_writes++;
@@ -84,30 +85,30 @@ TEST_P(RWMutexTest, TestDeadlocks) {
   // Start several blocking and non-blocking read-only workloads.
   for (int i = 0; i < 2; i++) {
     threads.emplace_back([&](){
-      while (!done.Load()) {
+      while (!done.load(std::memory_order_relaxed)) {
         shared_lock l(lock_);
-        number_of_reads.Increment();
+        number_of_reads.fetch_add(1, std::memory_order_relaxed);
       }
     });
     threads.emplace_back([&](){
-      while (!done.Load()) {
+      while (!done.load(std::memory_order_relaxed)) {
         shared_lock l(lock_, try_to_lock);
         if (l.owns_lock()) {
-          number_of_reads.Increment();
+          number_of_reads.fetch_add(1, std::memory_order_relaxed);
         }
       }
     });
   }
 
   SleepFor(MonoDelta::FromSeconds(1));
-  done.Store(true);
+  done.store(true, std::memory_order_relaxed);
   for (auto& t : threads) {
     t.join();
   }
 
   shared_lock l(lock_);
   LOG(INFO) << "Number of writes: " << number_of_writes;
-  LOG(INFO) << "Number of reads: " << number_of_reads.Load();
+  LOG(INFO) << "Number of reads: " << number_of_reads;
 }
 
 #ifndef NDEBUG

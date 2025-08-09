@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <atomic>
 #include <cstdint>
 #include <cstdlib>
 #include <functional>
@@ -71,7 +72,6 @@
 #include "kudu/tserver/tablet_server-test-base.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_service.proxy.h"
-#include "kudu/util/atomic.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
@@ -151,6 +151,7 @@ using kudu::pb_util::SecureShortDebugString;
 using kudu::rpc::RpcController;
 using kudu::server::SetFlagRequestPB;
 using kudu::server::SetFlagResponsePB;
+using std::atomic;
 using std::string;
 using std::thread;
 using std::unique_ptr;
@@ -208,7 +209,7 @@ class RaftConsensusITest : public RaftConsensusITestBase {
 
   // Thread which loops until '*finish' becomes true, trying to insert a row
   // on the given tablet server identified by 'replica_idx'.
-  void StubbornlyWriteSameRowThread(int replica_idx, const AtomicBool* finish);
+  void StubbornlyWriteSameRowThread(int replica_idx, const atomic<bool>* finish);
 
   // Stops the current leader of the configuration, runs leader election and then brings it back.
   // Before stopping the leader this pauses all follower nodes in regular intervals so that
@@ -366,7 +367,9 @@ void RaftConsensusITest::DelayInjectorThread(
   }
 }
 
-void RaftConsensusITest::StubbornlyWriteSameRowThread(int replica_idx, const AtomicBool* finish) {
+void RaftConsensusITest::StubbornlyWriteSameRowThread(
+    int replica_idx,
+    const atomic<bool>* finish) {
   vector<TServerDetails*> servers;
   AppendValuesFromMap(tablet_servers_, &servers);
   CHECK_LT(replica_idx, servers.size());
@@ -385,7 +388,7 @@ void RaftConsensusITest::StubbornlyWriteSameRowThread(int replica_idx, const Ato
   AddTestRowToPB(RowOperationsPB::INSERT, schema_, kTestRowKey, kTestRowIntVal,
                  "hello world", req.mutable_row_operations());
 
-  while (!finish->Load()) {
+  while (!finish->load(std::memory_order_relaxed)) {
     resp.Clear();
     rpc.Reset();
     rpc.set_timeout(MonoDelta::FromSeconds(10));
@@ -1090,14 +1093,14 @@ TEST_F(RaftConsensusITest, TestKUDU_597) {
   FLAGS_num_tablet_servers = 3;
   NO_FATALS(BuildAndStart());
 
-  AtomicBool finish(false);
+  atomic<bool> finish(false);
   for (int i = 0; i < FLAGS_num_tablet_servers; i++) {
     threads_.emplace_back([this, i, &finish]() {
       this->StubbornlyWriteSameRowThread(i, &finish);
     });
   }
   SCOPED_CLEANUP({
-    finish.Store(true);
+    finish.store(true, std::memory_order_relaxed);
     for (auto& t : threads_) {
       t.join();
     }
@@ -1690,10 +1693,10 @@ TEST_F(RaftConsensusITest, TestAtomicAddRemoveServer) {
 static void DoWriteTestRows(const TServerDetails* leader_tserver,
                             const string& tablet_id,
                             const MonoDelta& write_timeout,
-                            AtomicInt<int32_t>* rows_inserted,
-                            const AtomicBool* finish) {
-  while (!finish->Load()) {
-    int row_key = rows_inserted->Increment();
+                            atomic<int32_t>* rows_inserted,
+                            const atomic<bool>* finish) {
+  while (!finish->load(std::memory_order_relaxed)) {
+    int row_key = rows_inserted->fetch_add(1, std::memory_order_relaxed);
     CHECK_OK(WriteSimpleTestRow(leader_tserver, tablet_id, RowOperationsPB::INSERT,
                                 row_key, row_key, Substitute("key=$0", row_key),
                                 write_timeout));
@@ -1730,8 +1733,8 @@ TEST_F(RaftConsensusITest, TestConfigChangeUnderLoad) {
   LOG(INFO) << "Starting write workload...";
   vector<thread> threads;
   threads.reserve(FLAGS_num_client_threads);
-  AtomicInt<int32_t> rows_inserted(0);
-  AtomicBool finish(false);
+  atomic<int32_t> rows_inserted(0);
+  atomic<bool> finish(false);
   for (auto i = 0; i < FLAGS_num_client_threads; i++) {
     threads.emplace_back([this, leader_tserver, kTimeout, &rows_inserted, &finish]() {
       DoWriteTestRows(leader_tserver, this->tablet_id_, kTimeout, &rows_inserted, &finish);
@@ -1788,7 +1791,7 @@ TEST_F(RaftConsensusITest, TestConfigChangeUnderLoad) {
   }
 
   LOG(INFO) << "Joining writer threads...";
-  finish.Store(true);
+  finish.store(true, std::memory_order_relaxed);
   thread_joiner.run();
 
   LOG(INFO) << "Waiting for replicas to agree...";
@@ -1796,12 +1799,12 @@ TEST_F(RaftConsensusITest, TestConfigChangeUnderLoad) {
   // Since we don't batch, there should be at least # rows inserted log entries,
   // plus the initial leader's no-op, plus 2 for the removed servers, plus 2 for
   // the added servers for a total of 5.
-  int min_log_index = rows_inserted.Load() + 5;
+  int min_log_index = rows_inserted + 5;
   ASSERT_OK(WaitForServersToAgree(
       kTimeout, active_tablet_servers, tablet_id_, min_log_index));
 
-  LOG(INFO) << "Number of rows inserted: " << rows_inserted.Load();
-  NO_FATALS(AssertAllReplicasAgree(rows_inserted.Load()));
+  LOG(INFO) << "Number of rows inserted: " << rows_inserted;
+  NO_FATALS(AssertAllReplicasAgree(rows_inserted));
 }
 
 TEST_F(RaftConsensusITest, TestMasterNotifiedOnConfigChange) {

@@ -83,7 +83,6 @@
 #include "kudu/server/monitored_task.h"
 #include "kudu/server/rpc_server.h"
 #include "kudu/tablet/metadata.pb.h"
-#include "kudu/util/atomic.h"
 #include "kudu/util/cache.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/curl_util.h"
@@ -121,6 +120,7 @@ using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
 using rapidjson::Document;
 using std::accumulate;
+using std::atomic;
 using std::nullopt;
 using std::optional;
 using std::map;
@@ -2484,7 +2484,7 @@ TEST_F(MasterTest, TestGetTableLocationsDuringRepeatedTableVisit) {
   Schema schema({ ColumnSchema("key", INT32) }, 1);
   ASSERT_OK(CreateTable(kTableName, schema));
 
-  AtomicBool done(false);
+  atomic<bool> done(false);
 
   // Hammers the master with GetTableLocations() calls.
   thread t([&]() {
@@ -2492,7 +2492,7 @@ TEST_F(MasterTest, TestGetTableLocationsDuringRepeatedTableVisit) {
     GetTableLocationsResponsePB resp;
     req.mutable_table()->set_table_name(kTableName);
 
-    while (!done.Load()) {
+    while (!done.load(std::memory_order_relaxed)) {
       RpcController controller;
       CHECK_OK(proxy_->GetTableLocations(req, &resp, &controller));
     }
@@ -2503,7 +2503,7 @@ TEST_F(MasterTest, TestGetTableLocationsDuringRepeatedTableVisit) {
   for (int i = 0; i < 100; i++) {
     ignore_result(master_->catalog_manager()->ElectedAsLeaderCb());
   }
-  done.Store(true);
+  done.store(true, std::memory_order_relaxed);
   t.join();
 }
 
@@ -2518,7 +2518,7 @@ TEST_F(MasterTest, TestGetTableSchemaIsAtomicWithCreateTable) {
                             1);
 
   CountDownLatch started(1);
-  AtomicBool done(false);
+  atomic<bool> done(false);
 
   // Kick off a thread that hammers the master with GetTableSchema() calls,
   // checking that the results make sense.
@@ -2528,7 +2528,7 @@ TEST_F(MasterTest, TestGetTableSchemaIsAtomicWithCreateTable) {
     req.mutable_table()->set_table_name(kTableName);
 
     started.CountDown();
-    while (!done.Load()) {
+    while (!done.load(std::memory_order_relaxed)) {
       RpcController controller;
 
       CHECK_OK(proxy_->GetTableSchema(req, &resp, &controller));
@@ -2559,7 +2559,7 @@ TEST_F(MasterTest, TestGetTableSchemaIsAtomicWithCreateTable) {
   started.Wait();
   EXPECT_OK(CreateTable(kTableName, kTableSchema));
 
-  done.Store(true);
+  done.store(true, std::memory_order_relaxed);
   t.join();
 }
 
@@ -2605,7 +2605,7 @@ TEST_P(ConcurrentGetTableSchemaTest, Rpc) {
     EXPECT_OK(CreateTable(Substitute(kTableNamePattern, idx), kTableSchema));
   }
 
-  AtomicBool done(false);
+  atomic<bool> done(false);
 
   // Using multiple proxies to emulate multiple clients working concurrently,
   // one proxy per a worker thread below. If using single proxy for all the
@@ -2638,7 +2638,7 @@ TEST_P(ConcurrentGetTableSchemaTest, Rpc) {
       GetTableSchemaRequestPB req;
       req.mutable_table()->set_table_name(table_name);
       GetTableSchemaResponsePB resp;
-      while (!done.Load()) {
+      while (!done.load(std::memory_order_relaxed)) {
         RpcController controller;
         resp.Clear();
         CHECK_OK(proxies[idx]->GetTableSchema(req, &resp, &controller));
@@ -2658,7 +2658,7 @@ TEST_P(ConcurrentGetTableSchemaTest, Rpc) {
   });
 
   SleepFor(kRunInterval);
-  done.Store(true);
+  done.store(true, std::memory_order_relaxed);
 
   const auto errors = accumulate(error_counters.begin(), error_counters.end(), 0UL);
   if (errors != 0) {
@@ -2707,7 +2707,7 @@ TEST_P(ConcurrentGetTableSchemaTest, DirectMethodCall) {
     EXPECT_OK(CreateTable(Substitute(kTableNamePattern, idx), kTableSchema));
   }
 
-  AtomicBool done(false);
+  atomic<bool> done(false);
   CatalogManager* cm = mini_master_->master()->catalog_manager();
   const auto* token_signer = supports_authz_
       ? mini_master_->master()->token_signer() : nullptr;
@@ -2726,7 +2726,7 @@ TEST_P(ConcurrentGetTableSchemaTest, DirectMethodCall) {
     caller_threads.emplace_back([&, idx]() {
       GetTableSchemaRequestPB req;
       req.mutable_table()->set_table_name(Substitute(kTableNamePattern, idx));
-      while (!done.Load()) {
+      while (!done.load(std::memory_order_relaxed)) {
         RpcController controller;
         GetTableSchemaResponsePB resp;
         {
@@ -2744,7 +2744,7 @@ TEST_P(ConcurrentGetTableSchemaTest, DirectMethodCall) {
   }
 
   SleepFor(kRunInterval);
-  done.Store(true);
+  done.store(true, std::memory_order_relaxed);
   for (auto& t : caller_threads) {
     t.join();
   }
@@ -3167,8 +3167,8 @@ TEST_F(MasterTest, TestConcurrentCreateAndRenameOfSameTable) {
                             1);
   ASSERT_OK(CreateTable(kOldName, kTableSchema));
 
-  AtomicBool create_success(false);
-  AtomicBool rename_success(false);
+  atomic<int> create_success_cnt(0);
+  atomic<int> rename_success_cnt(0);
   vector<thread> threads;
   for (int i = 0; i < 10; i++) {
     if (i % 2) {
@@ -3208,8 +3208,7 @@ TEST_F(MasterTest, TestConcurrentCreateAndRenameOfSameTable) {
             FAIL() << failure_msg;
           }
         } else {
-          // Creating the table should only succeed once.
-          CHECK(!create_success.Exchange(true));
+          create_success_cnt.fetch_add(1, std::memory_order_relaxed);
         }
       });
     } else {
@@ -3247,8 +3246,7 @@ TEST_F(MasterTest, TestConcurrentCreateAndRenameOfSameTable) {
               FAIL() << failure_msg;
           }
         } else {
-          // Renaming the table should only succeed once.
-          CHECK(!rename_success.Exchange(true));
+          rename_success_cnt.fetch_add(1, std::memory_order_relaxed);
         }
       });
     }
@@ -3258,13 +3256,18 @@ TEST_F(MasterTest, TestConcurrentCreateAndRenameOfSameTable) {
     t.join();
   }
 
+  // Creating the table should only succeed once.
+  ASSERT_GE(1, create_success_cnt);
+  // Renaming the table should only succeed once.
+  ASSERT_GE(1, rename_success_cnt);
+
   // At least one of rename or create should have failed; if both succeeded
   // there must be some sort of race.
-  CHECK(!rename_success.Load() || !create_success.Load());
+  ASSERT_TRUE(rename_success_cnt == 0 || create_success_cnt == 0);
 
   unordered_set<string> live_tables;
   live_tables.insert(kNewName);
-  if (create_success.Load()) {
+  if (create_success_cnt != 0) {
     live_tables.insert(kOldName);
   }
   MasterMetadataVerifier verifier(live_tables, {});
@@ -3981,7 +3984,7 @@ TEST_F(MasterStartupTest, StartupWebPage) {
   const string addr = mini_master_->bound_http_addr().ToString();
   mini_master_->Shutdown();
 
-  std::atomic<bool> run_status_reader = true;
+  atomic<bool> run_status_reader = true;
   thread status_reader([&] {
     EasyCurl c;
     faststring buf;

@@ -14,13 +14,13 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_UTIL_SEMAPHORE_H
-#define KUDU_UTIL_SEMAPHORE_H
+#pragma once
 
 #include <semaphore.h>
 #if defined(__APPLE__)
 #include <dispatch/dispatch.h>
-#include "kudu/util/atomic.h"
+
+#include <atomic>
 #endif  // define(__APPLE__)
 
 #include "kudu/gutil/macros.h"
@@ -31,7 +31,7 @@ namespace kudu {
 class MonoDelta;
 
 // Wrapper for POSIX semaphores.
-class Semaphore {
+class Semaphore final {
  public:
   // Initialize the semaphore with the specified capacity.
   explicit Semaphore(int capacity);
@@ -66,7 +66,7 @@ class Semaphore {
 
 #if defined(__APPLE__)
   dispatch_semaphore_t sem_;
-  AtomicInt<int32_t> count_;
+  std::atomic<int32_t> count_;
 #else
   sem_t sem_;
 #endif  // define(__APPLE__)
@@ -74,4 +74,3 @@ class Semaphore {
 };
 
 } // namespace kudu
-#endif /* KUDU_UTIL_SEMAPHORE_H */

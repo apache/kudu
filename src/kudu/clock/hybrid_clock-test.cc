@@ -18,6 +18,7 @@
 #include "kudu/clock/hybrid_clock.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <initializer_list>
 #include <memory>
@@ -41,7 +42,6 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/mini-cluster/webui_checker.h"
-#include "kudu/util/atomic.h"
 #include "kudu/util/cloud/instance_detector.h"
 #include "kudu/util/cloud/instance_metadata.h"
 #include "kudu/util/curl_util.h"
@@ -68,6 +68,7 @@ METRIC_DECLARE_entity(server);
 using kudu::cloud::InstanceDetector;
 using kudu::cluster::ExternalMiniCluster;
 using kudu::cluster::ExternalMiniClusterOptions;
+using std::atomic;
 using std::string;
 using std::thread;
 using std::vector;
@@ -305,10 +306,10 @@ TEST_F(HybridClockTest, TestIsAfter) {
 
 // Thread which loops polling the clock and updating it slightly
 // into the future.
-void StresserThread(HybridClock* clock, AtomicBool* stop) {
+void StresserThread(HybridClock* clock, atomic<bool>* stop) {
   Random rng(GetRandomSeed32());
   Timestamp prev(0);
-  while (!stop->Load()) {
+  while (!stop->load(std::memory_order_relaxed)) {
     Timestamp t = clock->Now();
     CHECK_GT(t.value(), prev.value());
     prev = t;
@@ -324,10 +325,10 @@ void StresserThread(HybridClock* clock, AtomicBool* stop) {
 // clock concurrently, the clock should still never run backwards.
 TEST_F(HybridClockTest, TestClockDoesntGoBackwardsWithUpdates) {
   vector<thread> threads;
-  AtomicBool stop(false);
+  atomic<bool> stop(false);
 
   SCOPED_CLEANUP({
-    stop.Store(true);
+    stop.store(true, std::memory_order_relaxed);
     for (auto& t : threads) {
       t.join();
     }

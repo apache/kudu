@@ -17,6 +17,7 @@
 
 #include "kudu/tools/ksck_remote.h"
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -47,7 +48,6 @@
 #include "kudu/tools/ksck_checksum.h"
 #include "kudu/tools/ksck_results.h"
 #include "kudu/tserver/mini_tablet_server.h"
-#include "kudu/util/atomic.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/monotime.h"
@@ -88,6 +88,7 @@ using kudu::client::KuduTableCreator;
 using kudu::client::sp::shared_ptr;
 using kudu::cluster::InternalMiniCluster;
 using kudu::cluster::InternalMiniClusterOptions;
+using std::atomic;
 using std::string;
 using std::thread;
 using std::unique_ptr;
@@ -160,7 +161,7 @@ class RemoteKsckTest : public KuduTest {
 
   // Writes rows to the table until the continue_writing flag is set to false.
   void GenerateRowWritesLoop(CountDownLatch* started_writing,
-                             const AtomicBool& continue_writing,
+                             const atomic<bool>& continue_writing,
                              Promise<Status>* promise) {
     shared_ptr<KuduTable> table;
     Status status;
@@ -179,7 +180,7 @@ class RemoteKsckTest : public KuduTest {
       return;
     }
 
-    for (uint64_t i = 0; continue_writing.Load(); i++) {
+    for (uint64_t i = 0; continue_writing.load(std::memory_order_relaxed); i++) {
       unique_ptr<KuduInsert> insert(table->NewInsert());
       GenerateDataForRow(table->schema(), i, &random_, insert->mutable_row());
       status = session->Apply(insert.release());
@@ -421,7 +422,7 @@ TEST_F(RemoteKsckTest, TestChecksumTimeout) {
 
 TEST_F(RemoteKsckTest, TestChecksumSnapshot) {
   CountDownLatch started_writing(1);
-  AtomicBool continue_writing(true);
+  atomic<bool> continue_writing(true);
   Promise<Status> promise;
 
   // Allow the checksum scan to wait for longer in case it takes a while for the
@@ -433,7 +434,7 @@ TEST_F(RemoteKsckTest, TestChecksumSnapshot) {
   });
   {
     SCOPED_CLEANUP({
-      continue_writing.Store(false);
+      continue_writing.store(false, std::memory_order_relaxed);
       writer_thread.join();
     });
     started_writing.Wait();
@@ -463,7 +464,7 @@ TEST_F(RemoteKsckTest, TestChecksumSnapshot) {
 // scan at current timestamp.
 TEST_F(RemoteKsckTest, TestChecksumSnapshotCurrentTimestamp) {
   CountDownLatch started_writing(1);
-  AtomicBool continue_writing(true);
+  atomic<bool> continue_writing(true);
   Promise<Status> promise;
 
   // Allow the checksum scan to wait for longer in case it takes a while for the
@@ -475,7 +476,7 @@ TEST_F(RemoteKsckTest, TestChecksumSnapshotCurrentTimestamp) {
   });
   {
     SCOPED_CLEANUP({
-      continue_writing.Store(false);
+      continue_writing.store(false, std::memory_order_relaxed);
       writer_thread.join();
     });
     started_writing.Wait();
