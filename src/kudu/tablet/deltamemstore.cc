@@ -103,7 +103,8 @@ Status DeltaMemStore::Update(Timestamp timestamp,
   if (PREDICT_FALSE(mutation.exists())) {
     // We already have a delta for this row at the same timestamp.
     // Try again with a disambiguating sequence number appended to the key.
-    int seq = disambiguator_sequence_number_.Increment();
+    const uint32_t seq = disambiguator_sequence_number_.fetch_add(
+        1, std::memory_order_release);
     PutMemcmpableVarint64(&buf, seq);
     key_slice = Slice(buf);
     mutation.Reset(key_slice);
@@ -119,7 +120,7 @@ Status DeltaMemStore::Update(Timestamp timestamp,
   RETURN_NOT_OK(anchorer_.AnchorIfMinimum(op_id.index()));
 
   if (update.is_delete()) {
-    deleted_row_count_.Increment();
+    deleted_row_count_.fetch_add(1, std::memory_order_relaxed);
   }
 
   std::lock_guard l(ts_lock_);
@@ -188,9 +189,7 @@ void DeltaMemStore::DebugPrint() const {
 }
 
 int64_t DeltaMemStore::deleted_row_count() const {
-  int64_t count = deleted_row_count_.Load();
-  DCHECK_GE(count, 0);
-  return count;
+  return deleted_row_count_.load(std::memory_order_relaxed);
 }
 
 ////////////////////////////////////////////////////////////
