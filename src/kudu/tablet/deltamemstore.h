@@ -16,6 +16,7 @@
 // under the License.
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -32,7 +33,6 @@
 #include "kudu/tablet/concurrent_btree.h"
 #include "kudu/tablet/delta_stats.h"
 #include "kudu/tablet/delta_store.h"
-#include "kudu/util/atomic.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/make_shared.h"
 #include "kudu/util/memory/arena.h"
@@ -199,10 +199,10 @@ class DeltaMemStore : public DeltaStore,
   // in the underlying tree, so that the later operations will sort after
   // the earlier ones. This atomic integer serves to provide such a sequence
   // number, and is only used in the case that such a collision occurs.
-  AtomicInt<Atomic32> disambiguator_sequence_number_;
+  std::atomic<uint32_t> disambiguator_sequence_number_;
 
   // Number of deleted rows in this DMS.
-  AtomicInt<int64_t> deleted_row_count_;
+  std::atomic<int64_t> deleted_row_count_;
 
   DISALLOW_COPY_AND_ASSIGN(DeltaMemStore);
 };
