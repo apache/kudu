@@ -17,12 +17,8 @@
 
 #include "kudu/server/webserver.h"
 
-#include <netinet/in.h>
-#include <openssl/crypto.h>
-#if OPENSSL_VERSION_NUMBER >= 0x30000000L
-#include <openssl/ssl.h>
-#endif
 #include <gssapi/gssapi_krb5.h>
+#include <netinet/in.h>
 #include <sys/socket.h>
 
 #include <algorithm>
@@ -57,8 +53,8 @@
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/security/init.h"
 #include "kudu/security/gssapi.h"
+#include "kudu/security/init.h"
 #include "kudu/util/easy_json.h"
 #include "kudu/util/env.h"
 #include "kudu/util/flag_tags.h"
@@ -365,12 +361,7 @@ Status Webserver::Start() {
   }
 
   if (!opts_.password_file.empty()) {
-#if OPENSSL_VERSION_NUMBER < 0x30000000L
-  int fips_mode = FIPS_mode();
-#else
-  int fips_mode = EVP_default_properties_is_fips_enabled(NULL);
-#endif
-    if (fips_mode) {
+    if (security::IsFIPSEnabled()) {
       return Status::IllegalState(
           "Webserver cannot be started with Digest authentication in FIPS approved mode");
     }

@@ -122,6 +122,12 @@ void FinalizeOpenSSL();
 //   ** calls from global's initializers before main()
 bool IsOpenSSLInitialized();
 
+// Whether the FIPS provider is enabled.
+//
+// See https://github.com/openssl/openssl/discussions/21797 for details on the
+// evolution of the FIPS-related terminology in the OpenSSL project.
+bool IsFIPSEnabled();
+
 // Fetches errors from the OpenSSL error error queue, and stringifies them.
 //
 // The error queue will be empty after this method returns.

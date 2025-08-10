@@ -17,11 +17,6 @@
 
 #include "kudu/server/webserver.h"
 
-#include <openssl/crypto.h>
-#if OPENSSL_VERSION_NUMBER >= 0x30000000L
-#include <openssl/ssl.h>
-#endif
-
 #include <cstdlib>
 #include <functional>
 #include <initializer_list>
@@ -55,6 +50,7 @@
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/net/sockaddr.h"
+#include "kudu/util/openssl_util.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
@@ -82,13 +78,9 @@ DECLARE_bool(webserver_enable_csp);
 
 DECLARE_string(spnego_keytab_file);
 
-#if OPENSSL_VERSION_NUMBER < 0x30000000L
-int fips_mode = FIPS_mode();
-#else
-int fips_mode = EVP_default_properties_is_fips_enabled(NULL);
-#endif
-
 namespace kudu {
+
+const bool g_is_fips = security::IsFIPSEnabled();
 
 namespace {
 void SetSslOptions(WebserverOptions* opts) {
@@ -134,7 +126,7 @@ class WebserverTest : public KuduTest {
 
     AddPreInitializedDefaultPathHandlers(server_.get());
     AddPostInitializedDefaultPathHandlers(server_.get());
-    if (!use_htpasswd() || !fips_mode) {
+    if (!use_htpasswd() || !g_is_fips) {
       ASSERT_OK(server_->Start());
 
       vector<Sockaddr> addrs;
@@ -193,7 +185,7 @@ class PasswdWebserverTest : public WebserverTest {
 // Send a HTTP request with no username and password. It should reject
 // the request as the .htpasswd is presented to webserver.
 TEST_F(PasswdWebserverTest, TestPasswdMissing) {
-  if (fips_mode) {
+  if (g_is_fips) {
     GTEST_SKIP();
   }
   Status status = curl_.FetchURL(url_, &buf_);
@@ -201,7 +193,7 @@ TEST_F(PasswdWebserverTest, TestPasswdMissing) {
 }
 
 TEST_F(PasswdWebserverTest, TestPasswdPresent) {
-  if (fips_mode) {
+  if (g_is_fips) {
     GTEST_SKIP();
   }
   curl_.set_auth(CurlAuthType::DIGEST,
@@ -211,7 +203,7 @@ TEST_F(PasswdWebserverTest, TestPasswdPresent) {
 }
 
 TEST_F(PasswdWebserverTest, TestCrashInFIPSMode) {
-  if (!fips_mode) {
+  if (!g_is_fips) {
     GTEST_SKIP();
   }
 

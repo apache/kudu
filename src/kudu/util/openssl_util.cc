@@ -410,6 +410,14 @@ bool IsOpenSSLInitialized() {
   return g_ssl_is_initialized;
 }
 
+bool IsFIPSEnabled() {
+#if OPENSSL_VERSION_NUMBER < 0x30000000L
+  return FIPS_mode() != 0;
+#else
+  return EVP_default_properties_is_fips_enabled(nullptr) != 0;
+#endif
+}
+
 string GetOpenSSLErrors() {
   ostringstream serr;
   uint32_t l;
