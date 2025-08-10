@@ -416,6 +416,14 @@ uint32_t Messenger::GetInstanceCount() {
 Messenger::~Messenger() {
   CHECK_EQ(state_, kClosing) << "Should have already shut down";
   STLDeleteElements(&reactors_);
+
+  // KUDU(2439): kInstanceCount_'s zeroing is used as a criterion for the proper
+  //             timing of OPENSSL_clean() call; so, it's crucial to make sure
+  //             the sub-objects that call the OpenSSL API in their destructor
+  //             are already destroyed when the instance counter reaches zero
+  jwt_verifier_.reset();
+  token_verifier_.reset();
+  tls_context_.reset();
   kInstanceCount_.fetch_sub(1, std::memory_order_release);
 }
 

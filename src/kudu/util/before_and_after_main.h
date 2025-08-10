@@ -89,14 +89,18 @@ static void module_fini_openssl() {
   // majority of the kudu CLI's use cases, it's better to incur an extra second
   // of latency compared with a crash and inability to tell whether the tool
   // succeeded or not by analyzing its exit code.
-  if (const auto mc = kudu::rpc::Messenger::GetInstanceCount(); mc != 0) {
+  if (auto mc = kudu::rpc::Messenger::GetInstanceCount(); mc != 0) {
     RAW_VLOG(2, "waiting for %d Messengers to shut down", mc);
     const auto deadline = kudu::MonoTime::Now() + kudu::MonoDelta::FromSeconds(1);
-    while (kudu::MonoTime::Now() < deadline) {
+    do {
       SleepFor(kudu::MonoDelta::FromMilliseconds(50));
-      if (kudu::rpc::Messenger::GetInstanceCount() == 0) {
+      mc = kudu::rpc::Messenger::GetInstanceCount();
+      if (mc == 0) {
         break;
       }
+    } while (kudu::MonoTime::Now() < deadline);
+    if (mc != 0) {
+      RAW_LOG(WARNING, "possible race with %d thread(s) on OpenSSL cleanup", mc);
     }
   }
 #endif // #if !defined(KUDU_TEST_MAIN) ...
@@ -104,7 +108,7 @@ static void module_fini_openssl() {
   // Call OPENSSL_cleanup() to release resources and clean up the global state
   // of the library: it's applicable to OpenSSL 1.1.1 and newer versions.
   // At this point, tcmalloc must still be operational.
-  RAW_VLOG(2, "cleaning up OpenSSL runtime");
+  RAW_VLOG(2, "cleaning up OpenSSL");
   kudu::security::FinalizeOpenSSL();
 }
 
