@@ -244,12 +244,12 @@ void DoInitializeOpenSSL() {
   // log a warning.
   auto ctx = ssl_make_unique(SSL_CTX_new(SSLv23_method()));
   if (ctx) {
-    RAW_LOG(WARNING) << "It appears that OpenSSL has been previously initialized by "
-                        "code outside of Kudu. Please first properly initialize "
-                        "OpenSSL for multi-threaded usage (setting thread callback "
-                        "functions for OpenSSL of versions earlier than 1.1.0) and "
-                        "then call kudu::client::DisableOpenSSLInitialization() "
-                        "to avoid potential crashes due to conflicting initialization.";
+    RAW_LOG(WARNING, "It appears that OpenSSL has been previously initialized by "
+                     "code outside of Kudu. Please first properly initialize "
+                     "OpenSSL for multi-threaded usage (setting thread callback "
+                     "functions for OpenSSL of versions earlier than 1.1.0) and "
+                     "then call kudu::client::DisableOpenSSLInitialization() "
+                     "to avoid potential crashes due to conflicting initialization");
     // Continue anyway; all of the below is idempotent, except for the locking callback,
     // which we check before overriding. They aren't thread-safe, however -- that's why
     // we try to get embedding applications to do the right thing here rather than risk a
@@ -270,7 +270,7 @@ void DoInitializeOpenSSL() {
     // LSAN warnings.
     debug::ScopedLeakCheckDisabler d;
     int num_locks = CRYPTO_num_locks();
-    RAW_CHECK(!kCryptoLocks);
+    RAW_CHECK(!kCryptoLocks, "crypto locks are already initialized");
     kCryptoLocks = new Mutex[num_locks];
 
     // Callbacks used by OpenSSL required in a multi-threaded setting.
@@ -288,13 +288,19 @@ void DoFinalizeOpenSSL() {
     // If we haven't yet initialized the library, don't try to finalize it.
     return;
   }
-#ifdef NDEBUG
+
   // In case the user's thread has left some error around, clear it.
   // Do so only in release builds, but catch corresponding programming errors
   // if anything is left on the error stack otherwise.
-  ERR_clear_error();
+  {
+#ifdef NDEBUG
+    ERR_clear_error();
 #endif
-  SCOPED_OPENSSL_NO_PENDING_ERRORS;
+    // NOTE: it's important to call ScopedCheckNoPendingSSLErrors' destructor
+    // before OPENSSL_cleanup() is invoked because the latter cleans up the
+    // global state of the OpenSSL library, along with error stacks.
+    SCOPED_OPENSSL_NO_PENDING_ERRORS;
+  }
 #if OPENSSL_VERSION_NUMBER >= 0x10101000L
   if (g_is_standalone_init) {
     // If OPENSSL_INIT_NO_ATEXIT option was used for OPENSSL_init_ssl() or
