@@ -1983,7 +1983,14 @@ TEST_F(TabletCopyITest, TestBeginTabletCopySessionConcurrency) {
 //
 // Verify wal contents by comparing the count of rows.
 TEST_F(TabletCopyITest, TestDownloadWalInParallelWithHeavyInsert) {
-  MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+
+#ifdef THREAD_SANITIZER
+  const MonoDelta kWalSegmentCountTimeout = MonoDelta::FromSeconds(120);
+#else
+  const MonoDelta kWalSegmentCountTimeout = kTimeout;
+#endif
+
   FLAGS_log_segment_size_mb = 1;
   FLAGS_tablet_copy_download_wal_inject_latency = true;
 
@@ -2029,7 +2036,8 @@ TEST_F(TabletCopyITest, TestDownloadWalInParallelWithHeavyInsert) {
   ASSERT_OK(StartElection(first_leader, tablet_id, kTimeout));
 
   workload.Start();
-  inspect_->WaitForMinFilesInTabletWalDirOnTS(first_leader_index, tablet_id, kNumWalSegments);
+  inspect_->WaitForMinFilesInTabletWalDirOnTS(
+      first_leader_index, tablet_id, kNumWalSegments, kWalSegmentCountTimeout);
   workload.StopAndJoin();
   ASSERT_OK(WaitForServersToAgree(kTimeout, ts_map_, tablet_id, 1));
 
@@ -2060,7 +2068,13 @@ TEST_F(TabletCopyITest, TestDownloadWalInParallelWithHeavyInsert) {
 //
 // Verify wal contents by comparing the content.
 TEST_F(TabletCopyITest, TestDownloadWalInParallelWithHeavyUpdate) {
-  MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+#ifdef THREAD_SANITIZER
+  const MonoDelta kWalSegmentCountTimeout = MonoDelta::FromSeconds(120);
+#else
+  const MonoDelta kWalSegmentCountTimeout = kTimeout;
+#endif
+
   FLAGS_log_segment_size_mb = 1;
   FLAGS_tablet_copy_download_wal_inject_latency = true;
 
@@ -2105,7 +2119,8 @@ TEST_F(TabletCopyITest, TestDownloadWalInParallelWithHeavyUpdate) {
   ASSERT_OK(StartElection(first_leader, tablet_id, kTimeout));
 
   workload.Start();
-  inspect_->WaitForMinFilesInTabletWalDirOnTS(first_leader_index, tablet_id, kNumWalSegments);
+  inspect_->WaitForMinFilesInTabletWalDirOnTS(
+      first_leader_index, tablet_id, kNumWalSegments, kWalSegmentCountTimeout);
   workload.StopAndJoin();
   ASSERT_OK(WaitForServersToAgree(kTimeout, ts_map_, tablet_id, 1));
 
