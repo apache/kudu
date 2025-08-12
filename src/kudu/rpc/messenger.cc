@@ -183,8 +183,8 @@ void Messenger::ShutdownInternal(ShutdownMode mode) {
     VLOG(1) << "shutting down messenger " << name_;
     state_ = kClosing;
 
-    services_to_release = std::move(rpc_services_);
-    pools_to_shutdown = std::move(acceptor_pools_);
+    services_to_release.swap(rpc_services_);
+    pools_to_shutdown.swap(acceptor_pools_);
   }
 
   // Destroy state outside of the lock.
@@ -248,7 +248,7 @@ void Messenger::UnregisterAllServices() {
   RpcServicesMap to_release;
   {
     std::lock_guard<percpu_rwlock> guard(lock_);
-    to_release = std::move(rpc_services_);
+    to_release.swap(rpc_services_);
     state_ = kServicesUnregistered;
   }
   // Release the map outside of the lock.
