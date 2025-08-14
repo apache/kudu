@@ -1,0 +1,32 @@
+From 698e5c1d3c82d52b41890753314d7c4af22050ae Mon Sep 17 00:00:00 2001
+From: Abhishek Chennaka <achennaka@cloudera.com>
+Date: Wed, 20 Aug 2025 14:05:23 -0700
+Subject: [PATCH] Exclude SSL_CTX_set_ciphersuites call for OpenSSL 1.0.x
+
+---
+ squeasel.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/squeasel.c b/squeasel.c
+index c38c52e..fdd6375 100644
+--- a/squeasel.c
++++ b/squeasel.c
+@@ -3983,6 +3983,7 @@ static int set_ssl_option(struct sq_context *ctx) {
+     // non-empty list of default TLSv1.3 ciphers when given an empty list of
+     // TLSv1.2 ciphers, and SSL_CTX_set_ciphersuites() would allow an empty set
+     // of TLSv1.3 ciphers in a subsequent call.
++#if OPENSSL_VERSION_NUMBER >= 0x10101000L
+     if (ctx->config[SSL_CIPHERSUITES] != NULL) {
+       if (SSL_CTX_set_ciphersuites(ctx->ssl_ctx, ctx->config[SSL_CIPHERSUITES]) != 1) {
+         cry(fc(ctx), "SSL_CTX_set_ciphersuites: error setting ciphers (%s): %s",
+@@ -3990,6 +3991,7 @@ static int set_ssl_option(struct sq_context *ctx) {
+         return 0;
+       }
+     }
++#endif
+     if (ctx->config[SSL_CIPHERS] != NULL) {
+       if (SSL_CTX_set_cipher_list(ctx->ssl_ctx, ctx->config[SSL_CIPHERS]) != 1) {
+         cry(fc(ctx), "SSL_CTX_set_cipher_list: error setting ciphers (%s): %s",
+-- 
+1.8.3.1
+

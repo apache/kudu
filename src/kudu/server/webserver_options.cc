@@ -23,6 +23,7 @@
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
+#include <openssl/crypto.h>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -125,7 +126,8 @@ TAG_FLAG(webserver_tls_ciphersuites, advanced);
 
 DEFINE_string(webserver_tls_min_protocol, kudu::security::SecurityDefaults::kDefaultTlsMinVersion,
               "The minimum protocol version to allow when for webserver HTTPS "
-              "connections. May be one of 'TLSv1', 'TLSv1.1', 'TLSv1.2', or 'TLSv1.3'.");
+              "connections. May be one of 'TLSv1', 'TLSv1.1', 'TLSv1.2', or 'TLSv1.3' "
+              "(TLSv1.3 is only available when compiled with OpenSSL 1.1.1 or later).");
 TAG_FLAG(webserver_tls_min_protocol, advanced);
 
 DEFINE_bool(webserver_require_spnego, false,
@@ -156,10 +158,33 @@ bool ValidateTlsFlags() {
 GROUP_FLAG_VALIDATOR(webserver_tls_options, ValidateTlsFlags);
 
 bool ValidateTlsMinVersion(const char* /* flagname */, const string& ver) {
-  return kudu::iequals(ver, "TLSv1") ||
-    kudu::iequals(ver, "TLSv1.1") ||
-    kudu::iequals(ver, "TLSv1.2") ||
-    kudu::iequals(ver, "TLSv1.3");
+  // TLSv1.0 is available in OpenSSL 0.9.8+.
+  // TLSv1.1 is available in OpenSSL 1.0.1+ (some distros backported earlier).
+  if (kudu::iequals(ver, "TLSv1") || kudu::iequals(ver, "TLSv1.1")) {
+    return true;
+  }
+  // TLSv1.2 is supported in OpenSSL 1.0.1.
+  if (kudu::iequals(ver, "TLSv1.2")) {
+#if OPENSSL_VERSION_NUMBER >= 0x10001000L  // >= 1.0.1
+    return true;
+#else
+    LOG(ERROR) << "TLSv1.2 requested, but available OpenSSL version "
+                  "is too old (need >= 1.0.1)";
+    return false;
+#endif
+  }
+  // TLSv1.3 is supported in OpenSSL 1.1.1+
+  if (kudu::iequals(ver, "TLSv1.3")) {
+#if OPENSSL_VERSION_NUMBER >= 0x10101000L  // >= 1.1.1
+    return true;
+#else
+    LOG(ERROR) << "TLSv1.3 requested, but available OpenSSL version "
+                  "is too old (need >= 1.1.1)";
+    return false;
+#endif
+  }
+  LOG(ERROR) << "Unrecognized TLS version string: " << ver;
+  return false;
 }
 DEFINE_validator(webserver_tls_min_protocol, &ValidateTlsMinVersion);
 
