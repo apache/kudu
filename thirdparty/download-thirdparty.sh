@@ -278,13 +278,14 @@ fetch_and_patch \
  "patch -p1 < $TP_DIR/patches/rapidjson-document-assignment-operator-00.patch" \
  "patch -p1 < $TP_DIR/patches/rapidjson-document-assignment-operator-01.patch"
 
-SQUEASEL_PATCHLEVEL=2
+SQUEASEL_PATCHLEVEL=3
 fetch_and_patch \
  squeasel-${SQUEASEL_VERSION}.tar.gz \
  $SQUEASEL_SOURCE \
  $SQUEASEL_PATCHLEVEL \
  "patch -p1 < $TP_DIR/patches/squeasel-handle-openssl-errors.patch" \
- "patch -p1 < $TP_DIR/patches/squeasel-tls-min-version.patch"
+ "patch -p1 < $TP_DIR/patches/squeasel-tls-min-version.patch" \
+ "patch -p1 < $TP_DIR/patches/squeasel-tls-openssl10x.patch"
 
 MUSTACHE_PATCHLEVEL=0
 fetch_and_patch \
