@@ -22,6 +22,8 @@
 #include <openssl/pem.h>
 #include <openssl/ssl.h>
 #if OPENSSL_VERSION_NUMBER >= 0x30000000L
+#include <openssl/param_build.h>
+#include <openssl/params.h>
 #include <openssl/types.h>
 #endif
 #include <openssl/x509.h>
@@ -39,7 +41,7 @@
 namespace kudu {
 namespace security {
 namespace internal {
-struct ScopedCheckNoPendingSSLErrors;
+struct ScopedCheckNoPendingSSLErrors;  // IWYU pragma: keep
 }  // namespace internal
 }  // namespace security
 }  // namespace kudu
@@ -204,6 +206,14 @@ template<> struct SslTypeTraits<X509_REQ> {
 };
 template<> struct SslTypeTraits<EVP_PKEY> {
   static constexpr auto kFreeFunc = &EVP_PKEY_free;
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+  static constexpr auto kWritePemFunc = &PEM_write_bio_PUBKEY;
+  static constexpr auto kWriteDerFunc = &i2d_PUBKEY_bio;
+#endif
+};
+// EVP_PKEY_CTX deleter for RAII management via ssl_make_unique
+template<> struct SslTypeTraits<EVP_PKEY_CTX> {
+  static constexpr auto kFreeFunc = &EVP_PKEY_CTX_free;
 };
 template<> struct SslTypeTraits<SSL_CTX> {
   static constexpr auto kFreeFunc = &SSL_CTX_free;
@@ -211,6 +221,17 @@ template<> struct SslTypeTraits<SSL_CTX> {
 template<> struct SslTypeTraits<BIO> {
   static constexpr auto kFreeFunc = &BIO_free;
 };
+
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+// OSSL_PARAM_BLD deleter for RAII management
+template<> struct SslTypeTraits<OSSL_PARAM_BLD> {
+  static constexpr auto kFreeFunc = &OSSL_PARAM_BLD_free;
+};
+// OSSL_PARAM deleter for RAII management
+template<> struct SslTypeTraits<OSSL_PARAM> {
+  static constexpr auto kFreeFunc = &OSSL_PARAM_free;
+};
+#endif
 
 template<typename SSL_TYPE, typename Traits = SslTypeTraits<SSL_TYPE>>
 c_unique_ptr<SSL_TYPE> ssl_make_unique(SSL_TYPE* d) {

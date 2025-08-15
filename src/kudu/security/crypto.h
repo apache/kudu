@@ -17,7 +17,11 @@
 
 #pragma once
 
-#include <openssl/ssl.h>
+// No direct OpenSSL includes needed here; we rely on openssl_util.h for
+// forward declarations and public aggregation.
+
+// IWYU pragma: no_include <openssl/types.h>
+// IWYU pragma: no_include <openssl/ssl.h>
 
 #include <cstddef>
 #include <string>

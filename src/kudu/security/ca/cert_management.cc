@@ -374,7 +374,9 @@ Status CertSigner::DigestSign(const EVP_MD* md, EVP_PKEY* pkey, X509* x) {
 Status CertSigner::GenerateSerial(c_unique_ptr<ASN1_INTEGER>* ret) {
   SCOPED_OPENSSL_NO_PENDING_ERRORS;
   auto btmp = ssl_make_unique(BN_new());
-  OPENSSL_RET_NOT_OK(BN_pseudo_rand(btmp.get(), 64, 0, 0),
+  // BN_pseudo_rand() is deprecated in OpenSSL 3.x; BN_rand() is the recommended replacement.
+  // top=0 sets the most significant bit (fixed bit length), bottom=0 allows even values.
+  OPENSSL_RET_NOT_OK(BN_rand(btmp.get(), 64, 0, 0),
       "error generating random number");
   auto serial = ssl_make_unique(ASN1_INTEGER_new());
   OPENSSL_RET_IF_NULL(BN_to_ASN1_INTEGER(btmp.get(), serial.get()),

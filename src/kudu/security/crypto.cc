@@ -55,13 +55,21 @@ int PemWritePrivateKey(BIO* bio, EVP_PKEY* key) {
 }
 
 int PemWritePublicKey(BIO* bio, EVP_PKEY* key) {
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+  return PEM_write_bio_PUBKEY(bio, key);
+#else
   auto rsa = ssl_make_unique(EVP_PKEY_get1_RSA(key));
   return PEM_write_bio_RSA_PUBKEY(bio, rsa.get());
+#endif
 }
 
 int DerWritePublicKey(BIO* bio, EVP_PKEY* key) {
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+  return i2d_PUBKEY_bio(bio, key);
+#else
   auto rsa = ssl_make_unique(EVP_PKEY_get1_RSA(key));
   return i2d_RSA_PUBKEY_bio(bio, rsa.get());
+#endif
 }
 
 } // anonymous namespace
@@ -87,9 +95,11 @@ struct RsaPublicKeyTraits : public SslTypeTraits<EVP_PKEY> {
   static constexpr auto kWritePemFunc = &PemWritePublicKey;
   static constexpr auto kWriteDerFunc = &DerWritePublicKey;
 };
+#if OPENSSL_VERSION_NUMBER < 0x30000000L
 template<> struct SslTypeTraits<RSA> {
   static constexpr auto kFreeFunc = &RSA_free;
 };
+#endif
 template<> struct SslTypeTraits<EVP_MD_CTX> {
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
   static constexpr auto kFreeFunc = &EVP_MD_CTX_destroy;
@@ -181,7 +191,11 @@ Status PublicKey::VerifySignature(DigestType digest,
                                   const std::string& signature) const {
   SCOPED_OPENSSL_NO_PENDING_ERRORS;
   const EVP_MD* md = GetMessageDigest(digest);
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
   auto md_ctx = ssl_make_unique(EVP_MD_CTX_create());
+#else
+  auto md_ctx = ssl_make_unique(EVP_MD_CTX_new());
+#endif
 
   OPENSSL_RET_NOT_OK(EVP_DigestVerifyInit(md_ctx.get(), nullptr, md, nullptr, GetRawData()),
                      "error initializing verification digest");
@@ -213,12 +227,19 @@ Status PublicKey::VerifySignature(DigestType digest,
 
 Status PublicKey::Equals(const PublicKey& other, bool* equals) const {
   SCOPED_OPENSSL_NO_PENDING_ERRORS;
-  int cmp = EVP_PKEY_cmp(data_.get(), other.data_.get());
+  int cmp;
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+  cmp = EVP_PKEY_eq(data_.get(), other.data_.get());
+#else
+  cmp = EVP_PKEY_cmp(data_.get(), other.data_.get());
+#endif
   switch (cmp) {
     case -2:
       return Status::NotSupported("failed to compare public keys");
+#if OPENSSL_VERSION_NUMBER < 0x30000000L
     case -1: // Key types are different; treat this as not equal
-    case 0:  // Keys are not equal
+#endif
+    case 0:  // Keys are not equal or types differ
       *equals = false;
       return Status::OK();
     case 1:
@@ -263,15 +284,23 @@ Status PrivateKey::FromFile(const std::string& fpath, DataFormat format,
 Status PrivateKey::GetPublicKey(PublicKey* public_key) const {
   SCOPED_OPENSSL_NO_PENDING_ERRORS;
   CHECK(public_key);
-  auto rsa = ssl_make_unique(EVP_PKEY_get1_RSA(CHECK_NOTNULL(data_.get())));
+  auto pkey = CHECK_NOTNULL(data_.get());
+
+  auto tmp = ssl_make_unique(BIO_new(BIO_s_mem()));
+  OPENSSL_RET_IF_NULL(tmp, "could not create memory BIO");
+
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+  OPENSSL_RET_NOT_OK(i2d_PUBKEY_bio(tmp.get(), pkey),
+      "error extracting public key");
+#else
+  auto rsa = ssl_make_unique(EVP_PKEY_get1_RSA(pkey));
   if (PREDICT_FALSE(!rsa)) {
     return Status::RuntimeError(GetOpenSSLErrors());
   }
-  auto tmp = ssl_make_unique(BIO_new(BIO_s_mem()));
-  OPENSSL_RET_IF_NULL(tmp, "could not create memory BIO");
-  // Export public key in DER format into the temporary buffer.
   OPENSSL_RET_NOT_OK(i2d_RSA_PUBKEY_bio(tmp.get(), rsa.get()),
       "error extracting public RSA key");
+#endif
+
   // Read the public key into the result placeholder.
   return public_key->FromBIO(tmp.get(), DataFormat::DER);
 }
@@ -283,7 +312,11 @@ Status PrivateKey::MakeSignature(DigestType digest,
   SCOPED_OPENSSL_NO_PENDING_ERRORS;
   CHECK(signature);
   const EVP_MD* md = GetMessageDigest(digest);
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
   auto md_ctx = ssl_make_unique(EVP_MD_CTX_create());
+#else
+  auto md_ctx = ssl_make_unique(EVP_MD_CTX_new());
+#endif
 
   OPENSSL_RET_NOT_OK(EVP_DigestSignInit(md_ctx.get(), nullptr, md, nullptr, GetRawData()),
                      "error initializing signing digest");
@@ -304,6 +337,26 @@ Status GeneratePrivateKey(int num_bits, PrivateKey* ret) {
   CHECK(ret);
   InitializeOpenSSL();
   SCOPED_OPENSSL_NO_PENDING_ERRORS;
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+  auto ctx = ssl_make_unique(EVP_PKEY_CTX_new_from_name(nullptr, "RSA", nullptr));
+  OPENSSL_RET_IF_NULL(ctx.get(), "error creating EVP_PKEY_CTX for RSA");
+  int rc = EVP_PKEY_keygen_init(ctx.get());
+  if (rc <= 0) {
+    return Status::RuntimeError("error initializing RSA keygen", GetOpenSSLErrors());
+  }
+  rc = EVP_PKEY_CTX_set_rsa_keygen_bits(ctx.get(), num_bits);
+  if (rc <= 0) {
+    return Status::RuntimeError("error setting RSA key size", GetOpenSSLErrors());
+  }
+  EVP_PKEY* gen = nullptr;
+  rc = EVP_PKEY_keygen(ctx.get(), &gen);
+  if (rc <= 0) {
+    return Status::RuntimeError("error generating RSA key", GetOpenSSLErrors());
+  }
+  OPENSSL_RET_IF_NULL(gen, "error generating RSA key");
+  // Directly adopt the generated key for OpenSSL 3.0+
+  ret->AdoptRawData(gen);
+#else
   auto key = ssl_make_unique(EVP_PKEY_new());
   {
     auto bn = ssl_make_unique(BN_new());
@@ -316,7 +369,8 @@ Status GeneratePrivateKey(int num_bits, PrivateKey* ret) {
         EVP_PKEY_set1_RSA(key.get(), rsa.get()), "error assigning RSA key");
   }
   ret->AdoptRawData(key.release());
-
+#endif
+  // Common success return for both OpenSSL branches
   return Status::OK();
 }
 

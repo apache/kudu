@@ -19,7 +19,11 @@
 
 #include <openssl/asn1.h>
 #include <openssl/crypto.h>
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+#include <openssl/types.h>
+#else
 #include <openssl/ssl.h>
+#endif
 #include <openssl/x509.h>
 
 #include <cstdint>

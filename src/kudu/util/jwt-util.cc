@@ -19,13 +19,22 @@
 
 #include "kudu/util/jwt-util.h"
 
+// IWYU pragma: no_include <bits/struct_stat.h>
 #include <openssl/bn.h>
 #include <openssl/crypto.h>
-#include <openssl/ec.h>
+#include <openssl/evp.h> // IWYU pragma: keep
 #include <openssl/obj_mac.h>
-#include <openssl/pem.h>
 #include <openssl/ssl.h>
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+#include <openssl/core_names.h>
+#include <openssl/param_build.h>
+#include <openssl/types.h>
+#else
+#include <openssl/ec.h>
+#include <openssl/pem.h>
+#include <openssl/rsa.h> // IWYU pragma: keep
 #include <openssl/x509.h>
+#endif
 #include <sys/stat.h>
 
 #include <cerrno>
@@ -113,22 +122,27 @@ int WriteDerFuncNotImplementedEC(BIO* /*ununsed*/, EC_KEY* /*unused*/) {
   LOG(DFATAL) << "this should never be called";
   return -1;
 }
+#if OPENSSL_VERSION_NUMBER < 0x30000000L
 template<> struct SslTypeTraits<EC_KEY> {
   static constexpr auto kFreeFunc = &EC_KEY_free;
   static constexpr auto kWritePemFunc = &PEM_write_bio_EC_PUBKEY;
   static constexpr auto kWriteDerFunc = &WriteDerFuncNotImplementedEC;
 };
+#endif
 
 // Need this function because of template instantiation, but it's never used.
 int WriteDerNotImplementedRSA(BIO* /*unused*/, RSA* /*unused*/) {
   LOG(DFATAL) << "this should never be called";
   return -1;
 }
+#if OPENSSL_VERSION_NUMBER < 0x30000000L
 template<> struct SslTypeTraits<RSA> {
   static constexpr auto kFreeFunc = &RSA_free;
   static constexpr auto kWritePemFunc = &PEM_write_bio_RSA_PUBKEY;
   static constexpr auto kWriteDerFunc = &WriteDerNotImplementedRSA;
 };
+#endif
+
 
 } // namespace security
 
@@ -438,24 +452,56 @@ Status RSAJWTPublicKeyBuilder::ConvertJwkToPem(
   if (!WebSafeBase64Unescape(base64_e, &str_e)) {
     return Status::InvalidArgument("malformed 'e' key component");
   }
-  auto mod = ssl_make_unique(BN_bin2bn(
-      reinterpret_cast<const unsigned char*>(str_n.c_str()),
-      static_cast<int>(str_n.size()),
-      nullptr));
-  auto exp = ssl_make_unique(BN_bin2bn(
-      reinterpret_cast<const unsigned char*>(str_e.c_str()),
-      static_cast<int>(str_e.size()),
-      nullptr));
+  // Helper to convert raw bytes to BIGNUM with RAII.
+  auto bn_from_bytes = [](const string& s) {
+    return ssl_make_unique(BN_bin2bn(
+        reinterpret_cast<const unsigned char*>(s.c_str()),
+        static_cast<int>(s.size()),
+        nullptr));
+  };
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+  auto mod = bn_from_bytes(str_n);
+  auto exp = bn_from_bytes(str_e);
+
+  auto ctx = ssl_make_unique(EVP_PKEY_CTX_new_from_name(nullptr, "RSA", nullptr));
+  OPENSSL_RET_IF_NULL(ctx.get(), "failed to create EVP_PKEY_CTX for RSA");
+  int rc = EVP_PKEY_fromdata_init(ctx.get());
+  if (rc <= 0) {
+    return Status::RuntimeError("failed to init fromdata for RSA", GetOpenSSLErrors());
+  }
+  auto bld = ssl_make_unique(OSSL_PARAM_BLD_new());
+  if (!bld) {
+    return Status::RuntimeError("failed to allocate OSSL_PARAM_BLD", GetOpenSSLErrors());
+  }
+  OPENSSL_CHECK_OK(OSSL_PARAM_BLD_push_BN(bld.get(), OSSL_PKEY_PARAM_RSA_N, mod.get()));
+  OPENSSL_CHECK_OK(OSSL_PARAM_BLD_push_BN(bld.get(), OSSL_PKEY_PARAM_RSA_E, exp.get()));
+  auto params = ssl_make_unique(OSSL_PARAM_BLD_to_param(bld.get()));
+  if (!params) {
+    return Status::RuntimeError("failed to build OSSL_PARAM", GetOpenSSLErrors());
+  }
+  EVP_PKEY* pkey = nullptr;
+  rc = EVP_PKEY_fromdata(ctx.get(), &pkey, EVP_PKEY_PUBLIC_KEY, params.get());
+  if (rc <= 0) {
+    return Status::RuntimeError("failed to construct RSA EVP_PKEY", GetOpenSSLErrors());
+  }
+  OPENSSL_RET_IF_NULL(pkey, "failed to construct RSA EVP_PKEY");
+
+  auto pkey_up = ssl_make_unique(pkey);
+  return ToString<EVP_PKEY>(&pub_key, DataFormat::PEM, pkey_up.get());
+#else // OPENSSL_VERSION_NUMBER < 0x30000000L (OpenSSL < 3.0)
+  auto mod = bn_from_bytes(str_n);
+  auto exp = bn_from_bytes(str_e);
   auto rsa = ssl_make_unique(RSA_new());
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
+#if OPENSSL_VERSION_NUMBER < 0x10100000L // OpenSSL < 1.1.0
   rsa->n = mod.release();
   rsa->e = exp.release();
-#else
+#else // OPENSSL_VERSION_NUMBER >= 0x10100000L (OpenSSL >= 1.1.0)
   // RSA_set0_key is a new API introduced in OpenSSL version 1.1
   OPENSSL_RET_NOT_OK(RSA_set0_key(
       rsa.get(), mod.release(), exp.release(), nullptr), "failed to set RSA key");
-#endif
+#endif // OPENSSL_VERSION_NUMBER < 0x10100000L
   return ToString(&pub_key, DataFormat::PEM, rsa.get());
+#endif // OPENSSL_VERSION_NUMBER >= 0x30000000L
 }
 
 // Create a JWKPublicKey of EC (ES256, ES384 or ES512) from the JWK.
@@ -557,14 +603,86 @@ Status ECJWTPublicKeyBuilder::ConvertJwkToPem(int eccgrp,
   if (!WebSafeBase64Unescape(base64_y, &ascii_y)) {
     return Status::InvalidArgument("malformed 'y' key component");
   }
-  auto x = ssl_make_unique(BN_bin2bn(
-      reinterpret_cast<const unsigned char*>(ascii_x.c_str()),
-      static_cast<int>(ascii_x.size()),
-      nullptr));
-  auto y = ssl_make_unique(BN_bin2bn(
-      reinterpret_cast<const unsigned char*>(ascii_y.c_str()),
-      static_cast<int>(ascii_y.size()),
-      nullptr));
+  // Helper to convert raw bytes to BIGNUM with RAII.
+  auto bn_from_bytes = [](const string& s) {
+    return ssl_make_unique(BN_bin2bn(
+        reinterpret_cast<const unsigned char*>(s.c_str()),
+        static_cast<int>(s.size()),
+        nullptr));
+  };
+  // Common BIGNUMs for both OpenSSL branches
+  auto x = bn_from_bytes(ascii_x);
+  auto y = bn_from_bytes(ascii_y);
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+
+  const char* group_name = nullptr;
+  int coord_len = 0; // bytes per coordinate for uncompressed point
+  switch (eccgrp) {
+    case NID_X9_62_prime256v1:
+      group_name = "prime256v1";
+      coord_len = 32;
+      break;
+    case NID_secp384r1:
+      group_name = "secp384r1";
+      coord_len = 48;
+      break;
+    case NID_secp521r1:
+      group_name = "secp521r1";
+      coord_len = 66; // ceil(521/8)
+      break;
+    default: return Status::NotSupported("unsupported EC group NID");
+  }
+
+  auto ctx = ssl_make_unique(EVP_PKEY_CTX_new_from_name(nullptr, "EC", nullptr));
+  OPENSSL_RET_IF_NULL(ctx.get(), "failed to create EVP_PKEY_CTX for EC");
+  int rc = EVP_PKEY_fromdata_init(ctx.get());
+  if (rc <= 0) {
+    return Status::RuntimeError("failed to init fromdata for EC", GetOpenSSLErrors());
+  }
+  auto bld = ssl_make_unique(OSSL_PARAM_BLD_new());
+  if (!bld) {
+    return Status::RuntimeError("failed to allocate OSSL_PARAM_BLD", GetOpenSSLErrors());
+  }
+  OPENSSL_CHECK_OK(OSSL_PARAM_BLD_push_utf8_string(bld.get(), OSSL_PKEY_PARAM_GROUP_NAME,
+                                                   const_cast<char*>(group_name), 0));
+
+  std::vector<unsigned char> uncompressed;
+  uncompressed.resize(1 + 2 * coord_len);
+  uncompressed[0] = 0x04;
+  int xn = BN_bn2binpad(x.get(), uncompressed.data() + 1, coord_len);
+  int yn = BN_bn2binpad(y.get(), uncompressed.data() + 1 + coord_len, coord_len);
+  if (xn != coord_len || yn != coord_len) {
+    // bld and ctx are freed by RAII
+    return Status::InvalidArgument("invalid EC public key coordinate length");
+  }
+  // OSSL_PKEY_PARAM_PUB_KEY is a well-known constant name provided by OpenSSL 3.0
+  // headers (openssl/core_names.h). It's a compile-time constant string literal
+  // and should never be null.
+  static_assert(OSSL_PKEY_PARAM_PUB_KEY != nullptr,
+                "OSSL_PKEY_PARAM_PUB_KEY must be a non-null constant string in OpenSSL 3.0");
+  // push_octet_string should not fail here because:
+  //  - 'bld' was successfully allocated.
+  //  - 'uncompressed' contains a valid uncompressed EC point (0x04 || X || Y)
+  //    with coordinate lengths pre-validated via BN_bn2binpad against the
+  //    expected 'coord_len'.
+  //  - OSSL_PKEY_PARAM_PUB_KEY expects a public key in octet string form for EC.
+  // If OpenSSL returns failure, the following macro will surface detailed error info.
+  OPENSSL_CHECK_OK(OSSL_PARAM_BLD_push_octet_string(
+      bld.get(), OSSL_PKEY_PARAM_PUB_KEY, uncompressed.data(), uncompressed.size()));
+  auto params = ssl_make_unique(OSSL_PARAM_BLD_to_param(bld.get()));
+  if (!params) {
+    return Status::RuntimeError("failed to build OSSL_PARAM", GetOpenSSLErrors());
+  }
+  EVP_PKEY* pkey = nullptr;
+  rc = EVP_PKEY_fromdata(ctx.get(), &pkey, EVP_PKEY_PUBLIC_KEY, params.get());
+  if (rc <= 0) {
+    return Status::RuntimeError("failed to construct EC EVP_PKEY", GetOpenSSLErrors());
+  }
+  OPENSSL_RET_IF_NULL(pkey, "failed to construct EC EVP_PKEY");
+
+  auto pkey_up = ssl_make_unique(pkey);
+  return ToString<EVP_PKEY>(&pub_key, DataFormat::PEM, pkey_up.get());
+#else // OPENSSL_VERSION_NUMBER < 0x30000000L (OpenSSL < 3.0)
   auto ec_key = ssl_make_unique(EC_KEY_new_by_curve_name(eccgrp));
   OPENSSL_RET_IF_NULL(ec_key, "failed to create EC key");
   EC_KEY_set_asn1_flag(ec_key.get(), OPENSSL_EC_NAMED_CURVE);
@@ -572,6 +690,7 @@ Status ECJWTPublicKeyBuilder::ConvertJwkToPem(int eccgrp,
       ec_key.get(), x.get(), y.get()), "failed to set public key");
 
   return ToString(&pub_key, DataFormat::PEM, ec_key.get());
+#endif // OPENSSL_VERSION_NUMBER >= 0x30000000L
 }
 
 //

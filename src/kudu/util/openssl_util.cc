@@ -154,6 +154,7 @@ Status CheckOpenSSLInitialized() {
   if (!CRYPTO_get_locking_callback()) {
     return Status::RuntimeError("Locking callback not initialized");
   }
+
   auto ctx = ssl_make_unique(SSL_CTX_new(SSLv23_method()));
   if (!ctx) {
     ERR_clear_error();
@@ -242,6 +243,7 @@ void DoInitializeOpenSSL() {
   // initializes OpenSSL, and we risk installing conflicting callbacks
   // or crashing due to concurrent initialization attempts. In that case,
   // log a warning.
+  // Probe whether OpenSSL has been initialized already by attempting to create SSL_CTX.
   auto ctx = ssl_make_unique(SSL_CTX_new(SSLv23_method()));
   if (ctx) {
     RAW_LOG(WARNING, "It appears that OpenSSL has been previously initialized by "
@@ -424,7 +426,12 @@ string GetOpenSSLErrors() {
   int line, flags;
   const char *file, *data;
   bool is_first = true;
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+  const char* func = nullptr;
+  while ((l = ERR_get_error_all(&file, &line, &func, &data, &flags)) != 0) {
+#else
   while ((l = ERR_get_error_line_data(&file, &line, &data, &flags)) != 0) {
+#endif
     if (is_first) {
       is_first = false;
     } else {
@@ -434,6 +441,11 @@ string GetOpenSSLErrors() {
     char buf[256];
     ERR_error_string_n(l, buf, sizeof(buf));
     serr << buf << ":" << file << ":" << line;
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+    if (func && *func) {
+      serr << ":" << func;
+    }
+#endif
     if (flags & ERR_TXT_STRING) {
       serr << ":" << data;
     }
