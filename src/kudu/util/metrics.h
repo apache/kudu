@@ -569,6 +569,10 @@ class MetricPrototype {
         description_(description),
         level_(level),
         flags_(flags) {
+      DCHECK(entity_type);
+      DCHECK(name);
+      DCHECK(label);
+      DCHECK(description);
     }
 
     const char* const entity_type_;
@@ -750,7 +754,7 @@ class MetricEntity : public RefCountedThreadSafe<MetricEntity> {
 
   mutable simple_spinlock lock_;
 
-  // Map from metric name to Metric object. Protected by lock_.
+  // Map from metric prototype pointer to Metric object. Protected by lock_.
   MetricMap metric_map_;
 
   // The key/value attributes. Protected by lock_.

@@ -73,10 +73,10 @@ void WriteMetricsToJson(JsonWriter* writer,
 void WriteMetricsPrometheus(PrometheusWriter* writer,
                             const MetricEntity::MetricMap& metrics,
                             const string& prefix) {
-  for (const auto& [name, val] : metrics) {
+  for (const auto& [_, val] : metrics) {
     WARN_NOT_OK(val->WriteAsPrometheus(writer, prefix),
                 Substitute("unable to write '$0' ($1) in Prometheus format",
-                           name, val->prototype()->description()));
+                           val->prototype()->name(), val->prototype()->description()));
   }
 }
 
@@ -288,8 +288,8 @@ int MetricLevelNumeric(MetricLevel level) {
 Status MetricEntity::GetMetricsAndAttrs(const MetricFilters& filters,
                                         MetricMap* metrics,
                                         AttributeMap* attrs) const {
-  CHECK(metrics);
-  CHECK(attrs);
+  DCHECK(metrics);
+  DCHECK(attrs);
 
   // Filter the 'type'.
   if (!filters.entity_types.empty() && !MatchNameInList(prototype_->name(), filters.entity_types)) {
@@ -791,7 +791,7 @@ scoped_refptr<MetricEntity> MetricRegistry::FindOrCreateEntity(
 std::atomic<int64_t> Metric::g_epoch_;
 
 Metric::Metric(const MetricPrototype* prototype)
-    : prototype_(prototype),
+    : prototype_(DCHECK_NOTNULL(prototype)),
       m_epoch_(current_epoch()) {
 }
 
