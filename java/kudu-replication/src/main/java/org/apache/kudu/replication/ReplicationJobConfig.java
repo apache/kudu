@@ -37,6 +37,7 @@ public class ReplicationJobConfig implements Serializable {
   private final boolean restoreOwner;
   private final String tableSuffix;
   private final long discoveryIntervalSeconds;
+  private final boolean createTable;
 
   private ReplicationJobConfig(
           String sourceMasterAddresses,
@@ -44,7 +45,8 @@ public class ReplicationJobConfig implements Serializable {
           String tableName,
           boolean restoreOwner,
           String tableSuffix,
-          long discoveryIntervalSeconds) {
+          long discoveryIntervalSeconds,
+          boolean createTable) {
     this.sourceMasterAddresses = checkNotNull(sourceMasterAddresses,
       "sourceMasterAddresses cannot be null");
     this.sinkMasterAddresses = checkNotNull(sinkMasterAddresses,
@@ -53,6 +55,7 @@ public class ReplicationJobConfig implements Serializable {
     this.restoreOwner = restoreOwner;
     this.tableSuffix = tableSuffix != null ? tableSuffix : "";
     this.discoveryIntervalSeconds = discoveryIntervalSeconds;
+    this.createTable = createTable;
   }
 
   public String getSourceMasterAddresses() {
@@ -79,6 +82,10 @@ public class ReplicationJobConfig implements Serializable {
     return discoveryIntervalSeconds;
   }
 
+  public boolean getCreateTable() {
+    return createTable;
+  }
+
   public String getSinkTableName() {
     return tableName + tableSuffix;
   }
@@ -98,6 +105,7 @@ public class ReplicationJobConfig implements Serializable {
     private String tableSuffix = "";
     // The default discover interval is 5 minutes.
     private long discoveryIntervalSeconds = 5 * 60;
+    private boolean createTable = false;
 
     public Builder setSourceMasterAddresses(String sourceMasterAddresses) {
       this.sourceMasterAddresses = sourceMasterAddresses;
@@ -129,6 +137,11 @@ public class ReplicationJobConfig implements Serializable {
       return this;
     }
 
+    public Builder setCreateTable(boolean createTable) {
+      this.createTable = createTable;
+      return this;
+    }
+
     public ReplicationJobConfig build() {
       return new ReplicationJobConfig(
               sourceMasterAddresses,
@@ -136,7 +149,8 @@ public class ReplicationJobConfig implements Serializable {
               tableName,
               restoreOwner,
               tableSuffix,
-              discoveryIntervalSeconds);
+              discoveryIntervalSeconds,
+              createTable);
     }
   }
 

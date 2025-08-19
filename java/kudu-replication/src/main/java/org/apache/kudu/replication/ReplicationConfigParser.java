@@ -51,6 +51,9 @@ public class ReplicationConfigParser {
    *   (default: empty string)</li>
    *   <li>{@code job.discoveryIntervalSeconds} (optional) – interval in seconds at which the source
    *   tries to perform a diff scan to get new or changed data (default: 300)</li>
+   *   <li>{@code job.createTable} (optional) – whether to create the sink table if it not exists.
+   *   This setting recreates the partition schema that is present on the source side.
+   *   (default: false)</li>
    * </ul>
    *
    * @param params the Flink {@code ParameterTool} containing command-line parameters
@@ -73,6 +76,10 @@ public class ReplicationConfigParser {
 
     if (params.has("job.discoveryIntervalSeconds")) {
       builder.setDiscoveryIntervalSeconds(params.getInt("job.discoveryIntervalSeconds"));
+    }
+
+    if (params.has("job.createTable")) {
+      builder.setCreateTable(params.getBoolean("job.createTable"));
     }
 
     return builder.build();

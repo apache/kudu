@@ -58,6 +58,13 @@ public class ReplicationEnvProvider {
    * @throws Exception if table initialization or environment setup fails
    */
   public StreamExecutionEnvironment getEnv() throws Exception {
+    if (jobConfig.getCreateTable()) {
+      try (ReplicationTableInitializer tableInitializer =
+              new ReplicationTableInitializer(jobConfig)) {
+        tableInitializer.createTableIfNotExists();
+      }
+    }
+
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 
     KuduSource<Row> kuduSource = KuduSource.<Row>builder()
