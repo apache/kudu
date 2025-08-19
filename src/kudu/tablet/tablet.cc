@@ -182,18 +182,18 @@ TAG_FLAG(workload_score_upper_bound, experimental);
 TAG_FLAG(workload_score_upper_bound, runtime);
 
 DEFINE_int32(scans_started_per_sec_for_hot_tablets, 1,
-    "Minimum read rate for tablets to be considered 'hot' (scans/sec). If a tablet's "
-    "read rate exceeds this value, flush/compaction ops for it will be assigned the highest "
-    "possible workload score, which is defined by --workload_score_upper_bound.");
+             "Minimum read rate for tablets to be considered 'hot' (scans/sec). If a tablet's "
+             "read rate exceeds this value, flush/compaction ops for it will be assigned the "
+             "highest possible workload score, which is defined by --workload_score_upper_bound.");
 TAG_FLAG(scans_started_per_sec_for_hot_tablets, experimental);
 TAG_FLAG(scans_started_per_sec_for_hot_tablets, runtime);
 
-DEFINE_int32(rows_writed_per_sec_for_hot_tablets, 1000,
-    "Minimum write rate for tablets to be considered 'hot' (rows/sec). If a tablet's "
-    "write rate exceeds this value, compaction ops for it will be assigned the highest "
-    "possible workload score, which is defined by --workload_score_upper_bound.");
-TAG_FLAG(rows_writed_per_sec_for_hot_tablets, experimental);
-TAG_FLAG(rows_writed_per_sec_for_hot_tablets, runtime);
+DEFINE_int32(rows_written_per_sec_for_hot_tablets, 1000,
+             "Minimum write rate for tablets to be considered 'hot' (rows/sec). If a tablet's "
+             "write rate exceeds this value, compaction ops for it will be assigned the highest "
+             "possible workload score, which is defined by --workload_score_upper_bound.");
+TAG_FLAG(rows_written_per_sec_for_hot_tablets, experimental);
+TAG_FLAG(rows_written_per_sec_for_hot_tablets, runtime);
 
 DEFINE_double(rowset_compaction_ancient_delta_max_ratio, 0.2,
               "The ratio of data in ancient UNDO deltas to the total amount "
@@ -2703,7 +2703,7 @@ double Tablet::CollectAndUpdateWorkloadStats(MaintenanceOp::PerfImprovementOpTyp
       double last_write_rate =
           static_cast<double>(rows_mutated - last_rows_mutated_) / elapse.ToSeconds();
       last_write_score_ =
-          std::min(1.0, last_write_rate / FLAGS_rows_writed_per_sec_for_hot_tablets) *
+          std::min(1.0, last_write_rate / FLAGS_rows_written_per_sec_for_hot_tablets) *
           FLAGS_workload_score_upper_bound;
     }
     if (elapse.ToMilliseconds() > FLAGS_workload_stats_metric_collection_interval_ms) {
