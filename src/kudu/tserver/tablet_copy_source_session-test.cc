@@ -187,6 +187,7 @@ class TabletCopyTest : public KuduTabletTest,
                                      messenger,
                                      scoped_refptr<rpc::ResultTracker>(),
                                      log,
+                                     nullptr,
                                      prepare_pool_.get(),
                                      dns_resolver_.get()));
     ASSERT_OK(tablet_replica_->WaitUntilConsensusRunning(MonoDelta::FromSeconds(10)));

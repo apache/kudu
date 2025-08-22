@@ -148,6 +148,7 @@ class ConsensusPeersTest : public KuduTest {
                         kTabletId,
                         kLeaderUuid,
                         message_queue_.get(),
+                        nullptr, // We do not use heartbeat batching.
                         raft_pool_token_.get(),
                         &factory,
                         peer);
@@ -288,6 +289,7 @@ TEST_F(ConsensusPeersTest, TestCloseWhenRemotePeerDoesntMakeProgress) {
                       kTabletId,
                       kLeaderUuid,
                       message_queue_.get(),
+                      nullptr, // We do not use heartbeat batching.
                       raft_pool_token_.get(),
                       &factory,
                       &peer);
@@ -326,6 +328,7 @@ TEST_F(ConsensusPeersTest, TestDontSendOneRpcPerWriteWhenPeerIsDown) {
                       kTabletId,
                       kLeaderUuid,
                       message_queue_.get(),
+                      nullptr, // We do not use heartbeat batching.
                       raft_pool_token_.get(),
                       &factory,
                       &peer);

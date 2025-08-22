@@ -52,6 +52,8 @@ class ChangeConfigRequestPB;
 class ChangeConfigResponsePB;
 class ConsensusRequestPB;
 class ConsensusResponsePB;
+class MultiRaftConsensusRequestPB;
+class MultiRaftConsensusResponsePB;
 class GetConsensusStateRequestPB;
 class GetConsensusStateResponsePB;
 class GetLastOpIdRequestPB;
@@ -255,6 +257,11 @@ class ConsensusServiceImpl : public consensus::ConsensusServiceIf {
   void UpdateConsensus(const consensus::ConsensusRequestPB* req,
                        consensus::ConsensusResponsePB* resp,
                        rpc::RpcContext* context) override;
+
+  void MultiRaftUpdateConsensus(
+      const consensus::MultiRaftConsensusRequestPB* req,
+      consensus::MultiRaftConsensusResponsePB* resp,
+      rpc::RpcContext* context) override;
 
   void RequestConsensusVote(const consensus::VoteRequestPB* req,
                             consensus::VoteResponsePB* resp,

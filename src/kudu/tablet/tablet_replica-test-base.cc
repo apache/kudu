@@ -20,12 +20,14 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <utility>
 
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/common/common.pb.h"
+#include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/consensus_meta_manager.h"
@@ -43,7 +45,6 @@
 #include "kudu/tablet/ops/op.h"
 #include "kudu/tablet/ops/write_op.h"
 #include "kudu/tablet/tablet-test-util.h"
-#include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_bootstrap.h"
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_replica.h"
@@ -52,6 +53,12 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/test_macros.h"
+
+namespace kudu {
+namespace tablet {
+class Tablet;
+} // namespace tablet
+} // namespace kudu
 
 using kudu::consensus::ConsensusBootstrapInfo;
 using kudu::consensus::ConsensusMetadata;
@@ -178,6 +185,7 @@ Status TabletReplicaTestBase::StartReplica(const ConsensusBootstrapInfo& info) {
                                 messenger_,
                                 scoped_refptr<ResultTracker>(),
                                 log,
+                                nullptr,
                                 prepare_pool_.get(),
                                 dns_resolver_.get());
 }
@@ -223,6 +231,7 @@ Status TabletReplicaTestBase::RestartReplica(bool reset_tablet) {
                                        messenger_,
                                        scoped_refptr<ResultTracker>(),
                                        log,
+                                       nullptr,
                                        prepare_pool_.get(),
                                        dns_resolver_.get()));
   // Wait for the replica to be usable.

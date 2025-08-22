@@ -43,6 +43,7 @@
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/metadata.pb.h"
+#include "kudu/consensus/multi_raft_batcher.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/quorum_util.h"
@@ -346,7 +347,10 @@ TSTabletManager::TSTabletManager(TabletServer* server)
     shutdown_latch_(1),
     metric_registry_(server->metric_registry()),
     tablet_copy_metrics_(server->metric_entity()),
-    state_(MANAGER_INITIALIZING) {
+    state_(MANAGER_INITIALIZING),
+    multi_raft_manager_(std::make_unique<consensus::MultiRaftManager>(
+      server_->dns_resolver(), server_->metric_entity())) {
+
   // A heartbeat msg without statistics will be considered to be from an old
   // version, thus it's necessary to trigger updating stats as soon as possible.
   next_update_time_ = MonoTime::Now();
@@ -447,6 +451,8 @@ Status TSTabletManager::Init(Timer* start_tablets,
                              std::atomic<int>* tablets_processed,
                              std::atomic<int>* tablets_total) {
   CHECK_EQ(state(), MANAGER_INITIALIZING);
+
+  multi_raft_manager_->Init(server_->messenger(), server_->raft_pool());
 
   // Start the tablet copy thread pool. We set a max queue size of 0 so that if
   // the number of requests exceeds the number of threads, a
@@ -1433,6 +1439,7 @@ void TSTabletManager::OpenTablet(const scoped_refptr<tablet::TabletReplica>& rep
                        server_->messenger(),
                        server_->result_tracker(),
                        log,
+                       multi_raft_manager_.get(),
                        server_->tablet_prepare_pool(),
                        server_->dns_resolver());
     if (!s.ok()) {
@@ -1533,6 +1540,10 @@ void TSTabletManager::Shutdown() {
     shutdown_latch_.CountDown();
     // Shut down the pool running the dedicated TxnStatusManager-related task.
     txn_status_manager_pool_->Shutdown();
+  }
+
+  if (multi_raft_manager_ != nullptr) {
+    multi_raft_manager_->Shutdown();
   }
 
   // Take a snapshot of the replicas list -- that way we don't have to hold

@@ -226,6 +226,7 @@ Status TabletReplica::Start(
     shared_ptr<Messenger> messenger,
     scoped_refptr<ResultTracker> result_tracker,
     scoped_refptr<Log> log,
+    consensus::MultiRaftManager* multi_raft_manager,
     ThreadPool* prepare_pool,
     DnsResolver* resolver) {
   DCHECK(tablet) << "A TabletReplica must be provided with a Tablet";
@@ -292,6 +293,7 @@ Status TabletReplica::Start(
         bootstrap_info,
         std::move(peer_proxy_factory),
         log,
+        multi_raft_manager,
         std::move(time_manager),
         this,
         metric_entity,

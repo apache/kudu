@@ -39,7 +39,7 @@ class Peer;
 class PeerMessageQueue;
 class PeerProxyFactory;
 class RaftConfigPB;
-
+class MultiRaftManager;
 // Manages the remote peers that pull data from the local queue and send updates to the
 // remote machines.
 class PeerManager {
@@ -50,6 +50,7 @@ class PeerManager {
               std::string local_uuid,
               PeerProxyFactory* peer_proxy_factory,
               PeerMessageQueue* queue,
+              MultiRaftManager* multi_raft_manager,
               ThreadPoolToken* raft_pool_token,
               scoped_refptr<log::Log> log);
 
@@ -80,6 +81,7 @@ class PeerManager {
   ThreadPoolToken* raft_pool_token_;
   scoped_refptr<log::Log> log_;
   PeersMap peers_;
+  MultiRaftManager* multi_raft_manager_;
   mutable simple_spinlock lock_;
 
   DISALLOW_COPY_AND_ASSIGN(PeerManager);

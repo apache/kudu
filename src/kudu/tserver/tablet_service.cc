@@ -28,6 +28,7 @@
 #include <string>
 #include <type_traits>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags.h>
@@ -207,6 +208,8 @@ using kudu::consensus::GetNodeInstanceResponsePB;
 using kudu::consensus::LeaderStepDownMode;
 using kudu::consensus::LeaderStepDownRequestPB;
 using kudu::consensus::LeaderStepDownResponsePB;
+using kudu::consensus::MultiRaftConsensusRequestPB;
+using kudu::consensus::MultiRaftConsensusResponsePB;
 using kudu::consensus::OpId;
 using kudu::consensus::RaftConsensus;
 using kudu::consensus::RaftPeerPB;
@@ -261,6 +264,25 @@ extern const char* CFILE_CACHE_MISS_BYTES_METRIC_NAME;
 extern const char* CFILE_CACHE_HIT_BYTES_METRIC_NAME;
 }
 
+namespace {
+  consensus::ConsensusRequestPB ToSingleRequest(
+    const consensus::MultiRaftConsensusRequestPB& parent_req,
+    const consensus::BatchedNoOpConsensusRequestPB& req) {
+    consensus::ConsensusRequestPB result;
+
+    result.set_dest_uuid(parent_req.dest_uuid());
+    result.set_caller_uuid(parent_req.caller_uuid());
+    result.set_tablet_id(req.tablet_id());
+    result.set_caller_term(req.caller_term());
+    *result.mutable_preceding_id() = req.preceding_id();
+    result.set_committed_index(req.committed_index());
+    result.set_all_replicated_index(req.all_replicated_index());
+    result.set_safe_timestamp(req.safe_timestamp());
+    result.set_last_idx_appended_to_leader(req.last_idx_appended_to_leader());
+
+    return result;
+  }
+} // namespace
 namespace tserver {
 
 const char* SCANNER_BYTES_READ_METRIC_NAME = "scanner_bytes_read";
@@ -294,24 +316,31 @@ bool LookupTabletReplicaOrRespond(TabletReplicaLookupIf* tablet_manager,
   return true;
 }
 
-template<class RespClass>
-void RespondTabletNotRunning(const scoped_refptr<TabletReplica>& replica,
-                             TabletStatePB tablet_state,
-                             RespClass* resp,
-                             RpcContext* context) {
+std::pair<Status, TabletServerErrorPB::Code> GetTabletNotRunningCode(
+  const scoped_refptr<TabletReplica>& replica,
+  const TabletStatePB& tablet_state
+  ) {
   Status s = Status::IllegalState("Tablet not RUNNING",
                                   tablet::TabletStatePB_Name(tablet_state));
-  auto error_code = TabletServerErrorPB::TABLET_NOT_RUNNING;
   if (replica->tablet_metadata()->tablet_data_state() == TABLET_DATA_TOMBSTONED ||
       replica->tablet_metadata()->tablet_data_state() == TABLET_DATA_DELETED) {
     // Treat tombstoned tablets as if they don't exist for most purposes.
     // This takes precedence over failed, since we don't reset the failed
     // status of a TabletReplica when deleting it. Only tablet copy does that.
-    error_code = TabletServerErrorPB::TABLET_NOT_FOUND;
+    return {s, TabletServerErrorPB::TABLET_NOT_FOUND};
   } else if (tablet_state == tablet::FAILED) {
     s = s.CloneAndAppend(replica->error().ToString());
-    error_code = TabletServerErrorPB::TABLET_FAILED;
+    return {s, TabletServerErrorPB::TABLET_FAILED};
   }
+  return {s, TabletServerErrorPB::TABLET_NOT_RUNNING};
+}
+
+template<class RespClass>
+void RespondTabletNotRunning(const scoped_refptr<TabletReplica>& replica,
+                             TabletStatePB tablet_state,
+                             RespClass* resp,
+                             RpcContext* context) {
+  auto [s, error_code] = GetTabletNotRunningCode(replica, tablet_state);
   SetupErrorAndRespond(resp->mutable_error(), s, error_code, context);
 }
 
@@ -1773,6 +1802,67 @@ void ConsensusServiceImpl::UpdateConsensus(const ConsensusRequestPB* req,
                          TabletServerErrorPB::UNKNOWN_ERROR,
                          context);
     return;
+  }
+  context->RespondSuccess();
+}
+
+void ConsensusServiceImpl::MultiRaftUpdateConsensus(
+    const MultiRaftConsensusRequestPB* req,
+    MultiRaftConsensusResponsePB* resp,
+    RpcContext* context) {
+  DVLOG(3) << "Received Batched Consensus Update RPC: " << SecureDebugString(*req);
+  if (!CheckUuidMatchOrRespond(tablet_manager_, "UpdateConsensus", req, resp, context)) {
+    return;
+  }
+  resp->set_responder_uuid(tablet_manager_->NodeInstance().permanent_uuid());
+  for (const auto& single_req : req->consensus_requests()) {
+    auto* single_resp = resp->add_consensus_responses();
+    auto set_error = [single_resp](const Status& s, const TabletServerErrorPB::Code& error_code) {
+      auto error = single_resp->mutable_error();
+      StatusToPB(s, error->mutable_status());
+      error->set_code(error_code);
+    };
+    scoped_refptr<TabletReplica> replica;
+    Status s = tablet_manager_->GetTabletReplica(single_req.tablet_id(), &replica);
+    if (PREDICT_FALSE(!s.ok())) {
+      set_error(s, TabletServerErrorPB::TABLET_NOT_FOUND);
+      continue; // move to next request;
+    }
+
+    const auto& state = replica->state();
+    if (PREDICT_FALSE(state != tablet::RUNNING)) {
+      auto [s, error_code] = GetTabletNotRunningCode(replica, state);
+      set_error(s, error_code);
+      continue;
+    }
+    shared_ptr<RaftConsensus> consensus = replica->shared_consensus();
+
+    if (!consensus) {
+      set_error(Status::ServiceUnavailable("Raft Consensus unavailable",
+                                           "Tablet replica not initialized"),
+                TabletServerErrorPB::TABLET_NOT_RUNNING);
+      continue;
+    }
+
+    const auto req2 = ToSingleRequest(*req, single_req);
+    auto resp2 = ConsensusResponsePB();
+    // TODO(martonka): We know that this is a no-op. So maybe we could handle it
+    // in a more efficient way.
+    s = consensus->Update(&req2, &resp2);
+    if (PREDICT_FALSE(!s.ok())) {
+      // Clear the response first, since a partially-filled response could
+      // result in confusing a caller, or in having missing required fields
+      // in embedded optional messages.
+      single_resp->Clear();
+      set_error(s, TabletServerErrorPB::UNKNOWN_ERROR);
+      continue;
+    }
+    single_resp->set_responder_term(resp2.responder_term());
+    *single_resp->mutable_status() = resp2.status();
+    single_resp->set_server_quiescing(resp2.server_quiescing());
+    if (resp2.has_error()) {
+      *single_resp->mutable_error() = resp2.error();
+    }
   }
   context->RespondSuccess();
 }

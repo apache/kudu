@@ -37,6 +37,8 @@
 #include "kudu/consensus/consensus.proxy.h"
 #include "kudu/consensus/consensus_queue.h"
 #include "kudu/consensus/metadata.pb.h"
+#include "kudu/consensus/multi_raft_batcher.h" // IWYU pragma: keep
+#include "kudu/consensus/multi_raft_consensus_data.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
@@ -108,6 +110,7 @@ void Peer::NewRemotePeer(RaftPeerPB peer_pb,
                          string tablet_id,
                          string leader_uuid,
                          PeerMessageQueue* queue,
+                         std::shared_ptr<MultiRaftHeartbeatBatcher> multi_raft_batcher,
                          ThreadPoolToken* raft_pool_token,
                          PeerProxyFactory* peer_proxy_factory,
                          shared_ptr<Peer>* peer) {
@@ -116,6 +119,7 @@ void Peer::NewRemotePeer(RaftPeerPB peer_pb,
       std::move(tablet_id),
       std::move(leader_uuid),
       queue,
+      multi_raft_batcher,
       raft_pool_token,
       peer_proxy_factory));
   new_peer->Init();
@@ -126,6 +130,7 @@ Peer::Peer(RaftPeerPB peer_pb,
            string tablet_id,
            string leader_uuid,
            PeerMessageQueue* queue,
+           std::shared_ptr<MultiRaftHeartbeatBatcher> multi_raft_batcher,
            ThreadPoolToken* raft_pool_token,
            PeerProxyFactory* peer_proxy_factory)
     : tablet_id_(std::move(tablet_id)),
@@ -138,6 +143,8 @@ Peer::Peer(RaftPeerPB peer_pb,
       queue_(queue),
       failed_attempts_(0),
       messenger_(peer_proxy_factory_->messenger()),
+      multi_raft_batcher_(multi_raft_batcher),
+      multi_raft_batcher_registration_(std::nullopt),
       raft_pool_token_(raft_pool_token),
       request_pending_(false),
       closed_(false),
@@ -151,18 +158,34 @@ void Peer::Init() {
     queue_->TrackPeer(peer_pb_);
   }
 
-  // Capture a weak_ptr reference into the functor so it can safely handle
-  // outliving the peer.
   weak_ptr<Peer> w_this = shared_from_this();
-  heartbeater_ = PeriodicTimer::Create(
-      messenger_,
-      [w_this = std::move(w_this)]() {
-        if (auto p = w_this.lock()) {
-          WARN_NOT_OK(p->SignalRequest(true), "SignalRequest failed");
-        }
-      },
-      MonoDelta::FromMilliseconds(FLAGS_raft_heartbeat_interval_ms));
-  heartbeater_->Start();
+  if (multi_raft_batcher_) {
+    // We must use the weak ptr. If we use shared_ptr, ~Peer will be called
+    // on the raft thread pool and it might cause a deadlock.
+    multi_raft_batcher_registration_ =
+        multi_raft_batcher_->Subscribe({[w_this](MultiRaftConsensusData* data) {
+          if (auto this_ptr = w_this.lock()) {
+            // If the request is already pending, we do not send it again.
+            if (this_ptr->request_pending_) {
+              return;
+            }
+            this_ptr->SendNextRequest(true, data);
+          }
+        }});
+
+  } else {
+    // Capture a weak_ptr reference into the functor so it can safely handle
+    // outliving the peer.
+    heartbeater_ = PeriodicTimer::Create(
+        messenger_,
+        [w_this = std::move(w_this)]() {
+          if (auto p = w_this.lock()) {
+            WARN_NOT_OK(p->SignalRequest(true), "SignalRequest failed");
+          }
+        },
+        MonoDelta::FromMilliseconds(FLAGS_raft_heartbeat_interval_ms));
+    heartbeater_->Start();
+  }
 }
 
 Status Peer::SignalRequest(bool even_if_queue_empty) {
@@ -184,20 +207,20 @@ Status Peer::SignalRequest(bool even_if_queue_empty) {
   // Capture a weak_ptr reference into the submitted functor so that we can
   // safely handle the functor outliving its peer.
   weak_ptr<Peer> w_this(shared_from_this());
-  return raft_pool_token_->Submit([even_if_queue_empty, w_this = std::move(w_this)]() {
-    if (auto p = w_this.lock()) {
-      p->SendNextRequest(even_if_queue_empty);
-    }
+  return raft_pool_token_->Submit(
+    [even_if_queue_empty, w_this = std::move(w_this)]() {
+      if (auto p = w_this.lock()) {
+        p->SendNextRequest(even_if_queue_empty, nullptr);
+      }
   });
 }
 
-void Peer::SendNextRequest(bool even_if_queue_empty) {
+void Peer::SendNextRequest(bool even_if_queue_empty, MultiRaftConsensusData* mrc_data) {
   std::unique_lock l(peer_lock_);
   if (PREDICT_FALSE(closed_)) {
     return;
   }
 
-  // Only allow one request at a time.
   if (request_pending_) {
     return;
   }
@@ -227,16 +250,44 @@ void Peer::SendNextRequest(bool even_if_queue_empty) {
   bool needs_tablet_copy = false;
   int64_t commit_index_before = request_.has_committed_index() ?
       request_.committed_index() : kMinimumOpIdIndex;
-  Status s = queue_->RequestForPeer(peer_pb_.permanent_uuid(), &request_,
-                                    &replicate_msg_refs_, &needs_tablet_copy);
-  int64_t commit_index_after = request_.has_committed_index() ?
-      request_.committed_index() : kMinimumOpIdIndex;
+  Status s;
+  if (mrc_data) {
+    bool ops_pending = false;
+    s = queue_->RequestForPeer(peer_pb_.permanent_uuid(),
+                               &request_,
+                               &replicate_msg_refs_,
+                               &needs_tablet_copy,
+                               &ops_pending);
+    if (s.ok() && (ops_pending || (request_.has_committed_index() &&
+                                      request_.committed_index() > commit_index_before))) {
+      weak_ptr<Peer> w_this = shared_from_this();
+      // We don't want to send out a heavy request on the batching thread.
+      // So if we have any ops, we submit a task to the raft thread pool.
+      Status s2 = raft_pool_token_->Submit([w_this, even_if_queue_empty]() {
+        if (auto p = w_this.lock()) {
+          WARN_NOT_OK(p->SignalRequest(even_if_queue_empty), "SignalRequest failed");
+        }
+      });
+      if (s2.ok()) {
+        return;
+      }
+      DCHECK(false);
+      LOG_WITH_PREFIX_UNLOCKED(WARNING)
+          << "Failed to submit SignalRequest callback, processing heartbeat with"
+          << " ops on mrc thread";
+    }
+  } else {
+    s = queue_->RequestForPeer(
+        peer_pb_.permanent_uuid(), &request_, &replicate_msg_refs_, &needs_tablet_copy);
+  }
 
   if (PREDICT_FALSE(!s.ok())) {
     VLOG_WITH_PREFIX_UNLOCKED(1) << s.ToString();
     return;
   }
 
+  int64_t commit_index_after = request_.has_committed_index() ?
+      request_.committed_index() : kMinimumOpIdIndex;
   // NOTE: we only perform this check after creating the RequestForPeer() call
   // to ensure any peer health updates that happen therein associated with this
   // peer actually happen. E.g. if we haven't been able to create a proxy in a
@@ -274,7 +325,12 @@ void Peer::SendNextRequest(bool even_if_queue_empty) {
 
   if (req_has_ops) {
     // If we're actually sending ops there's no need to heartbeat for a while.
-    heartbeater_->Snooze();
+    if (multi_raft_batcher_) {
+      // TODO(martonka) add snooze logic to MultiRaftHeartbeatBatcher (I don't
+      // expect any measurable performance impact).
+    } else {
+      heartbeater_->Snooze();
+    }
   }
 
   if (!has_sent_first_request_) {
@@ -291,16 +347,36 @@ void Peer::SendNextRequest(bool even_if_queue_empty) {
       << SecureShortDebugString(request_);
 
   controller_.Reset();
+
   request_pending_ = true;
   l.unlock();
 
   // Capture a shared_ptr reference into the RPC callback so that we're guaranteed
   // that this object outlives the RPC.
   shared_ptr<Peer> s_this = shared_from_this();
-  proxy_->UpdateAsync(request_, &response_, &controller_,
-                      [s_this]() {
-                        s_this->ProcessResponse();
-                      });
+
+  if (mrc_data && !req_has_ops) {
+    if (mrc_data->batch_req.consensus_requests_size() == 0) {
+      // If this is the first request in the batch, we need to set the
+      // responder UUID and term.
+      mrc_data->batch_req.set_caller_uuid(request_.caller_uuid());
+      mrc_data->batch_req.set_dest_uuid(request_.dest_uuid());
+    } else {
+      DCHECK(mrc_data->batch_req.caller_uuid() == request_.caller_uuid());
+      DCHECK(mrc_data->batch_req.dest_uuid() == request_.dest_uuid());
+    }
+    *mrc_data->batch_req.add_consensus_requests() = ToNoOpRequest(request_);
+    mrc_data->response_callback_data.emplace_back(
+        [s_this](const rpc::RpcController& controller,
+                 const MultiRaftConsensusResponsePB& root,
+                 const BatchedNoOpConsensusResponsePB* resp) {
+          s_this->ProcessResponseFromBatch(controller, root, resp);
+        });
+  } else {
+    DCHECK(!mrc_data) << "Messages with ops should not be sent on MRC thread";
+    proxy_->UpdateAsync(
+        request_, &response_, &controller_, [s_this]() { s_this->ProcessSingleResponse(); });
+  }
 }
 
 void Peer::StartElection() {
@@ -335,7 +411,39 @@ void Peer::StartElection() {
     });
 }
 
-void Peer::ProcessResponse() {
+void Peer::ProcessResponseFromBatch(const rpc::RpcController& controller,
+                                    const MultiRaftConsensusResponsePB& root,
+                                    const BatchedNoOpConsensusResponsePB* resp) {
+  response_.Clear();
+  if (root.has_error()) {
+    *response_.mutable_error() = root.error();
+  }
+  if (root.has_responder_uuid()) {
+    response_.set_responder_uuid(root.responder_uuid());
+  }
+  if (resp != nullptr) {
+    if (resp->has_responder_term()) {
+      response_.set_responder_term(resp->responder_term());
+    }
+    if (resp->has_status()) {
+      *response_.mutable_status() = resp->status();
+    }
+    if (resp->has_server_quiescing()) {
+      response_.set_server_quiescing(resp->server_quiescing());
+    }
+    if (resp->has_error()) {
+      *response_.mutable_error() = resp->error();
+    }
+  }
+
+  ProcessResponse(controller);
+}
+
+void Peer::ProcessSingleResponse() {
+  ProcessResponse(controller_);
+}
+
+void Peer::ProcessResponse(const rpc::RpcController& controller) {
   // Note: This method runs on the reactor thread.
   std::lock_guard lock(peer_lock_);
   if (PREDICT_FALSE(closed_)) {
@@ -346,7 +454,7 @@ void Peer::ProcessResponse() {
   MAYBE_FAULT(FLAGS_fault_crash_after_leader_request_fraction);
 
   // Process RpcController errors.
-  const auto controller_status = controller_.status();
+  const auto controller_status = controller.status();
   if (!controller_status.ok()) {
     auto ps = controller_status.IsRemoteError() ?
         PeerStatus::REMOTE_ERROR : PeerStatus::RPC_LAYER_ERROR;
@@ -526,6 +634,10 @@ void Peer::Close() {
   }
   {
     std::lock_guard lock(peer_lock_);
+    if (multi_raft_batcher_registration_) {
+      DCHECK(multi_raft_batcher_);
+      multi_raft_batcher_->Unsubscribe(*multi_raft_batcher_registration_);
+    }
     closed_ = true;
   }
   VLOG_WITH_PREFIX_UNLOCKED(1) << "Closing peer: " << peer_pb_.permanent_uuid();

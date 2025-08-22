@@ -65,6 +65,7 @@ class TxnOpDispatcherITest_PreliminaryTasksTimeout_Test;
 
 namespace consensus {
 class ConsensusMetadataManager;
+class MultiRaftManager;
 class OpStatusPB;
 class TimeManager;
 }
@@ -130,6 +131,7 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
                std::shared_ptr<rpc::Messenger> messenger,
                scoped_refptr<rpc::ResultTracker> result_tracker,
                scoped_refptr<log::Log> log,
+               consensus::MultiRaftManager* multi_raft_manager,
                ThreadPool* prepare_pool,
                DnsResolver* resolver);
 

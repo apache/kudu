@@ -276,7 +276,8 @@ class PeerMessageQueue {
   Status RequestForPeer(const std::string& uuid,
                         ConsensusRequestPB* request,
                         std::vector<ReplicateRefPtr>* msg_refs,
-                        bool* needs_tablet_copy);
+                        bool* needs_tablet_copy,
+                        bool* return_no_ops_only = nullptr);
 
   // Fill in a StartTabletCopyRequest for the specified peer.
   // If that peer should not initiate Tablet Copy, returns a non-OK status.

@@ -238,6 +238,7 @@ class RaftConsensusQuorumTest : public KuduTest {
           boot_info,
           std::move(proxy_factory),
           logs_[i],
+          nullptr,
           std::move(time_manager),
           op_factories_.back().get(),
           metric_entity_,

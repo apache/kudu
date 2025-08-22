@@ -536,6 +536,7 @@ Status SysCatalogTable::SetupTablet(
       master_->messenger(),
       /*result_tracker*/nullptr,
       log,
+      nullptr,
       master_->tablet_prepare_pool(),
       master_->dns_resolver()), "failed to start system catalog replica");
 

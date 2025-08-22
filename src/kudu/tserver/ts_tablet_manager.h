@@ -66,6 +66,7 @@ namespace consensus {
 class ConsensusMetadataManager;
 class OpId;
 class StartTabletCopyRequestPB;
+class MultiRaftManager;
 } // namespace consensus
 
 namespace master {
@@ -503,6 +504,8 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
   // Track the creation and deletion time of tablets on the node.
   scoped_refptr<Histogram> create_tablet_run_time_;
   scoped_refptr<Histogram> delete_tablet_run_time_;
+
+  std::unique_ptr<consensus::MultiRaftManager> multi_raft_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(TSTabletManager);
 };

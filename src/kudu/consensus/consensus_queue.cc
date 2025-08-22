@@ -646,7 +646,8 @@ HealthReportPB::HealthStatus PeerMessageQueue::PeerHealthStatus(const TrackedPee
 Status PeerMessageQueue::RequestForPeer(const string& uuid,
                                         ConsensusRequestPB* request,
                                         vector<ReplicateRefPtr>* msg_refs,
-                                        bool* needs_tablet_copy) {
+                                        bool* needs_tablet_copy,
+                                        bool* return_no_ops_only) {
   // Maintain a thread-safe copy of necessary members.
   OpId preceding_id;
   int64_t current_term;
@@ -664,6 +665,13 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
     }
     peer_copy = *peer;
 
+    if (return_no_ops_only) {
+      *return_no_ops_only = peer_copy.last_exchange_status == PeerStatus::TABLET_NOT_FOUND
+        || log_cache_.HasOpBeenWritten(peer->next_index);
+      if (*return_no_ops_only) {
+        return Status::OK(); // Nothing is touched, we can try again from a different thread later.
+      }
+    }
     // Clear the requests without deleting the entries, as they may be in use by other peers.
     request->mutable_ops()->UnsafeArenaExtractSubrange(0, request->ops_size(), nullptr);
 
@@ -720,6 +728,11 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
     vector<ReplicateRefPtr> messages;
     int64_t max_batch_size = FLAGS_consensus_max_batch_size_bytes - request->ByteSizeLong();
 
+    // messages were added since early return check. There is a very small
+    // chance that we end up here with return_no_ops_only passed.
+    if (return_no_ops_only != nullptr) {
+      max_batch_size = 0;
+    }
     // We try to get the follower's next_index from our log.
     Status s = log_cache_.ReadOps(peer_copy.next_index - 1,
                                   max_batch_size,

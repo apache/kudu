@@ -416,6 +416,41 @@ message ConsensusResponsePB {
   optional tserver.TabletServerErrorPB error = 999;
 }
 
+// Same as ConsensusRequestPB. But dest_uuid and caller_uuid are shared between
+// messages.
+message BatchedNoOpConsensusRequestPB {
+  required string tablet_id = 1;
+  required int64 caller_term = 3;
+  optional OpId preceding_id = 4;
+  optional int64 committed_index = 8;
+  optional int64 all_replicated_index = 9;
+  optional fixed64 safe_timestamp = 10;
+  optional int64 last_idx_appended_to_leader = 11;
+}
+
+// Batched NoOp consensus updates.
+message MultiRaftConsensusRequestPB {
+  repeated BatchedNoOpConsensusRequestPB consensus_requests = 1;
+  optional bytes dest_uuid = 2;
+  required bytes caller_uuid = 3;
+}
+
+// Same as ConsensusResponsePB. But responder_uuid and certain type of errors
+// are shared between messages.
+message BatchedNoOpConsensusResponsePB {
+  optional int64 responder_term = 1;
+  optional ConsensusStatusPB status = 2;
+  optional bool server_quiescing = 3;
+  optional tserver.TabletServerErrorPB error = 999;
+}
+
+message MultiRaftConsensusResponsePB {
+  repeated BatchedNoOpConsensusResponsePB consensus_responses = 1;
+  optional bytes responder_uuid = 2;
+  // For errors shared between tablets (e.g. wrong caller id)
+  optional tserver.TabletServerErrorPB error = 999;
+}
+
 // A message reflecting the status of an in-flight op.
 message OpStatusPB {
   required OpId op_id = 1;
@@ -586,6 +621,9 @@ service ConsensusService {
 
   // Analogous to AppendEntries in Raft, but only used for followers.
   rpc UpdateConsensus(ConsensusRequestPB) returns (ConsensusResponsePB);
+
+  // Batched call of ConsensusRequestPB. Only exists for performance reasons.
+  rpc MultiRaftUpdateConsensus(MultiRaftConsensusRequestPB) returns (MultiRaftConsensusResponsePB);
 
   // RequestVote() from Raft.
   rpc RequestConsensusVote(VoteRequestPB) returns (VoteResponsePB);

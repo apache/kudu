@@ -67,6 +67,7 @@ namespace consensus {
 class ConsensusMetadataManager;
 class ConsensusRound;
 class ConsensusRoundHandler;
+class MultiRaftManager;
 class PeerManager;
 class PeerProxyFactory;
 class PendingRounds;
@@ -163,6 +164,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   Status Start(const ConsensusBootstrapInfo& info,
                std::unique_ptr<PeerProxyFactory> peer_proxy_factory,
                scoped_refptr<log::Log> log,
+               MultiRaftManager* multi_raft_manager,
                std::unique_ptr<TimeManager> time_manager,
                ConsensusRoundHandler* round_handler,
                const scoped_refptr<MetricEntity>& metric_entity,
