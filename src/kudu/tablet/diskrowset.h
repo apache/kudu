@@ -411,7 +411,7 @@ class DiskRowSet :
 
   uint64_t OnDiskBaseDataColumnSize(const ColumnId& col_id) const override;
 
-  uint64_t OnDiskBaseDataSizeWithRedos() const override;
+  uint64_t OnDiskBaseDataSizeWithDeltas() const override;
 
   size_t DeltaMemStoreSize() const override;
 

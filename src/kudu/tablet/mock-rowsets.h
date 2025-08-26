@@ -95,7 +95,7 @@ class MockRowSet : public RowSet {
     LOG(FATAL) << "Unimplemented";
     return 0;
   }
-  uint64_t OnDiskBaseDataSizeWithRedos() const override {
+  uint64_t OnDiskBaseDataSizeWithDeltas() const override {
     LOG(FATAL) << "Unimplemented";
     return 0;
   }
@@ -213,7 +213,7 @@ class MockDiskRowSet : public MockRowSet {
     return column_size_;
   }
 
-  uint64_t OnDiskBaseDataSizeWithRedos() const override {
+  uint64_t OnDiskBaseDataSizeWithDeltas() const override {
     return size_;
   }
 

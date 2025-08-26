@@ -107,8 +107,9 @@ DEFINE_bool(prevent_kudu_2233_corruption, true,
             "Whether or not to prevent KUDU-2233 corruptions. Used for testing only!");
 TAG_FLAG(prevent_kudu_2233_corruption, unsafe);
 
-DEFINE_int32(tablet_compaction_budget_mb, 128,
-             "Budget for a single compaction");
+DEFINE_int32(tablet_compaction_budget_mb, 256,
+             "Budget for a single compaction. Consider setting this back to 128 if "
+             "--rowset_deltas_size_include_undo is set to false.");
 TAG_FLAG(tablet_compaction_budget_mb, experimental);
 
 DEFINE_int32(tablet_bloom_block_size, 4096,
@@ -2244,7 +2245,7 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompactionOrFlush &input,
   if (input.num_rowsets() > 1) {
     MAYBE_FAULT(FLAGS_fault_crash_before_flush_tablet_meta_after_compaction);
   } else if (input.num_rowsets() == 1 &&
-      input.rowsets()[0]->OnDiskBaseDataSizeWithRedos() == 0) {
+      input.rowsets()[0]->OnDiskBaseDataSizeWithDeltas() == 0) {
     MAYBE_FAULT(FLAGS_fault_crash_before_flush_tablet_meta_after_flush_mrs);
   }
 

@@ -270,11 +270,11 @@ class MemRowSet : public RowSet,
     return 0;
   }
 
-  uint64_t OnDiskBaseDataSizeWithRedos() const override {
+  uint64_t OnDiskBaseDataSizeWithDeltas() const override {
     return 0;
   }
 
-  uint64_t OnDiskBaseDataColumnSize(const ColumnId& col_id) const override {
+  uint64_t OnDiskBaseDataColumnSize(const ColumnId& /*col_id*/) const override {
     return 0;
   }
 

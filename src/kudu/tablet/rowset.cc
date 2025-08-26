@@ -280,12 +280,12 @@ uint64_t DuplicatingRowSet::OnDiskBaseDataColumnSize(const ColumnId& col_id) con
   return size;
 }
 
-uint64_t DuplicatingRowSet::OnDiskBaseDataSizeWithRedos() const {
+uint64_t DuplicatingRowSet::OnDiskBaseDataSizeWithDeltas() const {
   // The actual value of this doesn't matter, since it won't be selected
   // for compaction.
   uint64_t size = 0;
   for (const shared_ptr<RowSet> &rs : new_rowsets_) {
-    size += rs->OnDiskBaseDataSizeWithRedos();
+    size += rs->OnDiskBaseDataSizeWithDeltas();
   }
   return size;
 }

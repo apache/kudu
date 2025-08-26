@@ -82,8 +82,14 @@ DEFINE_bool(rowset_metadata_store_keys, false,
             "metadata. If false, keys will be read from the data blocks.");
 TAG_FLAG(rowset_metadata_store_keys, experimental);
 
+DEFINE_bool(rowset_deltas_size_include_undo, true,
+            "Whether to consider undo delta size while picking rowsets for "
+            "merge compaction. If false, old behavior holds i.e., only base "
+            "data and redo delta size will be taken into account during "
+            "computation of upper and lower bounds for a set of rowsets");
+TAG_FLAG(rowset_deltas_size_include_undo, advanced);
+
 using kudu::cfile::BloomFileWriter;
-using kudu::fs::BlockManager;
 using kudu::fs::BlockCreationTransaction;
 using kudu::fs::CreateBlockOptions;
 using kudu::fs::IOContext;
@@ -813,9 +819,12 @@ uint64_t DiskRowSet::OnDiskBaseDataColumnSize(const ColumnId& col_id) const {
   return 0;
 }
 
-uint64_t DiskRowSet::OnDiskBaseDataSizeWithRedos() const {
+uint64_t DiskRowSet::OnDiskBaseDataSizeWithDeltas() const {
   DiskRowSetSpace drss;
   GetDiskRowSetSpaceUsage(&drss);
+  if (FLAGS_rowset_deltas_size_include_undo) {
+    return drss.base_data_size + drss.redo_deltas_size + drss.undo_deltas_size;
+  }
   return drss.base_data_size + drss.redo_deltas_size;
 }
 
