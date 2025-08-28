@@ -18,12 +18,13 @@
 package org.apache.kudu.backup
 
 import java.math.BigDecimal
+import java.nio.ByteBuffer
 import java.sql.Date
 import java.util
 
 import com.google.protobuf.ByteString
 import com.google.protobuf.StringValue
-import org.apache.commons.net.util.Base64
+import java.util.Base64
 import org.apache.kudu.backup.Backup._
 import org.apache.kudu.ColumnSchema.ColumnSchemaBuilder
 import org.apache.kudu.ColumnSchema.CompressionAlgorithm
@@ -294,7 +295,12 @@ object TableMetadata {
       case Type.DOUBLE => row.getDouble(columnName)
       case Type.VARCHAR => row.getVarchar(columnName)
       case Type.STRING => row.getString(columnName)
-      case Type.BINARY => row.getBinary(columnName)
+      case Type.BINARY => {
+        val byteBuffer = row.getBinary(columnName)
+        val byteArray = new Array[Byte](byteBuffer.remaining())
+        byteBuffer.get(byteArray)
+        byteArray
+      }
       case Type.DECIMAL => row.getDecimal(columnName)
       case Type.DATE => row.getDate(columnName)
       case _ =>
@@ -348,7 +354,17 @@ object TableMetadata {
       case Type.STRING =>
         value.asInstanceOf[String]
       case Type.BINARY =>
-        Base64.encodeBase64String(value.asInstanceOf[Array[Byte]])
+        val byteArray = value match {
+          case arr: Array[Byte] => arr
+          case buf: java.nio.ByteBuffer => {
+            val array = new Array[Byte](buf.remaining())
+            buf.get(array)
+            array
+          }
+          case _ =>
+            throw new IllegalArgumentException(s"Unsupported binary value type: ${value.getClass}")
+        }
+        Base64.getEncoder.encodeToString(byteArray)
       case Type.DECIMAL =>
         value
           .asInstanceOf[BigDecimal]
@@ -371,7 +387,7 @@ object TableMetadata {
       case Type.DOUBLE => value.toDouble
       case Type.VARCHAR => value
       case Type.STRING => value
-      case Type.BINARY => Base64.decodeBase64(value)
+      case Type.BINARY => Base64.getDecoder.decode(value)
       case Type.DECIMAL => new BigDecimal(value) // TODO: Explicitly pass scale
       case Type.DATE => Date.valueOf(value)
       case _ =>

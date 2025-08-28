@@ -39,6 +39,7 @@ import org.apache.kudu.util.HybridTimeUtil
 import org.apache.kudu.util.SchemaGenerator.SchemaGeneratorBuilder
 import org.apache.spark.scheduler.SparkListener
 import org.apache.spark.scheduler.SparkListenerJobEnd
+
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -333,6 +334,138 @@ class TestKuduBackup extends KuduTestSuite {
 
     backupAndValidateTable(tableName, 0)
     restoreAndValidateTable(tableName, 0)
+  }
+
+  @Test
+  def testBinaryColumnBackupReproducesBase64Issue(): Unit = {
+    // This test reproduces the latent Base64 issue.
+    // Before the fix, this would fail with:
+    // java.lang.NoClassDefFoundError: org/apache/commons/net/util/Base64
+    // The issue occurs when backup metadata processing encounters BINARY data
+    // and tries to serialize it.
+
+    val tableName = "binary-table-base64-issue"
+
+    // Create a schema with BINARY column that has a default value
+    // This triggers TableMetadata.valueToString():
+    // builder.setDefaultValue(StringValue.of(valueToString(col.getDefaultValue, col.getType)))
+    val binaryDefaultValue = Array[Byte](0x01.toByte, 0x02.toByte, 0x03.toByte, 0x04.toByte)
+    val binaryColumnSchema = new ColumnSchemaBuilder("binary_data", Type.BINARY)
+      .defaultValue(binaryDefaultValue) // This triggers the Base64 issue!
+      .build()
+
+    val keyColumnSchema = new ColumnSchemaBuilder("key", Type.INT32)
+      .key(true)
+      .build()
+
+    val binaryTableSchema = new Schema(util.Arrays.asList(keyColumnSchema, binaryColumnSchema))
+
+    val tableOptions = new CreateTableOptions()
+      .setRangePartitionColumns(List("key").asJava)
+      .setNumReplicas(1)
+
+    val binaryTable = kuduClient.createTable(tableName, binaryTableSchema, tableOptions)
+
+    val session = kuduClient.newSession()
+    for (i <- 0 until 5) {
+      val insert = binaryTable.newInsert()
+      val row = insert.getRow
+      row.addInt("key", i)
+      row.addBinary("binary_data", Array[Byte](i.toByte, (i + 1).toByte, (i + 2).toByte))
+      session.apply(insert)
+    }
+    session.flush()
+
+    // This backup operation would have failed with NoClassDefFoundError before the Base64 fix
+    // because processing the BINARY column's default value calls:
+    // TableMetadata.valueToString(col.getDefaultValue, col.getType)
+    // which calls Base64.encodeBase64String() for Type.BINARY
+    val backupOptions = createBackupOptions(Seq(tableName))
+
+    // The key assertion for ENCODE path: this should NOT throw NoClassDefFoundError
+    // Tests: TableMetadata.valueToString() -> Base64.encodeBase64String()
+    assertTrue(s"Backup failed - Base64 encode issue!", runBackup(backupOptions))
+
+    // Now test the DECODE path: restore the backup with BINARY default values
+    // Tests: TableMetadata.valueFromString() -> Base64.decodeBase64()
+    val restoreOptions = createRestoreOptions(Seq(tableName))
+    assertTrue(s"Restore failed - Base64 decode issue!", runRestore(restoreOptions))
+
+    // Validate the restored table has the correct data (verifies round-trip integrity)
+    validateTablesMatch(tableName, s"$tableName-restore")
+  }
+
+  @Test
+  def testBinaryPartitionBoundariesBase64Issue(): Unit = {
+    // This test reproduces the Base64 issue via a different code path:
+    // BINARY columns used in range partition boundaries trigger valueToString()
+    // in getBoundValues(): .setValue(valueToString(value, colType))
+
+    val tableName = "binary-partition-base64-issue"
+
+    val binaryKeySchema = new ColumnSchemaBuilder("binary_key", Type.BINARY)
+      .key(true)
+      .build()
+
+    val valueColumnSchema = new ColumnSchemaBuilder("value", Type.STRING)
+      .nullable(true)
+      .build()
+
+    val binaryPartitionSchema = new Schema(util.Arrays.asList(binaryKeySchema, valueColumnSchema))
+
+    val tableOptions = new CreateTableOptions()
+      .setRangePartitionColumns(List("binary_key").asJava)
+      .setNumReplicas(1)
+
+    // Add specific range partitions with BINARY boundaries
+    // This will create partition metadata that needs to be serialized during backup
+    val lowerBound1 = binaryPartitionSchema.newPartialRow()
+    lowerBound1.addBinary("binary_key", Array[Byte](0x00.toByte, 0x00.toByte))
+    val upperBound1 = binaryPartitionSchema.newPartialRow()
+    upperBound1.addBinary("binary_key", Array[Byte](0x10.toByte, 0x00.toByte))
+    tableOptions.addRangePartition(lowerBound1, upperBound1)
+
+    val lowerBound2 = binaryPartitionSchema.newPartialRow()
+    lowerBound2.addBinary("binary_key", Array[Byte](0x10.toByte, 0x00.toByte))
+    val upperBound2 = binaryPartitionSchema.newPartialRow()
+    upperBound2.addBinary("binary_key", Array[Byte](0x20.toByte, 0x00.toByte))
+    tableOptions.addRangePartition(lowerBound2, upperBound2)
+
+    val binaryPartitionTable =
+      kuduClient.createTable(tableName, binaryPartitionSchema, tableOptions)
+
+    val session = kuduClient.newSession()
+
+    // Insert into first partition
+    val insert1 = binaryPartitionTable.newInsert()
+    insert1.getRow.addBinary("binary_key", Array[Byte](0x05.toByte, 0x00.toByte))
+    insert1.getRow.addString("value", "partition1-data")
+    session.apply(insert1)
+
+    // Insert into second partition
+    val insert2 = binaryPartitionTable.newInsert()
+    insert2.getRow.addBinary("binary_key", Array[Byte](0x15.toByte, 0x00.toByte))
+    insert2.getRow.addString("value", "partition2-data")
+    session.apply(insert2)
+
+    session.flush()
+
+    // This backup would have failed because getRangePartitionMetadata() calls getBoundValues()
+    // which calls valueToString() for BINARY partition boundary values
+    // The stack trace would be:
+    // getRangePartitionMetadata() -> getBoundValues() ->
+    // -> valueToString() -> Base64.encodeBase64String()
+    val backupOptions = createBackupOptions(Seq(tableName))
+
+    assertTrue(
+      s"Backup failed - Base64 partition boundary issue not fixed!",
+      runBackup(backupOptions))
+
+    // Verify restore also works
+    val restoreOptions = createRestoreOptions(Seq(tableName))
+    assertTrue(s"Restore failed", runRestore(restoreOptions))
+
+    validateTablesMatch(tableName, s"$tableName-restore")
   }
 
   @Test
