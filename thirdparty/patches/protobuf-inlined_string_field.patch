@@ -1,0 +1,11 @@
+--- a/src/google/protobuf/inlined_string_field.h	2025-09-02 13:26:42.155029894 -0700
++++ b/src/google/protobuf/inlined_string_field.h	2025-09-02 13:27:51.865002067 -0700
+@@ -427,7 +427,7 @@
+     MessageLite* lhs_msg,  //
+     InlinedStringField* rhs, Arena* rhs_arena, bool rhs_arena_dtor_registered,
+     MessageLite* rhs_msg) {
+-#if GOOGLE_PROTOBUF_INTERNAL_DONATE_STEAL_INLINE
++#if defined(GOOGLE_PROTOBUF_INTERNAL_DONATE_STEAL_INLINE) && GOOGLE_PROTOBUF_INTERNAL_DONATE_STEAL_INLINE != 0
+   lhs->get_mutable()->swap(*rhs->get_mutable());
+   if (!lhs_arena_dtor_registered && rhs_arena_dtor_registered) {
+     lhs_msg->OnDemandRegisterArenaDtor(lhs_arena);

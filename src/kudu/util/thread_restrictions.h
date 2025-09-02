@@ -85,7 +85,7 @@ class ThreadRestrictions {
   };
 
 
-#if ENABLE_THREAD_RESTRICTIONS
+#if defined(ENABLE_THREAD_RESTRICTIONS) && ENABLE_THREAD_RESTRICTIONS != 0
   // Set whether the current thread to make IO calls.
   // Threads start out in the *allowed* state.
   // Returns the previous value.

@@ -206,11 +206,12 @@ fetch_and_patch \
 #   building under the CentOS docker image. It's a warning in regular build on
 #   Ubuntu/gLinux as well.
 #
-PROTOBUF_PATCHLEVEL=0
+PROTOBUF_PATCHLEVEL=1
 fetch_and_patch \
  protobuf-cpp-${PROTOBUF_VERSION}.tar.gz \
  $PROTOBUF_SOURCE \
  $PROTOBUF_PATCHLEVEL \
+ "patch -p1 < $TP_DIR/patches/protobuf-inlined_string_field.patch" \
  "mkdir -p third_party/googletest/m4" \
  "autoreconf -fvi"
 

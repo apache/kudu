@@ -244,7 +244,7 @@
 // UNSHIPPED_TRACE_EVENT* are like TRACE_EVENT* except that they are not
 // included in official builds.
 
-#if OFFICIAL_BUILD
+#if defined(OFFICIAL_BUILD) && OFFICIAL_BUILD != 0
 #undef TRACING_IS_OFFICIAL_BUILD
 #define TRACING_IS_OFFICIAL_BUILD 1
 #elif !defined(TRACING_IS_OFFICIAL_BUILD)

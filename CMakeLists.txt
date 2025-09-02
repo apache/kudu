@@ -231,6 +231,11 @@ set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -Wno-comment")
 # and for any functions/methods that return classes/structs/enums marked
 # with [[nodiscard]] attribute, e.g. Status class.
 set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -Werror=unused-result")
+# Warn on undefined, but evaluated macros.
+set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -Wundef")
+# Error out on warnings about undefined, but evaluated macros: it might lead
+# to unexpected results since such macros are silently evaluate to 0 otherwise.
+set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -Werror=undef")
 #  -pthread: enable multithreaded malloc
 set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -pthread")
 #  -fno-strict-aliasing
