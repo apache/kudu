@@ -31,6 +31,7 @@ import java.nio.ByteBuffer;
 import java.sql.Date;
 import java.sql.Timestamp;
 import java.time.LocalDate;
+import java.util.Arrays;
 
 import org.junit.Rule;
 import org.junit.Test;
@@ -630,4 +631,72 @@ public class TestPartialRow {
     }
   }
 
+  @Test
+  public void testEquals() {
+    Schema schema = getSchemaWithAllTypes();
+
+    PartialRow row1 = getPartialRowWithAllTypes();
+    PartialRow row2 = schema.newPartialRow();
+    row2.addInt("int32", 999);
+    assertFalse(row1.equals(row2));
+
+    PartialRow row3 = schema.newPartialRow();
+    row3.addInt("int32", 44); // same value as row1 but missing other columns
+    assertFalse(row1.equals(row3));
+
+    assertFalse(row1.equals(null));
+
+    assertFalse(row1.equals("not a PartialRow"));
+
+    // Test with different schemas
+    Schema simpleSchema = new Schema(Arrays.asList(
+        new ColumnSchema.ColumnSchemaBuilder("key", Type.INT32).key(true).build()));
+    PartialRow differentSchemaRow = simpleSchema.newPartialRow();
+    differentSchemaRow.addInt("key", 1);
+    assertFalse(row1.equals(differentSchemaRow));
+
+    // Test equality with itself and identical rows
+    assertTrue(row1.equals(row1));
+
+    PartialRow row4 = getPartialRowWithAllTypes();
+    assertTrue(row1.equals(row4));
+  }
+
+  @Test
+  public void testHashCode() {
+    final Schema schema = getSchemaWithAllTypes();
+
+    // Test hashCode consistency: equal objects must have equal hash codes
+    PartialRow row1 = getPartialRowWithAllTypes();
+    PartialRow row2 = getPartialRowWithAllTypes();
+    assertEquals(row1, row2);
+    assertEquals(row1.hashCode(), row2.hashCode());
+
+    int hash1 = row1.hashCode();
+    int hash2 = row1.hashCode();
+    assertEquals(hash1, hash2);
+
+    PartialRow emptyRow1 = schema.newPartialRow();
+    PartialRow emptyRow2 = schema.newPartialRow();
+    assertEquals(emptyRow1, emptyRow2);
+    assertEquals(emptyRow1.hashCode(), emptyRow2.hashCode());
+
+    // Test that different objects should have different hash codes
+    PartialRow differentRow = schema.newPartialRow();
+    differentRow.addInt("int32", 999);
+    assertFalse(row1.equals(differentRow));
+    // Note: hash codes can collide, but we expect them to be different in this case
+    assertTrue(row1.hashCode() != differentRow.hashCode());
+
+    // Test with partially filled rows
+    PartialRow partialRow = schema.newPartialRow();
+    partialRow.addInt("int32", 44); // same value as row1 but missing other columns
+    assertFalse(row1.equals(partialRow));
+    assertTrue(row1.hashCode() != partialRow.hashCode());
+
+    // Test empty row vs filled row
+    PartialRow emptyRow = schema.newPartialRow();
+    assertFalse(row1.equals(emptyRow));
+    assertTrue(row1.hashCode() != emptyRow.hashCode());
+  }
 }

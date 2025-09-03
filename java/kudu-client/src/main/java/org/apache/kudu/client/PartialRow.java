@@ -27,6 +27,7 @@ import java.util.Arrays;
 import java.util.BitSet;
 import java.util.List;
 import java.util.ListIterator;
+import java.util.Objects;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
@@ -1926,4 +1927,45 @@ public class PartialRow {
     }
     return size;
   }
+
+  @Override
+  public boolean equals(Object o) {
+    if (this == o) {
+      return true;
+    }
+    if (!(o instanceof PartialRow)) {
+      return false;
+    }
+    PartialRow that = (PartialRow) o;
+
+    return Objects.equals(schema, that.schema) &&
+    Objects.equals(columnsBitSet, that.columnsBitSet) &&
+    Objects.equals(nullsBitSet, that.nullsBitSet) &&
+    varLengthData.equals(that.varLengthData) &&
+    Arrays.equals(rowAlloc, that.rowAlloc);
+  }
+
+  @Override
+  public int hashCode() {
+    int result = Objects.hash(schema, columnsBitSet, nullsBitSet);
+
+    // Hash values for each set column using getObject()
+    for (int i = 0; i < schema.getColumnCount(); i++) {
+      if (!columnsBitSet.get(i)) {
+        continue;
+      }
+
+      Object value = getObject(i);
+      // Special handling for byte arrays, which don't hash content by default
+      if (value instanceof byte[]) {
+        result = 31 * result + Arrays.hashCode((byte[]) value);
+      } else {
+        result = 31 * result + Objects.hashCode(value);
+      }
+    }
+
+    return result;
+  }
+
+
 }

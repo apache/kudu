@@ -21,6 +21,7 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.TreeSet;
 
 import com.google.common.base.Preconditions;
@@ -285,6 +286,25 @@ public class PartitionSchema {
     public int getSeed() {
       return seed;
     }
+
+    @Override
+    public boolean equals(Object o) {
+      if (this == o) {
+        return true;
+      }
+      if (!(o instanceof HashBucketSchema)) {
+        return false;
+      }
+      HashBucketSchema that = (HashBucketSchema) o;
+      return numBuckets == that.numBuckets &&
+             seed == that.seed &&
+             Objects.equals(columnIds, that.columnIds);
+    }
+
+    @Override
+    public int hashCode() {
+      return Objects.hash(columnIds, numBuckets, seed);
+    }
   }
 
   /**
@@ -307,6 +327,26 @@ public class PartitionSchema {
       this.lowerBound = lowerBound;
       this.upperBound = upperBound;
       this.hashSchemas = hashSchemas;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+      if (this == o) {
+        return true;
+      }
+      if (!(o instanceof RangeWithHashSchema)) {
+        return false;
+      }
+      RangeWithHashSchema that = (RangeWithHashSchema) o;
+
+      return Objects.equals(lowerBound, that.lowerBound) &&
+             Objects.equals(upperBound, that.upperBound) &&
+             Objects.equals(hashSchemas, that.hashSchemas);
+    }
+
+    @Override
+    public int hashCode() {
+      return Objects.hash(lowerBound, upperBound, hashSchemas);
     }
   }
 }
