@@ -10,10 +10,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-develop:
+build:
 	python setup.py build_ext --inplace
 
-all: develop
+all: build
 
-clean-pyc:
+requirements:
+	pip install -r requirements.txt
+	pip install -r requirements_dev.txt
+
+test:
+ifdef TEST
+	python -m unittest $(TEST)
+else
+	python setup.py test
+endif
+
+clean:
 	find . -name "*.pyc" -exec rm -rf {} \;
+	find . -name "*.so" -exec rm -rf {} \;
+	rm -rf build/
+	rm -rf __pycache__/
+	rm -f kudu/client.cpp
+	rm -f kudu/errors.cpp
+	rm -f kudu/schema.cpp
+	rm -f kudu/config.pxi
+	rm -f kudu/version.py

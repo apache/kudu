@@ -34,7 +34,6 @@ For automated installation of these dependencies, you can use the bootstrap scri
 
 If you don't have virtualenv installed, you can learn more and install it from [the official virtualenv website](https://virtualenv.pypa.io/en/latest/index.html).
 
-
 ## Setting up a Virtual Environment
 ```bash
 # Create a virtual environment
@@ -77,7 +76,6 @@ export KUDU_HOME=/path/to/kudu
 
 This variable is required by various scripts and tools in the project. Make sure it's set in your environment before running any Kudu-related commands.
 
-
 **Note: Make sure you are in the `kudu/python` directory where the requirements files are located.**
 
 ```bash
@@ -108,3 +106,24 @@ python -m pdb -m unittest kudu.tests.test_client.TestClient.test_list_tables
 ```
 
 This will start the debugger before running the test, allowing you to set breakpoints and step through the code.
+
+## Using the Makefile
+
+A Makefile is provided to simplify common development tasks. It includes targets for building, installing dependencies, running tests, and cleaning the project.
+
+```bash
+# Install all dependencies
+make requirements
+
+# Build the extension in-place
+make build
+
+# Run all tests
+make test
+
+# Run a specific test
+make test TEST=kudu.tests.test_client.TestClient.test_list_tables
+
+# Clean build artifacts
+make clean
+```
