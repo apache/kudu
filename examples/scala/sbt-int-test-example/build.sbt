@@ -30,8 +30,8 @@ lazy val root = (project in file("."))
     Defaults.itSettings,
     name := "sbt-int-test-example",
     libraryDependencies += "org.scalatest" %% "scalatest" % "3.2.2" % "it,test",
-    libraryDependencies += "org.apache.kudu" % "kudu-client" % "1.18.0",
-    libraryDependencies += "org.apache.kudu" % "kudu-test-utils" % "1.18.0" % "it",
-    libraryDependencies += "org.apache.kudu" % "kudu-binary" % "1.18.0" % "it" classifier osDetectorClassifier.value,
+    libraryDependencies += "org.apache.kudu" % "kudu-client" % "1.18.1",
+    libraryDependencies += "org.apache.kudu" % "kudu-test-utils" % "1.18.1" % "it",
+    libraryDependencies += "org.apache.kudu" % "kudu-binary" % "1.18.1" % "it" classifier osDetectorClassifier.value,
     libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.2.3",
   )
