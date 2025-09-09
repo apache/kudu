@@ -387,118 +387,142 @@ Status KuduColumnSpec::ToColumnSchema(KuduColumnSchema* col) const {
   // Verify that the user isn't trying to use any methods that
   // don't make sense for CREATE.
   if (data_->rename_to) {
-    return Status::NotSupported("cannot rename a column during CreateTable",
-                                data_->name);
+    return Status::NotSupported("cannot rename a column during CreateTable", data_->name);
   }
   if (data_->remove_default) {
-    return Status::NotSupported("cannot remove default during CreateTable",
-                                data_->name);
+    return Status::NotSupported("cannot remove default during CreateTable", data_->name);
   }
-
   if (!data_->type) {
     return Status::InvalidArgument("no type provided for column", data_->name);
   }
 
-  switch (data_->type.value()) {
+  const KuduColumnSchema::DataType column_type = data_->type.value();
+  const auto validate_decimal = [&] {
+    if (!data_->precision) {
+      return Status::InvalidArgument("no precision provided for DECIMAL column",
+                                     data_->name);
+    }
+    if (data_->precision.value() < kMinDecimalPrecision ||
+        data_->precision.value() > kMaxDecimalPrecision) {
+      return Status::InvalidArgument(
+          Substitute("precision must be between $0 and $1",
+                     kMinDecimalPrecision, kMaxDecimalPrecision),
+          data_->name);
+    }
+    if (data_->scale) {
+      if (data_->scale.value() < kMinDecimalScale) {
+        return Status::InvalidArgument(
+            Substitute("scale is less than the minimum value of $0",
+                       kMinDecimalScale),
+            data_->name);
+      }
+      if (data_->scale.value() > data_->precision.value()) {
+        return Status::InvalidArgument(
+            Substitute("scale is greater than the precision value of $0",
+                       data_->precision.value()),
+            data_->name);
+      }
+    }
+    if (data_->length) {
+      return Status::InvalidArgument(
+          Substitute("length is not applicable to $0 column",
+                     KuduColumnSchema::DataTypeToString(column_type)),
+          data_->name);
+    }
+    return Status::OK();
+  };
+
+  const auto validate_varchar = [&] {
+    if (!data_->length) {
+      return Status::InvalidArgument("no length provided for VARCHAR column",
+                                     data_->name);
+    }
+    if (data_->length.value() < kMinVarcharLength ||
+        data_->length.value() > kMaxVarcharLength) {
+      return Status::InvalidArgument(Substitute("length must be between $0 and $1",
+                                                kMinVarcharLength,
+                                                kMaxVarcharLength),
+                                     data_->name);
+    }
+    if (data_->precision) {
+      return Status::InvalidArgument(
+          Substitute("precision is not applicable to $0 column",
+                     KuduColumnSchema::DataTypeToString(column_type)),
+          data_->name);
+    }
+    if (data_->scale) {
+      return Status::InvalidArgument(
+          Substitute("scale is not applicable to $0 column",
+                     KuduColumnSchema::DataTypeToString(column_type)),
+          data_->name);
+    }
+    return Status::OK();
+  };
+
+  switch (column_type) {
     case KuduColumnSchema::DECIMAL:
-      if (!data_->precision) {
-        return Status::InvalidArgument("no precision provided for decimal column", data_->name);
-      }
-      if (data_->precision.value() < kMinDecimalPrecision ||
-          data_->precision.value() > kMaxDecimalPrecision) {
-        return Status::InvalidArgument(
-            strings::Substitute("precision must be between $0 and $1",
-              kMinDecimalPrecision,
-              kMaxDecimalPrecision), data_->name);
-      }
-      if (data_->scale) {
-        if (data_->scale.value() < kMinDecimalScale) {
-          return Status::InvalidArgument(
-              strings::Substitute("scale is less than the minimum value of $0",
-                kMinDecimalScale), data_->name);
-        }
-        if (data_->scale.value() > data_->precision.value()) {
-          return Status::InvalidArgument(
-              strings::Substitute("scale is greater than the precision value of",
-                data_->precision.value()), data_->name);
-        }
-      }
-      if (data_->length) {
-        return Status::InvalidArgument(
-            strings::Substitute("length is not applicable for column $0",
-              data_->type.value()), data_->name);
-      }
+      RETURN_NOT_OK(validate_decimal());
       break;
     case KuduColumnSchema::VARCHAR:
-      if (!data_->length) {
-        return Status::InvalidArgument("no length provided for VARCHAR column", data_->name);
-      }
-      if (data_->length.value() < kMinVarcharLength ||
-          data_->length.value() > kMaxVarcharLength) {
-        return Status::InvalidArgument(
-            strings::Substitute("length must be between $0 and $1",
-                                kMinVarcharLength,
-                                kMaxVarcharLength), data_->name);
-      }
-      if (data_->precision) {
-        return Status::InvalidArgument(
-            strings::Substitute("precision is not valid on a $0 column",
-                                data_->type.value()), data_->name);
-      }
-      if (data_->scale) {
-        return Status::InvalidArgument(
-            strings::Substitute("scale is not valid on a $0 column",
-                                data_->type.value()), data_->name);
-      }
+      RETURN_NOT_OK(validate_varchar());
       break;
     default:
       if (data_->precision) {
         return Status::InvalidArgument(
-            strings::Substitute("precision is not valid on a $0 column",
-                                data_->type.value()), data_->name);
+            Substitute("precision is not applicable to $0 column",
+                       KuduColumnSchema::DataTypeToString(column_type)),
+            data_->name);
       }
       if (data_->scale) {
         return Status::InvalidArgument(
-            strings::Substitute("scale is not valid on a $0 column",
-                                data_->type.value()), data_->name);
+            Substitute("scale is not applicable to $0 column",
+                       KuduColumnSchema::DataTypeToString(column_type)),
+            data_->name);
       }
       if (data_->length) {
         return Status::InvalidArgument(
-            strings::Substitute("length is not valid on a $0 column",
-                                data_->type.value()), data_->name);
+            Substitute("length is not applicable to $0 column",
+                       KuduColumnSchema::DataTypeToString(column_type)),
+            data_->name);
       }
+      break;
   }
 
-  int8_t precision = data_->precision ? data_->precision.value() : 0;
-  int8_t scale = data_->scale ? data_->scale.value() : kDefaultDecimalScale;
-  uint16_t length = data_->length ? data_->length.value() : 0;
+  const int8_t precision = data_->precision ? data_->precision.value() : 0;
+  const int8_t scale = data_->scale ? data_->scale.value() : kDefaultDecimalScale;
+  const uint16_t length = data_->length ? data_->length.value() : 0;
 
-  KuduColumnTypeAttributes type_attrs(precision, scale, length);
-  DataType internal_type = ToInternalDataType(data_->type.value(), type_attrs);
-  bool nullable = data_->nullable ? data_->nullable.value() : true;
-  bool immutable = data_->immutable ? data_->immutable.value() : false;
+  const KuduColumnTypeAttributes type_attrs(precision, scale, length);
+  const DataType internal_type = ToInternalDataType(data_->type.value(), type_attrs);
+  const bool nullable = data_->nullable ? data_->nullable.value() : true;
+  const bool immutable = data_->immutable ? data_->immutable.value() : false;
 
   void* default_val = nullptr;
   // TODO(unknown): distinguish between DEFAULT NULL and no default?
   if (data_->default_val) {
-    ColumnTypeAttributes internal_type_attrs(precision, scale);
     RETURN_NOT_OK(data_->default_val.value()->data_->CheckTypeAndGetPointer(
-        data_->name, internal_type, internal_type_attrs,  &default_val));
+        data_->name, internal_type, ColumnTypeAttributes(precision, scale), &default_val));
   }
 
   // Encoding and compression.
-  KuduColumnStorageAttributes::EncodingType encoding = data_->encoding ?
-      data_->encoding.value() : KuduColumnStorageAttributes::AUTO_ENCODING;
-  KuduColumnStorageAttributes::CompressionType compression = data_->compression ?
-      data_->compression.value() : KuduColumnStorageAttributes::DEFAULT_COMPRESSION;
+  const KuduColumnStorageAttributes::EncodingType encoding =
+      data_->encoding ? data_->encoding.value()
+                      : KuduColumnStorageAttributes::AUTO_ENCODING;
+  const KuduColumnStorageAttributes::CompressionType compression =
+      data_->compression ? data_->compression.value()
+                         : KuduColumnStorageAttributes::DEFAULT_COMPRESSION;
 
   // BlockSize: '0' signifies server-side default.
-  int32_t block_size = data_->block_size ? data_->block_size.value() : 0;
+  const int32_t block_size = data_->block_size ? data_->block_size.value() : 0;
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-  *col = KuduColumnSchema(data_->name, data_->type.value(), nullable,
-                          immutable, data_->auto_incrementing, default_val,
+  *col = KuduColumnSchema(data_->name,
+                          column_type,
+                          nullable,
+                          immutable,
+                          data_->auto_incrementing,
+                          default_val,
                           KuduColumnStorageAttributes(encoding, compression, block_size),
                           type_attrs,
                           data_->comment ? data_->comment.value() : "");

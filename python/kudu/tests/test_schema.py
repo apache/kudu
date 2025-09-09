@@ -175,7 +175,7 @@ class TestSchema(CompatUnitTest):
          .primary_key()
          .nullable(False))
 
-        error_msg = 'no precision provided for decimal column: key'
+        error_msg = 'no precision provided for DECIMAL column: key'
         with self.assertRaisesRegex(kudu.KuduInvalidArgument, error_msg):
             builder.build()
 
@@ -188,7 +188,7 @@ class TestSchema(CompatUnitTest):
          .precision(9)
          .scale(2))
 
-        error_msg = 'precision is not valid on a 2 column: key'
+        error_msg = 'precision is not applicable to INT32 column: key'
         with self.assertRaisesRegex(kudu.KuduInvalidArgument, error_msg):
             builder.build()
 
@@ -252,7 +252,7 @@ class TestSchema(CompatUnitTest):
          .nullable(False)
          .length(10))
 
-        error_msg = 'no precision provided for decimal column: key'
+        error_msg = 'no precision provided for DECIMAL column: key'
         with self.assertRaisesRegex(kudu.KuduInvalidArgument, error_msg):
             builder.build()
 
