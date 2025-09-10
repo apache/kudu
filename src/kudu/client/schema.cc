@@ -169,9 +169,10 @@ KuduColumnSchema::DataType FromInternalDataType(kudu::DataType type) {
     case kudu::STRING: return KuduColumnSchema::STRING;
     case kudu::BINARY: return KuduColumnSchema::BINARY;
     case kudu::BOOL: return KuduColumnSchema::BOOL;
-    case kudu::DECIMAL32: return KuduColumnSchema::DECIMAL;
-    case kudu::DECIMAL64: return KuduColumnSchema::DECIMAL;
-    case kudu::DECIMAL128: return KuduColumnSchema::DECIMAL;
+    case kudu::DECIMAL32:
+    case kudu::DECIMAL64:
+    case kudu::DECIMAL128:
+      return KuduColumnSchema::DECIMAL;
     default: LOG(FATAL) << "Unexpected internal data type: " << type;
   }
 }
