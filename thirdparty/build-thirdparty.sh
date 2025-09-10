@@ -111,6 +111,7 @@ else
       "jwt-cpp")      F_JWT_CPP=1 ;;
       "ranger-kms")   F_RANGER_KMS=1 ;;
       "rocksdb")      F_ROCKSDB=1 ;;
+      "flatbuffers")  F_FLATBUFFERS=1 ;;
       *)              echo "Unknown module: $arg"; exit 1 ;;
     esac
   done
