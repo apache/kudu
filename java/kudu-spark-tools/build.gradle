@@ -21,7 +21,7 @@ apply from: "$rootDir/gradle/shadow.gradle"
 
 dependencies {
   implementation project(path: ":kudu-client", configuration: "shadow")
-  compileOnlyApi project(':kudu-spark')
+  implementation project(path: ":kudu-spark", configuration: "shadow")
   // TODO(KUDU-2500): Spark uses reflection which requires the annotations at runtime.
   implementation libs.yetusAnnotations
   implementation (libs.scopt)  {
