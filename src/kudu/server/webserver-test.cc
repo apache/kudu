@@ -20,7 +20,6 @@
 #include <cstdlib>
 #include <functional>
 #include <initializer_list>
-#include <iosfwd>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -49,6 +48,7 @@
 #include "kudu/util/faststring.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/openssl_util.h"
 #include "kudu/util/slice.h"
@@ -63,24 +63,24 @@ using std::vector;
 using std::unique_ptr;
 using strings::Substitute;
 
+DECLARE_bool(webserver_enable_csp);
 DECLARE_bool(webserver_hsts_include_sub_domains);
 DECLARE_int32(webserver_hsts_max_age_seconds);
 DECLARE_int32(webserver_max_post_length_bytes);
+DECLARE_string(ip_config_mode);
+DECLARE_string(spnego_keytab_file);
 DECLARE_string(trusted_certificate_file);
 DECLARE_string(webserver_cache_control_options);
+DECLARE_string(webserver_interface);
 DECLARE_string(webserver_x_content_type_options);
 DECLARE_string(webserver_x_frame_options);
 
 DEFINE_bool(test_sensitive_flag, false, "a sensitive flag");
 TAG_FLAG(test_sensitive_flag, sensitive);
 
-DECLARE_bool(webserver_enable_csp);
-
-DECLARE_string(spnego_keytab_file);
-
 namespace kudu {
 
-const bool g_is_fips = security::IsFIPSEnabled();
+const bool kIsFips = security::IsFIPSEnabled();
 
 namespace {
 void SetSslOptions(WebserverOptions* opts) {
@@ -99,16 +99,24 @@ void SetHTPasswdOptions(WebserverOptions* opts) {
 
 } // anonymous namespace
 
-class WebserverTest : public KuduTest {
+class WebserverTest : public KuduTest,
+                      public ::testing::WithParamInterface<std::string> {
  public:
   WebserverTest() {
+    IPMode mode;
     static_dir_ = GetTestPath("webserver-docroot");
     CHECK_OK(env_->CreateDir(static_dir_));
+    FLAGS_ip_config_mode = GetParam();
+    CHECK_OK(ParseIPModeFlag(FLAGS_ip_config_mode, &mode));
+    if (mode == IPMode::DUAL) {
+      FLAGS_webserver_interface = "[::]";
+    }
   }
 
   void SetUp() override {
     KuduTest::SetUp();
 
+    FLAGS_ip_config_mode = GetParam();
     WebserverOptions opts;
     opts.port = 0;
     opts.doc_root = static_dir_;
@@ -126,7 +134,7 @@ class WebserverTest : public KuduTest {
 
     AddPreInitializedDefaultPathHandlers(server_.get());
     AddPostInitializedDefaultPathHandlers(server_.get());
-    if (!use_htpasswd() || !g_is_fips) {
+    if (!use_htpasswd() || !kIsFips) {
       ASSERT_OK(server_->Start());
 
       vector<Sockaddr> addrs;
@@ -182,18 +190,22 @@ class PasswdWebserverTest : public WebserverTest {
   bool use_htpasswd() const override { return true; }
 };
 
+// This is used to run all parameterized tests with different IP modes.
+INSTANTIATE_TEST_SUITE_P(Parameters, PasswdWebserverTest,
+                         testing::Values("ipv4", "dual"));
+
 // Send a HTTP request with no username and password. It should reject
 // the request as the .htpasswd is presented to webserver.
-TEST_F(PasswdWebserverTest, TestPasswdMissing) {
-  if (g_is_fips) {
+TEST_P(PasswdWebserverTest, TestPasswdMissing) {
+  if (kIsFips) {
     GTEST_SKIP();
   }
   Status status = curl_.FetchURL(url_, &buf_);
   ASSERT_EQ("Remote error: HTTP 401", status.ToString());
 }
 
-TEST_F(PasswdWebserverTest, TestPasswdPresent) {
-  if (g_is_fips) {
+TEST_P(PasswdWebserverTest, TestPasswdPresent) {
+  if (kIsFips) {
     GTEST_SKIP();
   }
   curl_.set_auth(CurlAuthType::DIGEST,
@@ -202,8 +214,8 @@ TEST_F(PasswdWebserverTest, TestPasswdPresent) {
   ASSERT_OK(curl_.FetchURL(addr_.ToString(), &buf_));
 }
 
-TEST_F(PasswdWebserverTest, TestCrashInFIPSMode) {
-  if (!g_is_fips) {
+TEST_P(PasswdWebserverTest, TestCrashInFIPSMode) {
+  if (!kIsFips) {
     GTEST_SKIP();
   }
 
@@ -278,12 +290,20 @@ class SpnegoDedicatedKeytabWebserverTest : public SpnegoWebserverTest {
 
 };
 
-TEST_F(SpnegoDedicatedKeytabWebserverTest, TestAuthenticated) {
+// This is used to run all parameterized tests with different IP modes.
+INSTANTIATE_TEST_SUITE_P(Parameters, SpnegoDedicatedKeytabWebserverTest,
+                         testing::Values("ipv4", "dual"));
+
+TEST_P(SpnegoDedicatedKeytabWebserverTest, TestAuthenticated) {
   ASSERT_OK(kdc_->Kinit("alice"));
   ASSERT_OK(DoSpnegoCurl());
   EXPECT_EQ("alice@KRBTEST.COM", last_authenticated_spn_);
   EXPECT_STR_CONTAINS(buf_.ToString(), "Kudu");
 }
+
+// This is used to run all parameterized tests with different IP modes.
+INSTANTIATE_TEST_SUITE_P(Parameters, SpnegoWebserverTest,
+                         testing::Values("ipv4", "dual"));
 
 // Tests that execute DoSpnegoCurl() are ignored in MacOS (except the first test case)
 // MacOS heimdal kerberos caches kdc port number somewhere so that all the test cases
@@ -291,14 +311,14 @@ TEST_F(SpnegoDedicatedKeytabWebserverTest, TestAuthenticated) {
 // Please refer to KUDU-3533(https://issues.apache.org/jira/browse/KUDU-3533)
 #ifndef __APPLE__
 
-TEST_F(SpnegoWebserverTest, TestAuthenticated) {
+TEST_P(SpnegoWebserverTest, TestAuthenticated) {
   ASSERT_OK(kdc_->Kinit("alice"));
   ASSERT_OK(DoSpnegoCurl());
   EXPECT_EQ("alice@KRBTEST.COM", last_authenticated_spn_);
   EXPECT_STR_CONTAINS(buf_.ToString(), "Kudu");
 }
 
-TEST_F(SpnegoWebserverTest, TestUnauthenticatedBadKeytab) {
+TEST_P(SpnegoWebserverTest, TestUnauthenticatedBadKeytab) {
   ASSERT_OK(kdc_->Kinit("alice"));
   // Randomize the server's key in the KDC so that the key in the keytab doesn't match the
   // one for which the client will get a ticket. This is just an easy way to provoke an
@@ -325,7 +345,7 @@ TEST_F(SpnegoWebserverTest, TestUnauthenticatedBadKeytab) {
                      "Must authenticate with SPNEGO)");
 }
 
-TEST_F(SpnegoWebserverTest, TestUnauthenticatedNoClientAuth) {
+TEST_P(SpnegoWebserverTest, TestUnauthenticatedNoClientAuth) {
   Status curl_status = DoSpnegoCurl();
   EXPECT_EQ("Remote error: HTTP 401", curl_status.ToString());
   EXPECT_EQ("Must authenticate with SPNEGO.", buf_.ToString());
@@ -335,7 +355,7 @@ TEST_F(SpnegoWebserverTest, TestUnauthenticatedNoClientAuth) {
 #endif
 
 // Test some malformed authorization headers.
-TEST_F(SpnegoWebserverTest, TestInvalidHeaders) {
+TEST_P(SpnegoWebserverTest, TestInvalidHeaders) {
   EXPECT_EQ(curl_.FetchURL(url_, &buf_, { "Authorization: blahblah" }).ToString(),
             "Remote error: HTTP 500");
   EXPECT_STR_CONTAINS(buf_.ToString(), "bad Negotiate header");
@@ -350,7 +370,7 @@ TEST_F(SpnegoWebserverTest, TestInvalidHeaders) {
 
 // Test that if no authorization header at all is provided, the response
 // contains an empty "WWW-Authenticate: Negotiate" header.
-TEST_F(SpnegoWebserverTest, TestNoAuthHeader) {
+TEST_P(SpnegoWebserverTest, TestNoAuthHeader) {
   curl_.set_return_headers(true);
   ASSERT_EQ(curl_.FetchURL(url_, &buf_).ToString(), "Remote error: HTTP 401");
   ASSERT_STR_CONTAINS(buf_.ToString(), "WWW-Authenticate: Negotiate\r\n");
@@ -363,7 +383,7 @@ TEST_F(SpnegoWebserverTest, TestNoAuthHeader) {
 // it would not produce a successful authentication result, since it is a saved constant
 // from some previous run of SPNEGO on a different KDC. This test is primarily concerned
 // with defending against remote buffer overflows during token parsing, etc.
-TEST_F(SpnegoWebserverTest, TestBitFlippedTokens) {
+TEST_P(SpnegoWebserverTest, TestBitFlippedTokens) {
   string token;
   CHECK(strings::Base64Unescape(kWellFormedTokenBase64, &token));
 
@@ -386,7 +406,7 @@ TEST_F(SpnegoWebserverTest, TestBitFlippedTokens) {
 // crash.
 //
 // NOTE: see above regarding "well-formed" vs "valid".
-TEST_F(SpnegoWebserverTest, TestTruncatedTokens) {
+TEST_P(SpnegoWebserverTest, TestTruncatedTokens) {
   string token;
   CHECK(strings::Base64Unescape(kWellFormedTokenBase64, &token));
 
@@ -403,11 +423,15 @@ TEST_F(SpnegoWebserverTest, TestTruncatedTokens) {
 
 // Tests that even if we don't provide adequate authentication information in
 // an OPTIONS request, the server still honors it.
-TEST_F(SpnegoWebserverTest, TestAuthNotRequiredForOptions) {
+TEST_P(SpnegoWebserverTest, TestAuthNotRequiredForOptions) {
   NO_FATALS(RunTestOptions());
 }
 
-TEST_F(WebserverTest, TestIndexPage) {
+// This is used to run all parameterized tests with different IP modes.
+INSTANTIATE_TEST_SUITE_P(Parameters, WebserverTest,
+                         testing::Values("ipv4", "dual"));
+
+TEST_P(WebserverTest, TestIndexPage) {
   curl_.set_return_headers(true);
   ASSERT_OK(curl_.FetchURL(url_, &buf_));
 
@@ -448,7 +472,7 @@ TEST_F(WebserverTest, TestIndexPage) {
   ASSERT_STR_NOT_CONTAINS(buf_.ToString(), "X-Content-Type-Options");
 }
 
-TEST_F(WebserverTest, TestHttpCompression) {
+TEST_P(WebserverTest, TestHttpCompression) {
   std::ostringstream oss;
   string decoded_str;
 
@@ -504,7 +528,11 @@ TEST_F(WebserverTest, TestHttpCompression) {
   ASSERT_STR_CONTAINS(buf_.ToString(), "memz");
 }
 
-TEST_F(SslWebserverTest, TestSSL) {
+// This is used to run all parameterized tests with different IP modes.
+INSTANTIATE_TEST_SUITE_P(Parameters, SslWebserverTest,
+                         testing::Values("ipv4", "dual"));
+
+TEST_P(SslWebserverTest, TestSSL) {
   // We use a self-signed cert, so we have to trust it manually.
   FLAGS_trusted_certificate_file = cert_path_;
 
@@ -513,7 +541,11 @@ TEST_F(SslWebserverTest, TestSSL) {
   ASSERT_STR_CONTAINS(buf_.ToString(), "Kudu");
 }
 
-TEST_F(Tls13WebserverTest, TestTlsMinVersion) {
+// This is used to run all parameterized tests with different IP modes.
+INSTANTIATE_TEST_SUITE_P(Parameters, Tls13WebserverTest,
+                         testing::Values("ipv4", "dual"));
+
+TEST_P(Tls13WebserverTest, TestTlsMinVersion) {
   FLAGS_trusted_certificate_file = cert_path_;
   curl_.set_tls_max_version(TlsVersion::TLSv1_2);
 
@@ -527,7 +559,7 @@ TEST_F(Tls13WebserverTest, TestTlsMinVersion) {
   ASSERT_OK(curl_.FetchURL(url_, &buf_));
 }
 
-TEST_F(SslWebserverTest, StrictTransportSecurtyPolicyHeaders) {
+TEST_P(SslWebserverTest, StrictTransportSecurtyPolicyHeaders) {
   constexpr const char* const kHstsHeader = "Strict-Transport-Security";
   // Since the server uses a self-signed TLS certificate, disable the cert
   // validation in curl.
@@ -567,7 +599,7 @@ TEST_F(SslWebserverTest, StrictTransportSecurtyPolicyHeaders) {
       "$0: max-age=$1; includeSubDomains", kHstsHeader, kMaxAge));
 }
 
-TEST_F(WebserverTest, TestDefaultPaths) {
+TEST_P(WebserverTest, TestDefaultPaths) {
   // Test memz
   ASSERT_OK(curl_.FetchURL(Substitute("$0/memz?raw=1", url_), &buf_));
 #ifdef TCMALLOC_ENABLED
@@ -589,7 +621,7 @@ TEST_F(WebserverTest, TestDefaultPaths) {
   ASSERT_STR_CONTAINS(buf_.ToString(), "OK");
 }
 
-TEST_F(WebserverTest, TestRedactFlagsDump) {
+TEST_P(WebserverTest, TestRedactFlagsDump) {
   kudu::g_should_redact = kudu::RedactContext::ALL;
   // Test varz -- check for the sensitive flag is redacted and HTML-escaped.
   ASSERT_OK(curl_.FetchURL(Substitute("$0/varz", url_), &buf_));
@@ -601,7 +633,7 @@ TEST_F(WebserverTest, TestRedactFlagsDump) {
                                                   kRedactionMessage));
 }
 
-TEST_F(WebserverTest, TestCSPHeader) {
+TEST_P(WebserverTest, TestCSPHeader) {
   constexpr const char* kCspHeader = "Content-Security-Policy";
 
   curl_.set_return_headers(true);
@@ -624,7 +656,7 @@ void SomeMethodForSymbolTest1() {}
 // Used in symbolization test below.
 void SomeMethodForSymbolTest2() {}
 
-TEST_F(WebserverTest, TestPprofPaths) {
+TEST_P(WebserverTest, TestPprofPaths) {
   // Test /pprof/cmdline GET
   ASSERT_OK(curl_.FetchURL(Substitute("$0/pprof/cmdline", url_), &buf_));
   ASSERT_STR_CONTAINS(buf_.ToString(), "webserver-test");
@@ -653,7 +685,7 @@ TEST_F(WebserverTest, TestPprofPaths) {
 
 // Send a POST request with too much data. It should reject
 // the request with the correct HTTP error code.
-TEST_F(WebserverTest, TestPostTooBig) {
+TEST_P(WebserverTest, TestPostTooBig) {
   FLAGS_webserver_max_post_length_bytes = 10;
   string req(10000, 'c');
   Status s = curl_.PostToURL(Substitute("$0/pprof/symbol", url_), req, &buf_);
@@ -662,7 +694,7 @@ TEST_F(WebserverTest, TestPostTooBig) {
 
 // Test that static files are served and that directory listings are
 // disabled.
-TEST_F(WebserverTest, TestStaticFiles) {
+TEST_P(WebserverTest, TestStaticFiles) {
   // Fetch a non-existent static file.
   Status s = curl_.FetchURL(Substitute("$0/foo.txt", url_), &buf_);
   ASSERT_EQ("Remote error: HTTP 404", s.ToString());
@@ -679,13 +711,13 @@ TEST_F(WebserverTest, TestStaticFiles) {
   ASSERT_EQ("Remote error: HTTP 403", s.ToString());
 }
 
-TEST_F(WebserverTest, TestDeleteMethodNotAllowed) {
+TEST_P(WebserverTest, TestDeleteMethodNotAllowed) {
   curl_.set_custom_method("DELETE");
   Status s = curl_.FetchURL(Substitute("$0/index.html", url_), &buf_);
   ASSERT_EQ("Remote error: HTTP 401", s.ToString());
 }
 
-TEST_F(WebserverTest, TestPutMethodNotAllowed) {
+TEST_P(WebserverTest, TestPutMethodNotAllowed) {
   curl_.set_custom_method("PUT");
   Status s = curl_.FetchURL(Substitute("$0/index.html", url_), &buf_);
   ASSERT_EQ("Remote error: HTTP 401", s.ToString());
@@ -714,24 +746,32 @@ class NoAuthnWebserverTest : public WebserverTest {
   }
 };
 
-TEST_F(NoAuthnWebserverTest, TestUnauthenticatedUser) {
+// This is used to run all parameterized tests with different IP modes.
+INSTANTIATE_TEST_SUITE_P(Parameters, NoAuthnWebserverTest,
+                         testing::Values("ipv4", "dual"));
+
+TEST_P(NoAuthnWebserverTest, TestUnauthenticatedUser) {
   ASSERT_OK(curl_.FetchURL(Substitute("$0/authn", url_), &buf_));
   ASSERT_EQ(buf_.ToString(), "");
 }
+
+// This is used to run all parameterized tests with different IP modes.
+INSTANTIATE_TEST_SUITE_P(Parameters, AuthnWebserverTest,
+                         testing::Values("ipv4", "dual"));
 
 // The following tests are skipped on macOS due to inconsistent behavior of SPNEGO.
 // macOS heimdal kerberos caches the KDC port number, which can cause subsequent tests to fail.
 // For more details, refer to KUDU-3533 (https://issues.apache.org/jira/browse/KUDU-3533)
 #ifndef __APPLE__
 
-TEST_F(AuthnWebserverTest, TestAuthenticatedUserPassedToHandler) {
+TEST_P(AuthnWebserverTest, TestAuthenticatedUserPassedToHandler) {
   ASSERT_OK(kdc_->Kinit("alice"));
   curl_.set_auth(CurlAuthType::SPNEGO);
   ASSERT_OK(curl_.FetchURL(Substitute("$0/authn", url_), &buf_));
   ASSERT_STR_CONTAINS(buf_.ToString(), "alice");
 }
 
-TEST_F(AuthnWebserverTest, TestUnauthenticatedBadKeytab) {
+TEST_P(AuthnWebserverTest, TestUnauthenticatedBadKeytab) {
   // Test based on the SpnegoWebserverTest::TestUnauthenticatedBadKeytab test.
   ASSERT_OK(kdc_->Kinit("alice"));
   ASSERT_OK(kdc_->RandomizePrincipalKey("HTTP/127.0.0.1"));
@@ -744,7 +784,7 @@ TEST_F(AuthnWebserverTest, TestUnauthenticatedBadKeytab) {
                      "Must authenticate with SPNEGO)");
 }
 
-TEST_F(AuthnWebserverTest, TestUnauthenticatedRequestWithoutClientAuth) {
+TEST_P(AuthnWebserverTest, TestUnauthenticatedRequestWithoutClientAuth) {
   // Test based on the SpnegoWebserverTest::TestUnauthenticatedNoClientAuth test.
   curl_.set_auth(CurlAuthType::SPNEGO);
   Status curl_status = curl_.FetchURL(Substitute("$0/authn", url_), &buf_);
@@ -792,27 +832,31 @@ class PathParamWebserverTest : public WebserverTest {
 };
 }  // anonymous namespace
 
-TEST_F(PathParamWebserverTest, TestPathParameterAtEnd) {
+// This is used to run all parameterized tests with different IP modes.
+INSTANTIATE_TEST_SUITE_P(Parameters, PathParamWebserverTest,
+                         testing::Values("ipv4", "dual"));
+
+TEST_P(PathParamWebserverTest, TestPathParameterAtEnd) {
   ASSERT_OK(
       curl_.FetchURL(Substitute("$0/api/tables/45dc8d192549427b8dca871dbbb20bb3", url_), &buf_));
   ASSERT_STR_CONTAINS(buf_.ToString(), "\"table_id\":\"45dc8d192549427b8dca871dbbb20bb3\"");
 }
 
-TEST_F(PathParamWebserverTest, TestPathParameterInMiddleAndEnd) {
+TEST_P(PathParamWebserverTest, TestPathParameterInMiddleAndEnd) {
   ASSERT_OK(curl_.FetchURL(
       Substitute("$0/api/tables/45dc8d192549427b8dca871dbbb20bb3/tablets/1", url_), &buf_));
   ASSERT_STR_CONTAINS(buf_.ToString(), "\"table_id\":\"45dc8d192549427b8dca871dbbb20bb3\"");
   ASSERT_STR_CONTAINS(buf_.ToString(), "\"tablet_id\":\"1\"");
 }
 
-TEST_F(PathParamWebserverTest, TestInvalidPathParameter) {
+TEST_P(PathParamWebserverTest, TestInvalidPathParameter) {
   Status s = curl_.FetchURL(Substitute("$0/api/tables//tablets/1", url_), &buf_);
   ASSERT_EQ("Remote error: HTTP 404", s.ToString());
 }
 
 // Test that the query string is correctly parsed and returned in the response,
 // even when the path contains a path parameter.
-TEST_F(PathParamWebserverTest, TestPathWithQueryString) {
+TEST_P(PathParamWebserverTest, TestPathWithQueryString) {
   ASSERT_OK(curl_.FetchURL(
       Substitute("$0/api/tables/45dc8d192549427b8dca871dbbb20bb3?foo=bar", url_), &buf_));
   ASSERT_STR_CONTAINS(buf_.ToString(),
@@ -820,7 +864,7 @@ TEST_F(PathParamWebserverTest, TestPathWithQueryString) {
   ASSERT_STR_CONTAINS(buf_.ToString(), "\"query_params\":{\"foo\":\"bar\"}");
 }
 
-TEST_F(PathParamWebserverTest, TestInvalidPathWithSpace) {
+TEST_P(PathParamWebserverTest, TestInvalidPathWithSpace) {
   Status s = curl_.FetchURL(
       Substitute("$0/api/tables/45dc8d192549427b8dca871dbbb20bb3 /tablets/1", url_), &buf_);
   ASSERT_EQ(
@@ -829,7 +873,7 @@ TEST_F(PathParamWebserverTest, TestInvalidPathWithSpace) {
       s.ToString());
 }
 
-TEST_F(PathParamWebserverTest, TestRegisteredPathWithSpace) {
+TEST_P(PathParamWebserverTest, TestRegisteredPathWithSpace) {
   Status s = curl_.FetchURL(Substitute("$0/columns/45dc8d192549427b8dca871dbbb20bb3", url_), &buf_);
   ASSERT_EQ("Remote error: HTTP 404", s.ToString());
   Status s2 =
@@ -840,7 +884,7 @@ TEST_F(PathParamWebserverTest, TestRegisteredPathWithSpace) {
       s2.ToString());
 }
 
-TEST_F(PathParamWebserverTest, TestPathParamWithNonAsciiCharacter) {
+TEST_P(PathParamWebserverTest, TestPathParamWithNonAsciiCharacter) {
   Status s = curl_.FetchURL(
       Substitute("$0/api/tables/45dc8d192549427b8dca871dbbb20bb3ü20/tablets/1", url_), &buf_);
   ASSERT_EQ("Remote error: HTTP 400", s.ToString());
@@ -851,19 +895,23 @@ class DisabledDocRootWebserverTest : public WebserverTest {
   bool enable_doc_root() const override { return false; }
 };
 
-TEST_F(DisabledDocRootWebserverTest, TestHandlerNotFound) {
+// This is used to run all parameterized tests with different IP modes.
+INSTANTIATE_TEST_SUITE_P(Parameters, DisabledDocRootWebserverTest,
+                         testing::Values("ipv4", "dual"));
+
+TEST_P(DisabledDocRootWebserverTest, TestHandlerNotFound) {
   Status s = curl_.FetchURL(Substitute("$0/foo", url_), &buf_);
   ASSERT_EQ("Remote error: HTTP 404", s.ToString());
   ASSERT_STR_CONTAINS(buf_.ToString(), "No handler for URI /foo");
 }
 
 // Test that HTTP OPTIONS requests are permitted.
-TEST_F(WebserverTest, TestHttpOptions) {
+TEST_P(WebserverTest, TestHttpOptions) {
   NO_FATALS(RunTestOptions());
 }
 
 // Test that we're able to reuse connections for subsequent fetches.
-TEST_F(WebserverTest, TestConnectionReuse) {
+TEST_P(WebserverTest, TestConnectionReuse) {
   ASSERT_OK(curl_.FetchURL(url_, &buf_));
   ASSERT_EQ(1, curl_.num_connects());
   ASSERT_OK(curl_.FetchURL(url_, &buf_));
@@ -896,9 +944,16 @@ class WebserverAdvertisedAddressesTest : public KuduTest {
 
  protected:
   // Overridden by subclasses.
-  virtual string use_webserver_interface() const { return ""; }
+  virtual string use_webserver_interface() {
+    IPMode mode;
+    CHECK_OK(ParseIPModeFlag(FLAGS_ip_config_mode, &mode));
+    if (mode == IPMode::IPV6) {
+      FLAGS_webserver_interface = "[::]";
+    }
+    return FLAGS_webserver_interface;
+  }
   virtual int32 use_webserver_port() const { return 0; }
-  virtual string use_advertised_addresses() const { return ""; }
+  virtual string use_advertised_addresses() { return ""; }
 
   void GetAddresses(vector<Sockaddr>* bound_addrs,
                     vector<Sockaddr>* advertised_addrs) {
@@ -907,69 +962,158 @@ class WebserverAdvertisedAddressesTest : public KuduTest {
   }
 
   unique_ptr<Webserver> server_;
+  std::string expected_webserver_host_;
+  std::string expected_advertised_host_;
 };
 
-class AdvertisedOnlyWebserverTest : public WebserverAdvertisedAddressesTest {
+class AdvertisedOnlyWebserverTest : public WebserverAdvertisedAddressesTest,
+                                    public ::testing::WithParamInterface<std::string> {
+ public:
+  AdvertisedOnlyWebserverTest() {
+    FLAGS_ip_config_mode = GetParam();
+  }
  protected:
-  string use_advertised_addresses() const override { return "1.2.3.4:1234"; }
+  string use_advertised_addresses() override {
+    IPMode mode;
+    CHECK_OK(ParseIPModeFlag(FLAGS_ip_config_mode, &mode));
+    switch (mode) {
+      case IPMode::IPV4:
+        expected_advertised_host_ = "1.2.3.4";
+        return "1.2.3.4:1234";
+      case IPMode::IPV6:
+        expected_advertised_host_ = "1234:4567::1";
+        return "[1234:4567::1]:1234";
+      default:
+        CHECK(false) << "Unexpected IP configuration: " << FLAGS_ip_config_mode;
+    }
+  }
 };
 
-class BoundOnlyWebserverTest : public WebserverAdvertisedAddressesTest {
+class BoundOnlyWebserverTest : public WebserverAdvertisedAddressesTest,
+                               public ::testing::WithParamInterface<std::string> {
+ public:
+  BoundOnlyWebserverTest() {
+    FLAGS_ip_config_mode = GetParam();
+  }
  protected:
-  string use_webserver_interface() const override { return "127.0.0.1"; }
+  string use_webserver_interface() override {
+    IPMode mode;
+    CHECK_OK(ParseIPModeFlag(FLAGS_ip_config_mode, &mode));
+    switch (mode) {
+      case IPMode::IPV4:
+        expected_webserver_host_ = expected_advertised_host_ = "127.0.0.1";
+        return expected_webserver_host_;
+      case IPMode::IPV6:
+        expected_webserver_host_ = expected_advertised_host_ = "::1";
+        return "[::1]";
+      default:
+        CHECK(false) << "Unexpected IP configuration: " << FLAGS_ip_config_mode;
+    }
+  }
   int32 use_webserver_port() const override { return 9999; }
 };
 
-class BothBoundAndAdvertisedWebserverTest : public WebserverAdvertisedAddressesTest {
+class BothBoundAndAdvertisedWebserverTest : public WebserverAdvertisedAddressesTest,
+                                            public ::testing::WithParamInterface<std::string> {
+ public:
+  BothBoundAndAdvertisedWebserverTest() {
+    FLAGS_ip_config_mode = GetParam();
+  }
  protected:
-  string use_advertised_addresses() const override { return "1.2.3.4:1234"; }
-  string use_webserver_interface() const override { return "127.0.0.1"; }
+  string use_advertised_addresses() override {
+    IPMode mode;
+    CHECK_OK(ParseIPModeFlag(FLAGS_ip_config_mode, &mode));
+    switch (mode) {
+      case IPMode::IPV4:
+        expected_advertised_host_ = "1.2.3.4";
+        return "1.2.3.4:1234";
+      case IPMode::IPV6:
+        expected_advertised_host_ = "1234:4567::1";
+        return "[1234:4567::1]:1234";
+      default:
+        CHECK(false) << "Unexpected IP configuration: " << FLAGS_ip_config_mode;
+    }
+  }
+  string use_webserver_interface() override {
+    IPMode mode;
+    CHECK_OK(ParseIPModeFlag(FLAGS_ip_config_mode, &mode));
+    switch (mode) {
+      case IPMode::IPV4:
+        expected_webserver_host_ = "127.0.0.1";
+        return expected_webserver_host_;
+      case IPMode::IPV6:
+        expected_webserver_host_ = "::1";
+        return "[::1]";
+      default:
+        CHECK(false) << "Unexpected IP configuration: " << FLAGS_ip_config_mode;
+    }
+  }
+
   int32 use_webserver_port() const override { return 9999; }
 };
 
-TEST_F(AdvertisedOnlyWebserverTest, OnlyAdvertisedAddresses) {
-  vector<Sockaddr> bound_addrs, advertised_addrs;
+// This is used to run all parameterized tests with different IP modes.
+INSTANTIATE_TEST_SUITE_P(Parameters, AdvertisedOnlyWebserverTest,
+                         testing::Values("ipv4", "ipv6"));
+
+TEST_P(AdvertisedOnlyWebserverTest, OnlyAdvertisedAddresses) {
+  vector<Sockaddr> bound_addrs;
+  vector<Sockaddr> advertised_addrs;
   NO_FATALS(GetAddresses(&bound_addrs, &advertised_addrs));
 
   ASSERT_EQ(1, advertised_addrs.size());
   ASSERT_EQ(1, bound_addrs.size());
-  ASSERT_EQ("1.2.3.4", advertised_addrs[0].host());
+  ASSERT_EQ(expected_advertised_host_, advertised_addrs[0].host());
   ASSERT_EQ(1234, advertised_addrs[0].port());
   ASSERT_NE(9999, bound_addrs[0].port());
 }
 
-TEST_F(BoundOnlyWebserverTest, OnlyBoundAddresses) {
-  vector<Sockaddr> bound_addrs, advertised_addrs;
+// This is used to run all parameterized tests with different IP modes.
+INSTANTIATE_TEST_SUITE_P(Parameters, BoundOnlyWebserverTest,
+                         testing::Values("ipv4", "ipv6"));
+
+TEST_P(BoundOnlyWebserverTest, OnlyBoundAddresses) {
+  vector<Sockaddr> bound_addrs;
+  vector<Sockaddr> advertised_addrs;
   NO_FATALS(GetAddresses(&bound_addrs, &advertised_addrs));
 
   ASSERT_EQ(1, advertised_addrs.size());
   ASSERT_EQ(1, bound_addrs.size());
-  ASSERT_EQ("127.0.0.1", advertised_addrs[0].host());
+  ASSERT_EQ(expected_advertised_host_, advertised_addrs[0].host());
   ASSERT_EQ(9999, advertised_addrs[0].port());
-  ASSERT_EQ("127.0.0.1", bound_addrs[0].host());
+  ASSERT_EQ(expected_webserver_host_, bound_addrs[0].host());
   ASSERT_EQ(9999, bound_addrs[0].port());
 }
 
-TEST_F(BothBoundAndAdvertisedWebserverTest, BothBoundAndAdvertisedAddresses) {
-  vector<Sockaddr> bound_addrs, advertised_addrs;
+// This is used to run all parameterized tests with different IP modes.
+INSTANTIATE_TEST_SUITE_P(Parameters, BothBoundAndAdvertisedWebserverTest,
+                         testing::Values("ipv4", "ipv6"));
+
+TEST_P(BothBoundAndAdvertisedWebserverTest, BothBoundAndAdvertisedAddresses) {
+  vector<Sockaddr> bound_addrs;
+  vector<Sockaddr> advertised_addrs;
   NO_FATALS(GetAddresses(&bound_addrs, &advertised_addrs));
 
   ASSERT_EQ(1, advertised_addrs.size());
   ASSERT_EQ(1, bound_addrs.size());
-  ASSERT_EQ("1.2.3.4", advertised_addrs[0].host());
+
+  ASSERT_EQ(expected_advertised_host_, advertised_addrs[0].host());
   ASSERT_EQ(1234, advertised_addrs[0].port());
-  ASSERT_EQ("127.0.0.1", bound_addrs[0].host());
+
+  ASSERT_EQ(expected_webserver_host_, bound_addrs[0].host());
   ASSERT_EQ(9999, bound_addrs[0].port());
 }
 
 // Various tests for failed webserver startup cases.
-class WebserverNegativeTests : public KuduTest {
+class WebserverNegativeTests : public KuduTest,
+                               public ::testing::WithParamInterface<std::string> {
  protected:
 
   // Tries to start the webserver, expecting it to fail.
   // 'func' is used to set webserver options before starting it.
   template<class OptsFunc>
   void ExpectFailedStartup(const OptsFunc& func) {
+    FLAGS_ip_config_mode = GetParam();
     WebserverOptions opts;
     opts.port = 0;
     func(&opts);
@@ -979,47 +1123,51 @@ class WebserverNegativeTests : public KuduTest {
   }
 };
 
-TEST_F(WebserverNegativeTests, BadCertFile) {
+// This is used to run all parameterized tests with different IP modes.
+INSTANTIATE_TEST_SUITE_P(Parameters, WebserverNegativeTests,
+                         testing::Values("ipv4", "dual"));
+
+TEST_P(WebserverNegativeTests, BadCertFile) {
   ExpectFailedStartup([](WebserverOptions* opts) {
       SetSslOptions(opts);
       opts->certificate_file = "/dev/null";
     });
 }
 
-TEST_F(WebserverNegativeTests, BadKeyFile) {
+TEST_P(WebserverNegativeTests, BadKeyFile) {
   ExpectFailedStartup([](WebserverOptions* opts) {
       SetSslOptions(opts);
       opts->private_key_file = "/dev/null";
     });
 }
 
-TEST_F(WebserverNegativeTests, WrongPassword) {
+TEST_P(WebserverNegativeTests, WrongPassword) {
   ExpectFailedStartup([](WebserverOptions* opts) {
       SetSslOptions(opts);
       opts->private_key_password_cmd = "echo wrong_pass";
     });
 }
 
-TEST_F(WebserverNegativeTests, BadPasswordCommand) {
+TEST_P(WebserverNegativeTests, BadPasswordCommand) {
   ExpectFailedStartup([](WebserverOptions* opts) {
       SetSslOptions(opts);
       opts->private_key_password_cmd = "/bin/false";
     });
 }
 
-TEST_F(WebserverNegativeTests, BadAdvertisedAddresses) {
+TEST_P(WebserverNegativeTests, BadAdvertisedAddresses) {
   ExpectFailedStartup([](WebserverOptions* opts) {
       opts->webserver_advertised_addresses = ";;;;;";
     });
 }
 
-TEST_F(WebserverNegativeTests, BadAdvertisedAddressesZeroPort) {
+TEST_P(WebserverNegativeTests, BadAdvertisedAddressesZeroPort) {
   ExpectFailedStartup([](WebserverOptions* opts) {
       opts->webserver_advertised_addresses = "localhost:0";
     });
 }
 
-TEST_F(WebserverNegativeTests, SpnegoWithoutKeytab) {
+TEST_P(WebserverNegativeTests, SpnegoWithoutKeytab) {
   ExpectFailedStartup([](WebserverOptions* opts) {
       opts->require_spnego = true;
     });

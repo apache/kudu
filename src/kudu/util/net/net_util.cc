@@ -21,6 +21,7 @@
 #include <ifaddrs.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <sys/socket.h>
 #include <unistd.h>
 // IWYU pragma: no_include <bits/local_lim.h>
 
@@ -82,6 +83,13 @@ TAG_FLAG(dns_addr_resolution_override, hidden);
 DEFINE_string(host_for_tests, "", "Host to use when resolving a given server's locally bound or "
               "advertised addresses.");
 
+DEFINE_string(ip_config_mode, "ipv4",
+              "Internet protocol config mode for server bind interface. "
+              "Can be any one of these - 'ipv4' (default), 'ipv6' or 'dual'. "
+              "Value is case insensitive.");
+TAG_FLAG(ip_config_mode, advanced);
+TAG_FLAG(ip_config_mode, experimental);
+
 using std::function;
 using std::string;
 using std::string_view;
@@ -102,6 +110,17 @@ static const int kServerIdxBits = 24 - kPidBits;
 const int kServersMaxNum = (1 << kServerIdxBits) - 2;
 
 namespace {
+
+bool ValidateIPConfigMode(const char* /* flagname */, const string& value) {
+  IPMode mode;
+  const auto s = ParseIPModeFlag(value, &mode);
+  if (s.ok()) {
+    return true;
+  }
+  LOG(ERROR) << s.ToString();
+  return false;
+}
+DEFINE_validator(ip_config_mode, &ValidateIPConfigMode);
 
 using AddrInfo = unique_ptr<addrinfo, function<void(addrinfo*)>>;
 
@@ -147,6 +166,35 @@ Status HostPortFromSockaddrReplaceWildcard(const Sockaddr& addr, HostPort* hp) {
 }
 
 } // anonymous namespace
+
+Status ParseIPModeFlag(const string& flag_value, IPMode* mode) {
+  if (iequals(flag_value, "ipv4")) {
+    *mode = IPMode::IPV4;
+  } else if (iequals(flag_value, "ipv6")) {
+    *mode = IPMode::IPV6;
+  } else if (iequals(flag_value, "dual")) {
+    *mode = IPMode::DUAL;
+  } else {
+    return Status::InvalidArgument(
+        Substitute("$0: invalid value for flag --ip_config_mode, can be one of "
+                   "'ipv4', 'ipv6', 'dual'; case insensitive",
+                   flag_value));
+  }
+  return Status::OK();
+}
+
+sa_family_t GetIPFamily() {
+  IPMode mode;
+  CHECK_OK(ParseIPModeFlag(FLAGS_ip_config_mode, &mode));
+  switch (mode) {
+    case IPMode::IPV4:
+      return AF_INET;
+    case IPMode::IPV6:
+      return AF_INET6;
+    default:
+      return AF_UNSPEC;
+  }
+}
 
 HostPort::HostPort()
   : host_(""),
@@ -304,7 +352,7 @@ Status HostPort::ParseStringWithScheme(const string& str, uint16_t default_port)
   return ParseString(str_copy, default_port);
 }
 
-Status HostPort::ResolveAddresses(vector<Sockaddr>* addresses, sa_family_t family) const {
+Status HostPort::ResolveAddresses(vector<Sockaddr>* addresses) const {
   TRACE_EVENT1("net", "HostPort::ResolveAddresses",
                "host", host_);
   TRACE_COUNTER_SCOPE_LATENCY_US("dns_us");
@@ -330,7 +378,7 @@ Status HostPort::ResolveAddresses(vector<Sockaddr>* addresses, sa_family_t famil
   }
   struct addrinfo hints;
   memset(&hints, 0, sizeof(hints));
-  hints.ai_family = family;
+  hints.ai_family = GetIPFamily();
   hints.ai_socktype = SOCK_STREAM;
   AddrInfo result;
   const string op_description = Substitute("resolve address for $0", host_);
@@ -458,6 +506,19 @@ string HostPort::AddrToString(const void* addr, sa_family_t family) {
         "failed converting IP address to text form: $0", ErrnoToString(err));
   }
   return str;
+}
+
+Status HostPort::ToIpInterface(const string& host, string* out) {
+  IPMode mode = IPMode::IPV4;
+  DCHECK(out);
+
+  RETURN_NOT_OK(ParseIPModeFlag(FLAGS_ip_config_mode, &mode));
+  if (mode == IPMode::IPV6 || mode == IPMode::DUAL) {
+    *out = "[" + host + "]";
+  } else {
+    *out = host;
+  }
+  return Status::OK();
 }
 
 Network::Network()
@@ -645,8 +706,8 @@ Status GetFQDN(string* hostname) {
 
   struct addrinfo hints;
   memset(&hints, 0, sizeof(hints));
+  hints.ai_family = GetIPFamily();
   hints.ai_socktype = SOCK_DGRAM;
-  hints.ai_family = AF_INET;
   hints.ai_flags = AI_CANONNAME;
   AddrInfo result;
   const string op_description =

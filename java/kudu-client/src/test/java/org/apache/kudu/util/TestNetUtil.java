@@ -55,6 +55,18 @@ public class TestNetUtil {
     HostAndPort hostAndPortForStringWithoutPort = NetUtil.parseString(stringWithoutPort, 12345);
     assertEquals(hostAndPortForStringWithoutPort.getHost(), stringWithoutPort);
     assertEquals(hostAndPortForStringWithoutPort.getPort(), 12345);
+
+    String stringWithPortIpv6 = "[1:2:3::4]:1234";
+    HostAndPort hostAndPortForStringWithPortIpv6 = NetUtil.parseString(
+        stringWithPortIpv6, 0);
+    assertEquals(hostAndPortForStringWithPortIpv6.getHost(), "1:2:3::4");
+    assertEquals(hostAndPortForStringWithPortIpv6.getPort(), 1234);
+
+    String stringWithoutPortIpv6 = "[1:2:3::4]";
+    HostAndPort hostAndPortForStringWithoutPortIpv6 = NetUtil.parseString(
+        stringWithoutPortIpv6, 12345);
+    assertEquals(hostAndPortForStringWithoutPortIpv6.getHost(), "1:2:3::4");
+    assertEquals(hostAndPortForStringWithoutPortIpv6.getPort(), 12345);
   }
 
   /**
@@ -71,6 +83,14 @@ public class TestNetUtil {
             new HostAndPort("10.0.0.1", 5555),
             new HostAndPort("127.0.0.1", 7777)}
     );
+    String testAddrsIpv6 = "1234:5678::1,[10:10::10]:5555,[::1]:7777";
+    List<HostAndPort> hostsAndPortsIpv6 = NetUtil.parseStrings(testAddrsIpv6, 3333);
+    assertArrayEquals(hostsAndPortsIpv6.toArray(),
+        new HostAndPort[] {
+            new HostAndPort("1234:5678::1", 3333),
+            new HostAndPort("10:10::10", 5555),
+            new HostAndPort("::1", 7777)}
+    );
   }
 
   @Test
@@ -80,12 +100,19 @@ public class TestNetUtil {
         new HostAndPort("1.2.3.4.5", 0)
     );
     assertEquals("127.0.0.1:1111,1.2.3.4.5:0", NetUtil.hostsAndPortsToString(hostsAndPorts));
+
+    List<HostAndPort> hostsAndPortsIpv6 = Arrays.asList(
+        new HostAndPort("::1", 1111),
+        new HostAndPort("1:2:3:4::5", 0)
+    );
+    assertEquals("::1:1111,1:2:3:4::5:0", NetUtil.hostsAndPortsToString(hostsAndPortsIpv6));
   }
 
   @Test
   public void testLocal() throws Exception {
     assertTrue(NetUtil.isLocalAddress(NetUtil.getInetAddress("localhost")));
     assertTrue(NetUtil.isLocalAddress(NetUtil.getInetAddress("127.0.0.1")));
+    assertTrue(NetUtil.isLocalAddress(NetUtil.getInetAddress("::1")));
     assertTrue(NetUtil.isLocalAddress(InetAddress.getLocalHost()));
     assertFalse(NetUtil.isLocalAddress(NetUtil.getInetAddress("kudu.apache.org")));
   }

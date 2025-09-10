@@ -135,7 +135,9 @@ DEFINE_string(webserver_x_content_type_options, "nosniff",
 TAG_FLAG(webserver_x_content_type_options, advanced);
 TAG_FLAG(webserver_x_content_type_options, runtime);
 
+DECLARE_string(ip_config_mode);
 DECLARE_string(spnego_keytab_file);
+DECLARE_string(webserver_interface);
 
 namespace kudu {
 
@@ -253,7 +255,7 @@ Webserver::Webserver(const WebserverOptions& opts)
   : opts_(opts),
   context_(nullptr),
   is_started_(false) {
-  string host = opts.bind_interface.empty() ? "0.0.0.0" : opts.bind_interface;
+  string host = opts.bind_interface.empty() ? FLAGS_webserver_interface : opts.bind_interface;
   http_address_ = host + ":" + std::to_string(opts.port);
 }
 
@@ -449,7 +451,17 @@ Status Webserver::Start() {
   signal(SIGCHLD, sig_chld);
 
   if (context_ == nullptr) {
-    Sockaddr addr = Sockaddr::Wildcard();
+    IPMode mode;
+    RETURN_NOT_OK(ParseIPModeFlag(FLAGS_ip_config_mode, &mode));
+    Sockaddr addr;
+    switch (mode) {
+      case IPMode::IPV4:
+        addr = Sockaddr::Wildcard();
+        break;
+      default:
+        addr = Sockaddr::Wildcard(AF_INET6);
+        break;
+    }
     addr.set_port(opts_.port);
     TryRunLsof(addr);
     string err_msg = Substitute("Webserver: could not start on address $0", http_address_);
@@ -507,7 +519,20 @@ Status Webserver::GetBoundAddresses(std::vector<Sockaddr>* addrs) const {
   addrs->reserve(num_addrs);
 
   for (int i = 0; i < num_addrs; i++) {
-    addrs->emplace_back(*reinterpret_cast<struct sockaddr_in*>(sockaddrs[i]));
+    switch (sockaddrs[i]->ss_family) {
+      case AF_INET:
+        {
+          addrs->emplace_back(*reinterpret_cast<struct sockaddr_in*>(sockaddrs[i]));
+          break;
+        }
+      case AF_INET6:
+        {
+          addrs->emplace_back(*reinterpret_cast<struct sockaddr_in6*>(sockaddrs[i]));
+          break;
+        }
+      default:
+        DCHECK(false) << "Unexpected address family: " << sockaddrs[i]->ss_family;
+    }
     free(sockaddrs[i]);
   }
   free(sockaddrs);

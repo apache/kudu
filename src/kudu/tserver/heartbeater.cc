@@ -803,7 +803,7 @@ Status Heartbeater::Thread::MasterServiceProxyForHostPort(
                                                           &addrs));
   CHECK(!addrs.empty());
   if (addrs.size() > 1) {
-    LOG(WARNING) << Substitute(
+    KLOG_EVERY_N_SECS(WARNING, 60) << Substitute(
         "Master address '$0' resolves to $1 different addresses. Using $2",
         master_address_.ToString(), addrs.size(), addrs[0].ToString());
   }

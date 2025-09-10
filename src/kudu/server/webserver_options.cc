@@ -44,9 +44,8 @@ static std::string GetDefaultDocumentRoot();
 // not use these directly, but rather access them via WebserverOptions.
 // This makes it easier to instantiate web servers with different options
 // within a single unit test.
-DEFINE_string(webserver_interface, "",
-    "Interface to start the embedded webserver on. If blank, the webserver "
-    "binds to 0.0.0.0");
+DEFINE_string(webserver_interface, "0.0.0.0",
+              "Interface to start the embedded webserver on.");
 TAG_FLAG(webserver_interface, advanced);
 
 DEFINE_string(webserver_advertised_addresses, "",

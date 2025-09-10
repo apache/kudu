@@ -746,7 +746,8 @@ build_squeasel() {
   mkdir -p $SQUEASEL_BDIR
   pushd $SQUEASEL_BDIR
   CFLAGS="$EXTRA_CFLAGS \
-    -DALLOW_UNSAFE_HTTP_METHODS"
+    -DALLOW_UNSAFE_HTTP_METHODS \
+    -DUSE_IPV6"
   ${CC:-gcc} $CFLAGS $OPENSSL_CFLAGS $OPENSSL_LDFLAGS -std=c99 -O3 -DNDEBUG -fPIC -c "$SQUEASEL_SOURCE/squeasel.c"
   ar rs libsqueasel.a squeasel.o
   cp libsqueasel.a $PREFIX/lib/

@@ -16,7 +16,6 @@
 // under the License.
 #pragma once
 
-#include <sys/socket.h>
 #include <sys/un.h>
 
 #include <cstddef>
@@ -74,10 +73,8 @@ class HostPort {
   //
   // 'addresses' may be NULL, in which case this function simply checks that
   // the host/port pair can be resolved, without returning anything.
-  // 'family' is to provide hint to translation function to return address
-  // for a specific family. Default is AF_UNSPEC i.e. any address family.
   Status ResolveAddresses(
-      std::vector<Sockaddr>* addresses, sa_family_t family = AF_UNSPEC) const;
+      std::vector<Sockaddr>* addresses) const;
 
   std::string ToString() const;
 
@@ -123,6 +120,9 @@ class HostPort {
   //
   // REQUIRES: addr should be in big-endian byte order.
   static std::string AddrToString(const void* addr, sa_family_t family);
+
+  // Encloses hostname in square brackets if required, returns in out parameter.
+  static Status ToIpInterface(const std::string& host, std::string* out);
 
  private:
   std::string host_;
@@ -271,6 +271,19 @@ enum class BindMode {
   WILDCARD,
   LOOPBACK
 };
+
+enum class IPMode {
+  IPV4,
+  IPV6,
+  DUAL,
+};
+
+// This is a helper function to parse a flag that has three possible values:
+// "ipv4", "ipv6", "dual"
+Status ParseIPModeFlag(const std::string& flag_value, IPMode* mode);
+
+// Return appropriate sa_family_t based on ip_config_mode flag value.
+sa_family_t GetIPFamily();
 
 // Gets a random port from the ephemeral range by binding to port 0 on address
 // 'address' and letting the kernel choose an unused one from the ephemeral port

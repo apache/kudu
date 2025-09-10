@@ -47,6 +47,7 @@ using strings::Substitute;
 DECLARE_bool(enable_minidumps);
 DECLARE_bool(rpc_listen_on_unix_domain_socket);
 DECLARE_bool(rpc_server_allow_ephemeral_ports);
+DECLARE_string(ip_config_mode);
 
 namespace kudu {
 namespace master {
@@ -62,7 +63,7 @@ MiniMaster::MiniMaster(string fs_root, HostPort rpc_bind_addr, int num_data_dirs
   // of multi-master mini-clusters, but the SO_REUSEPORT option isn't applicable
   // for Unix domain sockets.
   opts_.rpc_opts.rpc_reuseport = !FLAGS_rpc_listen_on_unix_domain_socket;
-  opts_.webserver_opts.bind_interface = web_bind_addr.host();
+  CHECK_OK(HostPort::ToIpInterface(web_bind_addr.host(), &opts_.webserver_opts.bind_interface));
   opts_.webserver_opts.port = web_bind_addr.port();
   opts_.set_block_cache_metrics_policy(Cache::ExistingMetricsPolicy::kKeep);
   if (num_data_dirs == 1) {
@@ -110,7 +111,7 @@ Status MiniMaster::Start() {
 Status MiniMaster::Restart() {
   CHECK(!master_);
   opts_.rpc_opts.rpc_bind_addresses = bound_rpc_.ToString();
-  opts_.webserver_opts.bind_interface = bound_http_.host();
+  CHECK_OK(HostPort::ToIpInterface(bound_http_.host(), &opts_.webserver_opts.bind_interface));
   opts_.webserver_opts.port = bound_http_.port();
   Shutdown();
   return Start();

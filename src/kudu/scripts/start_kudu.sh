@@ -38,6 +38,7 @@ EXTRA_MASTER_FLAGS=""
 ENABLE_TDE=""
 RPC_IP="127.0.0.1"
 HTTP_IP="127.0.0.1"
+IP_CONFIG_MODE=""
 
 function usage() {
 cat << EOF
@@ -241,6 +242,10 @@ function start_master() {
   ARGS="$ARGS --unlock_unsafe_flags"
   ARGS="$ARGS --webserver_interface=$HTTP_IP"
   ARGS="$ARGS --webserver_port=$HTTP_PORT"
+  if [ -n "$IP_CONFIG_MODE" ]; then
+    ARGS="$ARGS --ip_config_mode=$IP_CONFIG_MODE"
+    ARGS="$ARGS --unlock_experimental_flags=true"
+  fi
   if [ -d "$WEBSERVER_DOC_ROOT" ]; then
     ARGS="$ARGS --webserver_doc_root=$WEBSERVER_DOC_ROOT"
   fi
@@ -272,6 +277,10 @@ function start_tserver() {
   ARGS="$ARGS --webserver_interface=$HTTP_IP"
   ARGS="$ARGS --webserver_port=$HTTP_PORT"
   ARGS="$ARGS --tserver_master_addrs=$4"
+  if [ -n "$IP_CONFIG_MODE" ]; then
+    ARGS="$ARGS --ip_config_mode=$IP_CONFIG_MODE"
+    ARGS="$ARGS --unlock_experimental_flags=true"
+  fi
   if [ -d "$WEBSERVER_DOC_ROOT" ]; then
     ARGS="$ARGS --webserver_doc_root=$WEBSERVER_DOC_ROOT"
   fi

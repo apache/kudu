@@ -67,10 +67,9 @@ public class NetUtil {
    */
   public static HostAndPort parseString(String addrString, int defaultPort) {
     // Use Guava's HostAndPort so we don't need to handle parsing ourselves.
-    com.google.common.net.HostAndPort hostAndPort = addrString.indexOf(':') == -1 ?
-        com.google.common.net.HostAndPort.fromParts(addrString, defaultPort) :
+    com.google.common.net.HostAndPort hostAndPort =
         com.google.common.net.HostAndPort.fromString(addrString);
-    return new HostAndPort(hostAndPort.getHost(), hostAndPort.getPort());
+    return new HostAndPort(hostAndPort.getHost(), hostAndPort.getPortOrDefault(defaultPort));
   }
 
   /**

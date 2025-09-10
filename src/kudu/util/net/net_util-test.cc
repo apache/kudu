@@ -40,6 +40,7 @@
 
 DECLARE_bool(fail_dns_resolution);
 DECLARE_string(fail_dns_resolution_hostports);
+DECLARE_string(ip_config_mode);
 
 using std::string;
 using std::vector;
@@ -203,6 +204,7 @@ TEST(SockaddrTest, Test) {
 
 TEST_F(NetUtilTest, TestParseAddresses) {
   string ret;
+  FLAGS_ip_config_mode = "dual";
   ASSERT_OK(DoParseBindAddresses("0.0.0.0:12345", &ret));
   ASSERT_EQ("0.0.0.0:12345", ret);
 
@@ -278,9 +280,25 @@ TEST_F(NetUtilTest, TestParseAddressesWithScheme) {
   ASSERT_STR_CONTAINS(s.ToString(), "invalid scheme format");
 }
 
-TEST_F(NetUtilTest, TestInjectFailureToResolveAddresses) {
-  HostPort hp1("localhost", 12345);
-  HostPort hp2("localhost", 12346);
+class ResolveAddressTest : public NetUtilTest,
+                           public ::testing::WithParamInterface<std::string> {
+public:
+  ResolveAddressTest() : hostname("localhost") {
+    FLAGS_ip_config_mode = GetParam();
+  }
+protected:
+  string hostname;
+};
+
+
+// This is used to run all parameterized tests with different IP modes.
+INSTANTIATE_TEST_SUITE_P(Parameters, ResolveAddressTest,
+                         testing::Values("ipv4", "ipv6", "dual"));
+
+// Paramterize these tests for ipv4, ipv6 and dual as localhost can resolve to any of these.
+TEST_P(ResolveAddressTest, TestInjectFailureToResolveAddresses) {
+  HostPort hp1(hostname, 12345);
+  HostPort hp2(hostname, 12346);
   FLAGS_fail_dns_resolution_hostports = hp1.ToString();
   FLAGS_fail_dns_resolution = true;
 
@@ -311,8 +329,8 @@ TEST_F(NetUtilTest, TestInjectFailureToResolveAddresses) {
   ASSERT_TRUE(s.IsNetworkError()) << s.ToString();
 }
 
-TEST_F(NetUtilTest, TestResolveAddresses) {
-  HostPort hp("localhost", 12345);
+TEST_P(ResolveAddressTest, TestResolveAddresses) {
+  HostPort hp(hostname, 12345);
   vector<Sockaddr> addrs;
   ASSERT_OK(hp.ResolveAddresses(&addrs));
   ASSERT_TRUE(!addrs.empty());
