@@ -3857,8 +3857,16 @@ void delete_table_in_syscatalog(const string& wal_dir,
   NO_FATALS(master.Shutdown());
 }
 
+#if !defined(THREAD_SANITIZER)
 // Rebuild tables according to part of tables not all tables.
+//
+// KUDU-3660: this test isn't built and run under thread sanitizer because
+//            it often times out on WaitForTSAndReplicas() when running
+//            on busy machines or if running with many CPU stress test threads
+//            (i.e. --stress_cpu_threads=N, where N is greater or equal
+//            to the number of machine's CPU cores) when built with TSAN support
 TEST_F(AdminCliTest, TestRebuildTables) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
   FLAGS_num_tablet_servers = 3;
   NO_FATALS(BuildAndStart({}, {}, {}, /*create_table*/false));
   // Create 3 tables.
@@ -3915,6 +3923,7 @@ TEST_F(AdminCliTest, TestRebuildTables) {
   ClusterVerifier cv2(cluster_.get());
   NO_FATALS(cv2.CheckCluster());
 }
+#endif // #if !defined(THREAD_SANITIZER) ...
 
 // Test that the master rebuilder ignores tombstones.
 TEST_F(AdminCliTest, TestRebuildMasterWithTombstones) {
