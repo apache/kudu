@@ -148,6 +148,12 @@ publishing {
             }
           }
         }
+        // TODO(achennaka): Find a cleaner fix to have the scope as compile instead of runtime
+        asNode().dependencies.dependency.findAll {
+          it.artifactId.text() ==~ /kudu-spark[0-9]*_.*/
+        }.each {
+          it.scope*.value = "compile"   // or remove it.parent().remove(it) if you want none
+        }
       }
     }
   }

@@ -28,7 +28,7 @@ dependencies {
     exclude group: "org.scala-lang", module: "scala-library"
   }
   implementation project(path: ":kudu-client", configuration: "shadow")
-  compileOnlyApi project(path: ":kudu-spark", configuration: "shadow")
+  implementation project(path: ":kudu-spark", configuration: "shadow")
   implementation libs.protobufJava
   implementation (libs.scopt)  {
     // Make sure wrong Scala version is not pulled in.
