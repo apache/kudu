@@ -159,4 +159,75 @@ public class TestColumnSchema {
     Assert.assertTrue(thrown.getMessage().contains("Column name " +
         Schema.getAutoIncrementingColumnName() + " is reserved by Kudu engine"));
   }
+
+  @Test
+  public void testArrayTypeColumn() {
+    // STRING[]
+    ColumnSchema strArrayCol = new ColumnSchema.ColumnSchemaBuilder("str_arr", Type.STRING)
+        .array(true)      // promotes to NESTED with element type STRING
+        .nullable(true)   // the array itself can be null
+        .build();
+
+    assertEquals("str_arr", strArrayCol.getName());
+    assertEquals(Type.NESTED, strArrayCol.getType());
+    Assert.assertTrue(strArrayCol.isNullable());
+    assertEquals(Type.STRING,
+        strArrayCol.getNestedTypeDescriptor().getArrayDescriptor().getElemType());
+
+    // DECIMAL(10,4)[]
+    ColumnTypeAttributes decimalAttrs = new ColumnTypeAttributes.ColumnTypeAttributesBuilder()
+         .precision(10)
+         .scale(4)
+         .build();
+
+    ColumnSchema decimalArrayCol = new ColumnSchema.ColumnSchemaBuilder("dec_arr", Type.DECIMAL)
+        .typeAttributes(decimalAttrs)
+        .array(true)
+        .nullable(true)
+        .build();
+
+    assertEquals("dec_arr", decimalArrayCol.getName());
+    assertEquals(Type.NESTED, decimalArrayCol.getType());
+    Assert.assertTrue(decimalArrayCol.isNullable());
+    assertEquals(Type.DECIMAL,
+        decimalArrayCol.getNestedTypeDescriptor().getArrayDescriptor().getElemType());
+
+    // INT32[] (non-nullable)
+    ColumnSchema intArrayCol = new ColumnSchema.ColumnSchemaBuilder("int_arr", Type.INT32)
+        .array(true)
+        .nullable(false)
+        .build();
+
+    assertEquals("int_arr", intArrayCol.getName());
+    assertEquals(Type.NESTED, intArrayCol.getType());
+    Assert.assertFalse(intArrayCol.isNullable());
+    assertEquals(Type.INT32,
+        intArrayCol.getNestedTypeDescriptor().getArrayDescriptor().getElemType());
+
+    // VARCHAR(50)[]
+    ColumnTypeAttributes varcharAttrs = new ColumnTypeAttributes.ColumnTypeAttributesBuilder()
+        .length(50)
+        .build();
+
+    ColumnSchema varcharArrayCol = new ColumnSchema.ColumnSchemaBuilder("varchar_arr", Type.VARCHAR)
+        .typeAttributes(varcharAttrs)
+        .array(true)
+        .nullable(true)
+        .build();
+
+    assertEquals("varchar_arr", varcharArrayCol.getName());
+    assertEquals(Type.NESTED, varcharArrayCol.getType());
+    Assert.assertTrue(varcharArrayCol.isNullable());
+    assertEquals(Type.VARCHAR,
+        varcharArrayCol.getNestedTypeDescriptor().getArrayDescriptor().getElemType());
+
+    // Test constructor restriction: cannot pass NESTED directly
+    IllegalArgumentException thrown = Assert.assertThrows(IllegalArgumentException.class, () ->
+            new ColumnSchema.ColumnSchemaBuilder("nested", Type.NESTED)
+    );
+    Assert.assertTrue(thrown.getMessage().contains(
+        "Column nested cannot be set to NESTED type. Use ColumnSchemaBuilder.array(true) instead"
+    ));
+
+  }
 }

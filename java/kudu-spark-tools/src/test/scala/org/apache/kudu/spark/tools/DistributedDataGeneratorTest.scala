@@ -36,8 +36,9 @@ class DistributedDataGeneratorTest extends KuduTestSuite {
 
   private val generator = new SchemaGenerator.SchemaGeneratorBuilder()
     .random(RandomUtils.getRandom)
-    // These types don't have enough values to prevent collisions.
-    .excludeTypes(Type.BOOL, Type.INT8)
+    // BOOL and INT8 types don't have enough values to prevent collisions.
+    // NESTED cannot be set directly as a Type.
+    .excludeTypes(Type.BOOL, Type.INT8, Type.NESTED)
     // Ensure decimals have enough values to prevent collisions.
     .precisionRange(DecimalUtil.MAX_DECIMAL32_PRECISION, DecimalUtil.MAX_DECIMAL_PRECISION)
     .build()

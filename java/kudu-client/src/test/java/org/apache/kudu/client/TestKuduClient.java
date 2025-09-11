@@ -26,6 +26,7 @@ import static org.apache.kudu.test.ClientTestUtil.countRowsInScan;
 import static org.apache.kudu.test.ClientTestUtil.createBasicSchemaInsert;
 import static org.apache.kudu.test.ClientTestUtil.createManyStringsSchema;
 import static org.apache.kudu.test.ClientTestUtil.createManyVarcharsSchema;
+import static org.apache.kudu.test.ClientTestUtil.createSchemaWithArrayColumns;
 import static org.apache.kudu.test.ClientTestUtil.createSchemaWithBinaryColumns;
 import static org.apache.kudu.test.ClientTestUtil.createSchemaWithDateColumns;
 import static org.apache.kudu.test.ClientTestUtil.createSchemaWithDecimalColumns;
@@ -1169,6 +1170,74 @@ public class TestKuduClient {
       assertTrue(e.getMessage().contains("Cannot change immutable for " +
           "auto-incrementing column " + Schema.getAutoIncrementingColumnName()));
     }
+
+    client.deleteTable(TABLE_NAME);
+  }
+
+  /**
+   * Test creating a table schema with an array type column.
+   */
+  @Test(timeout = 100000)
+  public void testArrayTypeColumnCreationAndAlter() throws Exception {
+    Schema schema = createSchemaWithArrayColumns();
+    client.createTable(TABLE_NAME, schema, getBasicCreateTableOptions());
+
+    KuduTable table = client.openTable(TABLE_NAME);
+    Schema returnedSchema = table.getSchema();
+
+    // Verify initial columns (as in your original test)
+    assertEquals(5, returnedSchema.getColumnCount());
+    assertTrue(returnedSchema.getColumn("int_arr").isArray());
+    assertFalse(returnedSchema.getColumn("int_arr").isKey());
+    assertTrue(returnedSchema.getColumn("nullable_int_arr").isArray());
+    assertTrue(returnedSchema.getColumn("dec_arr").isArray());
+    assertTrue(returnedSchema.getColumn("str_arr").isArray());
+
+    // ---- Sub-scenario: Alter table ----
+    AlterTableOptions alter = new AlterTableOptions();
+
+    // Add new array columns
+    ColumnSchema newFloatArray =
+            new ColumnSchema.ColumnSchemaBuilder("string_arr", Type.STRING)
+                    .array(true)
+                    .nullable(true)
+                    .build();
+    alter.addColumn(newFloatArray);
+
+    ColumnSchema newIntCol =
+            new ColumnSchema.ColumnSchemaBuilder("int_col", Type.INT32)
+                    .array(false)
+                    .nullable(true)
+                    .build();
+    alter.addColumn(newIntCol);
+
+    // Drop existing array column
+    alter.dropColumn("nullable_int_arr");
+
+    client.alterTable(TABLE_NAME, alter);
+
+    // Validate altered schema
+    table = client.openTable(TABLE_NAME);
+    returnedSchema = table.getSchema();
+
+    // Column count should stay 6 (added two, dropped one)
+    assertEquals(6, returnedSchema.getColumnCount());
+
+    // Check the new columns
+    ColumnSchema floatArr = returnedSchema.getColumn("string_arr");
+    assertTrue(floatArr.isArray());
+    assertTrue(floatArr.isNullable());
+    assertEquals(Type.NESTED, floatArr.getType());
+    assertEquals(Type.STRING,
+            floatArr.getNestedTypeDescriptor().getArrayDescriptor().getElemType());
+    ColumnSchema intCol = returnedSchema.getColumn("int_col");
+    assertFalse(intCol.isArray());
+    assertTrue(intCol.isNullable());
+    assertNotEquals(Type.NESTED, intCol.getType());
+    assertEquals(Type.INT32, intCol.getType());
+
+    // Check dropped column is gone
+    assertFalse(returnedSchema.hasColumn("nullable_int_arr"));
 
     client.deleteTable(TABLE_NAME);
   }

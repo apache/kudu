@@ -52,6 +52,8 @@ public class ColumnSchema {
   private final Common.DataType wireType;
   private final String comment;
 
+  private final NestedTypeDescriptor nestedTypeDescriptor;
+
   /**
    * Specifies the encoding of data for a column on disk.
    * Not all encodings are available for all data types.
@@ -111,7 +113,7 @@ public class ColumnSchema {
                        Object defaultValue, int desiredBlockSize, Encoding encoding,
                        CompressionAlgorithm compressionAlgorithm,
                        ColumnTypeAttributes typeAttributes, Common.DataType wireType,
-                       String comment) {
+                       String comment, NestedTypeDescriptor nestedTypeDescriptor) {
     this.name = name;
     this.type = type;
     this.key = key;
@@ -127,6 +129,7 @@ public class ColumnSchema {
     this.typeSize = type.getSize(typeAttributes);
     this.wireType = wireType;
     this.comment = comment;
+    this.nestedTypeDescriptor = nestedTypeDescriptor;
   }
 
   /**
@@ -248,6 +251,145 @@ public class ColumnSchema {
     return comment;
   }
 
+  /** Returns true if this column represents an array (1D). */
+  public boolean isArray() {
+    return nestedTypeDescriptor != null && nestedTypeDescriptor.isArray();
+  }
+
+  /** Return nested descriptor or null if none. */
+  public NestedTypeDescriptor getNestedTypeDescriptor() {
+    return nestedTypeDescriptor;
+  }
+
+
+  /**
+   * Top-level container for nested type descriptors (ARRAY, MAP, STRUCT, ...).
+   * Placed here as a static inner class to keep schema-related types together.
+   */
+  public static final class NestedTypeDescriptor {
+    private final Descriptor descriptor;
+
+    private NestedTypeDescriptor(Descriptor descriptor) {
+      this.descriptor = Objects.requireNonNull(descriptor, "descriptor");
+    }
+
+    public boolean isArray() {
+      return descriptor.array != null;
+    }
+
+    public ArrayTypeDescriptor getArrayDescriptor() {
+      if (!isArray()) {
+        throw new IllegalStateException("Not an array descriptor");
+      }
+      return descriptor.array;
+    }
+
+    private static final class Descriptor {
+      final ArrayTypeDescriptor array;
+
+      private Descriptor(ArrayTypeDescriptor array) {
+        if (array == null) {
+          throw new IllegalArgumentException("ArrayTypeDescriptor must not be null");
+        }
+        this.array = array;
+      }
+
+      static Descriptor forArray(ArrayTypeDescriptor arr) {
+        return new Descriptor(arr);
+      }
+
+      @Override
+      public boolean equals(Object o) {
+        if (this == o) {
+          return true;
+        }
+        if (!(o instanceof Descriptor)) {
+          return false;
+        }
+        Descriptor that = (Descriptor) o;
+        return Objects.equals(array, that.array);
+      }
+
+      @Override
+      public int hashCode() {
+        return Objects.hash(array);
+      }
+    }
+
+    public static NestedTypeDescriptor forArray(ArrayTypeDescriptor arr) {
+      return new NestedTypeDescriptor(Descriptor.forArray(arr));
+    }
+
+    @Override
+    public boolean equals(Object o) {
+      if (this == o) {
+        return true;
+      }
+      if (!(o instanceof NestedTypeDescriptor)) {
+        return false;
+      }
+      NestedTypeDescriptor that = (NestedTypeDescriptor) o;
+      return Objects.equals(descriptor, that.descriptor);
+    }
+
+    @Override
+    public int hashCode() {
+      return Objects.hash(descriptor);
+    }
+
+    @Override
+    public String toString() {
+      if (isArray()) {
+        return descriptor.array.toString();
+      }
+      return "unknown-nested-type";
+    }
+  }
+
+  /**
+   * Descriptor for array-specific data.
+   */
+  public static final class ArrayTypeDescriptor {
+    private final Type elemType;
+
+    public ArrayTypeDescriptor(Type elemType) {
+      Objects.requireNonNull(elemType, "elemType");
+      if (elemType == Type.NESTED) {
+        // if element is nested, we would need nested descriptor in future
+        // for now disallow without explicit nested descriptor support
+        throw new IllegalArgumentException("Nested element without descriptor not supported");
+      }
+      this.elemType = elemType;
+    }
+
+    public Type getElemType() {
+      return elemType;
+    }
+
+    @Override
+    public String toString() {
+      String base = elemType.getName();
+      return base + " 1D-ARRAY";
+    }
+
+    @Override
+    public boolean equals(Object o) {
+      if (this == o) {
+        return true;
+      }
+      if (!(o instanceof ArrayTypeDescriptor)) {
+        return false;
+      }
+      ArrayTypeDescriptor that = (ArrayTypeDescriptor) o;
+      return  elemType == that.elemType;
+    }
+
+    @Override
+    public int hashCode() {
+      return Objects.hash(elemType);
+    }
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -297,7 +439,7 @@ public class ColumnSchema {
     private static final List<Type> TYPES_WITH_ATTRIBUTES = Arrays.asList(Type.DECIMAL,
                                                                          Type.VARCHAR);
     private final String name;
-    private final Type type;
+    private Type type;
     private boolean key = false;
     private boolean keyUnique = false;
     private boolean nullable = false;
@@ -309,6 +451,11 @@ public class ColumnSchema {
     private ColumnTypeAttributes typeAttributes = null;
     private Common.DataType wireType = null;
     private String comment = "";
+    // Nested descriptor captured when array(true) called
+    private NestedTypeDescriptor nestedTypeDescriptor = null;
+
+    private boolean isArray = false;
+
 
     /**
      * Constructor for the required parameters.
@@ -323,6 +470,10 @@ public class ColumnSchema {
             Schema.getAutoIncrementingColumnName() + " is reserved by Kudu engine");
       }
       this.name = name;
+      if (type == Type.NESTED) {
+        throw new IllegalArgumentException("Column " +
+            name + " cannot be set to NESTED type. Use ColumnSchemaBuilder.array(true) instead");
+      }
       this.type = type;
     }
 
@@ -344,6 +495,7 @@ public class ColumnSchema {
       this.typeAttributes = that.typeAttributes;
       this.wireType = that.wireType;
       this.comment = that.comment;
+      this.nestedTypeDescriptor = that.nestedTypeDescriptor;
     }
 
     /**
@@ -483,28 +635,81 @@ public class ColumnSchema {
     }
 
     /**
+     * Marks this builder as creating a 1D array column. This records the intent,
+     * but does NOT immediately mutate the builder's declared 'type' into NESTED.
+     * Final promotion/validation happens inside build().
+     */
+    public ColumnSchemaBuilder array(boolean isArray) {
+      if (isArray) {
+        if (this.type == Type.NESTED) {
+          throw new IllegalArgumentException("Builder.type must be scalar when calling " +
+              "array(true)");
+        }
+        this.isArray = true;
+      } else {
+        this.isArray = false;
+      }
+      return this;
+    }
+
+    /**
      * Builds a {@link ColumnSchema} using the passed parameters.
-     * @return a new {@link ColumnSchema}
+     * If array(true) was called, this method will create ArrayTypeDescriptor and
+     * NestedTypeDescriptor, promote the column to Type.NESTED and perform all
+     * necessary validation.
      */
     public ColumnSchema build() {
-      // Set the wire type if it wasn't explicitly set.
-      if (wireType == null) {
-        this.wireType = type.getDataType(typeAttributes);
+      final Type finalType;
+
+      if (this.isArray) {
+        // The builder's `type` currently holds the element (scalar) type.
+        if (this.type == Type.NESTED) {
+          throw new IllegalArgumentException("Builder.type must be scalar when creating " +
+              "an array column");
+        }
+        ColumnSchema.ArrayTypeDescriptor arrDesc = new ColumnSchema.ArrayTypeDescriptor(this.type);
+        nestedTypeDescriptor = ColumnSchema.NestedTypeDescriptor.forArray(arrDesc);
+        finalType = Type.NESTED;
+      } else {
+        nestedTypeDescriptor = null;
+        finalType = this.type;
       }
-      if (type == Type.VARCHAR) {
-        if (typeAttributes == null || !typeAttributes.hasLength() ||
-            typeAttributes.getLength() < CharUtil.MIN_VARCHAR_LENGTH ||
-            typeAttributes.getLength() > CharUtil.MAX_VARCHAR_LENGTH) {
-          throw new IllegalArgumentException(
-            String.format("VARCHAR's length must be set and between %d and %d",
-                          CharUtil.MIN_VARCHAR_LENGTH, CharUtil.MAX_VARCHAR_LENGTH));
+
+      // Validate type attributes:
+      // - For scalar VARCHAR: typeAttributes.length must be set and in bounds.
+      // - For array element VARCHAR: same requirements apply to column-level typeAttributes
+      if (finalType != Type.NESTED) {
+        if (finalType == Type.VARCHAR) {
+          if (typeAttributes == null || !typeAttributes.hasLength() ||
+              typeAttributes.getLength() < CharUtil.MIN_VARCHAR_LENGTH ||
+              typeAttributes.getLength() > CharUtil.MAX_VARCHAR_LENGTH) {
+            throw new IllegalArgumentException(
+                String.format("VARCHAR's length must be set and between %d and %d",
+                    CharUtil.MIN_VARCHAR_LENGTH, CharUtil.MAX_VARCHAR_LENGTH));
+          }
+        }
+      } else {
+        // For arrays, element type rules apply.
+        Type elemType = nestedTypeDescriptor.getArrayDescriptor().getElemType();
+        if (elemType == Type.VARCHAR) {
+          if (typeAttributes == null || !typeAttributes.hasLength() ||
+              typeAttributes.getLength() < CharUtil.MIN_VARCHAR_LENGTH ||
+              typeAttributes.getLength() > CharUtil.MAX_VARCHAR_LENGTH) {
+            throw new IllegalArgumentException(
+                String.format("Array element VARCHAR's length must be set and between %d and %d",
+                    CharUtil.MIN_VARCHAR_LENGTH, CharUtil.MAX_VARCHAR_LENGTH));
+          }
         }
       }
 
-      return new ColumnSchema(name, type, key, keyUnique, nullable, immutable,
-                              /* autoIncrementing */false, defaultValue,
-                              desiredBlockSize, encoding, compressionAlgorithm,
-                              typeAttributes, wireType, comment);
+      if (wireType == null) {
+        this.wireType = finalType.getDataType(typeAttributes);
+      }
+
+      // Finally build immutable ColumnSchema with nested descriptor if any.
+      return new ColumnSchema(name, finalType, key, keyUnique, nullable, immutable,
+              /* autoIncrementing */ false, defaultValue, desiredBlockSize, encoding,
+              compressionAlgorithm, typeAttributes, wireType, comment, nestedTypeDescriptor);
     }
   }
 
@@ -591,7 +796,7 @@ public class ColumnSchema {
                               /* nullable */false, /* immutable */false,
                               /* autoIncrementing */true, /* defaultValue */null,
                               desiredBlockSize, encoding, compressionAlgorithm,
-                              /* typeAttributes */null, wireType, comment);
+                              /* typeAttributes */null, wireType, comment, null);
     }
   }
 }

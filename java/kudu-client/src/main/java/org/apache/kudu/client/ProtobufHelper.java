@@ -17,6 +17,7 @@
 
 package org.apache.kudu.client;
 
+import static com.google.common.base.Preconditions.checkState;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 import java.math.BigDecimal;
@@ -132,6 +133,28 @@ public class ProtobufHelper {
         !column.getComment().isEmpty()) {
       schemaBuilder.setComment(column.getComment());
     }
+
+    // Handle nested/array column: populate NestedDataTypePB.array.type with the type of
+    // array elements
+    if (column.isArray()) {
+      ColumnSchema.NestedTypeDescriptor nested = column.getNestedTypeDescriptor();
+      checkState(nested == null || nested.isArray(),
+              "Column reports isArray() but nested descriptor is not ARRAY");
+
+      ColumnSchema.ArrayTypeDescriptor arr = nested.getArrayDescriptor();
+      Type elemType = arr.getElemType();
+
+      Common.NestedDataTypePB.ArrayTypeDescriptor.Builder arrPb =
+              Common.NestedDataTypePB.ArrayTypeDescriptor.newBuilder();
+
+      Common.DataType elemPbType = elemType.getDataType(column.getTypeAttributes());
+      arrPb.setType(elemPbType);
+
+      Common.NestedDataTypePB.Builder nestedPb = Common.NestedDataTypePB.newBuilder();
+      nestedPb.setArray(arrPb);
+
+      schemaBuilder.setNestedType(nestedPb);
+    }
     return schemaBuilder.build();
   }
 
@@ -171,13 +194,25 @@ public class ProtobufHelper {
                              .build();
     }
 
-    Type type = Type.getTypeForDataType(pb.getType());
     ColumnTypeAttributes typeAttributes = pb.hasTypeAttributes() ?
         pbToColumnTypeAttributes(pb.getTypeAttributes()) : null;
-    Object defaultValue = pb.hasWriteDefaultValue() ?
-        byteStringToObject(type, typeAttributes, pb.getWriteDefaultValue()) : null;
-    ColumnSchema.ColumnSchemaBuilder csb =
-        new ColumnSchema.ColumnSchemaBuilder(pb.getName(), type);
+    Object defaultValue;
+    ColumnSchema.ColumnSchemaBuilder csb;
+    // Set the name, type and populate default value for nested column.
+    if (pb.hasNestedType() && pb.getNestedType().hasArray()) {
+      Common.NestedDataTypePB.ArrayTypeDescriptor arrPb = pb.getNestedType().getArray();
+      Type elemType = Type.getTypeForDataType(arrPb.getType());
+      csb = new ColumnSchema.ColumnSchemaBuilder(pb.getName(), elemType);
+      csb.array(true);
+      // TODO(achennaka): Re-visit the read and write default implementation for nested types.
+      defaultValue = pb.hasWriteDefaultValue() ?
+              byteStringToObject(elemType, typeAttributes, pb.getWriteDefaultValue()) : null;
+    } else {
+      Type type = Type.getTypeForDataType(pb.getType());
+      csb = new ColumnSchema.ColumnSchemaBuilder(pb.getName(), type);
+      defaultValue = pb.hasWriteDefaultValue() ?
+              byteStringToObject(type, typeAttributes, pb.getWriteDefaultValue()) : null;
+    }
     if (pb.getIsKey() && isKeyUnique) {
       csb.key(true);
     } else {

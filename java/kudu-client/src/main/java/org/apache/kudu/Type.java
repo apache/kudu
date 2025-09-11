@@ -50,7 +50,8 @@ public enum Type {
   UNIXTIME_MICROS(DataType.UNIXTIME_MICROS, "unixtime_micros"),
   DECIMAL(Arrays.asList(DataType.DECIMAL32, DataType.DECIMAL64, DataType.DECIMAL128), "decimal"),
   VARCHAR(DataType.VARCHAR, "varchar"),
-  DATE(DataType.DATE, "date");
+  DATE(DataType.DATE, "date"),
+  NESTED(DataType.NESTED, "nested");
 
   private final ImmutableList<DataType> dataTypes;
   private final String name;
@@ -148,6 +149,7 @@ public enum Type {
       case STRING:
       case BINARY:
       case VARCHAR:
+      case NESTED:
         return 8 + 8; // offset then string length
       case BOOL:
       case INT8:
@@ -204,6 +206,8 @@ public enum Type {
       case DECIMAL64:
       case DECIMAL128:
         return DECIMAL;
+      case NESTED:
+        return NESTED;
       default:
         throw new IllegalArgumentException("the provided data type doesn't map " +
             "to any known one: " + type.getDescriptorForType().getFullName());

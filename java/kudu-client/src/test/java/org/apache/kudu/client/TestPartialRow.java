@@ -489,7 +489,8 @@ public class TestPartialRow {
 
   // Shift the type one position to force the wrong type for all types.
   private Type getShiftedType(Type type) {
-    int shiftedPosition = (type.ordinal() + 1) % Type.values().length;
+    // TODO(achennaka) : remove the stopgap once serdes of array datatype is implemented.
+    int shiftedPosition = (type.ordinal() + 1) % (Type.values().length - 1);
     return Type.values()[shiftedPosition];
   }
 

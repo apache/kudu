@@ -513,4 +513,41 @@ public abstract class ClientTestUtil {
         .build());
     return new Schema(columns);
   }
+
+  public static Schema createSchemaWithArrayColumns() {
+    ArrayList<ColumnSchema> columns = new ArrayList<>();
+    // Primary key column
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.INT32)
+            .key(true)
+            .build());
+
+    // Non-nullable 1D array of INT32
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("int_arr", Type.INT32)
+            .array(true)
+            .nullable(false)
+            .build());
+
+    // Nullable 1D array of INT32
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("nullable_int_arr", Type.INT32)
+            .array(true)
+            .nullable(true)
+            .build());
+
+    // Nullable 1D array of DECIMAL with precision/scale
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("dec_arr", Type.DECIMAL)
+            .array(true)
+            .nullable(true)
+            .typeAttributes(new ColumnTypeAttributes.ColumnTypeAttributesBuilder()
+                    .precision(10)
+                    .scale(2)
+                    .build())
+            .build());
+
+    // Nullable 1D array of STRING
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("str_arr", Type.STRING)
+            .array(true)
+            .nullable(true)
+            .build());
+    return new Schema(columns);
+  }
 }

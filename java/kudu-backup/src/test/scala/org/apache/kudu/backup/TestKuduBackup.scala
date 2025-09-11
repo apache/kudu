@@ -1031,6 +1031,7 @@ class TestKuduBackup extends KuduTestSuite {
     val keyColumnCount = random.nextInt(columnCount) + 1 // At least one key.
     val schemaGenerator = new SchemaGeneratorBuilder()
       .random(random)
+      .excludeTypes(Type.NESTED)
       .columnCount(columnCount)
       .keyColumnCount(keyColumnCount)
       .build()
