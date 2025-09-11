@@ -16,7 +16,7 @@
 // under the License.
 
 [[release_notes]]
-= Apache Kudu 1.18.0 Release Notes
+= Apache Kudu 1.18.1 Release Notes
 
 :author: Kudu Team
 :imagesdir: ./images
@@ -43,6 +43,8 @@ below.
   optional (see https://issues.apache.org/jira/browse/KUDU-3677[KUDU-3677]).
 * Kudu CLI tools no longer crash on exit, as the global state of the OpenSSL library is
   cleaned up explicitly (see https://issues.apache.org/jira/browse/KUDU-3635[KUDU-3635]).
+* Fixed NPE in Kudu Java client introduced by the code first released with
+  Kudu 1.17.0 (see https://issues.apache.org/jira/browse/KUDU-3698[KUDU-3698]).
 
 [[rn_1.18.1_improvements]]
 == Optimizations and improvements
