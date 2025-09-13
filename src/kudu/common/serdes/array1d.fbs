@@ -30,7 +30,7 @@ table UInt64 { values:[uint64]; }
 table Float { values:[float32]; }
 table Double { values:[float64]; }
 table String { values:[string]; }
-table Binary { values:[ubyte]; }
+table Binary { values:[UInt8]; }
 
 // A wrapper to represent one-dimensional arrays above under the umbrella
 // of a single field.

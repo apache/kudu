@@ -56,7 +56,7 @@ message ArrayPB {
     repeated string values = 1;
   };
   message Binary {
-    repeated bytes values = 1;
+    repeated UInt8 values = 1;
   };
 
   // The 'validity' field contains information on the validity/non-nullness

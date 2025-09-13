@@ -32,7 +32,7 @@ table UInt64 { values:[uint64]; }
 table Float { values:[float]; }
 table Double { values:[double]; }
 table String { values:[string]; }
-table Binary { values:[ubyte]; }
+table Binary { values:[UInt8]; }
 
 // A wrapper to represent one-dimensional arrays of various scalar types
 // under the umbrella of a single field.

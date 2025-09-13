@@ -46,17 +46,21 @@
 #include "kudu/util/test_util.h"
 
 using arrays::test::ArrayPB;
+using arrays::test::Binary;
+using arrays::test::Content;
+using arrays::test::CreateBinaryDirect;
 using arrays::test::CreateContentDirect;
 using arrays::test::CreateInt32Direct;
 using arrays::test::CreateUInt64Direct;
-using arrays::test::Content;
+using arrays::test::CreateUInt8;
+using arrays::test::GetContent;
 using arrays::test::Int16;
 using arrays::test::Int32;
 using arrays::test::Int64;
-using arrays::test::GetContent;
-using arrays::test::String;
 using arrays::test::ScalarArray;
+using arrays::test::String;
 using arrays::test::UInt64;
+using arrays::test::UInt8;
 using arrays::test::VerifyContentBuffer;
 using flatbuffers::FlatBufferBuilder;
 using flatbuffers::Verifier;
@@ -74,10 +78,11 @@ namespace kudu {
 // in the 'arrays.fbs' and 'arrays.proto' IDL files. For Flatbuffers-specific
 // C++ bindings and reference, see https://flatbuffers.dev/languages/cpp/
 class SerDesTest : public KuduTest {
+ protected:
+  static constexpr const size_t kBufSize = 1024;
 };
 
 TEST_F(SerDesTest, FlatbuffersBasic) {
-  constexpr const size_t kBufSize = 1024;
   const vector<int32_t> values_src{ 1, 2, 3, 4, 5 };
   const vector<uint8_t> validity_src{ 0b00010111 };
 
@@ -128,7 +133,6 @@ TEST_F(SerDesTest, FlatbuffersBasic) {
 }
 
 TEST_F(SerDesTest, FlatbuffersPlainSrcBuffer) {
-  constexpr const size_t kBufSize = 1024;
   const vector<int16_t> values_src{ 1, 2, 3, 4, 5, 6, 7 };
   const vector<uint8_t> validity_src{ 0b01010111 };
 
@@ -177,7 +181,6 @@ TEST_F(SerDesTest, FlatbuffersPlainSrcBuffer) {
 }
 
 TEST_F(SerDesTest, FlatbuffersStringSrcVector) {
-  constexpr const size_t kBufSize = 1024;
   const vector<string> values_src{ "", "1", "02", "003", "0004", "00005" };
   const vector<uint8_t> validity_src{ 0b00111110 };
 
@@ -223,7 +226,6 @@ TEST_F(SerDesTest, FlatbuffersStringSrcVector) {
 }
 
 TEST_F(SerDesTest, FlatbuffersStringViewSrcVector) {
-  constexpr const size_t kBufSize = 1024;
   const vector<string_view> values_src{ "1", "02", "003" };
   const vector<uint8_t> validity_src{ 0b00000111 };
 
@@ -269,7 +271,6 @@ TEST_F(SerDesTest, FlatbuffersStringViewSrcVector) {
 }
 
 TEST_F(SerDesTest, FlatbuffersSliceSrcVector) {
-  constexpr const size_t kBufSize = 1024;
   const vector<Slice> values_src{ "-1", "0", "1", "02", "003", "100000000000" };
   const vector<uint8_t> validity_src{ 0b00101111 };
 
@@ -312,8 +313,63 @@ TEST_F(SerDesTest, FlatbuffersSliceSrcVector) {
   }
 }
 
+TEST_F(SerDesTest, FlatbuffersBinaryVector) {
+  const vector<string> values_src{
+      "-1",
+      "0",
+      "1",
+      string{'\0'},
+      string{'\0', '\1', '2', '\0', '\0', },
+      string{ 0x00, 0x03, 0x7f, 0x42, 0x00 },
+  };
+  const vector<uint8_t> validity_src{ 0b00101111 };
+
+  FlatBufferBuilder builder(kBufSize);
+  {
+    vector<flatbuffers::Offset<UInt8>> offsets;
+    offsets.reserve(values_src.size());
+    for (const auto& e : values_src) {
+      auto ev = builder.CreateVector(
+          reinterpret_cast<const uint8_t*>(e.data()), e.size());
+      offsets.emplace_back(CreateUInt8(builder, ev));
+    }
+
+    auto values = CreateBinaryDirect(builder, &offsets);
+    builder.Finish(CreateContentDirect(builder,
+                                       ScalarArray::Binary,
+                                       values.Union(),
+                                       &validity_src));
+  }
+
+  // Extract data from the buffer and verify it matches the source.
+  const uint8_t* buf = builder.GetBufferPointer();
+  {
+    Verifier verifier(buf, kBufSize);
+    ASSERT_TRUE(VerifyContentBuffer(verifier));
+
+    const Content* content = GetContent(buf);
+    ASSERT_NE(nullptr, content);
+    const auto array_type = content->data_type();
+    ASSERT_EQ(ScalarArray::Binary, array_type);
+
+    const auto* values = content->data_as<Binary>()->values();
+    ASSERT_NE(nullptr, values);
+    ASSERT_EQ(values_src.size(), values->size());
+    for (size_t i = 0; i < values->size(); ++i) {
+      // Do explicit memory comparison using raw data accessors.
+      const auto ref_size = values_src[i].size();
+      const auto* data = values->Get(i)->values();
+      ASSERT_EQ(ref_size, data->size());
+      ASSERT_EQ(0, memcmp(data->data(), values_src[i].data(), ref_size));
+    }
+
+    const auto* validity = content->validity();
+    ASSERT_EQ(validity_src.size(), validity->size());
+    ASSERT_EQ(0, memcmp(validity_src.data(), validity->data(), validity_src.size()));
+  }
+}
+
 TEST_F(SerDesTest, FlatbuffersBuilderUninitializedVector) {
-  constexpr const size_t kBufSize = 1024;
   const int64_t values_src[] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
   const vector<uint8_t> validity_src{ 0b00000010, 0b11010111 };
 
@@ -358,7 +414,6 @@ TEST_F(SerDesTest, FlatbuffersBuilderUninitializedVector) {
 }
 
 TEST_F(SerDesTest, FlatbuffersReleaseRaw) {
-  constexpr const size_t kBufSize = 1024;
   const vector<int32_t> values_src{ 1, 2, 3, 4, 5 };
   const vector<uint8_t> validity_src{ 0b00010111 };
 
