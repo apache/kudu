@@ -78,7 +78,6 @@ shadowJar {
   exclude '**/*.dylib'
   exclude '**/*.html'
   exclude '**/*.md'
-  exclude 'META-INF/services/**'
   exclude 'codegen/**'
   exclude 'javax/**'
   exclude 'org/threeten/**'
@@ -86,7 +85,6 @@ shadowJar {
   exclude 'org/apache/orc/**'
   exclude 'org/jetbrains/**'
 
-  minimize()
 }
 
 // Adjust the artifact name to match the maven build.
