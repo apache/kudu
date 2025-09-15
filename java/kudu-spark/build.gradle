@@ -72,7 +72,6 @@ shadowJar {
   exclude '**/*.dylib'
   exclude '**/*.html'
   exclude '**/*.md'
-  exclude 'META-INF/services/**'
   exclude 'codegen/**'
   exclude 'org/threeten/**'
   exclude 'org/apache/arrow/**'
