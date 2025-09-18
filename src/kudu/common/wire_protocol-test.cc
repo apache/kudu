@@ -886,6 +886,58 @@ TEST_F(WireProtocolTest, ScalarArray1DToPB) {
   }
 }
 
+TEST_F(WireProtocolTest, ScalarArrayWithTypeAttributes1DToPB) {
+  // Column 1: DECIMAL(10,5) array
+  ColumnSchema dec_col(ColumnSchemaBuilder()
+                           .name("dec_col")
+                           .type(DECIMAL32)
+                           .type_attributes(ColumnTypeAttributes(10, 5))
+                           .array(true));
+
+  // Column 2: STRING(10) array
+  ColumnSchema str_col(ColumnSchemaBuilder()
+                           .name("str_col")
+                           .type(VARCHAR)
+                           .type_attributes(ColumnTypeAttributes(10))
+                           .array(true));
+
+  // Serialize both
+  ColumnSchemaPB dec_pb;
+  ColumnSchemaToPB(dec_col, &dec_pb);
+  ColumnSchemaPB str_pb;
+  ColumnSchemaToPB(str_col, &str_pb);
+
+  // Deserialize both
+  ColumnSchemaBuilder dec_bld;
+  ASSERT_OK(ColumnSchemaBuilderFromPB(dec_pb, &dec_bld));
+  ColumnSchema dec_col_fpb(dec_bld);
+
+  ColumnSchemaBuilder str_bld;
+  ASSERT_OK(ColumnSchemaBuilderFromPB(str_pb, &str_bld));
+  ColumnSchema str_col_fpb(str_bld);
+
+  // DECIMAL array column checks
+  ASSERT_TRUE(dec_col_fpb.is_array());
+  const auto* dec_type_info = dec_col_fpb.type_info();
+  ASSERT_EQ(DataType::NESTED, dec_col_fpb.type_info()->type());
+
+  const auto* dec_nested = dec_type_info->nested_type_info();
+  ASSERT_TRUE(dec_nested->is_array());
+  ASSERT_EQ(DataType::DECIMAL32, dec_nested->array().elem_type_info()->type());
+  ASSERT_EQ(10, dec_col_fpb.type_attributes().precision);
+  ASSERT_EQ(5, dec_col_fpb.type_attributes().scale);
+
+  // VARCHAR array column checks
+  ASSERT_TRUE(str_col_fpb.is_array());
+  const auto* str_type_info = str_col_fpb.type_info();
+  ASSERT_EQ(DataType::NESTED, str_type_info->type());
+
+  const auto* str_nested = str_type_info->nested_type_info();
+  ASSERT_TRUE(str_nested->is_array());
+  ASSERT_EQ(DataType::VARCHAR, str_nested->array().elem_type_info()->type());
+  ASSERT_EQ(10, str_col_fpb.type_attributes().length);
+}
+
 TEST_F(WireProtocolTest, NestedTypeValidityChecks) {
   {
     ColumnSchemaPB pb;

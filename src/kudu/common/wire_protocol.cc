@@ -235,6 +235,7 @@ void ColumnSchemaToPB(const ColumnSchema& col_schema, ColumnSchemaPB *pb, int fl
   const auto* type_info = col_schema.type_info();
   const DataType type = type_info->type();
   pb->set_type(type);
+  DataType elem_type = type;
   // Set information on the nested type, if necessary.
   if (type == DataType::NESTED) {
     const auto* nested_type_info = type_info->nested_type_info();
@@ -242,16 +243,16 @@ void ColumnSchemaToPB(const ColumnSchema& col_schema, ColumnSchemaPB *pb, int fl
     // Only arrays are supported yet.
     DCHECK(nested_type_info->is_array());
     const auto& array_info = nested_type_info->array();
-    pb->mutable_nested_type()->mutable_array()->set_type(
-        array_info.elem_type_info()->type());
+    elem_type = array_info.elem_type_info()->type();
+    pb->mutable_nested_type()->mutable_array()->set_type(elem_type);
   }
   // Only serialize precision and scale for decimal types.
-  if (type == DataType::DECIMAL32 ||
-      type == DataType::DECIMAL64 ||
-      type == DataType::DECIMAL128) {
+  if (elem_type == DataType::DECIMAL32 ||
+      elem_type == DataType::DECIMAL64 ||
+      elem_type == DataType::DECIMAL128) {
     pb->mutable_type_attributes()->set_precision(col_schema.type_attributes().precision);
     pb->mutable_type_attributes()->set_scale(col_schema.type_attributes().scale);
-  } else if (type == DataType::VARCHAR) {
+  } else if (elem_type == DataType::VARCHAR) {
     pb->mutable_type_attributes()->set_length(col_schema.type_attributes().length);
   }
   if (!(flags & SCHEMA_PB_WITHOUT_STORAGE_ATTRIBUTES)) {
