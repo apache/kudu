@@ -19,6 +19,7 @@
 #include <iostream>
 #include <sstream>
 
+#include "kudu/client/array_cell.h"
 #include "kudu/client/callbacks.h"
 #include "kudu/client/client.h"
 #include "kudu/client/row_result.h"
@@ -28,6 +29,7 @@
 #include "kudu/common/partial_row.h"
 #include "kudu/util/monotime.h"
 
+using kudu::client::KuduArrayCellView;
 using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;
 using kudu::client::KuduColumnSchema;
@@ -62,13 +64,23 @@ static Status CreateClient(const vector<string>& master_addrs,
 }
 
 static KuduSchema CreateSchema() {
-  KuduSchema schema;
   KuduSchemaBuilder b;
   b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
   b.AddColumn("int_val")->Type(KuduColumnSchema::INT32)->NotNull();
   b.AddColumn("string_val")->Type(KuduColumnSchema::STRING)->NotNull();
-  b.AddColumn("non_null_with_default")->Type(KuduColumnSchema::INT32)->NotNull()
-    ->Default(KuduValue::FromInt(12345));
+  b.AddColumn("non_null_with_default")->
+      Type(KuduColumnSchema::INT32)->
+      NotNull()->
+      Default(KuduValue::FromInt(12345));
+
+  // In addition to scalar type columns, add one nullable nested type column
+  // to contain one-dimensional ararys of INT64 values.
+  const KuduColumnSchema::KuduArrayTypeDescriptor desc(KuduColumnSchema::INT64);
+  b.AddColumn("arr_int64")->
+      Type(KuduColumnSchema::NESTED)->
+      NestedType(KuduColumnSchema::KuduNestedTypeDescriptor(desc));
+
+  KuduSchema schema;
   KUDU_CHECK_OK(b.Build(&schema));
   return schema;
 }
@@ -140,6 +152,16 @@ static Status InsertRows(const shared_ptr<KuduTable>& table, int num_rows) {
     KUDU_CHECK_OK(row->SetInt32("key", i));
     KUDU_CHECK_OK(row->SetInt32("integer_val", i * 2));
     KUDU_CHECK_OK(row->SetInt32("non_null_with_default", i * 5));
+    {
+      // An array with three values, two non-nulls and one null in the middle.
+      vector<int64_t> values(3, 0);
+      values[0] = i * 6;
+      values[2] = i * 7;
+      vector<bool> validity(3, false);
+      validity[0] = true;
+      validity[2] = true;
+      KUDU_CHECK_OK(row->SetArrayInt64("arr_int64", values, validity));
+    }
     KUDU_CHECK_OK(session->Apply(insert));
   }
   Status s = session->Flush();
@@ -207,6 +229,35 @@ static Status ScanRows(const shared_ptr<KuduTable>& table) {
         out << "Scan returned the wrong results. Expected key "
             << next_row << " but got " << val;
         return Status::IOError(out.str());
+      }
+
+      // An example of accessing a column by index in a row scan projection.
+      vector<int64_t> arr;
+      vector<bool> arr_notnull;
+      KUDU_RETURN_NOT_OK(row.GetArrayInt64(3, &arr, &arr_notnull));
+      KUDU_CHECK(arr.size() == arr_notnull.size());
+
+      // An example of accessing raw cell data in an array column.
+      const void* cell_ptr = row.cell(3);
+      KuduArrayCellView view(cell_ptr);
+      KUDU_RETURN_NOT_OK(view.Init());
+      KUDU_CHECK(view.elem_num() == arr.size());
+      const uint8_t* arr_raw_notnull_bitmap = view.not_null_bitmap();
+      KUDU_CHECK(arr_raw_notnull_bitmap);
+      const int64_t* arr_raw = reinterpret_cast<const int64_t*>(
+          view.data(KuduColumnSchema::INT64));
+      KUDU_CHECK(arr_raw);
+      for (size_t i = 0; i < arr_notnull.size(); ++i) {
+        if (arr_notnull[i]) {
+          // That's the same data for non-null array elements regardless
+          // of the way accessing it.
+          KUDU_CHECK(arr[i] == *(arr_raw + i));
+        }
+        // Check the validity bit: it should correspond to the boolean value
+        // at the same position in the 'arr_notnull' non-nullness array.
+        const bool arr_raw_elem_validity =
+            *(arr_raw_notnull_bitmap + (i >> 3)) & (1 << (i & 7));
+        KUDU_CHECK(arr_notnull[i] == arr_raw_elem_validity);
       }
     }
   }
@@ -299,7 +350,7 @@ int main(int argc, char* argv[]) {
   bool exists;
   KUDU_CHECK_OK(DoesTableExist(client, kTableName, &exists));
   if (exists) {
-    client->DeleteTable(kTableName);
+    KUDU_CHECK_OK(client->DeleteTable(kTableName));
     KUDU_LOG(INFO) << "Deleting old table before creating new one";
   }
   KUDU_CHECK_OK(CreateTable(client, kTableName, schema, 10));
