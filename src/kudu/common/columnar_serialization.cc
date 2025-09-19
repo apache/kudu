@@ -344,7 +344,7 @@ int CopySelectedRowsAvx(
 // Define AVX2-optimized variants where possible.
 // These are disabled on GCC4 because it doesn't support per-function
 // enabling of intrinsics.
-#if __x86_64__ && (defined(__clang__) || (defined(__GNUC__) && __GNUC__ >= 5))
+#if defined(__x86_64__) && (defined(__clang__) || (defined(__GNUC__) && __GNUC__ >= 5))
 template<>
 __attribute__((target("avx2")))
 int CopySelectedRowsAvx<4>(
