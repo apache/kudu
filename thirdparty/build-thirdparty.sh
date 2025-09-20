@@ -86,7 +86,7 @@ else
       "zlib")         F_ZLIB=1 ;;
       "squeasel")     F_SQUEASEL=1 ;;
       "mustache")     F_MUSTACHE=1 ;;
-      "gsg")          F_GSG=1 ;;
+      "cpplint")      F_CPPLINT=1 ;;
       "gcovr")        F_GCOVR=1 ;;
       "curl")         F_CURL=1 ;;
       "crcutil")      F_CRCUTIL=1 ;;
@@ -234,7 +234,7 @@ if [ -n "$F_COMMON" -o -n "$F_RAPIDJSON" ]; then
   build_rapidjson
 fi
 
-if [ -n "$F_COMMON" -o -n "$F_GSG" ]; then
+if [ -n "$F_COMMON" -o -n "$F_CPPLINT" ]; then
   build_cpplint
 fi
 

@@ -1,6 +1,6 @@
---- a/cpplint/cpplint.py	2019-01-29 19:51:49.000000000 -0800
-+++ b/cpplint/cpplint.py	2019-01-30 15:19:26.000000000 -0800
-@@ -207,6 +207,7 @@
+--- a/cpplint.py	2019-01-30 15:19:26.000000000 -0800
++++ b/cpplint.py	2025-09-19 18:01:05.895383196 -0700
+@@ -325,6 +325,7 @@
      'readability/todo',
      'readability/utf8',
      'runtime/arrays',
@@ -8,16 +8,7 @@
      'runtime/casting',
      'runtime/explicit',
      'runtime/int',
-@@ -251,7 +252,7 @@
- # flag. By default all errors are on, so only add here categories that should be
- # off by default (i.e., categories that must be enabled by the --filter= flags).
- # All entries here should start with a '-' or '+', as in the --filter= flag.
--_DEFAULT_FILTERS = ['-build/include_alpha']
-+_DEFAULT_FILTERS = ['-build/include_alpha','-runtime/broken_libstdcpp_regex']
- 
- # We used to check for high-bit characters, but after much discussion we
- # decided those were OK, as long as they were in UTF-8 and didn't represent
-@@ -1934,6 +1935,91 @@
+@@ -2651,6 +2652,91 @@
              '...) for improved thread safety.')
  
  
@@ -109,41 +100,11 @@
  def CheckVlogArguments(filename, clean_lines, linenum, error):
    """Checks that VLOG() is only used for defining a logging level.
  
-@@ -3111,8 +3111,8 @@
-   line = clean_lines.elided[linenum]
-
-   # You shouldn't have spaces before your brackets, except maybe after
--  # 'delete []' or 'return []() {};'
--  if Search(r'\w\s+\[', line) and not Search(r'(?:delete|return)\s+\[', line):
-+  # 'delete []', 'return []() {};', or 'auto [abc, ...] = ...;'.
-+  if Search(r'\w\s+\[', line) and not Search(r'(?:auto&?|delete|return)\s+\[', line):
-     error(filename, linenum, 'whitespace/braces', 5,
-           'Extra space before [')
-
-@@ -5488,7 +5574,7 @@
-     ('<stack>', ('stack',)),
-     ('<string>', ('char_traits', 'basic_string',)),
-     ('<tuple>', ('tuple',)),
--    ('<utility>', ('pair',)),
-+    ('<utility>', ('pair', 'swap',)),
-     ('<vector>', ('vector',)),
- 
-     # gcc extensions.
-@@ -5501,8 +5587,7 @@
- _RE_PATTERN_STRING = re.compile(r'\bstring\b')
- 
- _re_pattern_algorithm_header = []
--for _template in ('copy', 'max', 'min', 'min_element', 'sort', 'swap',
--                  'transform'):
-+for _template in ('copy', 'max', 'min', 'min_element', 'sort', 'transform'):
-   # Match max<type>(..., ...), max(..., ...), but not foo->max, foo.max or
-   # type::max().
-   _re_pattern_algorithm_header.append(
-@@ -5940,6 +6025,7 @@
+@@ -6391,6 +6477,7 @@
                                  nesting_state, error)
    CheckVlogArguments(filename, clean_lines, line, error)
    CheckPosixThreading(filename, clean_lines, line, error)
 +  CheckBrokenLibStdCppRegex(filename, clean_lines, line, error)
    CheckInvalidIncrement(filename, clean_lines, line, error)
    CheckMakePairUsesDeduction(filename, clean_lines, line, error)
-   CheckDefaultLambdaCaptures(filename, clean_lines, line, error)
+   CheckRedundantVirtual(filename, clean_lines, line, error)

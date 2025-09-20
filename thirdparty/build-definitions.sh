@@ -917,7 +917,7 @@ build_breakpad() {
 
 build_cpplint() {
   # Copy cpplint tool into bin directory
-  cp $GSG_SOURCE/cpplint/cpplint.py $PREFIX/bin/cpplint.py
+  cp $CPPLINT_SOURCE/cpplint.py $PREFIX/bin/cpplint.py
 }
 
 build_gcovr() {

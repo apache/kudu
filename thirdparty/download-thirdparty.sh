@@ -302,12 +302,12 @@ fetch_and_patch \
  $MUSTACHE_SOURCE \
  $MUSTACHE_PATCHLEVEL
 
-GSG_PATCHLEVEL=3
+CPPLINT_PATCHLEVEL=1
 fetch_and_patch \
- google-styleguide-${GSG_VERSION}.tar.gz \
- $GSG_SOURCE \
- $GSG_PATCHLEVEL \
- "patch -p1 < $TP_DIR/patches/google-styleguide-cpplint.patch"
+ cpplint-${CPPLINT_VERSION}.tar.gz \
+ $CPPLINT_SOURCE \
+ $CPPLINT_PATCHLEVEL \
+ "patch -p1 < $TP_DIR/patches/cpplint-libstdcpp-regex.patch"
 
 GCOVR_PATCHLEVEL=0
 fetch_and_patch \

@@ -634,9 +634,9 @@ NOTE: build-time dependency
 TODO(KUDU-2696): gmock is unnecessarily linked into the kudu cli binary
 
 --------------------------------------------------------------------------------
-thirdparty/src/google-styleguide-*/: CC-By 3.0 (http://creativecommons.org/licenses/by/3.0/)
-Source: https://github.com/google/styleguide
-NOTE: optional build-time dependency, not linked or bundled.
+thirdparty/src/cpplint-*/: BSD 3-clause license
+Source: https://github.com/cpplint/cpplint
+NOTE: optional build-time dependency, not linked or bundled
 
 --------------------------------------------------------------------------------
 thirdparty/src/python-*/: Python 2.7 license (https://www.python.org/download/releases/2.7/license/)

@@ -115,12 +115,17 @@ MUSTACHE_VERSION=b290952d8eb93d085214d8c8c9eab8559df9f606
 MUSTACHE_NAME=mustache-$MUSTACHE_VERSION
 MUSTACHE_SOURCE=$TP_SOURCE_DIR/$MUSTACHE_NAME
 
-# git revision of google style guide:
-# https://github.com/google/styleguide
-# git archive --prefix=google-styleguide-$(git rev-parse HEAD)/ -o /tmp/google-styleguide-$(git rev-parse HEAD).tgz HEAD
-GSG_VERSION=7a179d1ac2e08a5cc1622bec900d1e0452776713
-GSG_NAME=google-styleguide-$GSG_VERSION
-GSG_SOURCE=$TP_SOURCE_DIR/$GSG_NAME
+# git release/revision of cpplint https://github.com/cpplint/cpplint
+# (used to be a part of google styleguide https://github.com/google/styleguide)
+#
+# $ git clone https://github.com/cpplint/cpplint.git
+# $ cd cpplint
+# $ git tag -l    # to see available tags/snapshots
+# $ git checkout 1.6.1  # checkout the sources of the chosen tag/snapshot
+# $ git archive --prefix=cpplint-1.6.1/ -o /tmp/cpplint-1.6.1.tar.gz HEAD
+CPPLINT_VERSION=1.6.1
+CPPLINT_NAME=cpplint-$CPPLINT_VERSION
+CPPLINT_SOURCE=$TP_SOURCE_DIR/$CPPLINT_NAME
 
 GCOVR_VERSION=3.0
 GCOVR_NAME=gcovr-$GCOVR_VERSION
