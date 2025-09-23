@@ -20,6 +20,7 @@
 
 #include <memory>
 #include <numeric>
+#include <utility>
 #include <vector>
 
 #include "kudu/fs/block_manager.h"

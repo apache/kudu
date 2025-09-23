@@ -68,7 +68,7 @@ namespace sp {
 }
 
 #else
-#include <tr1/memory>
+#include <tr1/memory>   // NOLINT(build/c++tr1)
 
 namespace kudu {
 namespace client {

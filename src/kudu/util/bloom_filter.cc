@@ -52,7 +52,7 @@ BloomFilterSizing BloomFilterSizing::BySizeAndFPRate(size_t n_bytes, double fp_r
   double expected_elems = -static_cast<double>(n_bits) * kNaturalLog2 * kNaturalLog2 /
     log(fp_rate);
   DCHECK_GT(expected_elems, 1);
-  return BloomFilterSizing(n_bytes, (size_t)ceil(expected_elems));
+  return BloomFilterSizing(n_bytes, static_cast<size_t>(ceil(expected_elems)));
 }
 
 

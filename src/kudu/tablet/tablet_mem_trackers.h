@@ -18,6 +18,7 @@
 
 #include <memory>
 #include <string>
+#include <utility>
 
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/mem_tracker.h"

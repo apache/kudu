@@ -19,6 +19,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <utility>
 
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"

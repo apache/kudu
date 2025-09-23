@@ -18,6 +18,7 @@
 
 #include <algorithm>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "kudu/cfile/block_encodings.h"

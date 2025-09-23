@@ -16,6 +16,8 @@
 // under the License.
 #pragma once
 
+#include <memory>
+#include <utility>
 #include <vector>
 
 #include "kudu/tablet/tablet_replica.h"

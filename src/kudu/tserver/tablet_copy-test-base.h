@@ -19,7 +19,9 @@
 
 #include "kudu/tserver/tablet_server-test-base.h"
 
+#include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "kudu/consensus/log_anchor_registry.h"

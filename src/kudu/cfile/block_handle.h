@@ -17,6 +17,7 @@
 #pragma once
 
 #include <memory>
+#include <utility>
 
 #include <boost/variant/get.hpp>
 #include <boost/variant/variant.hpp>

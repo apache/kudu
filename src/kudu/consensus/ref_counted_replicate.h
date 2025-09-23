@@ -16,6 +16,8 @@
 // under the License.
 #pragma once
 
+#include <memory>
+
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/gutil/ref_counted.h"
 

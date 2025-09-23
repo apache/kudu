@@ -17,10 +17,11 @@
 
 #pragma once
 
+#include <string>
 #include <thread>
+#include <utility>
 
 #include <glog/logging.h>
-#include <string>
 
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/countdown_latch.h"

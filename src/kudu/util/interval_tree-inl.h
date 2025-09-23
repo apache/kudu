@@ -18,6 +18,7 @@
 #define KUDU_UTIL_INTERVAL_TREE_INL_H
 
 #include <algorithm>
+#include <utility>
 #include <vector>
 
 #include "kudu/util/interval_tree.h"

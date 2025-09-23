@@ -17,16 +17,20 @@
 #ifndef KUDU_UTIL_STOPWATCH_H
 #define KUDU_UTIL_STOPWATCH_H
 
-#include <glog/logging.h>
+#include <ctime>
+#include <string>
+#include <utility>
+
 #include <sys/resource.h>
 #include <sys/time.h>
-#include <time.h>
-#include <string>
+
 #if defined(__APPLE__)
 #include <mach/clock.h>
 #include <mach/mach.h>
 #include <mach/thread_info.h>
 #endif  // defined(__APPLE__)
+
+#include <glog/logging.h>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/stringprintf.h"

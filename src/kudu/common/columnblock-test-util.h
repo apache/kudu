@@ -16,6 +16,8 @@
 // under the License.
 #pragma once
 
+#include <memory>
+
 #include "kudu/gutil/macros.h"
 
 #include "kudu/common/columnblock.h"

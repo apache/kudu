@@ -18,6 +18,7 @@
 
 #include <optional>
 #include <string>
+#include <utility>
 
 #include "kudu/client/schema.h"
 #include "kudu/client/value.h"

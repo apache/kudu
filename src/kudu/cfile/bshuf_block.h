@@ -28,6 +28,7 @@
 #include <cstring>
 #include <cstdint>
 #include <ostream>
+#include <utility>
 #include <vector>
 
 #include <glog/logging.h>
