@@ -385,7 +385,7 @@ As verified at RHEL7.5/CentOS7.5 with `chronyd` 3.2 and newer, the default
 configuration file is good enough to satisfy Kudu requirements for the system
 clock if running on a machine that has Internet access.
 
-An link:https://chrony.tuxfamily.org/faq.html#_what_is_the_minimum_recommended_configuration_for_an_ntp_client[example of a minimum viable configuration] for `chronyd` is:
+An link:https://chrony-project.org/faq.html#_what_is_the_minimum_recommended_configuration_for_an_ntp_client[example of a minimum viable configuration] for `chronyd` is:
 
 ----
 pool pool.ntp.org iburst
@@ -512,7 +512,7 @@ Total valid RX  : 50
 ----
 
 For troubleshooting tips on clock synchronisation with chronyd see
-link:https://chrony.tuxfamily.org/faq.html#_computer_is_not_synchronising[this
+link:https://chrony-project.org/faq.html#_computer_is_not_synchronising[this
 useful guide].
 
 ===== Notes on running `chronyd` in local reference mode
@@ -521,7 +521,7 @@ the clocks on all nodes with one another, but not necessarily to true time.
 The local clock of one dedicated server can be kept vaguely in line with true
 time by manual input, and other nodes will synchronize with that one. The
 `chronyd` at the dedicated server runs in
-link:https://chrony.tuxfamily.org/doc/3.4/chrony.conf.html#local[local reference mode],
+link:https://chrony-project.org/doc/3.4/chrony.conf.html#local[local reference mode],
 and `chronyd` at other nodes synchronize with it as with a regular true time
 reference.
 
