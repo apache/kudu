@@ -1,0 +1,45 @@
+diff -Naur breakpad-e09741c609dcd5f5274d40182c5e2cc9a002d5ba/src/client/linux/minidump_writer/linux_dumper.cc breakpad-e09741c609dcd5f5274d40182c5e2cc9a002d5ba_patched/src/client/linux/minidump_writer/linux_dumper.cc
+--- breakpad-e09741c609dcd5f5274d40182c5e2cc9a002d5ba/src/client/linux/minidump_writer/linux_dumper.cc	2022-03-29 16:51:59.000000000 -0700
++++ breakpad-e09741c609dcd5f5274d40182c5e2cc9a002d5ba_patched/src/client/linux/minidump_writer/linux_dumper.cc	2025-09-18 11:37:01.043520288 -0700
+--- a/src/client/linux/minidump_writer/linux_dumper.cc
++++ b/src/client/linux/minidump_writer/linux_dumper.cc
+@@ -791,18 +791,33 @@
+ // unwind. So we just grab, up to, 32k of stack.
+ bool LinuxDumper::GetStackInfo(const void** stack, size_t* stack_len,
+                                uintptr_t int_stack_pointer) {
+-  // Move the stack pointer to the bottom of the page that it's in.
+-  const uintptr_t page_size = getpagesize();
++  // Look up the memory mapping for this stack address. This is used for bounds
++  // checking.
++  const MappingInfo* mapping = FindMapping(reinterpret_cast<uint8_t*>(int_stack_pointer));
++  if (!mapping)
++    return false;
++
++  // x86_64 has a 128 byte red zone where leaf functions can use the stack without
++  // setting the stack pointer. Include that red zone without going beyond the
++  // start of the memory mapping.
++  static const ptrdiff_t red_zone_size = 128;
++  uintptr_t red_zone_start =
++    std::max(mapping->start_addr, int_stack_pointer - red_zone_size);
+ 
++  // Historically, this rounded the stack_pointer off to a page boundary
++  // by using getpagesize(). For top-down stacks, this includes extra memory
++  // beyond the current stack pointer. With 64KB pages, this is excessive, so
++  // this changes the logic to include a limited amount of space beyond the
++  // stack pointer. This rounds it off to a 1KB boundary rather than the page
++  // boundary, which reduces the extra memory included.
++  // TODO: We can look into reducing this further.
++  static const uintptr_t rounding_size = 1024;
+   uint8_t* const stack_pointer =
+-      reinterpret_cast<uint8_t*>(int_stack_pointer & ~(page_size - 1));
++      reinterpret_cast<uint8_t*>(red_zone_start & ~(rounding_size - 1));
+ 
+   // The number of bytes of stack which we try to capture.
+   static const ptrdiff_t kStackToCapture = 32 * 1024;
+ 
+-  const MappingInfo* mapping = FindMapping(stack_pointer);
+-  if (!mapping)
+-    return false;
+   const ptrdiff_t offset = stack_pointer -
+       reinterpret_cast<uint8_t*>(mapping->start_addr);
+   const ptrdiff_t distance_to_end =
