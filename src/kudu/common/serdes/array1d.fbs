@@ -15,38 +15,38 @@
 // specific language governing permissions and limitations
 // under the License.
 
-namespace kudu.array1d;
+namespace kudu.serdes;
 
 // These represent one-dimensional arrays of a particular scalar type
 // containing an arbitrary number of elements.
-table Int8 { values:[int8]; }
-table UInt8 { values:[uint8]; }
-table Int16 { values:[int16]; }
-table UInt16 { values:[uint16]; }
-table Int32 { values:[int32]; }
-table UInt32 { values:[uint32]; }
-table Int64 { values:[int64]; }
-table UInt64 { values:[uint64]; }
-table Float { values:[float32]; }
-table Double { values:[float64]; }
-table String { values:[string]; }
-table Binary { values:[UInt8]; }
+table Int8Array { values:[int8]; }
+table UInt8Array { values:[uint8]; }
+table Int16Array { values:[int16]; }
+table UInt16Array { values:[uint16]; }
+table Int32Array { values:[int32]; }
+table UInt32Array { values:[uint32]; }
+table Int64Array { values:[int64]; }
+table UInt64Array { values:[uint64]; }
+table FloatArray { values:[float32]; }
+table DoubleArray { values:[float64]; }
+table StringArray { values:[string]; }
+table BinaryArray { values:[UInt8Array]; }
 
 // A wrapper to represent one-dimensional arrays above under the umbrella
 // of a single field.
 union ScalarArray {
-  Int8,
-  UInt8,
-  Int16,
-  UInt16,
-  Int32,
-  UInt32,
-  Int64,
-  UInt64,
-  Float,
-  Double,
-  String,
-  Binary
+  Int8Array,
+  UInt8Array,
+  Int16Array,
+  UInt16Array,
+  Int32Array,
+  UInt32Array,
+  Int64Array,
+  UInt64Array,
+  FloatArray,
+  DoubleArray,
+  StringArray,
+  BinaryArray
 }
 
 // This is to represent a one-dimensional array of a particular scalar type
