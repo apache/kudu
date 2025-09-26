@@ -30,6 +30,7 @@
 
 #include <glog/logging.h>
 
+#include "kudu/common/array_cell_view.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/mathlimits.h"
@@ -916,24 +917,125 @@ struct TypeTraits : public DataTypeTraits<datatype> {
 template<DataType ARRAY_ELEMENT_TYPE>
 struct ArrayTypeTraits : public ArrayDataTypeTraits<ARRAY_ELEMENT_TYPE> {
   typedef Slice cpp_type;
+  typedef typename TypeTraits<ARRAY_ELEMENT_TYPE>::cpp_type element_cpp_type;
 
   static const DataType type = DataType::NESTED;
   static const DataType physical_type = DataType::BINARY;
+  static const DataType element_type = ARRAY_ELEMENT_TYPE;
 
   static const size_t size = sizeof(Slice);
 
   static void AppendDebugStringForValue(const void* val, std::string* str) {
-    // TODO(aserbin): implement once ArrayCellMetadataView is available
-    str->append("not implemented yet for ");
-    str->append(ArrayDataTypeTraits<ARRAY_ELEMENT_TYPE>::name());
+    static constexpr const char* const kErrCorruption = "corrupted array cell data";
+    const Slice* cell_ptr = reinterpret_cast<const Slice*>(val);
+    if (!cell_ptr->data() || cell_ptr->empty()) {
+      // This is a NULL array cell.
+      str->append("NULL");
+      return;
+    }
+    ArrayCellMetadataView view(cell_ptr->data(), cell_ptr->size());
+    const auto s = view.Init();
+    DCHECK(s.ok());
+    if (PREDICT_FALSE(!s.ok())) {
+      str->append(kErrCorruption);
+      return;
+    }
+    const size_t elem_num = view.elem_num();
+    if (elem_num == 0) {
+      str->append("[]");
+      return;
+    }
+    DCHECK_NE(0, elem_num);
+    const uint8_t* data_ptr = view.data_as(ARRAY_ELEMENT_TYPE);
+    if (PREDICT_FALSE(!data_ptr)) {
+      str->append(kErrCorruption);
+      return;
+    }
+    str->append("[");
+    const auto* validity = view.not_null_bitmap();
+    for (size_t idx = 0; idx < elem_num; ++idx) {
+      if (idx != 0) {
+        str->append(", ");
+      }
+      if (BitmapTest(validity, idx)) {
+        DataTypeTraits<ARRAY_ELEMENT_TYPE>::AppendDebugStringForValue(data_ptr, str);
+      } else {
+        str->append("NULL");
+      }
+      data_ptr += sizeof(typename TypeTraits<ARRAY_ELEMENT_TYPE>::cpp_type);
+    }
+    str->append("]");
   }
+
+  // Compare two arrays. If any of the array cells is null, the arrays aren't
+  // equal: this follows the standard notation of comparison of two NULLs in
+  // SQL: 'NULL = NULL' evaluates to 'false'. However: '[NULL] = [NULL]'
+  // evaluates to 'true'.
   static int Compare(const void* lhs, const void* rhs) {
-    // TODO(aserbin): implement once ArrayCellMetadataView is available
-    return -1;
+    const Slice* lhs_cell_ptr = reinterpret_cast<const Slice*>(lhs);
+    if (!lhs_cell_ptr->data() || lhs_cell_ptr->empty()) {
+      return -1;
+    }
+    const Slice* rhs_cell_ptr = reinterpret_cast<const Slice*>(rhs);
+    if (!rhs_cell_ptr->data() || rhs_cell_ptr->empty()) {
+      return -1;
+    }
+
+    ArrayCellMetadataView lhs_view(lhs_cell_ptr->data(), lhs_cell_ptr->size());
+    if (const auto s = lhs_view.Init(); PREDICT_FALSE(!s.ok())) {
+      DCHECK(false) << s.ToString();
+      return -1;
+    }
+    ArrayCellMetadataView rhs_view(rhs_cell_ptr->data(), rhs_cell_ptr->size());
+    if (const auto s = rhs_view.Init(); PREDICT_FALSE(!s.ok())) {
+      DCHECK(false) << s.ToString();
+      return -1;
+    }
+    return Compare(lhs_view, rhs_view, std::numeric_limits<size_t>::max());
   }
+
+  // Return true if increment(a) is equal to b. For arrays, let's define
+  // increment as adding an extra NULL element in the end. So, two arrays
+  // are consecutive if the longer one is equal to the shorter one with an
+  // additional trailing NULL element. This is consistent with the array
+  // comparison rules above, where [0, 1] < [0, 1, NULL],
+  // but [0, 1, NULL] < [0, 2].
   static bool AreConsecutive(const void* a, const void* b) {
-    // TODO(aserbin): implement once ArrayCellMetadataView is available
-    return false;
+
+    // If any of the arrays is null, they cannot be consecutive.
+    const Slice* a_cell_ptr = reinterpret_cast<const Slice*>(a);
+    if (!a_cell_ptr->data() || a_cell_ptr->empty()) {
+      return false;
+    }
+    const Slice* b_cell_ptr = reinterpret_cast<const Slice*>(b);
+    if (!b_cell_ptr->data() || b_cell_ptr->empty()) {
+      return false;
+    }
+
+    ArrayCellMetadataView a_view(a_cell_ptr->data(), a_cell_ptr->size());
+    if (const auto s = a_view.Init(); PREDICT_FALSE(!s.ok())) {
+      DCHECK(false) << s.ToString();
+      return false;
+    }
+    ArrayCellMetadataView b_view(b_cell_ptr->data(), b_cell_ptr->size());
+    if (const auto s = b_view.Init(); PREDICT_FALSE(!s.ok())) {
+      DCHECK(false) << s.ToString();
+      return false;
+    }
+
+    const size_t a_elem_num = a_view.elem_num();
+    const size_t b_elem_num = b_view.elem_num();
+    if (a_elem_num + 1 != b_elem_num) {
+      return false;
+    }
+
+    const uint8_t* b_not_null_bitmap = b_view.not_null_bitmap();
+    if (BitmapTest(b_not_null_bitmap, a_elem_num)) {
+      // The trailing extra element in 'b' must be NULL if 'b' goes
+      // consecutively after 'a'.
+      return false;
+    }
+    return Compare(a_view, b_view, a_elem_num) == 0;
   }
   static const cpp_type* min_value() {
     static const cpp_type kMinVal{};
@@ -942,8 +1044,82 @@ struct ArrayTypeTraits : public ArrayDataTypeTraits<ARRAY_ELEMENT_TYPE> {
   static const cpp_type* max_value() {
     return nullptr;
   }
-  static bool IsVirtual() {
+  static constexpr bool IsVirtual() {
     return false;
+  }
+
+ private:
+  // Compare array represented by the specified array views facades up to
+  // the specified number of elements. The comparison goes element-by-element,
+  // using Compare() method for the corresponding element scalar type.
+  static int Compare(const ArrayCellMetadataView& lhs,
+                     const ArrayCellMetadataView& rhs,
+                     size_t num_elems_to_compare) {
+
+    if (num_elems_to_compare == 0) {
+      return 0;
+    }
+
+    const size_t lhs_elems = lhs.elem_num();
+    const size_t rhs_elems = rhs.elem_num();
+
+    // The number of array elements available for comparison in each of the arrays.
+    const size_t num_elems = std::min(lhs_elems, rhs_elems);
+    // The number of array elements available for comparison in each of the
+    // arrays, additionally capped by the 'num_elems_to_compare' parameter.
+    const size_t cap_num_elems = std::min(num_elems, num_elems_to_compare);
+
+    const uint8_t* lhs_data_ptr = lhs.data_as(ARRAY_ELEMENT_TYPE);
+    DCHECK(lhs_data_ptr || lhs_elems == 0);
+    const uint8_t* lhs_not_null_bitmap = lhs.not_null_bitmap();
+    DCHECK(lhs_not_null_bitmap || lhs_elems == 0);
+
+    const uint8_t* rhs_data_ptr = rhs.data_as(ARRAY_ELEMENT_TYPE);
+    DCHECK(rhs_data_ptr || rhs_elems == 0);
+    const uint8_t* rhs_not_null_bitmap = rhs.not_null_bitmap();
+    DCHECK(rhs_not_null_bitmap || rhs_elems == 0);
+
+    for (size_t idx = 0; idx < cap_num_elems; ++idx,
+        lhs_data_ptr += sizeof(typename TypeTraits<ARRAY_ELEMENT_TYPE>::cpp_type),
+        rhs_data_ptr += sizeof(typename TypeTraits<ARRAY_ELEMENT_TYPE>::cpp_type)) {
+      if (!BitmapTest(lhs_not_null_bitmap, idx)) {
+        if (!BitmapTest(rhs_not_null_bitmap, idx)) {
+          // Both elements are NULL: continue with next elements in the arrays.
+          continue;
+        }
+        // lhs < rhs: a non-NULL element in rhs at idx, but lhs has NULL
+        // at idx, while all the pairs of elements in the arrays contain
+        // same numbers (or two NULLs) up to the 'idx' position.
+        return -1;
+      } else {
+        if (!BitmapTest(rhs_not_null_bitmap, idx)) {
+          // lhs > rhs: a non-NULL element in lhs at idx, but rhs non-NULL
+          // at idx, while all the pairs of elements in the array contain
+          // same numbers (or two NULLs) up to the 'idx' position.
+          return 1;
+        }
+        // OK, it's time to compare two non-null elements at same index.
+        const int res = DataTypeTraits<ARRAY_ELEMENT_TYPE>::Compare(
+            lhs_data_ptr, rhs_data_ptr);
+        if (res != 0) {
+          return res;
+        }
+      }
+    }
+    // At this point, all pairs of elements up to 'cap_num_elems' idx contai
+    // same values or two NULLs.
+    if (num_elems >= num_elems_to_compare) {
+      return 0;
+    }
+    DCHECK(lhs_elems <= num_elems_to_compare && rhs_elems <= num_elems_to_compare);
+    if (lhs_elems < rhs_elems) {
+      return -1;
+    }
+    if (lhs_elems > rhs_elems) {
+      return 1;
+    }
+
+    return 0;
   }
 };
 

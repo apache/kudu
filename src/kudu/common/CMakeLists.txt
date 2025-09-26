@@ -105,6 +105,7 @@ ADD_EXPORTABLE_LIBRARY(kudu_common
 #######################################
 
 SET_KUDU_TEST_LINK_LIBS(kudu_common)
+ADD_KUDU_TEST(array_type_serdes-test)
 ADD_KUDU_TEST(columnar_serialization-test)
 ADD_KUDU_TEST(columnblock-test)
 ADD_KUDU_TEST(column_predicate-test NUM_SHARDS 4)

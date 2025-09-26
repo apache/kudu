@@ -1,0 +1,282 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+#pragma once
+
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <vector>
+
+#include <flatbuffers/vector.h>
+#include <flatbuffers/verifier.h>
+#include <glog/logging.h>
+#include <gtest/gtest_prod.h>
+
+#include "kudu/common/common.pb.h"
+#include "kudu/common/serdes/array1d.fb.h"
+#include "kudu/gutil/port.h"
+#include "kudu/util/bitmap.h"
+#include "kudu/util/status.h"
+
+namespace kudu {
+
+constexpr serdes::ScalarArray KuduToScalarArrayType(DataType data_type) {
+  switch (data_type) {
+    case INT8:
+      return serdes::ScalarArray::Int8Array;
+    case BOOL:
+    case UINT8:
+      return serdes::ScalarArray::UInt8Array;
+    case INT16:
+      return serdes::ScalarArray::Int16Array;
+    case UINT16:
+      return serdes::ScalarArray::UInt16Array;
+    case DATE:
+    case INT32:
+      return serdes::ScalarArray::Int32Array;
+    case UINT32:
+      return serdes::ScalarArray::UInt32Array;
+    case INT64:
+    case UNIXTIME_MICROS:
+      return serdes::ScalarArray::Int64Array;
+    case UINT64:
+      return serdes::ScalarArray::UInt64Array;
+    case FLOAT:
+      return serdes::ScalarArray::FloatArray;
+    case DOUBLE:
+      return serdes::ScalarArray::DoubleArray;
+    case STRING:
+    case VARCHAR:
+      return serdes::ScalarArray::StringArray;
+    case BINARY:
+      return serdes::ScalarArray::BinaryArray;
+    case DECIMAL32:
+      return serdes::ScalarArray::Int32Array;
+    case DECIMAL64:
+      return serdes::ScalarArray::Int64Array;
+    case DECIMAL128:
+    case INT128:
+      LOG(DFATAL) << DataType_Name(data_type)
+                 << ": type isn't yet supported in 1D arrays";
+      return serdes::ScalarArray::NONE;
+    default:
+      LOG(DFATAL) << "unknown type: " << DataType_Name(data_type);
+      return serdes::ScalarArray::NONE;
+  }
+}
+
+class ArrayCellMetadataView final {
+ public:
+  // buf: data raw pointer
+  // len: size of the buffer (bytes) pointed at by the 'buf' pointer
+  ArrayCellMetadataView(const uint8_t* buf, const size_t size)
+       : data_(buf),
+         size_(size),
+         content_(nullptr),
+         is_initialized_(false) {
+  }
+
+  Status Init() {
+    DCHECK(!is_initialized_);
+    if (size_ == 0) {
+      DCHECK(!data_);
+      content_ = nullptr;
+      is_initialized_ = true;
+      return Status::OK();
+    }
+
+    DCHECK_GT(size_, 0);
+    {
+      flatbuffers::Verifier::Options opt;
+      // While verifying the input data, rely on the built-in constant of
+      // FLATBUFFERS_MAX_BUFFER_SIZE.  2GiBytes - 1 bytes seems big enough
+      // to fit a single one-dimensional array.
+      if (PREDICT_FALSE(size_ + 1 > FLATBUFFERS_MAX_BUFFER_SIZE)) {
+        return Status::InvalidArgument("serialized flatbuffers too big");
+      }
+
+      // Keep the verifier's parameters strict:
+      //   * depth of 3 is enough to verify contents of serdes::Binary, the type
+      //     from array1d.fbs of the deepest nesting
+      //   * maximum number of tables to verify is set to 65536 + 1 to support
+      //     the maximum possible number of serdes::UInt8Array elements as the
+      //     contents of serdes::BinaryArray table: 65536 is the the limitation
+      //     based on CFile's array data block format, and extra 1 comes from
+      //     the top-level Content table (see serdes/array1d.fbs)
+      //   * max_size is set to the size of the memory buffer plus one extra
+      //     byte due to the strict 'less than' (not 'less than or equal')
+      //     comparison criteria in the flatbuffers' logic that asserts the
+      //     buffers size restriction
+      opt.max_depth = 3;
+      opt.max_tables = 65536 + 1;
+      opt.max_size = size_ + 1;
+
+      flatbuffers::Verifier verifier(data_, size_, opt);
+      if (PREDICT_FALSE(!serdes::VerifyContentBuffer(verifier))) {
+        return Status::Corruption("corrupted flatbuffers data");
+      }
+    }
+
+    content_ = serdes::GetContent(data_);
+    if (PREDICT_FALSE(!content_)) {
+      return Status::IllegalState("null flatbuffers of non-zero size");
+    }
+
+    DCHECK(content_);
+    if (const size_t bit_num = content_->validity()->size(); bit_num != 0) {
+      bitmap_.reset(new uint8_t[BitmapSize(bit_num)]);
+      auto* bm = bitmap_.get();
+      const auto* v = content_->validity();
+      for (size_t idx = 0; idx < bit_num; ++idx) {
+        if (v->Get(idx) != 0) {
+          BitmapSet(bm, idx);
+        } else {
+          BitmapClear(bm, idx);
+        }
+      }
+    }
+    const auto data_type = content_->data_type();
+    if (data_type != serdes::ScalarArray::BinaryArray &&
+        data_type != serdes::ScalarArray::StringArray) {
+      // For non-binary types, there is nothing else to do.
+      is_initialized_ = true;
+      return Status::OK();
+    }
+
+    // Build the metadata on the spans of binary/string elements
+    // in the buffer.
+    if (data_type == serdes::ScalarArray::StringArray) {
+      const auto* values = content_->data_as<serdes::StringArray>()->values();
+      binary_data_spans_.reserve(values->size());
+      for (auto cit = values->cbegin(); cit != values->end(); ++cit) {
+        const auto* str = *cit;
+        DCHECK(str);
+        binary_data_spans_.emplace_back(str->c_str(), str->size());
+      }
+    } else {
+      DCHECK(serdes::ScalarArray::BinaryArray == data_type);
+      const auto* values = content_->data_as<serdes::BinaryArray>()->values();
+      binary_data_spans_.reserve(values->size());
+      for (auto cit = values->cbegin(); cit != values->end(); ++cit) {
+        const auto* byte_seq = cit->values();
+        DCHECK(byte_seq);
+        binary_data_spans_.emplace_back(byte_seq->Data(), byte_seq->size());
+      }
+    }
+    is_initialized_ = true;
+    return Status::OK();
+  }
+
+  ~ArrayCellMetadataView() = default;
+
+  // Number of elements in the array.
+  size_t elem_num() const {
+    DCHECK(is_initialized_);
+    return content_ ? content_->validity()->size() : 0;
+  }
+
+  bool empty() const {
+    DCHECK(is_initialized_);
+    return content_ ? content_->validity()->empty() : true;
+  }
+
+  // Non-null (a.k.a. validity) bitmap for the array elements.
+  const uint8_t* not_null_bitmap() const {
+    DCHECK(is_initialized_);
+    return bitmap_.get();
+  }
+
+  const uint8_t* data_as(DataType data_type) const {
+    DCHECK(is_initialized_);
+    if (empty()) {
+      return nullptr;
+    }
+    if (PREDICT_FALSE(content_->data_type() != KuduToScalarArrayType(data_type))) {
+      return nullptr;
+    }
+    switch (data_type) {
+      case DataType::BOOL:
+        return data<serdes::UInt8Array>();
+      case DataType::INT8:
+        return data<serdes::Int8Array>();
+      case DataType::UINT8:
+        return data<serdes::UInt8Array>();
+      case DataType::INT16:
+        return data<serdes::Int16Array>();
+      case DataType::UINT16:
+        return data<serdes::UInt16Array>();
+      case DataType::DATE:
+      case DataType::DECIMAL32:
+      case DataType::INT32:
+        return data<serdes::Int32Array>();
+      case DataType::UINT32:
+        return data<serdes::UInt32Array>();
+      case DataType::DECIMAL64:
+      case DataType::INT64:
+      case DataType::UNIXTIME_MICROS:
+        return data<serdes::Int64Array>();
+      case DataType::UINT64:
+        return data<serdes::UInt64Array>();
+      case DataType::FLOAT:
+        return data<serdes::FloatArray>();
+      case DataType::DOUBLE:
+        return data<serdes::DoubleArray>();
+      case DataType::BINARY:
+      case DataType::STRING:
+      case DataType::VARCHAR:
+        // For binary/non-integer types, Kudu expects Slice elements.
+        return reinterpret_cast<const uint8_t*>(binary_data_spans_.data());
+      default:
+        DCHECK(false) << "unsupported type: " << DataType_Name(data_type);
+        return nullptr;
+    }
+  }
+
+ private:
+  FRIEND_TEST(ArrayTypeSerdesTest, Basic);
+
+  template<typename T>
+  const uint8_t* data() const {
+    DCHECK(is_initialized_);
+    return content_ ? content_->data_as<T>()->values()->Data() : nullptr;
+  }
+
+  // Flatbuffer-encoded data; a non-owning raw pointer.
+  const uint8_t* data_;
+
+  // Size of the encoded data, i.e. the number of bytes in the memory after
+  // the 'data_' pointer that represent the serialized array.
+  const size_t size_;
+
+  // A non-owning raw pointer to the flatbuffers serialized buffer. It's nullptr
+  // for an empty (size_ == 0) buffer.
+  const serdes::Content* content_;
+
+  // A bitmap built of the boolean validity vector.
+  // TODO(aserbin): switch array1d to bitfield instead of bool vector for validity?
+  std::unique_ptr<uint8_t[]> bitmap_;
+
+  // Spans of binary data in the serialized buffer. This is populated only
+  // for string/binary types.
+  std::vector<Slice> binary_data_spans_;
+
+  // Whether the Init() method has been successfully run for this object.
+  bool is_initialized_;
+};
+
+} // namespace kudu

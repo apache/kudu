@@ -20,12 +20,14 @@
 #include <cstring>
 #include <ostream>
 #include <string>
+#include <vector>
 
 #include <glog/logging.h>
 
 #include "kudu/gutil/stringprintf.h"
 
 using std::string;
+using std::vector;
 
 namespace kudu {
 
@@ -150,6 +152,20 @@ void BitmapCopy(uint8_t* dst, size_t dst_offset,
   for (size_t bit_num = 0; bit_num < num_bits; ++bit_num) {
     BitmapChange(dst, dst_offset + bit_num, BitmapTest(src, src_offset + bit_num));
   }
+}
+
+vector<bool> BitmapToVector(const uint8_t* bitmap, size_t num_bits) {
+  BitmapIterator it(bitmap, num_bits);
+  vector<bool> result(num_bits);
+  bool is_set = false;
+  size_t offset = 0;
+  while (const size_t num_elem = it.Next(&is_set)) {
+    for (size_t i = 0; i < num_elem; ++i) {
+      result[offset + i] = is_set;
+    }
+    offset += num_elem;
+  }
+  return result;
 }
 
 string BitmapToString(const uint8_t* bitmap, size_t num_bits) {

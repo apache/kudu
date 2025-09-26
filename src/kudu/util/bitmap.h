@@ -22,6 +22,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include <glog/logging.h>
 
@@ -123,6 +124,8 @@ inline bool BitmapEquals(const uint8_t* bm1, const uint8_t* bm2, size_t bitmap_s
 void BitmapCopy(uint8_t* dst, size_t dst_offset,
                 const uint8_t* src, size_t src_offset,
                 size_t num_bits);
+
+std::vector<bool> BitmapToVector(const uint8_t* bitmap, size_t num_bits);
 
 std::string BitmapToString(const uint8_t* bitmap, size_t num_bits);
 

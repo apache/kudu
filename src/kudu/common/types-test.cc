@@ -18,10 +18,13 @@
 #include "kudu/common/types.h"
 
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <initializer_list>
 #include <limits>
+#include <memory>
 #include <string>
+#include <string_view>
 #include <tuple>  // IWYU pragma: keep
 #include <utility>
 #include <variant>
@@ -30,17 +33,21 @@
 #include <gflags/gflags.h>
 #include <gtest/gtest.h>
 
+#include "kudu/common/array_type_serdes.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/gutil/mathlimits.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/slice.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 using std::get;
 using std::make_tuple;
 using std::nextafter;
 using std::string;
+using std::string_view;
 using std::tuple;
+using std::unique_ptr;
 using std::vector;
 
 namespace kudu {
@@ -240,6 +247,294 @@ TEST_F(TestTypes, ArrayTypeNoRegistryEntries) {
       ASSERT_EQ(nullptr, info);
     }, "'type_info' Must be non NULL");
   }
+}
+
+// Verifying how ArrayTypeTraits<T>::AppendDebugStringForValue(...) works
+// for a few data types.
+TEST_F(TestTypes, ArrayTypeDebugString) {
+  {
+    const Slice cell;
+    string out;
+    ArrayTypeTraits<INT8>::AppendDebugStringForValue(&cell, &out);
+    ASSERT_EQ("NULL", out);
+  }
+  {
+    const Slice cell(static_cast<const uint8_t*>(nullptr), 0);
+    string out;
+    ArrayTypeTraits<INT16>::AppendDebugStringForValue(&cell, &out);
+    ASSERT_EQ("NULL", out);
+  }
+  {
+    const vector<int64_t> val;
+    const vector<bool> validity;
+    ASSERT_EQ(val.size(), validity.size());
+
+    unique_ptr<uint8_t[]> buf_data;
+    size_t buf_data_size = 0;
+    ASSERT_OK(Serialize(GetTypeInfo(INT64),
+                        reinterpret_cast<const uint8_t*>(val.data()),
+                        val.size(),
+                        validity,
+                        &buf_data,
+                        &buf_data_size));
+    ASSERT_TRUE(buf_data);
+
+    const Slice cell(buf_data.get(), buf_data_size);
+    string out;
+    ArrayTypeTraits<INT64>::AppendDebugStringForValue(&cell, &out);
+    ASSERT_EQ("[]", out);
+  }
+  {
+    const vector<int32_t> val{ 0, 1, 12, 5, 26, 42, };
+    const vector<bool> validity{ false, true, false, true, true, true, };
+    ASSERT_EQ(val.size(), validity.size());
+
+    unique_ptr<uint8_t[]> buf_data;
+    size_t buf_data_size = 0;
+    ASSERT_OK(Serialize(GetTypeInfo(INT32),
+                        reinterpret_cast<const uint8_t*>(val.data()),
+                        val.size(),
+                        validity,
+                        &buf_data,
+                        &buf_data_size));
+    ASSERT_TRUE(buf_data);
+
+    const Slice cell(buf_data.get(), buf_data_size);
+    string out;
+    ArrayTypeTraits<INT32>::AppendDebugStringForValue(&cell, &out);
+    ASSERT_EQ("[NULL, 1, NULL, 5, 26, 42]", out);
+  }
+  {
+    const vector<Slice> val{ "alphabet", "", "ABC", "mega", "", "turbo", };
+    const vector<bool> validity{ true, false, true, true, true, true, };
+    ASSERT_EQ(val.size(), validity.size());
+
+    unique_ptr<uint8_t[]> buf_data;
+    size_t buf_data_size = 0;
+    ASSERT_OK(Serialize(GetTypeInfo(STRING),
+                        reinterpret_cast<const uint8_t*>(val.data()),
+                        val.size(),
+                        validity,
+                        &buf_data,
+                        &buf_data_size));
+    ASSERT_TRUE(buf_data);
+
+    const Slice cell(buf_data.get(), buf_data_size);
+    string out;
+    ArrayTypeTraits<STRING>::AppendDebugStringForValue(&cell, &out);
+    ASSERT_EQ("[\"alphabet\", NULL, \"ABC\", \"mega\", \"\", \"turbo\"]", out);
+  }
+}
+
+template <typename T, DataType KUDU_TYPE>
+static void CompareArrays(
+    int expected,
+    string_view tag,
+    const vector<T>& lhs_val,
+    const vector<bool>& lhs_validity,
+    const vector<T>& rhs_val,
+    const vector<bool>& rhs_validity) {
+
+  SCOPED_TRACE(tag);
+  ASSERT_EQ(lhs_val.size(), lhs_validity.size());
+  unique_ptr<uint8_t[]> lhs_buf_data;
+  size_t lhs_buf_data_size = 0;
+  ASSERT_OK(Serialize(GetTypeInfo(KUDU_TYPE),
+                      reinterpret_cast<const uint8_t*>(lhs_val.data()),
+                      lhs_val.size(),
+                      lhs_validity,
+                      &lhs_buf_data,
+                      &lhs_buf_data_size));
+  ASSERT_TRUE(lhs_buf_data);
+  const Slice lhs_cell(lhs_buf_data.get(), lhs_buf_data_size);
+
+  ASSERT_EQ(rhs_val.size(), rhs_validity.size());
+  unique_ptr<uint8_t[]> rhs_buf_data;
+  size_t rhs_buf_data_size = 0;
+  ASSERT_OK(Serialize(GetTypeInfo(KUDU_TYPE),
+                      reinterpret_cast<const uint8_t*>(rhs_val.data()),
+                      rhs_val.size(),
+                      rhs_validity,
+                      &rhs_buf_data,
+                      &rhs_buf_data_size));
+  ASSERT_TRUE(rhs_buf_data);
+  const Slice rhs_cell(rhs_buf_data.get(), rhs_buf_data_size);
+
+  ASSERT_EQ(expected, ArrayTypeTraits<KUDU_TYPE>::Compare(&lhs_cell, &rhs_cell));
+}
+
+TEST_F(TestTypes, CompareNullArrays) {
+  Slice lhs_cell;;
+  Slice rhs_cell;;
+  ASSERT_EQ(-1, ArrayTypeTraits<INT32>::Compare(&lhs_cell, &rhs_cell));
+  ASSERT_EQ(-1, ArrayTypeTraits<INT32>::Compare(&rhs_cell, &lhs_cell));
+
+  ASSERT_EQ(-1, ArrayTypeTraits<STRING>::Compare(&lhs_cell, &rhs_cell));
+  ASSERT_EQ(-1, ArrayTypeTraits<STRING>::Compare(&rhs_cell, &lhs_cell));
+}
+
+TEST_F(TestTypes, CompareArrays) {
+  NO_FATALS((CompareArrays<Slice, BINARY>(0,
+      "[] = []",
+      {}, {},
+      {}, {})));
+  NO_FATALS((CompareArrays<Slice, STRING>(-1,
+      "[] < [NULL]",
+      {}, {},
+      { "" }, { false })));
+  NO_FATALS((CompareArrays<Slice, BINARY>(1,
+      "[NULL] > []",
+      { "" }, { false },
+      {}, {})));
+  NO_FATALS((CompareArrays<Slice, STRING>(-1,
+      "[NULL, '1'] < ['', '1']",
+      { "0", "1", }, { false, true, },
+      { "", "1", }, { true, true, })));
+  NO_FATALS((CompareArrays<int16_t, INT16>(-1,
+      "[] < [NULL]",
+      {}, {},
+      { 0 }, { false })));
+  NO_FATALS((CompareArrays<int32_t, DATE>(1,
+      "[NULL] > []",
+      { 0 }, { false },
+      {}, {})));
+  NO_FATALS((CompareArrays<int16_t, INT16>(-1,
+      "[] < [-5]",
+      {}, {},
+      { -5 }, { true })));
+  NO_FATALS((CompareArrays<int64_t, UNIXTIME_MICROS>(-1,
+      "[] < [3]",
+      {}, {},
+      { 3 }, { true })));
+  NO_FATALS((CompareArrays<int8_t, INT8>(0,
+      "[NULL] = [NULL]",
+      { 0 }, { false },
+      { 0 }, { false })));
+  NO_FATALS((CompareArrays<int8_t, INT8>(1,
+      "[1] > [NULL]",
+      { 1 }, { true },
+      { 2 }, { false })));
+  NO_FATALS((CompareArrays<int32_t, INT32>(-1,
+      "[-1] < [1]",
+      { -1 }, { true },
+      { 1 }, { true })));
+  NO_FATALS((CompareArrays<int64_t, INT64>(-1,
+      "[NULL] < [-1]",
+      { 1 }, { false },
+      { -1 }, { true })));
+  NO_FATALS((CompareArrays<Slice, STRING>(0,
+      "[NULL, '1', NULL, '42'] = [NULL, '1', NULL, '42']",
+      { "0", "1", "12", "42", }, { false, true, false, true, },
+      { "", "1", "1", "42", }, { false, true, false, true, })));
+  NO_FATALS((CompareArrays<int16_t, INT16>(0,
+      "[NULL, 1, NULL, 5, 26, 42] = [NULL, 1, NULL, 5, 26, 42]",
+      { 0, 1, 12, 5, 26, 42, }, { false, true, false, true, true, true, },
+      { 1, 1, 1, 5, 26, 42, }, { false, true, false, true, true, true, })));
+  NO_FATALS((CompareArrays<int32_t, INT32>(-1,
+      "[NULL, 1, NULL, 5, 26, 42] < [NULL, 1, NULL, 5, 26, 43]",
+      { 0, 1, 0, 5, 26, 42, }, { false, true, false, true, true, true, },
+      { 0, 1, 0, 5, 26, 43, }, { false, true, false, true, true, true, })));
+  NO_FATALS((CompareArrays<int64_t, INT64>(-1,
+      "[NULL, 1, NULL, 5, 25, 42] < [NULL, 1, NULL, 5, 26, 42]",
+      { 0, 1, 0, 5, 25, 42, }, { false, true, false, true, true, true, },
+      { 0, 1, 0, 5, 26, 42, }, { false, true, false, true, true, true, })));
+  NO_FATALS((CompareArrays<Slice, STRING>(-1,
+      "[NULL, '1', NULL] < [NULL, '1', '']",
+      { "0", "1", "12", }, { false, true, false, },
+      { "", "1", "", }, { false, true, true, })));
+  NO_FATALS((CompareArrays<Slice, VARCHAR>(-1,
+      "[NULL, 1] < [NULL, 1, NULL]",
+      { "0", "1", }, { false, true, },
+      { "", "1", "", }, { false, true, false, })));
+  NO_FATALS((CompareArrays<int32_t, INT32>(1,
+      "[NULL, 1, NULL] > [NULL, 0, 2]",
+      { 0, 1, 2 }, { false, true, false },
+      { 0, 0, 2, }, { false, true, true, })));
+  NO_FATALS((CompareArrays<int32_t, INT32>(-1,
+      "[-1, 1, 0] < [1, -2, 1]",
+      { -1, 1, 0, }, { true, true, true, },
+      { 1, -2, 1, }, { true, true, true, })));
+  NO_FATALS((CompareArrays<int16_t, INT16>(-1,
+      "[0, 1, 2, NULL] < [0, 1, 3]",
+      { 0, 1, 2, 0, }, { true, true, true, false, },
+      { 0, 1, 3, }, { true, true, true, })));
+  NO_FATALS((CompareArrays<int64_t, INT64>(-1,
+      "[0, 1, 2, NULL] < [0, 1, 3, NULL]",
+      { 0, 1, 2, 0, }, { true, true, true, false, },
+      { 0, 1, 3, 0, }, { true, true, true, false, })));
+}
+
+template <typename T, DataType KUDU_TYPE>
+static void AreArraysConsecutive(
+    bool expected,
+    string_view tag,
+    const vector<T>& lhs_val,
+    const vector<bool>& lhs_validity,
+    const vector<T>& rhs_val,
+    const vector<bool>& rhs_validity) {
+
+  SCOPED_TRACE(tag);
+  ASSERT_EQ(lhs_val.size(), lhs_validity.size());
+  unique_ptr<uint8_t[]> lhs_buf_data;
+  size_t lhs_buf_data_size = 0;
+  ASSERT_OK(Serialize(GetTypeInfo(KUDU_TYPE),
+                      reinterpret_cast<const uint8_t*>(lhs_val.data()),
+                      lhs_val.size(),
+                      lhs_validity,
+                      &lhs_buf_data,
+                      &lhs_buf_data_size));
+  ASSERT_TRUE(lhs_buf_data);
+  const Slice lhs_cell(lhs_buf_data.get(), lhs_buf_data_size);
+
+  ASSERT_EQ(rhs_val.size(), rhs_validity.size());
+  unique_ptr<uint8_t[]> rhs_buf_data;
+  size_t rhs_buf_data_size = 0;
+  ASSERT_OK(Serialize(GetTypeInfo(KUDU_TYPE),
+                      reinterpret_cast<const uint8_t*>(rhs_val.data()),
+                      rhs_val.size(),
+                      rhs_validity,
+                      &rhs_buf_data,
+                      &rhs_buf_data_size));
+  ASSERT_TRUE(rhs_buf_data);
+  const Slice rhs_cell(rhs_buf_data.get(), rhs_buf_data_size);
+
+  ASSERT_EQ(expected,
+            ArrayTypeTraits<KUDU_TYPE>::AreConsecutive(&lhs_cell, &rhs_cell));
+}
+
+TEST_F(TestTypes, ConsecutiveArrays) {
+  NO_FATALS((AreArraysConsecutive<int8_t, INT8>(false,
+      "[-1, 1] and [-1, 1]",
+      { -1, 1, }, { true, true, },
+      { -1, 1, }, { true, true, })));
+  NO_FATALS((AreArraysConsecutive<int16_t, INT16>(false,
+      "[-1, 1] and [-1, 1, 0]",
+      { -1, 1, }, { true, true, },
+      { -1, 1, 0, }, { true, true, true, })));
+  NO_FATALS((AreArraysConsecutive<int32_t, INT32>(true,
+      "[] and [NULL]",
+      {}, {},
+      { 0, }, { false, })));
+  NO_FATALS((AreArraysConsecutive<int64_t, INT64>(false,
+      "[NULL] and []",
+      { 0, }, { false, },
+      {}, {})));
+  NO_FATALS((AreArraysConsecutive<int8_t, INT8>(true,
+      "[1] and [1, NULL]",
+      { 1, }, { true, },
+      { 1, 0, }, { true, false, })));
+  NO_FATALS((AreArraysConsecutive<int32_t, INT32>(false,
+      "[1, NULL] and [1]",
+      { 1, 0, }, { true, false, },
+      { 1, }, { true, })));
+  NO_FATALS((AreArraysConsecutive<int16_t, INT16>(false,
+      "[-1, 1, NULL] and [-1, 1, 0]",
+      { -1, 1, 0, }, { true, true, false, },
+      { -1, 1, 0, }, { true, true, true, })));
+  NO_FATALS((AreArraysConsecutive<int16_t, INT16>(false,
+      "[-1, 1, 0] and [-1, 1, NULL]",
+      { -1, 1, 0, }, { true, true, true, },
+      { -1, 1, 0, }, { true, true, false, })));
 }
 
 } // namespace kudu
