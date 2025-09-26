@@ -30,6 +30,7 @@ ADD_EXPORTABLE_LIBRARY(client_proto
   NONLINK_DEPS ${CLIENT_PROTO_TGTS})
 
 set(CLIENT_SRCS
+  array_cell-internal.cc
   authz_token_cache.cc
   batcher.cc
   client.cc
@@ -183,6 +184,7 @@ install(TARGETS kudu_client_exported
 
 # Headers: client
 install(FILES
+  array_cell.h
   callbacks.h
   client.h
   columnar_scan_batch.h

@@ -17,13 +17,19 @@
 
 #include "kudu/common/partial_row.h"
 
+#include <algorithm>
+#include <cstdint>
 #include <cstring>
+#include <iterator>
+#include <memory>
 #include <ostream>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include <glog/logging.h>
 
+#include "kudu/common/array_type_serdes.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/key_encoder.h"
 #include "kudu/common/row.h"
@@ -42,6 +48,7 @@
 #include "kudu/util/status.h"
 
 using std::string;
+using std::vector;
 using strings::Substitute;
 
 namespace kudu {
@@ -134,9 +141,8 @@ Status KuduPartialRow::Set(int col_idx,
   if (PREDICT_FALSE(col.type_info()->type() != T::type)) {
     // TODO: at some point we could allow type coercion here.
     return Status::InvalidArgument(
-      Substitute("invalid type $0 provided for column '$1' (expected $2)",
-                 T::name(),
-                 col.name(), col.type_info()->name()));
+        Substitute("invalid type $0 provided for column '$1' (expected $2)",
+                   T::name(), col.name(), col.type_info()->name()));
   }
 
   ContiguousRow row(schema_, row_data_);
@@ -158,6 +164,136 @@ Status KuduPartialRow::Set(int col_idx,
   if (owned) {
     BitmapSet(owned_strings_bitmap_, col_idx);
   }
+  return Status::OK();
+}
+
+namespace {
+
+Status CheckArrayColumnType(
+    const ColumnSchema& col_schema,
+    DataType data_type,
+    const TypeInfo** elem_type_info) {
+  if (PREDICT_FALSE(col_schema.type_info()->type() != DataType::NESTED)) {
+    return Status::InvalidArgument(
+        Substitute("column '$0' isn't of NESTED type: $1",
+                   col_schema.name(), col_schema.type_info()->name()));
+  }
+
+  const auto* ati = col_schema.type_info();
+  DCHECK(ati->is_array());
+  const TypeInfo* eti = ati->nested_type_info()->array().elem_type_info();
+  if (PREDICT_FALSE(!eti) ||
+      PREDICT_FALSE(eti->type() != data_type)) {
+    return Status::InvalidArgument(
+        Substitute("array element type of column '$0' is $1, not $2",
+                   col_schema.name(), eti->name(), DataType_Name(data_type)));
+  }
+  *elem_type_info = eti;
+
+  return Status::OK();
+}
+
+} // anonymous namespace
+
+template<typename T>
+Status KuduPartialRow::SetArray(const Slice& col_name,
+                                const vector<typename T::element_cpp_type>& val,
+                                const vector<bool>& validity) {
+  int col_idx;
+  RETURN_NOT_OK(schema_->FindColumn(col_name, &col_idx));
+  return SetArray<T>(col_idx, val, validity);
+}
+
+template<typename T>
+Status KuduPartialRow::SetArray(int col_idx,
+                                const vector<typename T::element_cpp_type>& val,
+                                const vector<bool>& validity) {
+  if (PREDICT_FALSE(val.size() != validity.size())) {
+    return Status::InvalidArgument(
+        "data and validity arrays must be the same length");
+  }
+
+  const ColumnSchema& col = schema_->column(col_idx);
+  const TypeInfo* elem_type_info = nullptr;
+  RETURN_NOT_OK(CheckArrayColumnType(col, T::element_type, &elem_type_info));
+  DCHECK(elem_type_info);
+
+  std::unique_ptr<uint8_t[]> buf_data;
+  size_t buf_data_size = 0;
+  RETURN_NOT_OK(Serialize(elem_type_info,
+                          reinterpret_cast<const uint8_t*>(val.data()),
+                          val.size(),
+                          validity,
+                          &buf_data,
+                          &buf_data_size));
+
+  ContiguousRow row(schema_, row_data_);
+  DeallocateStringIfSet(col_idx, col);
+
+  // Mark the column as set.
+  BitmapSet(isset_bitmap_, col_idx);
+
+  if (col.is_nullable()) {
+    row.set_null(col_idx, false);
+  }
+
+  ContiguousRowCell<ContiguousRow> dst(&row, col_idx);
+  Slice cell(buf_data.get(), buf_data_size);
+  memcpy(dst.mutable_ptr(), &cell, sizeof(cell));
+
+  // Pass the ownership of the data.
+  BitmapSet(owned_strings_bitmap_, col_idx);
+  buf_data.release();
+
+  return Status::OK();
+}
+
+// Specialization for SetArray() for BOOL.
+template<>
+Status KuduPartialRow::SetArray<ArrayTypeTraits<BOOL>>(
+    int col_idx,
+    const vector<bool>& val_bool,
+    const vector<bool>& validity) {
+  if (PREDICT_FALSE(val_bool.size() != validity.size())) {
+    return Status::InvalidArgument(
+        "data and validity arrays must be the same length");
+  }
+  vector<uint8_t> val;
+  val.reserve(val_bool.size());
+  std::copy(val_bool.begin(), val_bool.end(), std::back_inserter(val));
+
+  const ColumnSchema& col = schema_->column(col_idx);
+  const TypeInfo* elem_type_info = nullptr;
+  RETURN_NOT_OK(CheckArrayColumnType(col, BOOL, &elem_type_info));
+  DCHECK(elem_type_info);
+
+  std::unique_ptr<uint8_t[]> buf_data;
+  size_t buf_data_size = 0;
+  RETURN_NOT_OK(Serialize(elem_type_info,
+                          reinterpret_cast<const uint8_t*>(val.data()),
+                          val.size(),
+                          validity,
+                          &buf_data,
+                          &buf_data_size));
+
+  ContiguousRow row(schema_, row_data_);
+  DeallocateStringIfSet(col_idx, col);
+
+  // Mark the column as set.
+  BitmapSet(isset_bitmap_, col_idx);
+
+  if (col.is_nullable()) {
+    row.set_null(col_idx, false);
+  }
+
+  ContiguousRowCell<ContiguousRow> dst(&row, col_idx);
+  Slice cell(buf_data.get(), buf_data_size);
+  memcpy(dst.mutable_ptr(), &cell, sizeof(cell));
+
+  // Pass the ownership of the data.
+  BitmapSet(owned_strings_bitmap_, col_idx);
+  buf_data.release();
+
   return Status::OK();
 }
 
@@ -238,26 +374,31 @@ Status KuduPartialRow::Set(int32_t column_idx, const uint8_t* val) {
 }
 
 void KuduPartialRow::DeallocateStringIfSet(int col_idx, const ColumnSchema& col) {
-  if (BitmapTest(owned_strings_bitmap_, col_idx)) {
-    ContiguousRow row(schema_, row_data_);
-    const Slice* dst;
-    switch (col.type_info()->type()) {
-      case BINARY:
-        dst = schema_->ExtractColumnFromRow<BINARY>(row, col_idx);
-        break;
-      case VARCHAR:
-        dst = schema_->ExtractColumnFromRow<VARCHAR>(row, col_idx);
-        break;
-      case STRING:
-        dst = schema_->ExtractColumnFromRow<STRING>(row, col_idx);
-        break;
-      default:
-        LOG(FATAL) << "Unexpected type " << col.type_info()->type();
-        break;
-    }
-    delete [] dst->data();
-    BitmapClear(owned_strings_bitmap_, col_idx);
+  if (!BitmapTest(owned_strings_bitmap_, col_idx)) {
+    return;
   }
+  ContiguousRow row(schema_, row_data_);
+  const auto* type_info = col.type_info();
+  const uint8_t* dst = nullptr;
+  switch (type_info->type()) {
+    case BINARY:
+      dst = schema_->ExtractColumnFromRow<BINARY>(row, col_idx)->data();
+      break;
+    case VARCHAR:
+      dst = schema_->ExtractColumnFromRow<VARCHAR>(row, col_idx)->data();
+      break;
+    case STRING:
+      dst = schema_->ExtractColumnFromRow<STRING>(row, col_idx)->data();
+      break;
+    case NESTED:
+      dst = schema_->ExtractColumnFromRow(row, col_idx)->data();
+      break;
+    default:
+      LOG(FATAL) << "Unexpected type " << col.type_info()->type();
+      break;
+  }
+  delete [] dst;
+  BitmapClear(owned_strings_bitmap_, col_idx);
 }
 
 void KuduPartialRow::DeallocateOwnedStrings() {
@@ -342,7 +483,7 @@ Status CheckDecimalValueInRange(ColumnSchema col, int128_t val) {
   int128_t min_val = -max_val;
   if (val < min_val || val > max_val) {
     return Status::InvalidArgument(
-        Substitute("value $0 out of range for decimal column '$1'",
+        Substitute("value $0 out of decimal range for column '$1'",
                    DecimalToString(val, col.type_attributes().scale), col.name()));
   }
   return Status::OK();
@@ -414,6 +555,189 @@ Status KuduPartialRow::SetBinaryNoCopy(int col_idx, const Slice& val) {
 }
 Status KuduPartialRow::SetStringNoCopy(int col_idx, const Slice& val) {
   return Set<TypeTraits<STRING> >(col_idx, val, false);
+}
+
+Status KuduPartialRow::SetArrayBool(const Slice& col_name,
+                                    const vector<bool>& val,
+                                    const vector<bool>& validity) {
+  return SetArray<ArrayTypeTraits<BOOL>>(col_name, val, validity);
+}
+Status KuduPartialRow::SetArrayInt8(const Slice& col_name,
+                                    const vector<int8_t>& val,
+                                    const vector<bool>& validity) {
+  return SetArray<ArrayTypeTraits<INT8>>(col_name, val, validity);
+}
+Status KuduPartialRow::SetArrayInt16(const Slice& col_name,
+                                     const vector<int16_t>& val,
+                                     const vector<bool>& validity) {
+  return SetArray<ArrayTypeTraits<INT16>>(col_name, val, validity);
+}
+Status KuduPartialRow::SetArrayInt32(const Slice& col_name,
+                                     const vector<int32_t>& val,
+                                     const vector<bool>& validity) {
+  return SetArray<ArrayTypeTraits<INT32>>(col_name, val, validity);
+}
+Status KuduPartialRow::SetArrayInt64(const Slice& col_name,
+                                     const vector<int64_t>& val,
+                                     const vector<bool>& validity) {
+  return SetArray<ArrayTypeTraits<INT64>>(col_name, val, validity);
+}
+Status KuduPartialRow::SetArrayFloat(const Slice& col_name,
+                                     const vector<float>& val,
+                                     const vector<bool>& validity) {
+  return SetArray<ArrayTypeTraits<FLOAT>>(col_name, val, validity);
+}
+Status KuduPartialRow::SetArrayDouble(const Slice& col_name,
+                                      const vector<double>& val,
+                                      const vector<bool>& validity) {
+  return SetArray<ArrayTypeTraits<DOUBLE>>(col_name, val, validity);
+}
+Status KuduPartialRow::SetArrayDate(const Slice& col_name,
+                                    const vector<int32_t>& val,
+                                    const vector<bool>& validity) {
+  return SetArray<ArrayTypeTraits<DATE>>(col_name, val, validity);
+}
+Status KuduPartialRow::SetArrayUnixTimeMicros(const Slice& col_name,
+                                              const vector<int64_t>& val,
+                                              const vector<bool>& validity) {
+  return SetArray<ArrayTypeTraits<UNIXTIME_MICROS>>(col_name, val, validity);
+}
+Status KuduPartialRow::SetArrayBinary(const Slice& col_name,
+                                      const vector<Slice>& val,
+                                      const vector<bool>& validity) {
+  return SetArray<ArrayTypeTraits<BINARY>>(col_name, val, validity);
+}
+Status KuduPartialRow::SetArrayString(const Slice& col_name,
+                                      const vector<Slice>& val,
+                                      const vector<bool>& validity) {
+  return SetArray<ArrayTypeTraits<STRING>>(col_name, val, validity);
+}
+Status KuduPartialRow::SetArrayVarchar(const Slice& col_name,
+                                       const vector<Slice>& val,
+                                       const vector<bool>& validity) {
+  return SetArray<ArrayTypeTraits<VARCHAR>>(col_name, val, validity);
+}
+Status KuduPartialRow::SetArrayUnscaledDecimal(const Slice& col_name,
+                                               const vector<int32_t>& val,
+                                               const vector<bool>& validity) {
+  int col_idx;
+  RETURN_NOT_OK(schema_->FindColumn(col_name, &col_idx));
+  return SetArrayUnscaledDecimal(col_idx, val, validity);
+}
+Status KuduPartialRow::SetArrayUnscaledDecimal(const Slice& col_name,
+                                               const vector<int64_t>& val,
+                                               const vector<bool>& validity) {
+  int col_idx;
+  RETURN_NOT_OK(schema_->FindColumn(col_name, &col_idx));
+  return SetArrayUnscaledDecimal(col_idx, val, validity);
+}
+
+
+Status KuduPartialRow::SetArrayBool(int col_idx,
+                                    const vector<bool>& val,
+                                    const vector<bool>& validity) {
+  return SetArray<ArrayTypeTraits<BOOL>>(col_idx, val, validity);
+}
+Status KuduPartialRow::SetArrayInt8(int col_idx,
+                                    const vector<int8_t>& val,
+                                    const vector<bool>& validity) {
+  return SetArray<ArrayTypeTraits<INT8>>(col_idx, val, validity);
+}
+Status KuduPartialRow::SetArrayInt16(int col_idx,
+                                     const vector<int16_t>& val,
+                                     const vector<bool>& validity) {
+  return SetArray<ArrayTypeTraits<INT16>>(col_idx, val, validity);
+}
+Status KuduPartialRow::SetArrayInt32(int col_idx,
+                                     const vector<int32_t>& val,
+                                     const vector<bool>& validity) {
+  return SetArray<ArrayTypeTraits<INT32>>(col_idx, val, validity);
+}
+Status KuduPartialRow::SetArrayInt64(int col_idx,
+                                     const vector<int64_t>& val,
+                                     const vector<bool>& validity) {
+  return SetArray<ArrayTypeTraits<INT64>>(col_idx, val, validity);
+}
+Status KuduPartialRow::SetArrayFloat(int col_idx,
+                                     const vector<float>& val,
+                                     const vector<bool>& validity) {
+  return SetArray<ArrayTypeTraits<FLOAT>>(col_idx, val, validity);
+}
+Status KuduPartialRow::SetArrayDouble(int col_idx,
+                                      const vector<double>& val,
+                                      const vector<bool>& validity) {
+  return SetArray<ArrayTypeTraits<DOUBLE>>(col_idx, val, validity);
+}
+Status KuduPartialRow::SetArrayDate(int col_idx,
+                                    const vector<int32_t>& val,
+                                    const vector<bool>& validity) {
+  return SetArray<ArrayTypeTraits<DATE>>(col_idx, val, validity);
+}
+Status KuduPartialRow::SetArrayUnixTimeMicros(int col_idx,
+                                              const vector<int64_t>& val,
+                                              const vector<bool>& validity) {
+  return SetArray<ArrayTypeTraits<UNIXTIME_MICROS>>(col_idx, val, validity);
+}
+Status KuduPartialRow::SetArrayBinary(int col_idx,
+                                      const vector<Slice>& val,
+                                      const vector<bool>& validity) {
+  return SetArray<ArrayTypeTraits<BINARY>>(col_idx, val, validity);
+}
+Status KuduPartialRow::SetArrayString(int col_idx,
+                                      const vector<Slice>& val,
+                                      const vector<bool>& validity) {
+  return SetArray<ArrayTypeTraits<STRING>>(col_idx, val, validity);
+}
+Status KuduPartialRow::SetArrayVarchar(int col_idx,
+                                       const vector<Slice>& val,
+                                       const vector<bool>& validity) {
+  return SetArray<ArrayTypeTraits<VARCHAR>>(col_idx, val, validity);
+}
+
+template<typename T, DataType ELEMENT_TYPE>
+static Status CheckArrayDecimalValuesInRange(
+    const Schema& schema,
+    int col_idx,
+    const vector<T>& val,
+    const vector<bool>& validity) {
+  if (PREDICT_FALSE(val.size() != validity.size())) {
+    return Status::InvalidArgument(
+        "data and validity arrays must be the same length");
+  }
+  const ColumnSchema& col = schema.column(col_idx);
+  const TypeInfo* elem_typeinfo = GetArrayElementTypeInfo(*col.type_info());
+  if (PREDICT_FALSE(!elem_typeinfo)) {
+    return Status::InvalidArgument(Substitute(
+        "column '$0' is not of $1 array type", col.name(), DataType_Name(ELEMENT_TYPE)));
+  }
+  const DataType col_type = elem_typeinfo->type();
+  if (PREDICT_FALSE(col_type != ELEMENT_TYPE)) {
+    return Status::InvalidArgument(
+        Substitute("column '$0' is array of $1, not $2 type",
+                   col.name(), DataType_Name(col_type), DataType_Name(ELEMENT_TYPE)));
+  }
+  for (size_t i = 0; i < val.size(); ++i) {
+    if (!validity[i]) {
+      // skip null elements
+      continue;
+    }
+    RETURN_NOT_OK(CheckDecimalValueInRange(col, val[i]));
+  }
+  return Status::OK();
+}
+Status KuduPartialRow::SetArrayUnscaledDecimal(int col_idx,
+                                               const vector<int32_t>& val,
+                                               const vector<bool>& validity) {
+  RETURN_NOT_OK((CheckArrayDecimalValuesInRange<int32_t, DataType::DECIMAL32>(
+      *schema_, col_idx, val, validity)));
+  return SetArray<ArrayTypeTraits<DECIMAL32>>(col_idx, val, validity);
+}
+Status KuduPartialRow::SetArrayUnscaledDecimal(int col_idx,
+                                               const vector<int64_t>& val,
+                                               const vector<bool>& validity) {
+  RETURN_NOT_OK((CheckArrayDecimalValuesInRange<int64_t, DataType::DECIMAL64>(
+      *schema_, col_idx, val, validity)));
+  return SetArray<ArrayTypeTraits<DECIMAL64>>(col_idx, val, validity);
 }
 
 Status KuduPartialRow::SetVarcharNoCopyUnsafe(const Slice& col_name, const Slice& val) {

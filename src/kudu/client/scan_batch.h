@@ -24,6 +24,7 @@
 #include <cstddef>
 #include <iterator>
 #include <string>
+#include <vector>
 
 #ifdef KUDU_HEADERS_NO_STUBS
 #include "kudu/gutil/macros.h"
@@ -334,6 +335,97 @@ class KUDU_EXPORT KuduScanBatch::RowPtr {
   Status GetVarchar(int col_idx, Slice* val) const WARN_UNUSED_RESULT;
   ///@}
 
+  Status GetArrayBool(const Slice& col_name,
+                      std::vector<bool>* data,
+                      std::vector<bool>* validity) const WARN_UNUSED_RESULT;
+  Status GetArrayInt8(const Slice& col_name,
+                      std::vector<int8_t>* data,
+                      std::vector<bool>* validity) const WARN_UNUSED_RESULT;
+  Status GetArrayInt16(const Slice& col_name,
+                       std::vector<int16_t>* data,
+                       std::vector<bool>* validity) const WARN_UNUSED_RESULT;
+  Status GetArrayInt32(const Slice& col_name,
+                       std::vector<int32_t>* data,
+                       std::vector<bool>* validity) const WARN_UNUSED_RESULT;
+  Status GetArrayInt64(const Slice& col_name,
+                       std::vector<int64_t>* data,
+                       std::vector<bool>* validity) const WARN_UNUSED_RESULT;
+
+  Status GetArrayUnscaledDecimal(const Slice& col_name,
+                                 std::vector<int32_t>* data,
+                                 std::vector<bool>* validity) const WARN_UNUSED_RESULT;
+  Status GetArrayUnscaledDecimal(const Slice& col_name,
+                                 std::vector<int64_t>* data,
+                                 std::vector<bool>* validity) const WARN_UNUSED_RESULT;
+  Status GetArrayUnixTimeMicros(const Slice& col_name,
+                                std::vector<int64_t>* data,
+                                std::vector<bool>* validity) const WARN_UNUSED_RESULT;
+  Status GetArrayDate(const Slice& col_name,
+                      std::vector<int32_t>* data,
+                      std::vector<bool>* validity) const WARN_UNUSED_RESULT;
+  Status GetArrayFloat(const Slice& col_name,
+                       std::vector<float>* data,
+                       std::vector<bool>* validity) const WARN_UNUSED_RESULT;
+  Status GetArrayDouble(const Slice& col_name,
+                        std::vector<double>* data,
+                        std::vector<bool>* validity) const WARN_UNUSED_RESULT;
+
+  Status GetArrayString(const Slice& col_name,
+                        std::vector<Slice>* data,
+                        std::vector<bool>* validity) const WARN_UNUSED_RESULT;
+  Status GetArrayBinary(const Slice& col_name,
+                        std::vector<Slice>* data,
+                        std::vector<bool>* validity) const WARN_UNUSED_RESULT;
+  Status GetArrayVarchar(const Slice& col_name,
+                         std::vector<Slice>* data,
+                         std::vector<bool>* validity) const WARN_UNUSED_RESULT;
+
+
+  Status GetArrayBool(int col_idx,
+                      std::vector<bool>* data,
+                      std::vector<bool>* validity) const WARN_UNUSED_RESULT;
+  Status GetArrayInt8(int col_idx,
+                      std::vector<int8_t>* data,
+                      std::vector<bool>* validity) const WARN_UNUSED_RESULT;
+  Status GetArrayInt16(int col_idx,
+                       std::vector<int16_t>* data,
+                       std::vector<bool>* validity) const WARN_UNUSED_RESULT;
+  Status GetArrayInt32(int col_idx,
+                       std::vector<int32_t>* data,
+                       std::vector<bool>* validity) const WARN_UNUSED_RESULT;
+  Status GetArrayInt64(int col_idx,
+                       std::vector<int64_t>* data,
+                       std::vector<bool>* validity) const WARN_UNUSED_RESULT;
+
+  Status GetArrayUnscaledDecimal(int col_idx,
+                                 std::vector<int32_t>* data,
+                                 std::vector<bool>* validity) const WARN_UNUSED_RESULT;
+  Status GetArrayUnscaledDecimal(int col_idx,
+                                 std::vector<int64_t>* data,
+                                 std::vector<bool>* validity) const WARN_UNUSED_RESULT;
+  Status GetArrayUnixTimeMicros(int col_idx,
+                                std::vector<int64_t>* data,
+                                std::vector<bool>* validity) const WARN_UNUSED_RESULT;
+  Status GetArrayDate(int col_idx,
+                      std::vector<int32_t>* data,
+                      std::vector<bool>* validity) const WARN_UNUSED_RESULT;
+  Status GetArrayFloat(int col_idx,
+                       std::vector<float>* data,
+                       std::vector<bool>* validity) const WARN_UNUSED_RESULT;
+  Status GetArrayDouble(int col_idx,
+                        std::vector<double>* data,
+                        std::vector<bool>* validity) const WARN_UNUSED_RESULT;
+
+  Status GetArrayString(int col_idx,
+                        std::vector<Slice>* data,
+                        std::vector<bool>* validity) const WARN_UNUSED_RESULT;
+  Status GetArrayBinary(int col_idx,
+                        std::vector<Slice>* data,
+                        std::vector<bool>* validity) const WARN_UNUSED_RESULT;
+  Status GetArrayVarchar(int col_idx,
+                         std::vector<Slice>* data,
+                         std::vector<bool>* validity) const WARN_UNUSED_RESULT;
+
   /// Get the column's row data.
   ///
   /// @note Should be avoided unless absolutely necessary.
@@ -363,6 +455,16 @@ class KUDU_EXPORT KuduScanBatch::RowPtr {
 
   template<typename T>
   Status Get(int col_idx, typename T::cpp_type* val) const;
+
+  template<typename T>
+  Status GetArray(const Slice& col_name,
+                  std::vector<typename T::cpp_type>* data,
+                  std::vector<bool>* validity) const;
+
+  template<typename T>
+  Status GetArray(int col_idx,
+                  std::vector<typename T::cpp_type>* data,
+                  std::vector<bool>* validity) const;
 
   const Schema* schema_;
   const uint8_t* row_data_;

@@ -17,13 +17,17 @@
 
 #include "kudu/client/scan_batch.h"
 
+#include <algorithm>
+#include <iterator>
 #include <cstring>
 #include <string>
+#include <vector>
 
 #include <glog/logging.h>
 
 #include "kudu/client/row_result.h"
 #include "kudu/client/scanner-internal.h"
+#include "kudu/common/array_cell_view.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
@@ -33,6 +37,7 @@
 #include "kudu/util/logging.h"
 
 using std::string;
+using std::vector;
 using strings::Substitute;
 
 namespace kudu {
@@ -253,6 +258,173 @@ Status KuduScanBatch::RowPtr::Get(int col_idx, typename T::cpp_type* val) const 
 
   memcpy(val, row_data_ + schema_->column_offset(col_idx), sizeof(*val));
   return Status::OK();
+}
+
+namespace {
+
+Status ArrayValidation(const ColumnSchema& col,
+                       const char* type_name) {
+  if (PREDICT_FALSE(col.type_info()->type() != NESTED)) {
+    return BadTypeStatus(type_name, col);
+  }
+  const auto* descriptor = col.type_info()->nested_type_info();
+  if (PREDICT_FALSE(!descriptor)) {
+    return Status::InvalidArgument(Substitute(
+        "column '$0': missing type descriptor for NESTED type", col.name()));
+  }
+  if (PREDICT_FALSE(!descriptor->is_array())) {
+    return Status::InvalidArgument(Substitute(
+        "column '$0': underlying NESTED type isn't an array", col.name()));
+  }
+  return Status::OK();
+}
+
+} // anonymous namespace
+
+template<typename T>
+Status KuduScanBatch::RowPtr::GetArray(const Slice& col_name,
+                                       vector<typename T::cpp_type>* data_out,
+                                       vector<bool>* validity_out) const {
+  int col_idx;
+  RETURN_NOT_OK(schema_->FindColumn(col_name, &col_idx));
+  return GetArray<T>(col_idx, data_out, validity_out);
+}
+
+template<typename T>
+Status KuduScanBatch::RowPtr::GetArray(int col_idx,
+                                       vector<typename T::cpp_type>* data_out,
+                                       vector<bool>* validity_out) const {
+  const ColumnSchema& col = schema_->column(col_idx);
+  RETURN_NOT_OK(ArrayValidation(col, T::name()));
+  if (PREDICT_FALSE(col.is_nullable() && IsNull(col_idx))) {
+    return Status::NotFound("column is NULL");
+  }
+  const Slice* cell_data = reinterpret_cast<const Slice*>(
+      row_data_ + schema_->column_offset(col_idx));
+  ArrayCellMetadataView view(cell_data->data(), cell_data->size());
+  RETURN_NOT_OK(view.Init());
+
+  if (data_out) {
+    data_out->resize(view.elem_num());
+    if (!view.empty()) {
+      const uint8_t* data_raw = view.data_as(T::type);
+      DCHECK(data_raw);
+      memcpy(data_out->data(), data_raw, view.elem_num() * sizeof(typename T::cpp_type));
+    }
+  }
+  if (validity_out) {
+    validity_out->resize(view.elem_num());
+    if (!view.empty()) {
+      *validity_out = BitmapToVector(view.not_null_bitmap(), view.elem_num());
+    }
+  }
+  return Status::OK();
+}
+
+// Since std::vector<bool> isn't a standard container, the data() accessor
+// isn't available and copying the data requires an alternative approach.
+template<>
+Status KuduScanBatch::RowPtr::GetArray<TypeTraits<BOOL>>(
+    int col_idx,
+    vector<bool>* data_out,
+    vector<bool>* validity) const {
+  const ColumnSchema& col = schema_->column(col_idx);
+  RETURN_NOT_OK(ArrayValidation(col, TypeTraits<BOOL>::name()));
+  if (PREDICT_FALSE(col.is_nullable() && IsNull(col_idx))) {
+    return Status::NotFound("column is NULL");
+  }
+  const Slice* cell_data = reinterpret_cast<const Slice*>(
+      row_data_ + schema_->column_offset(col_idx));
+  ArrayCellMetadataView view(cell_data->data(), cell_data->size());
+  RETURN_NOT_OK(view.Init());
+
+  if (data_out) {
+    const size_t elem_num = view.elem_num();
+    data_out->clear();
+    data_out->reserve(elem_num);
+    const uint8_t* data_raw = view.data_as(BOOL);
+    DCHECK(data_raw);
+    std::copy(data_raw, data_raw + elem_num, std::back_inserter(*data_out));
+  }
+  if (validity) {
+    *validity = BitmapToVector(view.not_null_bitmap(), view.elem_num());
+  }
+  return Status::OK();
+}
+
+Status KuduScanBatch::RowPtr::GetArrayBool(int col_idx,
+                                           vector<bool>* data,
+                                           vector<bool>* validity) const {
+  return GetArray<TypeTraits<BOOL>>(col_idx, data, validity);
+}
+
+Status KuduScanBatch::RowPtr::GetArrayInt8(int col_idx,
+                                           vector<int8_t>* data,
+                                           vector<bool>* validity) const {
+  return GetArray<TypeTraits<INT8>>(col_idx, data, validity);
+}
+
+Status KuduScanBatch::RowPtr::GetArrayInt16(int col_idx,
+                                            vector<int16_t>* data,
+                                            vector<bool>* validity) const {
+  return GetArray<TypeTraits<INT16>>(col_idx, data, validity);
+}
+
+Status KuduScanBatch::RowPtr::GetArrayInt32(int col_idx,
+                                            vector<int32_t>* data,
+                                            vector<bool>* validity) const {
+  return GetArray<TypeTraits<INT32>>(col_idx, data, validity);
+}
+
+Status KuduScanBatch::RowPtr::GetArrayInt64(int col_idx,
+                                            vector<int64_t>* data,
+                                            vector<bool>* validity) const {
+  return GetArray<TypeTraits<INT64>>(col_idx, data, validity);
+}
+Status KuduScanBatch::RowPtr::GetArrayUnscaledDecimal(int col_idx,
+                                                      vector<int32_t>* data,
+                                                      vector<bool>* validity) const {
+  return GetArray<TypeTraits<DECIMAL32>>(col_idx, data, validity);
+}
+Status KuduScanBatch::RowPtr::GetArrayUnscaledDecimal(int col_idx,
+                                                      vector<int64_t>* data,
+                                                      vector<bool>* validity) const {
+  return GetArray<TypeTraits<DECIMAL64>>(col_idx, data, validity);
+}
+Status KuduScanBatch::RowPtr::GetArrayUnixTimeMicros(int col_idx,
+                                                     vector<int64_t>* data,
+                                                     vector<bool>* validity) const {
+  return GetArray<TypeTraits<UNIXTIME_MICROS>>(col_idx, data, validity);
+}
+Status KuduScanBatch::RowPtr::GetArrayDate(int col_idx,
+                                           vector<int32_t>* data,
+                                           vector<bool>* validity) const {
+  return GetArray<TypeTraits<DATE>>(col_idx, data, validity);
+}
+Status KuduScanBatch::RowPtr::GetArrayFloat(int col_idx,
+                                            vector<float>* data,
+                                            vector<bool>* validity) const {
+  return GetArray<TypeTraits<FLOAT>>(col_idx, data, validity);
+}
+Status KuduScanBatch::RowPtr::GetArrayDouble(int col_idx,
+                                             vector<double>* data,
+                                             vector<bool>* validity) const {
+  return GetArray<TypeTraits<DOUBLE>>(col_idx, data, validity);
+}
+Status KuduScanBatch::RowPtr::GetArrayString(int col_idx,
+                                             vector<Slice>* data,
+                                             vector<bool>* validity) const {
+  return GetArray<TypeTraits<STRING>>(col_idx, data, validity);
+}
+Status KuduScanBatch::RowPtr::GetArrayBinary(int col_idx,
+                                            vector<Slice>* data,
+                                            vector<bool>* validity) const {
+  return GetArray<TypeTraits<BINARY>>(col_idx, data, validity);
+}
+Status KuduScanBatch::RowPtr::GetArrayVarchar(int col_idx,
+                                              vector<Slice>* data,
+                                              vector<bool>* validity) const {
+  return GetArray<TypeTraits<VARCHAR>>(col_idx, data, validity);
 }
 
 const void* KuduScanBatch::RowPtr::cell(int col_idx) const {

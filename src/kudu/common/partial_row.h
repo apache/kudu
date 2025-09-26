@@ -19,9 +19,10 @@
 
 // NOTE: using stdint.h instead of cstdint because this file is supposed
 //       to be processed by a compiler lacking C++11 support.
-#include <stdint.h>
+#include <stdint.h> // NOLINT(modernize-deprecated-headers)
 
 #include <string>
+#include <vector>
 
 #ifdef KUDU_HEADERS_NO_STUBS
 #include <gtest/gtest_prod.h>
@@ -57,6 +58,7 @@ namespace tablet {
 } // namespace tablet
 
 namespace tools {
+class PartialRow;
 class TableScanner;
 } // namespace tools
 
@@ -376,6 +378,93 @@ class KUDU_EXPORT KuduPartialRow {
   Status SetStringNoCopy(int col_idx, const Slice& val) WARN_UNUSED_RESULT;
   ///@}
 
+  Status SetArrayBool(const Slice& col_name,
+                      const std::vector<bool>& val,
+                      const std::vector<bool>& validity) WARN_UNUSED_RESULT;
+  Status SetArrayInt8(const Slice& col_name,
+                      const std::vector<int8_t>& val,
+                      const std::vector<bool>& validity) WARN_UNUSED_RESULT;
+  Status SetArrayInt16(const Slice& col_name,
+                       const std::vector<int16_t>& val,
+                       const std::vector<bool>& validity) WARN_UNUSED_RESULT;
+  Status SetArrayInt32(const Slice& col_name,
+                       const std::vector<int32_t>& val,
+                       const std::vector<bool>& validity) WARN_UNUSED_RESULT;
+  Status SetArrayInt64(const Slice& col_name,
+                       const std::vector<int64_t>& val,
+                       const std::vector<bool>& validity) WARN_UNUSED_RESULT;
+  Status SetArrayFloat(const Slice& col_name,
+                       const std::vector<float>& val,
+                       const std::vector<bool>& validity) WARN_UNUSED_RESULT;
+  Status SetArrayDouble(const Slice& col_name,
+                        const std::vector<double>& val,
+                        const std::vector<bool>& validity) WARN_UNUSED_RESULT;
+  Status SetArrayDate(const Slice& col_name,
+                      const std::vector<int32_t>& val,
+                      const std::vector<bool>& validity) WARN_UNUSED_RESULT;
+  Status SetArrayUnixTimeMicros(const Slice& col_name,
+                                const std::vector<int64_t>& val,
+                                const std::vector<bool>& validity) WARN_UNUSED_RESULT;
+  Status SetArrayBinary(const Slice& col_name,
+                        const std::vector<Slice>& val,
+                        const std::vector<bool>& validity) WARN_UNUSED_RESULT;
+  Status SetArrayString(const Slice& col_name,
+                        const std::vector<Slice>& val,
+                        const std::vector<bool>& validity) WARN_UNUSED_RESULT;
+  Status SetArrayVarchar(const Slice& col_name,
+                         const std::vector<Slice>& val,
+                         const std::vector<bool>& validity) WARN_UNUSED_RESULT;
+  Status SetArrayUnscaledDecimal(const Slice& col_name,
+                                 const std::vector<int32_t>& val,
+                                 const std::vector<bool>& validity) WARN_UNUSED_RESULT;
+  Status SetArrayUnscaledDecimal(const Slice& col_name,
+                                 const std::vector<int64_t>& val,
+                                 const std::vector<bool>& validity) WARN_UNUSED_RESULT;
+
+  Status SetArrayBool(int col_idx,
+                      const std::vector<bool>& val,
+                      const std::vector<bool>& validity) WARN_UNUSED_RESULT;
+  Status SetArrayInt8(int col_idx,
+                      const std::vector<int8_t>& val,
+                      const std::vector<bool>& validity) WARN_UNUSED_RESULT;
+  Status SetArrayInt16(int col_idx,
+                       const std::vector<int16_t>& val,
+                       const std::vector<bool>& validity) WARN_UNUSED_RESULT;
+  Status SetArrayInt32(int col_idx,
+                       const std::vector<int32_t>& val,
+                       const std::vector<bool>& validity) WARN_UNUSED_RESULT;
+  Status SetArrayInt64(int col_idx,
+                       const std::vector<int64_t>& val,
+                       const std::vector<bool>& validity) WARN_UNUSED_RESULT;
+  Status SetArrayFloat(int col_idx,
+                       const std::vector<float>& val,
+                       const std::vector<bool>& validity) WARN_UNUSED_RESULT;
+  Status SetArrayDouble(int col_idx,
+                        const std::vector<double>& val,
+                        const std::vector<bool>& validity) WARN_UNUSED_RESULT;
+  Status SetArrayDate(int col_idx,
+                      const std::vector<int32_t>& val,
+                      const std::vector<bool>& validity) WARN_UNUSED_RESULT;
+  Status SetArrayUnixTimeMicros(int col_idx,
+                                const std::vector<int64_t>& val,
+                                const std::vector<bool>& validity) WARN_UNUSED_RESULT;
+  Status SetArrayBinary(int col_idx,
+                        const std::vector<Slice>& val,
+                        const std::vector<bool>& validity) WARN_UNUSED_RESULT;
+  Status SetArrayString(int col_idx,
+                        const std::vector<Slice>& val,
+                        const std::vector<bool>& validity) WARN_UNUSED_RESULT;
+  Status SetArrayVarchar(int col_idx,
+                         const std::vector<Slice>& val,
+                         const std::vector<bool>& validity) WARN_UNUSED_RESULT;
+  Status SetArrayUnscaledDecimal(int col_idx,
+                                 const std::vector<int32_t>& val,
+                                 const std::vector<bool>& validity) WARN_UNUSED_RESULT;
+  Status SetArrayUnscaledDecimal(int col_idx,
+                                 const std::vector<int64_t>& val,
+                                 const std::vector<bool>& validity) WARN_UNUSED_RESULT;
+
+
   /// Set column value to @c NULL; the column is identified by its name.
   ///
   /// This will only succeed on nullable columns. Use Unset() to restore
@@ -652,8 +741,9 @@ class KUDU_EXPORT KuduPartialRow {
   const Schema* schema() const { return schema_; }
 
  private:
-  friend class client::KuduWriteOperation;   // for row_data_.
-  friend class client::internal::WriteRpc;   // for row_data_.
+  friend class client::KuduWriteOperation;  // for row_data_
+  friend class client::internal::WriteRpc;  // for row_data_
+  friend class tools::PartialRow;           // for Set<T>(), SetArray<T>()
   friend class KeyUtilTest;
   friend class PartitionSchema;
   friend class RowOperationsPBDecoder;
@@ -680,8 +770,18 @@ class KUDU_EXPORT KuduPartialRow {
              bool owned = false);
 
   template<typename T>
+  Status SetArray(const Slice& col_name,
+                  const std::vector<typename T::element_cpp_type>& val,
+                  const std::vector<bool>& validity);
+
+  template<typename T>
   Status Set(int col_idx, const typename T::cpp_type& val,
              bool owned = false);
+
+  template<typename T>
+  Status SetArray(int col_idx,
+                  const std::vector<typename T::element_cpp_type>& val,
+                  const std::vector<bool>& validity);
 
   // Runtime version of the generic setter.
   Status Set(int32_t column_idx, const uint8_t* val);

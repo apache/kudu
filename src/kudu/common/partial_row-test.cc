@@ -19,7 +19,9 @@
 
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <string>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -32,6 +34,7 @@
 #include "kudu/util/test_util.h"
 
 using std::string;
+using std::vector;
 
 namespace kudu {
 
@@ -52,8 +55,25 @@ class PartialRowTest : public KuduTest {
                       .name("varchar_val")
                       .type(VARCHAR)
                       .nullable(true)
-                      .type_attributes(ColumnTypeAttributes(10)) },
-              1) {
+                      .type_attributes(ColumnTypeAttributes(10)),
+                ColumnSchemaBuilder()
+                      .name("decimal32_arr")
+                      .type(DECIMAL32)
+                      .array(true)
+                      .nullable(true)
+                      .type_attributes({6, 2}),
+                ColumnSchemaBuilder()
+                      .name("decimal64_arr")
+                      .type(DECIMAL64)
+                      .array(true)
+                      .nullable(true)
+                      .type_attributes({18, 10}),
+                ColumnSchemaBuilder()
+                      .name("bool_arr")
+                      .type(BOOL)
+                      .array(true)
+                      .nullable(true)
+              }, 1) {
     SeedRandom();
   }
 
@@ -142,6 +162,9 @@ TEST_F(PartialRowTest, UnitTest) {
   EXPECT_FALSE(row.IsColumnSet(4));
   EXPECT_FALSE(row.IsColumnSet(5));
   EXPECT_FALSE(row.IsColumnSet(6));
+  EXPECT_FALSE(row.IsColumnSet(7));
+  EXPECT_FALSE(row.IsColumnSet(8));
+  EXPECT_FALSE(row.IsColumnSet(9));
   EXPECT_FALSE(row.IsKeySet());
   EXPECT_EQ("", row.ToString());
 
@@ -263,12 +286,12 @@ TEST_F(PartialRowTest, UnitTest) {
 
   // Set a value that's too large for the decimal_val column
   s = row.SetUnscaledDecimal("decimal_val", 1000000);
-  EXPECT_EQ("Invalid argument: value 10000.00 out of range for decimal column 'decimal_val'",
+  EXPECT_EQ("Invalid argument: value 10000.00 out of decimal range for column 'decimal_val'",
             s.ToString());
 
   // Set a value that's too small for the decimal_val column
   s = row.SetUnscaledDecimal("decimal_val", -1000000);
-  EXPECT_EQ("Invalid argument: value -10000.00 out of range for decimal column 'decimal_val'",
+  EXPECT_EQ("Invalid argument: value -10000.00 out of decimal range for column 'decimal_val'",
             s.ToString());
 
   // Set a decimal value on a non decimal column.
@@ -319,6 +342,84 @@ TEST_F(PartialRowTest, UnitTest) {
 
   s = row.SetVarcharNoCopyUnsafe("varchar_val", test_string);
   EXPECT_TRUE(s.IsInvalidArgument());
+}
+
+TEST_F(PartialRowTest, BoolArray) {
+  // Set value by column index.
+  {
+    KuduPartialRow row(&schema_);
+    ASSERT_FALSE(row.IsColumnSet(9));
+
+    ASSERT_OK(row.SetArrayBool(9, {}, {}));
+    ASSERT_TRUE(row.IsColumnSet(9));
+    ASSERT_FALSE(row.IsNull(9));
+    ASSERT_EQ("bool 1d-array bool_arr=[]", row.ToString());
+  }
+  // Set value by column name.
+  {
+    KuduPartialRow row(&schema_);
+    ASSERT_FALSE(row.IsColumnSet(9));
+
+    ASSERT_OK(row.SetArrayBool(
+        "bool_arr",
+        vector<bool>{ true, false, false, true, true },
+        { true, false, true, true, true }));
+    ASSERT_TRUE(row.IsColumnSet(9));
+    ASSERT_FALSE(row.IsNull(9));
+    ASSERT_EQ("bool 1d-array bool_arr=[true, NULL, false, true, true]",
+              row.ToString());
+    ASSERT_OK(row.SetNull(9));
+    ASSERT_TRUE(row.IsNull(9));
+  }
+}
+
+TEST_F(PartialRowTest, DecimalArray) {
+  {
+    KuduPartialRow row(&schema_);
+
+    ASSERT_FALSE(row.IsColumnSet(7));
+    // Set DECIMAL32 array column.
+    ASSERT_OK(row.SetArrayUnscaledDecimal(
+        "decimal32_arr", vector<int32_t>{ 1, 0 }, { true, false }));
+    ASSERT_TRUE(row.IsColumnSet(7));
+    ASSERT_FALSE(row.IsNull(7));
+    ASSERT_EQ("decimal (32 bit) 1d-array decimal32_arr=[1_D32, NULL]",
+              row.ToString());
+    ASSERT_OK(row.SetNull(7));
+    ASSERT_TRUE(row.IsColumnSet(7));
+    ASSERT_TRUE(row.IsNull(7));
+
+    ASSERT_FALSE(row.IsColumnSet(8));
+    ASSERT_FALSE(row.IsNull(8));
+    // Set DECIMAL64 array column.
+    ASSERT_OK(row.SetArrayUnscaledDecimal(
+        "decimal64_arr",
+        vector<int64_t>{ std::numeric_limits<int32_t>::max() }, { true }));
+    ASSERT_TRUE(row.IsColumnSet(8));
+    ASSERT_EQ("decimal (32 bit) 1d-array decimal32_arr=NULL, "
+              "decimal (64 bit) 1d-array decimal64_arr=[2147483647_D64]",
+              row.ToString());
+    ASSERT_FALSE(row.IsNull(8));
+  }
+  {
+    KuduPartialRow row(&schema_);
+
+    // Set a DECIMAL32 array column.
+    ASSERT_FALSE(row.IsColumnSet(7));
+    auto s = row.SetArrayUnscaledDecimal(
+        "decimal32_arr", vector<int64_t>{ std::numeric_limits<uint32_t>::max() }, { true });
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(),
+                        "column 'decimal32_arr' is array of DECIMAL32, not DECIMAL64 type");
+    ASSERT_FALSE(row.IsColumnSet(7));
+
+    s = row.SetArrayUnscaledDecimal(
+        "decimal32_arr", vector<int32_t>{ std::numeric_limits<int32_t>::max() }, { true });
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(),
+                        "value 21474836.47 out of decimal range for column 'decimal32_arr'");
+    ASSERT_FALSE(row.IsColumnSet(7));
+  }
 }
 
 TEST_F(PartialRowTest, TestCopy) {
