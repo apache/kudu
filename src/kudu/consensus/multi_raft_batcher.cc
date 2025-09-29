@@ -113,7 +113,7 @@ MultiRaftHeartbeatBatcher::MultiRaftHeartbeatBatcher(
 
 void MultiRaftHeartbeatBatcher::StartTimer() {
   std::weak_ptr<MultiRaftHeartbeatBatcher> const weak_peer = shared_from_this();
-  DCHECK_EQ(nullptr, heartbeat_timer_) << "Heartbeat timer started twice";
+  DCHECK(!heartbeat_timer_) << "Heartbeat timer started twice";
   heartbeat_timer_ = PeriodicTimer::Create(
       messenger_,
       [weak_peer]() {
