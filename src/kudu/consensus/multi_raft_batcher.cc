@@ -56,13 +56,13 @@ DECLARE_int32(consensus_rpc_timeout_ms);
 DECLARE_int32(raft_heartbeat_interval_ms);
 
 DEFINE_int32(multi_raft_heartbeat_window_ms, 100,
-  "The batch time window for heartbeat batching."
-  "For minimal delay and still maximum effectiveness set"
+  "The batch time window for heartbeat batching. "
+  "For minimal delay and still maximum effectiveness set "
   "multi_raft_heartbeat_window_ms = heartbeat_interval_ms * ("
-  "batch_size / {estimated follower peers from the same host}) + {a little tolerance};"
-  "however, a 0.1 * heartbeat_interval_ms is good, and there is no reason to"
-  "set it any lower."
-  "This value is also forced to be less than or equal to half of the heartbeat interval,"
+  "batch_size / {estimated follower peers from the same host}) + {a little tolerance}; "
+  "however, a 0.1 * heartbeat_interval_ms is good, and there is no reason to "
+  "set it any lower. "
+  "This value is also forced to be less than or equal to half of the heartbeat interval, "
   "because it makes no sense to introduce a possible delay comparable to the heartbeat interval."
 );
 TAG_FLAG(multi_raft_heartbeat_window_ms, experimental);
@@ -283,7 +283,7 @@ MultiRaftHeartbeatBatcherPtr MultiRaftManager::AddOrGetBatcher(
   batcher = std::make_shared<MultiRaftHeartbeatBatcher>(
       hostport, dns_resolver_, messenger_, batch_time_window_, raft_pool_token);
   batcher->StartTimer();
-  batchers_.insert({hostport, BatcherAndPoolToken(batcher, raft_pool_token)});
+  batchers_.insert_or_assign(hostport, BatcherAndPoolToken(batcher, raft_pool_token));
   return batcher;
 }
 
