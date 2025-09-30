@@ -1915,9 +1915,160 @@ cdef class Row:
             return frombytes(self.get_varchar(i))
         elif t == KUDU_DATE:
             return self.get_date(i)
+        elif t == KUDU_NESTED:
+            return self.get_array(i)
         else:
             raise TypeError("Cannot get kudu type <{0}>"
                                 .format(_type_names[t]))
+
+    cdef DataType _get_scan_array_element_type(self, int i):
+        """
+        Extract array element type using projection schema (Python wrapper).
+        """
+        if self.parent.projection_schema is None:
+            raise TypeError("No projection schema available")
+
+        # Use the same safe pattern as PartialRow._get_array_element_type
+        col = self.parent.projection_schema[i]
+        return self._extract_element_type_from_column(col)
+
+    cdef DataType _extract_element_type_from_column(self, ColumnSchema col):
+        """
+        Helper to extract element type from a Python ColumnSchema wrapper.
+        """
+        cdef:
+            const KuduNestedTypeDescriptor* nested_desc
+            const KuduArrayTypeDescriptor* array_desc
+
+        # Safe access via Python wrapper (col owns the C++ object)
+        nested_desc = col.schema.nested_type()
+
+        if nested_desc == NULL:
+            raise TypeError("Column '{0}' is not a nested type".format(col.name))
+
+        if not nested_desc.is_array():
+            raise TypeError("Column '{0}' is nested but not an array".format(col.name))
+
+        array_desc = nested_desc.array()
+        if array_desc == NULL:
+            raise TypeError("Column '{0}' array descriptor is NULL".format(col.name))
+
+        return array_desc.type()
+
+    cdef list _get_array_by_type(self, int i, DataType elem_type):
+        """
+        Get array using the known element type (from schema introspection).
+        """
+        cdef:
+            vector[c_bool] cpp_data_bool
+            vector[int8_t] cpp_data_int8
+            vector[int16_t] cpp_data_int16
+            vector[int32_t] cpp_data_int32
+            vector[int64_t] cpp_data_int64
+            vector[float] cpp_data_float
+            vector[double] cpp_data_double
+            vector[Slice] cpp_data_slice
+            vector[c_bool] cpp_validity
+            size_t j
+            list result
+
+        if elem_type == KUDU_INT8:
+            check_status(self.row.GetArrayInt8(i, &cpp_data_int8, &cpp_validity))
+            result = []
+            for j in range(cpp_data_int8.size()):
+                result.append(cpp_data_int8[j] if cpp_validity[j] else None)
+            return result
+
+        elif elem_type == KUDU_INT16:
+            check_status(self.row.GetArrayInt16(i, &cpp_data_int16, &cpp_validity))
+            result = []
+            for j in range(cpp_data_int16.size()):
+                result.append(cpp_data_int16[j] if cpp_validity[j] else None)
+            return result
+
+        elif elem_type == KUDU_INT32:
+            check_status(self.row.GetArrayInt32(i, &cpp_data_int32, &cpp_validity))
+            result = []
+            for j in range(cpp_data_int32.size()):
+                result.append(cpp_data_int32[j] if cpp_validity[j] else None)
+            return result
+
+        elif elem_type == KUDU_INT64:
+            check_status(self.row.GetArrayInt64(i, &cpp_data_int64, &cpp_validity))
+            result = []
+            for j in range(cpp_data_int64.size()):
+                result.append(cpp_data_int64[j] if cpp_validity[j] else None)
+            return result
+
+        elif elem_type == KUDU_FLOAT:
+            check_status(self.row.GetArrayFloat(i, &cpp_data_float, &cpp_validity))
+            result = []
+            for j in range(cpp_data_float.size()):
+                result.append(cpp_data_float[j] if cpp_validity[j] else None)
+            return result
+
+        elif elem_type == KUDU_DOUBLE:
+            check_status(self.row.GetArrayDouble(i, &cpp_data_double, &cpp_validity))
+            result = []
+            for j in range(cpp_data_double.size()):
+                result.append(cpp_data_double[j] if cpp_validity[j] else None)
+            return result
+
+        elif elem_type == KUDU_BOOL:
+            check_status(self.row.GetArrayBool(i, &cpp_data_bool, &cpp_validity))
+            result = []
+            for j in range(cpp_data_bool.size()):
+                result.append(bool(cpp_data_bool[j]) if cpp_validity[j] else None)
+            return result
+
+        elif elem_type == KUDU_STRING:
+            check_status(self.row.GetArrayString(i, &cpp_data_slice, &cpp_validity))
+            result = []
+            for j in range(cpp_data_slice.size()):
+                result.append(frombytes(cpp_data_slice[j].ToString()) if cpp_validity[j] else None)
+            return result
+
+        elif elem_type == KUDU_BINARY:
+            check_status(self.row.GetArrayBinary(i, &cpp_data_slice, &cpp_validity))
+            result = []
+            for j in range(cpp_data_slice.size()):
+                result.append(cpp_data_slice[j].data()[:cpp_data_slice[j].size()] if cpp_validity[j] else None)
+            return result
+
+        elif elem_type == KUDU_VARCHAR:
+            check_status(self.row.GetArrayVarchar(i, &cpp_data_slice, &cpp_validity))
+            result = []
+            for j in range(cpp_data_slice.size()):
+                result.append(frombytes(cpp_data_slice[j].ToString()) if cpp_validity[j] else None)
+            return result
+
+        elif elem_type == KUDU_UNIXTIME_MICROS:
+            check_status(self.row.GetArrayUnixTimeMicros(i, &cpp_data_int64, &cpp_validity))
+            result = []
+            for j in range(cpp_data_int64.size()):
+                result.append(from_unixtime_micros(cpp_data_int64[j]) if cpp_validity[j] else None)
+            return result
+
+        elif elem_type == KUDU_DATE:
+            check_status(self.row.GetArrayDate(i, &cpp_data_int32, &cpp_validity))
+            result = []
+            for j in range(cpp_data_int32.size()):
+                result.append(unix_epoch_days_to_date(cpp_data_int32[j]) if cpp_validity[j] else None)
+            return result
+
+        else:
+            raise TypeError("Unsupported array element type {0}".format(
+                _type_names.get(elem_type, elem_type)))
+
+    cdef get_array(self, int i):
+        """
+        Get the array value from column i.
+        Returns a Python list with None for NULL elements.
+        """
+        cdef DataType elem_type
+
+        elem_type = self._get_scan_array_element_type(i)
+        return self._get_array_by_type(i, elem_type)
 
     cdef inline bint is_null(self, int i):
         return self.row.IsNull(i)
@@ -1930,6 +2081,9 @@ cdef class RowBatch:
     # This class owns the KuduScanBatch data
     cdef:
         KuduScanBatch batch
+
+        # Python Schema wrapper for array type introspection
+        Schema projection_schema
 
     def __len__(self):
         return self.batch.NumRows()
@@ -2368,6 +2522,8 @@ cdef class Scanner:
 
         cdef RowBatch batch = RowBatch()
         check_status(self.scanner.NextBatch(&batch.batch))
+        # Pass the projection schema to enable schema introspection in Row
+        batch.projection_schema = self.get_projection_schema()
         return batch
 
     def set_cache_blocks(self, cache_blocks):
@@ -3129,8 +3285,192 @@ cdef class PartialRow:
                 check_status(self.row.SetUnscaledDecimal(i, <int128_t>to_unscaled_decimal(value)))
             ELSE:
                 raise KuduException("The decimal type is not supported when GCC version is < 4.6.0" % self)
+        elif t == KUDU_NESTED:
+            self._set_array(i, value)
         else:
             raise TypeError("Cannot set kudu type <{0}>.".format(_type_names[t]))
+
+    cdef DataType _get_array_element_type(self, int col_idx):
+        """
+        Extract array element type from schema for column at index col_idx.
+        Returns the DataType of the array elements.
+        """
+        cdef:
+            ColumnSchema py_col
+            const KuduNestedTypeDescriptor* nested_desc
+            const KuduArrayTypeDescriptor* array_desc
+
+        # Use Python wrapper which properly manages the C++ KuduColumnSchema
+        py_col = self.schema[col_idx]
+
+        # Access nested_type through the pointer (py_col.schema is KuduColumnSchema*)
+        nested_desc = py_col.schema.nested_type()
+
+        if nested_desc == NULL:
+            raise TypeError("Column '{0}' is not a nested type".format(py_col.name))
+
+        if not nested_desc.is_array():
+            raise TypeError("Column '{0}' is nested but not an array".format(py_col.name))
+
+        array_desc = nested_desc.array()
+        if array_desc == NULL:
+            raise TypeError("Column '{0}' array descriptor is NULL".format(py_col.name))
+
+        return array_desc.type()
+
+    cdef _set_array(self, int i, value):
+        """
+        Set the array value for column i.
+
+        The value should be a list or tuple. Elements can be None to indicate NULL.
+        """
+        cdef:
+            vector[c_bool] cpp_values_bool
+            vector[int8_t] cpp_values_int8
+            vector[int16_t] cpp_values_int16
+            vector[int32_t] cpp_values_int32
+            vector[int64_t] cpp_values_int64
+            vector[float] cpp_values_float
+            vector[double] cpp_values_double
+            vector[Slice] cpp_values_slice
+            vector[c_bool] cpp_validity
+            Slice slc
+            bytes encoded_str
+            DataType elem_type
+
+        if not isinstance(value, (list, tuple)):
+            raise TypeError("Array values must be a list or tuple, got {0}".format(type(value)))
+
+        for elem in value:
+            cpp_validity.push_back(elem is not None)
+
+        # Get element type from schema via copy constructor (safe)
+        elem_type = self._get_array_element_type(i)
+
+        if elem_type == KUDU_BOOL:
+            for elem in value:
+                if elem is None:
+                    # Dummy value for NULL
+                    cpp_values_bool.push_back(False)
+                else:
+                    cpp_values_bool.push_back(<c_bool>elem)
+            check_status(self.row.SetArrayBool(i, cpp_values_bool, cpp_validity))
+
+        elif elem_type == KUDU_INT8:
+            for elem in value:
+                if elem is None:
+                    cpp_values_int8.push_back(0)
+                else:
+                    cpp_values_int8.push_back(<int8_t>elem)
+            check_status(self.row.SetArrayInt8(i, cpp_values_int8, cpp_validity))
+
+        elif elem_type == KUDU_INT16:
+            for elem in value:
+                if elem is None:
+                    cpp_values_int16.push_back(0)
+                else:
+                    cpp_values_int16.push_back(<int16_t>elem)
+            check_status(self.row.SetArrayInt16(i, cpp_values_int16, cpp_validity))
+
+        elif elem_type == KUDU_INT32:
+            for elem in value:
+                if elem is None:
+                    cpp_values_int32.push_back(0)
+                else:
+                    cpp_values_int32.push_back(<int32_t>elem)
+            check_status(self.row.SetArrayInt32(i, cpp_values_int32, cpp_validity))
+
+        elif elem_type == KUDU_INT64:
+            for elem in value:
+                if elem is None:
+                    cpp_values_int64.push_back(0)
+                else:
+                    cpp_values_int64.push_back(<int64_t>elem)
+            check_status(self.row.SetArrayInt64(i, cpp_values_int64, cpp_validity))
+
+        elif elem_type == KUDU_FLOAT:
+            for elem in value:
+                if elem is None:
+                    cpp_values_float.push_back(0.0)
+                else:
+                    cpp_values_float.push_back(<float>elem)
+            check_status(self.row.SetArrayFloat(i, cpp_values_float, cpp_validity))
+
+        elif elem_type == KUDU_DOUBLE:
+            for elem in value:
+                if elem is None:
+                    cpp_values_double.push_back(0.0)
+                else:
+                    cpp_values_double.push_back(<double>elem)
+            check_status(self.row.SetArrayDouble(i, cpp_values_double, cpp_validity))
+
+        elif elem_type == KUDU_STRING:
+            encoded_strings = []
+            for elem in value:
+                if elem is None:
+                    slc = Slice(<char*>"", 0)
+                    cpp_values_slice.push_back(slc)
+                    encoded_strings.append(b"")
+                else:
+                    if isinstance(elem, unicode):
+                        encoded_str = elem.encode('utf8')
+                    else:
+                        encoded_str = elem
+                    encoded_strings.append(encoded_str)
+                    slc = Slice(<char*>encoded_str, len(encoded_str))
+                    cpp_values_slice.push_back(slc)
+            check_status(self.row.SetArrayString(i, cpp_values_slice, cpp_validity))
+
+        elif elem_type == KUDU_BINARY:
+            binary_data = []
+            for elem in value:
+                if elem is None:
+                    slc = Slice(<char*>"", 0)
+                    cpp_values_slice.push_back(slc)
+                    binary_data.append(b"")
+                else:
+                    if isinstance(elem, unicode):
+                        raise TypeError("Unicode objects must be explicitly encoded before storing in Binary array.")
+                    binary_data.append(elem)
+                    slc = Slice(<char*>elem, len(elem))
+                    cpp_values_slice.push_back(slc)
+            check_status(self.row.SetArrayBinary(i, cpp_values_slice, cpp_validity))
+
+        elif elem_type == KUDU_VARCHAR:
+            encoded_strings = []
+            for elem in value:
+                if elem is None:
+                    slc = Slice(<char*>"", 0)
+                    cpp_values_slice.push_back(slc)
+                    encoded_strings.append(b"")
+                else:
+                    if isinstance(elem, unicode):
+                        encoded_str = elem.encode('utf8')
+                    else:
+                        encoded_str = elem
+                    encoded_strings.append(encoded_str)
+                    slc = Slice(<char*>encoded_str, len(encoded_str))
+                    cpp_values_slice.push_back(slc)
+            check_status(self.row.SetArrayVarchar(i, cpp_values_slice, cpp_validity))
+
+        elif elem_type == KUDU_UNIXTIME_MICROS:
+            for elem in value:
+                if elem is None:
+                    cpp_values_int64.push_back(0)
+                else:
+                    cpp_values_int64.push_back(<int64_t>to_unixtime_micros(elem))
+            check_status(self.row.SetArrayUnixTimeMicros(i, cpp_values_int64, cpp_validity))
+
+        elif elem_type == KUDU_DATE:
+            for elem in value:
+                if elem is None:
+                    cpp_values_int32.push_back(0)
+                else:
+                    val = date_to_unix_epoch_days(elem)
+                    cpp_values_int32.push_back(<int32_t>val)
+            check_status(self.row.SetArrayDate(i, cpp_values_int32, cpp_validity))
+        else:
+            raise TypeError("Unsupported array element type: {0}".format(_type_names.get(elem_type, elem_type)))
 
     cpdef set_field_null(self, key):
         pass

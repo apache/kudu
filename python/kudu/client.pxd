@@ -53,6 +53,10 @@ cdef class PartialRow:
 
     cpdef set_loc_null(self, int i)
 
+    cdef DataType _get_array_element_type(self, int col_idx)
+
+    cdef _set_array(self, int i, value)
+
     cdef add_to_session(self, Session s)
 
 

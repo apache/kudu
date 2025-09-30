@@ -23,6 +23,7 @@ from kudu.errors import KuduInvalidArgument
 import kudu
 
 from kudu.schema import Schema
+import datetime
 
 class TestSchema(CompatUnitTest):
 
@@ -546,3 +547,155 @@ class TestSchema(CompatUnitTest):
         result = repr(self.schema[0])
         expected = 'ColumnSchema(name=one, type=int32, nullable=False)'
         self.assertEqual(result, expected)
+
+
+class TestArrayDataTypeSchema(CompatUnitTest):
+
+    SUPPORTED_ARRAY_TYPES = [
+        ('int8', kudu.int8),
+        ('int16', kudu.int16),
+        ('int32', kudu.int32),
+        ('int64', kudu.int64),
+        ('float', kudu.float_),
+        ('double', kudu.double),
+        ('bool', kudu.bool),
+        ('string', kudu.string),
+        ('binary', kudu.binary),
+        ('unixtime_micros', kudu.unixtime_micros),
+        ('date', kudu.date),
+    ]
+
+    SPECIAL_PARAM_TYPES = [
+        ('varchar', kudu.varchar, {'length': 50})
+    ]
+
+    def test_array_type_descriptors_all_types(self):
+        for type_name, kudu_type in self.SUPPORTED_ARRAY_TYPES:
+            arr = kudu.array_type(kudu_type)
+            self.assertIsNotNone(arr, "Failed to create array type for {0}".format(type_name))
+            self.assertTrue(arr.is_array(), "Array type {0} not recognized".format(type_name))
+            self.assertEqual(str(arr), 'NestedTypeDescriptor(type=array)')
+
+        for type_name, kudu_type, params in self.SPECIAL_PARAM_TYPES:
+            arr = kudu.array_type(kudu_type)
+            self.assertIsNotNone(arr, "Failed to create array type for {0}".format(type_name))
+            self.assertTrue(arr.is_array(), "Array type {0} not recognized".format(type_name))
+            self.assertEqual(str(arr), 'NestedTypeDescriptor(type=array)')
+
+    def test_comprehensive_array_schema(self):
+        builder = kudu.schema_builder()
+
+        builder.add_column('id', kudu.int32, nullable=False).primary_key()
+        builder.add_column('name', kudu.string)
+        builder.add_column('age', kudu.int32)
+
+        for type_name, kudu_type in self.SUPPORTED_ARRAY_TYPES:
+            col_name = 'arr_' + type_name
+            builder.add_column(col_name).nested_type(kudu.array_type(kudu_type))
+
+        for type_name, kudu_type, params in self.SPECIAL_PARAM_TYPES:
+            col_name = 'arr_' + type_name
+            col_spec = builder.add_column(col_name).nested_type(kudu.array_type(kudu_type))
+            if 'length' in params:
+                col_spec.length(params['length'])
+            if 'precision' in params:
+                col_spec.precision(params['precision'])
+            if 'scale' in params:
+                col_spec.scale(params['scale'])
+
+        schema = builder.build()
+
+        # Verify schema structure
+        # 3 scalar + 11 basic arrays + 1 special array (varchar)
+        self.assertEqual(len(schema), 15)
+
+        self.assertEqual(schema[0].name, 'id')
+        self.assertEqual(schema[0].type.name, 'int32')
+        self.assertFalse(schema[0].nullable)  # Primary key
+
+        self.assertEqual(schema[1].name, 'name')
+        self.assertEqual(schema[1].type.name, 'string')
+
+        self.assertEqual(schema[2].name, 'age')
+        self.assertEqual(schema[2].type.name, 'int32')
+
+        # Verify all array columns have nested type and are nullable by default
+        # Start at index 3 (after scalars)
+        for idx, (type_name, kudu_type) in enumerate(self.SUPPORTED_ARRAY_TYPES, start=3):
+            col = schema[idx]
+            expected_name = 'arr_' + type_name
+            self.assertEqual(col.name, expected_name)
+            self.assertEqual(col.type.name, 'nested')
+            # Arrays nullable by default
+            self.assertTrue(col.nullable)
+
+        # Verify special parameter types
+        varchar_col = schema[14]
+        self.assertEqual(varchar_col.name, 'arr_varchar')
+        self.assertEqual(varchar_col.type.name, 'nested')
+
+    def test_array_schema_introspection_and_writing(self):
+        builder = kudu.schema_builder()
+        builder.add_column('key', kudu.int32, nullable=False).primary_key()
+
+        for type_name, kudu_type in self.SUPPORTED_ARRAY_TYPES:
+            col_name = 'arr_' + type_name
+            builder.add_column(col_name).nested_type(kudu.array_type(kudu_type))
+
+        for type_name, kudu_type, params in self.SPECIAL_PARAM_TYPES:
+            col_name = 'arr_' + type_name
+            col_spec = builder.add_column(col_name).nested_type(kudu.array_type(kudu_type))
+            if 'length' in params:
+                col_spec.length(params['length'])
+            if 'precision' in params:
+                col_spec.precision(params['precision'])
+            if 'scale' in params:
+                col_spec.scale(params['scale'])
+
+        schema = builder.build()
+
+        row = schema.new_row()
+        row['key'] = 1
+
+        test_data = [
+            ('arr_int8', [1, 2, None]),
+            ('arr_int16', [10, 20, None]),
+            ('arr_int32', [100, 200, None]),
+            ('arr_int64', [1000, 2000, None]),
+            ('arr_float', [1.5, 2.5, None]),
+            ('arr_double', [1.1, 2.2, None]),
+            ('arr_bool', [True, False, None]),
+            ('arr_string', ['hello', 'world', None]),
+            ('arr_binary', [b'data1', b'data2', None]),
+            ('arr_unixtime_micros', [datetime.datetime(2020, 1, 1), datetime.datetime(2020, 1, 2), None]),
+            ('arr_date', [datetime.date(2020, 1, 1), datetime.date(2020, 1, 2), None]),
+            ('arr_varchar', ['short', 'text', None]),
+        ]
+
+        for col_name, data in test_data:
+            row[col_name] = data
+
+        self.assertIsNotNone(row)
+
+        row2 = schema.new_row()
+        row2['key'] = 2
+
+        empty_test_data = [
+            ('arr_int8', []),
+            ('arr_int16', []),
+            ('arr_int32', []),
+            ('arr_int64', []),
+            ('arr_float', []),
+            ('arr_double', []),
+            ('arr_bool', []),
+            ('arr_string', []),
+            ('arr_binary', []),
+            ('arr_unixtime_micros', []),
+            ('arr_date', []),
+            ('arr_varchar', []),
+        ]
+
+        for col_name, data in empty_test_data:
+            row2[col_name] = data
+
+        self.assertIsNotNone(row2)

@@ -51,6 +51,7 @@ DATE = KUDU_DATE
 BINARY = KUDU_BINARY
 
 DECIMAL = KUDU_DECIMAL
+NESTED = KUDU_NESTED
 
 cdef dict _reverse_dict(d):
     return dict((v, k) for k, v in d.items())
@@ -128,6 +129,7 @@ unixtime_micros = KuduType(KUDU_UNIXTIME_MICROS)
 decimal = KuduType(KUDU_DECIMAL)
 varchar = KuduType(KUDU_VARCHAR)
 date = KuduType(KUDU_DATE)
+nested = KuduType(KUDU_NESTED)
 
 
 cdef dict _type_names = {
@@ -143,7 +145,8 @@ cdef dict _type_names = {
     UNIXTIME_MICROS: 'unixtime_micros',
     DECIMAL: 'decimal',
     VARCHAR: 'varchar',
-    DATE: 'date'
+    DATE: 'date',
+    NESTED: 'nested'
 }
 
 
@@ -162,7 +165,8 @@ cdef dict _type_to_obj = {
     UNIXTIME_MICROS: unixtime_micros,
     DECIMAL: decimal,
     VARCHAR: varchar,
-    DATE: date
+    DATE: date,
+    NESTED: nested
 }
 
 
@@ -175,6 +179,104 @@ cdef KuduType to_data_type(object obj):
         return _type_to_obj[obj]
     else:
         raise ValueError('Invalid type: {0}'.format(obj))
+
+
+cdef class ArrayTypeDescriptor:
+    """
+    Descriptor for array data types.
+    Specifies the element type for array columns.
+    """
+    cdef:
+        KuduArrayTypeDescriptor* descriptor
+
+    def __cinit__(self, element_type):
+        """
+        Create an array type descriptor.
+
+        Parameters
+        ----------
+        element_type : KuduType or type constant
+            The type of elements in the array (e.g., kudu.int64, kudu.string)
+        """
+        cdef KuduType k_type = to_data_type(element_type)
+        self.descriptor = new KuduArrayTypeDescriptor(k_type.type)
+
+    def __dealloc__(self):
+        if self.descriptor != NULL:
+            del self.descriptor
+
+    property element_type:
+        def __get__(self):
+            """Get the array element type"""
+            return self.descriptor.type()
+
+    def __repr__(self):
+        return 'ArrayTypeDescriptor(element_type=%s)' % _type_names.get(self.element_type, 'unknown')
+
+
+cdef class NestedTypeDescriptor:
+    """
+    Descriptor for nested (non-scalar) data types.
+    Currently only supports arrays.
+    """
+    cdef:
+        KuduNestedTypeDescriptor* descriptor
+
+    def __cinit__(self, array_descriptor):
+        """
+        Create a nested type descriptor from an array descriptor.
+
+        Parameters
+        ----------
+        array_descriptor : ArrayTypeDescriptor
+            The array type descriptor
+        """
+        if not isinstance(array_descriptor, ArrayTypeDescriptor):
+            raise TypeError("Expected ArrayTypeDescriptor, got %s" % type(array_descriptor))
+
+        cdef ArrayTypeDescriptor arr_desc = <ArrayTypeDescriptor>array_descriptor
+        self.descriptor = new KuduNestedTypeDescriptor(deref(arr_desc.descriptor))
+
+    def __dealloc__(self):
+        if self.descriptor != NULL:
+            del self.descriptor
+
+    def is_array(self):
+        """Returns True if this is an array type"""
+        return self.descriptor.is_array()
+
+    def __repr__(self):
+        if self.is_array():
+            return 'NestedTypeDescriptor(type=array)'
+        return 'NestedTypeDescriptor(type=unknown)'
+
+
+def array_type(element_type):
+    """
+    Helper function to create an array type descriptor.
+
+    Parameters
+    ----------
+    element_type : KuduType or type constant
+        The type of elements in the array (e.g., kudu.int64, kudu.string)
+
+    Returns
+    -------
+    descriptor : NestedTypeDescriptor
+        A nested type descriptor for an array with the specified element type
+
+    Examples
+    --------
+    >>> import kudu
+    >>> # Create a table with an array of INT64 values
+    >>> builder = kudu.schema_builder()
+    >>> builder.add_column('key', kudu.int32, nullable=False).primary_key()
+    >>> builder.add_column('values').nested_type(kudu.array_type(kudu.int64))
+    >>> schema = builder.build()
+    """
+    array_desc = ArrayTypeDescriptor(element_type)
+    return NestedTypeDescriptor(array_desc)
+
 
 cdef cppclass KuduColumnTypeAttributes:
         KuduColumnTypeAttributes()
@@ -420,6 +522,35 @@ cdef class ColumnSpec:
         self
         """
         self.spec.Length(length)
+        return self
+
+    def nested_type(self, type_descriptor):
+        """
+        Set nested type information for this column.
+
+        Use this method to create array columns. The type_descriptor should be
+        created using the array_type() helper function.
+
+        Parameters
+        ----------
+        type_descriptor : NestedTypeDescriptor
+            The nested type descriptor, typically created via array_type()
+
+        Returns
+        -------
+        self
+
+        Examples
+        --------
+        >>> import kudu
+        >>> builder = kudu.schema_builder()
+        >>> builder.add_column('my_array').nested_type(kudu.array_type(kudu.int64))
+        """
+        if not isinstance(type_descriptor, NestedTypeDescriptor):
+            raise TypeError("Expected NestedTypeDescriptor, got %s" % type(type_descriptor))
+
+        cdef NestedTypeDescriptor nested_desc = <NestedTypeDescriptor>type_descriptor
+        self.spec.NestedType(deref(nested_desc.descriptor))
         return self
 
     def primary_key(self):

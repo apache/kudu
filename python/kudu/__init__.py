@@ -47,6 +47,7 @@ from kudu.schema import (int8, int16, int32, int64, string_ as string,  # noqa
                          date,
                          KuduType,
                          SchemaBuilder, ColumnSpec, Schema, ColumnSchema,
+                         array_type,
                          COMPRESSION_DEFAULT,
                          COMPRESSION_NONE,
                          COMPRESSION_SNAPPY,

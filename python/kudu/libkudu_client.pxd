@@ -127,6 +127,7 @@ cdef extern from "kudu/client/schema.h" namespace "kudu::client" nogil:
         KUDU_DECIMAL " kudu::client::KuduColumnSchema::DECIMAL"
         KUDU_VARCHAR " kudu::client::KuduColumnSchema::VARCHAR"
         KUDU_DATE " kudu::client::KuduColumnSchema::DATE"
+        KUDU_NESTED " kudu::client::KuduColumnSchema::NESTED"
 
     enum EncodingType" kudu::client::KuduColumnStorageAttributes::EncodingType":
         EncodingType_AUTO " kudu::client::KuduColumnStorageAttributes::AUTO_ENCODING"
@@ -163,6 +164,16 @@ cdef extern from "kudu/client/schema.h" namespace "kudu::client" nogil:
         c_bool Equals(KuduColumnTypeAttributes& other)
         void CopyFrom(KuduColumnTypeAttributes& other)
 
+    cdef cppclass KuduArrayTypeDescriptor" kudu::client::KuduColumnSchema::KuduArrayTypeDescriptor":
+        KuduArrayTypeDescriptor(DataType element_type)
+        DataType type()
+
+    cdef cppclass KuduNestedTypeDescriptor" kudu::client::KuduColumnSchema::KuduNestedTypeDescriptor":
+        KuduNestedTypeDescriptor(const KuduArrayTypeDescriptor& desc)
+        KuduNestedTypeDescriptor(const KuduNestedTypeDescriptor& other)
+        c_bool is_array()
+        const KuduArrayTypeDescriptor* array()
+
     cdef cppclass KuduColumnSchema:
         KuduColumnSchema(const KuduColumnSchema& other)
         KuduColumnSchema(const string& name, DataType type)
@@ -176,6 +187,7 @@ cdef extern from "kudu/client/schema.h" namespace "kudu::client" nogil:
         c_bool is_immutable()
         KuduColumnTypeAttributes type_attributes()
         string& comment()
+        const KuduNestedTypeDescriptor* nested_type()
 
         c_bool Equals(KuduColumnSchema& other)
         void CopyFrom(KuduColumnSchema& other)
@@ -216,6 +228,8 @@ cdef extern from "kudu/client/schema.h" namespace "kudu::client" nogil:
          KuduColumnSpec* Precision(int8_t precision);
          KuduColumnSpec* Scale(int8_t scale);
          KuduColumnSpec* Length(uint16_t length);
+
+         KuduColumnSpec* NestedType(const KuduNestedTypeDescriptor& type_info)
 
          KuduColumnSpec* RenameTo(const string& new_name)
          KuduColumnSpec* Comment(const string& comment)
@@ -284,6 +298,67 @@ cdef extern from "kudu/client/scan_batch.h" namespace "kudu::client" nogil:
 
         Status GetDate(Slice& col_name, int32_t* val)
         Status GetDate(int col_idx, int32_t* val)
+
+        # Array getters
+        Status GetArrayBool(const Slice& col_name, vector[c_bool]* data,
+                           vector[c_bool]* validity)
+        Status GetArrayBool(int col_idx, vector[c_bool]* data,
+                           vector[c_bool]* validity)
+
+        Status GetArrayInt8(const Slice& col_name, vector[int8_t]* data,
+                           vector[c_bool]* validity)
+        Status GetArrayInt8(int col_idx, vector[int8_t]* data,
+                           vector[c_bool]* validity)
+
+        Status GetArrayInt16(const Slice& col_name, vector[int16_t]* data,
+                            vector[c_bool]* validity)
+        Status GetArrayInt16(int col_idx, vector[int16_t]* data,
+                            vector[c_bool]* validity)
+
+        Status GetArrayInt32(const Slice& col_name, vector[int32_t]* data,
+                            vector[c_bool]* validity)
+        Status GetArrayInt32(int col_idx, vector[int32_t]* data,
+                            vector[c_bool]* validity)
+
+        Status GetArrayInt64(const Slice& col_name, vector[int64_t]* data,
+                            vector[c_bool]* validity)
+        Status GetArrayInt64(int col_idx, vector[int64_t]* data,
+                            vector[c_bool]* validity)
+
+        Status GetArrayFloat(const Slice& col_name, vector[float]* data,
+                            vector[c_bool]* validity)
+        Status GetArrayFloat(int col_idx, vector[float]* data,
+                            vector[c_bool]* validity)
+
+        Status GetArrayDouble(const Slice& col_name, vector[double]* data,
+                             vector[c_bool]* validity)
+        Status GetArrayDouble(int col_idx, vector[double]* data,
+                             vector[c_bool]* validity)
+
+        Status GetArrayString(const Slice& col_name, vector[Slice]* data,
+                             vector[c_bool]* validity)
+        Status GetArrayString(int col_idx, vector[Slice]* data,
+                             vector[c_bool]* validity)
+
+        Status GetArrayBinary(const Slice& col_name, vector[Slice]* data,
+                             vector[c_bool]* validity)
+        Status GetArrayBinary(int col_idx, vector[Slice]* data,
+                             vector[c_bool]* validity)
+
+        Status GetArrayVarchar(const Slice& col_name, vector[Slice]* data,
+                              vector[c_bool]* validity)
+        Status GetArrayVarchar(int col_idx, vector[Slice]* data,
+                              vector[c_bool]* validity)
+
+        Status GetArrayUnixTimeMicros(const Slice& col_name, vector[int64_t]* data,
+                                     vector[c_bool]* validity)
+        Status GetArrayUnixTimeMicros(int col_idx, vector[int64_t]* data,
+                                     vector[c_bool]* validity)
+
+        Status GetArrayDate(const Slice& col_name, vector[int32_t]* data,
+                           vector[c_bool]* validity)
+        Status GetArrayDate(int col_idx, vector[int32_t]* data,
+                           vector[c_bool]* validity)
 
         const void* cell(int col_idx)
         string ToString()
@@ -391,6 +466,69 @@ cdef extern from "kudu/common/partial_row.h" namespace "kudu" nogil:
 
         Status Unset(Slice& col_name)
         Status Unset(int col_idx)
+
+        #----------------------------------------------------------------------
+        # Array Setters
+
+        Status SetArrayBool(const Slice& col_name, const vector[c_bool]& val,
+                           const vector[c_bool]& validity)
+        Status SetArrayBool(int col_idx, const vector[c_bool]& val,
+                           const vector[c_bool]& validity)
+
+        Status SetArrayInt8(const Slice& col_name, const vector[int8_t]& val,
+                           const vector[c_bool]& validity)
+        Status SetArrayInt8(int col_idx, const vector[int8_t]& val,
+                           const vector[c_bool]& validity)
+
+        Status SetArrayInt16(const Slice& col_name, const vector[int16_t]& val,
+                            const vector[c_bool]& validity)
+        Status SetArrayInt16(int col_idx, const vector[int16_t]& val,
+                            const vector[c_bool]& validity)
+
+        Status SetArrayInt32(const Slice& col_name, const vector[int32_t]& val,
+                            const vector[c_bool]& validity)
+        Status SetArrayInt32(int col_idx, const vector[int32_t]& val,
+                            const vector[c_bool]& validity)
+
+        Status SetArrayInt64(const Slice& col_name, const vector[int64_t]& val,
+                            const vector[c_bool]& validity)
+        Status SetArrayInt64(int col_idx, const vector[int64_t]& val,
+                            const vector[c_bool]& validity)
+
+        Status SetArrayFloat(const Slice& col_name, const vector[float]& val,
+                            const vector[c_bool]& validity)
+        Status SetArrayFloat(int col_idx, const vector[float]& val,
+                            const vector[c_bool]& validity)
+
+        Status SetArrayDouble(const Slice& col_name, const vector[double]& val,
+                             const vector[c_bool]& validity)
+        Status SetArrayDouble(int col_idx, const vector[double]& val,
+                             const vector[c_bool]& validity)
+
+        Status SetArrayString(const Slice& col_name, const vector[Slice]& val,
+                             const vector[c_bool]& validity)
+        Status SetArrayString(int col_idx, const vector[Slice]& val,
+                             const vector[c_bool]& validity)
+
+        Status SetArrayBinary(const Slice& col_name, const vector[Slice]& val,
+                             const vector[c_bool]& validity)
+        Status SetArrayBinary(int col_idx, const vector[Slice]& val,
+                             const vector[c_bool]& validity)
+
+        Status SetArrayVarchar(const Slice& col_name, const vector[Slice]& val,
+                              const vector[c_bool]& validity)
+        Status SetArrayVarchar(int col_idx, const vector[Slice]& val,
+                              const vector[c_bool]& validity)
+
+        Status SetArrayUnixTimeMicros(const Slice& col_name, const vector[int64_t]& val,
+                                     const vector[c_bool]& validity)
+        Status SetArrayUnixTimeMicros(int col_idx, const vector[int64_t]& val,
+                                     const vector[c_bool]& validity)
+
+        Status SetArrayDate(const Slice& col_name, const vector[int32_t]& val,
+                           const vector[c_bool]& validity)
+        Status SetArrayDate(int col_idx, const vector[int32_t]& val,
+                           const vector[c_bool]& validity)
 
         #----------------------------------------------------------------------
         # Getters
