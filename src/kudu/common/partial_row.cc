@@ -995,6 +995,146 @@ Status KuduPartialRow::Set<TypeTraits<DECIMAL128> >(const Slice& col_name,
                                                     const TypeTraits<DECIMAL128>::cpp_type& val,
                                                     bool owned);
 
+template
+Status KuduPartialRow::SetArray<ArrayTypeTraits<BOOL>>(
+    const Slice& col_name,
+    const std::vector<bool>& val,
+    const std::vector<bool>& validity);
+template
+Status KuduPartialRow::SetArray<ArrayTypeTraits<INT8>>(
+    const Slice& col_name,
+    const std::vector<int8_t>& val,
+    const std::vector<bool>& validity);
+template
+Status KuduPartialRow::SetArray<ArrayTypeTraits<INT16>>(
+    const Slice& col_name,
+    const std::vector<int16_t>& val,
+    const std::vector<bool>& validity);
+template
+Status KuduPartialRow::SetArray<ArrayTypeTraits<INT32>>(
+    const Slice& col_name,
+    const std::vector<int32_t>& val,
+    const std::vector<bool>& validity);
+template
+Status KuduPartialRow::SetArray<ArrayTypeTraits<INT64>>(
+    const Slice& col_name,
+    const std::vector<int64_t>& val,
+    const std::vector<bool>& validity);
+template
+Status KuduPartialRow::SetArray<ArrayTypeTraits<FLOAT>>(
+    const Slice& col_name,
+    const std::vector<float>& val,
+    const std::vector<bool>& validity);
+template
+Status KuduPartialRow::SetArray<ArrayTypeTraits<DOUBLE>>(
+    const Slice& col_name,
+    const std::vector<double>& val,
+    const std::vector<bool>& validity);
+template
+Status KuduPartialRow::SetArray<ArrayTypeTraits<DATE>>(
+    const Slice& col_name,
+    const std::vector<int32_t>& val,
+    const std::vector<bool>& validity);
+template
+Status KuduPartialRow::SetArray<ArrayTypeTraits<UNIXTIME_MICROS>>(
+    const Slice& col_name,
+    const std::vector<int64_t>& val,
+    const std::vector<bool>& validity);
+template
+Status KuduPartialRow::SetArray<ArrayTypeTraits<BINARY>>(
+    const Slice& col_name,
+    const std::vector<Slice>& val,
+    const std::vector<bool>& validity);
+template
+Status KuduPartialRow::SetArray<ArrayTypeTraits<STRING>>(
+    const Slice& col_name,
+    const std::vector<Slice>& val,
+    const std::vector<bool>& validity);
+template
+Status KuduPartialRow::SetArray<ArrayTypeTraits<VARCHAR>>(
+    const Slice& col_name,
+    const std::vector<Slice>& val,
+    const std::vector<bool>& validity);
+template
+Status KuduPartialRow::SetArray<ArrayTypeTraits<DECIMAL32>>(
+    const Slice& col_name,
+    const std::vector<int32_t>& val,
+    const std::vector<bool>& validity);
+template
+Status KuduPartialRow::SetArray<ArrayTypeTraits<DECIMAL64>>(
+    const Slice& col_name,
+    const std::vector<int64_t>& val,
+    const std::vector<bool>& validity);
+
+// Status KuduPartialRow::SetArray<ArrayTypeTraits<BOOL>>(...) doesn't need an
+// instantiation since it's already specialized.
+template
+Status KuduPartialRow::SetArray<ArrayTypeTraits<INT8>>(
+    int col_idx,
+    const std::vector<int8_t>& val,
+    const std::vector<bool>& validity);
+template
+Status KuduPartialRow::SetArray<ArrayTypeTraits<INT16>>(
+    int col_idx,
+    const std::vector<int16_t>& val,
+    const std::vector<bool>& validity);
+template
+Status KuduPartialRow::SetArray<ArrayTypeTraits<INT32>>(
+    int col_idx,
+    const std::vector<int32_t>& val,
+    const std::vector<bool>& validity);
+template
+Status KuduPartialRow::SetArray<ArrayTypeTraits<INT64>>(
+    int col_idx,
+    const std::vector<int64_t>& val,
+    const std::vector<bool>& validity);
+template
+Status KuduPartialRow::SetArray<ArrayTypeTraits<FLOAT>>(
+    int col_idx,
+    const std::vector<float>& val,
+    const std::vector<bool>& validity);
+template
+Status KuduPartialRow::SetArray<ArrayTypeTraits<DOUBLE>>(
+    int col_idx,
+    const std::vector<double>& val,
+    const std::vector<bool>& validity);
+template
+Status KuduPartialRow::SetArray<ArrayTypeTraits<DATE>>(
+    int col_idx,
+    const std::vector<int32_t>& val,
+    const std::vector<bool>& validity);
+template
+Status KuduPartialRow::SetArray<ArrayTypeTraits<UNIXTIME_MICROS>>(
+    int col_idx,
+    const std::vector<int64_t>& val,
+    const std::vector<bool>& validity);
+template
+Status KuduPartialRow::SetArray<ArrayTypeTraits<BINARY>>(
+    int col_idx,
+    const std::vector<Slice>& val,
+    const std::vector<bool>& validity);
+template
+Status KuduPartialRow::SetArray<ArrayTypeTraits<STRING>>(
+    int col_idx,
+    const std::vector<Slice>& val,
+    const std::vector<bool>& validity);
+template
+Status KuduPartialRow::SetArray<ArrayTypeTraits<VARCHAR>>(
+    int col_idx,
+    const std::vector<Slice>& val,
+    const std::vector<bool>& validity);
+template
+Status KuduPartialRow::SetArray<ArrayTypeTraits<DECIMAL32>>(
+    int col_idx,
+    const std::vector<int32_t>& val,
+    const std::vector<bool>& validity);
+template
+Status KuduPartialRow::SetArray<ArrayTypeTraits<DECIMAL64>>(
+    int col_idx,
+    const std::vector<int64_t>& val,
+    const std::vector<bool>& validity);
+
+
 //------------------------------------------------------------
 // Getters
 //------------------------------------------------------------
