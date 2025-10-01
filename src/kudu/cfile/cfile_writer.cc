@@ -66,9 +66,9 @@ DEFINE_bool(cfile_write_checksums, true,
             "Write CRC32 checksums for each block");
 TAG_FLAG(cfile_write_checksums, evolving);
 
-DEFINE_bool(cfile_support_arrays, false,
+DEFINE_bool(cfile_support_arrays, true,
             "Support encoding/decoding of arrays in CFile data blocks");
-TAG_FLAG(cfile_support_arrays, evolving);
+TAG_FLAG(cfile_support_arrays, experimental);
 
 using google::protobuf::RepeatedPtrField;
 using kudu::fs::BlockCreationTransaction;
