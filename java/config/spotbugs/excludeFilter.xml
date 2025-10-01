@@ -175,6 +175,17 @@
 
     <!-- kudu-client exclusions -->
     <Match>
+        <!-- For invalid elements we return null. -->
+        <Class name="org.apache.kudu.client.ArrayCellView"/>
+        <Method name="getBinary" />
+        <Bug pattern="PZLA_PREFER_ZERO_LENGTH_ARRAYS" />
+    </Match>
+    <Match>
+        <Class name="org.apache.kudu.client.PartialRow"/>
+        <Method name="normalizeValidity" />
+        <Bug pattern="PZLA_PREFER_ZERO_LENGTH_ARRAYS" />
+    </Match>
+    <Match>
         <!-- Reference equality is intended here. -->
         <Class name="org.apache.kudu.client.AsyncKuduClient"/>
         <Method name="isMasterTable" />

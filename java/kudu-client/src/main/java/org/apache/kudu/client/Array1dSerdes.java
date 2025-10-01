@@ -17,13 +17,13 @@
 
 package org.apache.kudu.client;
 
+import java.lang.reflect.Array;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.Arrays;
 import java.util.Objects;
 
 import com.google.flatbuffers.FlatBufferBuilder;
-import com.google.flatbuffers.Table;
 
 // FlatBuffers generated classes
 import org.apache.kudu.serdes.BinaryArray;
@@ -84,6 +84,20 @@ public class Array1dSerdes {
     if (validity == null || validity.length == 0) {
       return 0;
     }
+
+    // If all entries are true, omit encoding
+    boolean allTrue = true;
+    for (boolean v : validity) {
+      if (!v) {
+        allTrue = false;
+        break;
+      }
+    }
+    if (allTrue) {
+      return 0;
+    }
+
+    // Only encode if at least one false
     return Content.createValidityVector(b, validity);
   }
 
@@ -119,6 +133,18 @@ public class Array1dSerdes {
       validity[i] = c.validity(i);
     }
     return validity;
+  }
+
+  private static boolean hasNulls(Object[] values) {
+    if (values == null) {
+      return false;
+    }
+    for (Object v : values) {
+      if (v == null) {
+        return true;
+      }
+    }
+    return false;
   }
 
   // ---------------- Int8 ----------------
@@ -354,6 +380,14 @@ public class Array1dSerdes {
 
   // ---------------- String ----------------
   public static byte[] serializeString(String[] values, boolean[] validity) {
+    // If validity is omitted, data must not contain nulls. If not,
+    // the serializer can't differentiate null from an empty value.
+    if (validity == null || validity.length == 0) {
+      if (hasNulls(values)) {
+        throw new IllegalArgumentException(
+            "Empty validity vector not allowed when values contain nulls");
+      }
+    }
     FlatBufferBuilder b = new FlatBufferBuilder();
     int[] offs = new int[values.length];
     for (int i = 0; i < values.length; i++) {
@@ -391,6 +425,14 @@ public class Array1dSerdes {
 
   // ---------------- Binary ----------------
   public static byte[] serializeBinary(byte[][] values, boolean[] validity) {
+    // If validity is omitted, data must not contain nulls. If not,
+    // the serializer can't differentiate null from an empty value.
+    if (validity == null || validity.length == 0) {
+      if (hasNulls(values)) {
+        throw new IllegalArgumentException(
+            "Empty validity vector not allowed when values contain nulls");
+      }
+    }
     FlatBufferBuilder b = new FlatBufferBuilder();
     int[] elemOffs = new int[values.length];
     for (int i = 0; i < values.length; i++) {
@@ -432,11 +474,20 @@ public class Array1dSerdes {
       CreateVec<V> createVec, Start start, AddValues addValues, End end) {
 
     if (values != null && validity != null) {
-      int valueLen = java.lang.reflect.Array.getLength(values);
-      if (validity.length != valueLen) {
+      int valueLen = Array.getLength(values);
+      if (validity.length != 0 && validity.length != valueLen) {
         throw new IllegalArgumentException(
             String.format("Validity length %d does not match values length %d",
                 validity.length, valueLen));
+      }
+      if (validity.length == 0) {
+        for (int i = 0; i < valueLen; i++) {
+          Object elem = Array.get(values, i);
+          if (elem == null) {
+            throw new IllegalArgumentException(
+                String.format("Empty validity vector provided, but values[%d] is null", i));
+          }
+        }
       }
     }
 

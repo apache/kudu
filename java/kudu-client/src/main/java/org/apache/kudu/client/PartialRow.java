@@ -18,6 +18,7 @@
 package org.apache.kudu.client;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.sql.Date;
@@ -70,6 +71,16 @@ public class PartialRow {
   private final BitSet nullsBitSet;
 
   private boolean frozen = false;
+
+  private static final Type ARRAY_TYPE = Type.NESTED;
+
+  private byte[] getVarLenBytes(int columnIndex) {
+    ByteBuffer dup = getVarLengthData(columnIndex);
+    dup.reset();
+    byte[] out = new byte[dup.remaining()];
+    dup.get(out);
+    return out;
+  }
 
   /**
    * This is not a stable API, prefer using {@link Schema#newPartialRow()}
@@ -931,6 +942,504 @@ public class PartialRow {
     return getVarLengthData(columnIndex);
   }
 
+  /**
+   * Normalize a validity array for object arrays where elements may be null.
+   * For primitive arrays (e.g. boolean[]), callers can pass validity directly.
+   *
+   * Behavior:
+   * - If {@code validity == null}, infer validity by marking each non-null element {@code true}.
+   * - If {@code validity.length == values.length}, validate length and mask out any null elements
+   *   (i.e., null values are always marked invalid regardless of the validity bit).
+   * - If {@code validity.length == 0}, treat it as an optimization meaning "all elements valid",
+   *   but only if all {@code values[]} are non-null; otherwise throw
+   *   {@link IllegalArgumentException}.
+   *
+   * This ensures consistency with serialization rules, where an empty validity vector
+   * is accepted only when all elements are valid (non-null).
+   */
+
+  private static <T> boolean[] normalizeValidity(T[] values, boolean[] validity) {
+    if (values == null) {
+      return null;
+    }
+
+    // explicit non-empty validity vector
+    if (validity != null && validity.length != 0) {
+      if (validity.length != values.length) {
+        throw new IllegalArgumentException(
+            "validity length mismatch: " + validity.length + " vs " + values.length);
+      }
+      boolean[] corrected = new boolean[values.length];
+      for (int i = 0; i < values.length; i++) {
+        corrected[i] = (values[i] != null) && validity[i];
+      }
+      return corrected;
+    }
+
+    // empty validity vector => all valid, must have no nulls
+    if (validity != null && validity.length == 0) {
+      for (int i = 0; i < values.length; i++) {
+        if (values[i] == null) {
+          throw new IllegalArgumentException(
+              String.format("Empty validity vector provided, but values[%d] is null", i));
+        }
+      }
+      boolean[] allValid = new boolean[values.length];
+      java.util.Arrays.fill(allValid, true);
+      return allValid;
+    }
+
+    // validity == null => infer validity from non-nulls
+    boolean[] inferred = new boolean[values.length];
+    for (int i = 0; i < values.length; i++) {
+      inferred[i] = (values[i] != null);
+    }
+    return inferred;
+  }
+
+  private void checkValidityLength(int valuesLen, boolean[] validity) {
+    if (validity != null && validity.length != 0 && validity.length != valuesLen) {
+      throw new IllegalArgumentException(
+          "validity length mismatch: " + validity.length + " vs " + valuesLen);
+    }
+  }
+
+
+  /**
+   * Adds array-typed column values to this row and defines how validity (nullability)
+   * is interpreted for array elements.
+   *
+   * <p>Each {@code addArray*()} method writes a complete array cell into the row.
+   * The caller may optionally provide a {@code validity} vector to control which
+   * elements are null or valid:
+   * <ul>
+   *   <li>If {@code validity == null}, validity is inferred from whether each
+   *       array element is {@code null}.</li>
+   *   <li>If {@code validity.length == 0}, it signals that all elements are valid;
+   *       this is only allowed when the array contains no nulls.</li>
+   *   <li>If {@code validity.length > 0}, it must match the array length; each
+   *       element is valid only if both the value is non-null and the corresponding
+   *       validity bit is {@code true}.</li>
+   * </ul>
+   *
+   * <p>For primitive arrays (which cannot contain nulls), the validity vector
+   * is ignored, and the entire array is treated as valid. Empty or all-true
+   * validity masks are omitted from serialization for efficiency.
+   */
+
+  public void addArrayInt8(int columnIndex, byte[] values, boolean[] validity) {
+    checkNotFrozen();
+    checkColumn(schema.getColumnByIndex(columnIndex), ARRAY_TYPE);
+
+    if (values == null) {
+      setNull(columnIndex);
+      return;
+    }
+    checkValidityLength(values.length, validity);
+    addVarLengthData(columnIndex, Array1dSerdes.serializeInt8(values, validity));
+  }
+
+  public void addArrayInt8(String columnName, byte[] values, boolean[] validity) {
+    addArrayInt8(schema.getColumnIndex(columnName), values, validity);
+  }
+
+  public void addArrayInt8(int columnIndex, byte[] values) {
+    addArrayInt8(columnIndex, values, null);
+  }
+
+  public void addArrayInt8(String columnName, byte[] values) {
+    addArrayInt8(schema.getColumnIndex(columnName), values, null);
+  }
+
+  public void addArrayInt16(int columnIndex, short[] values, boolean[] validity) {
+    checkNotFrozen();
+    checkColumn(schema.getColumnByIndex(columnIndex), ARRAY_TYPE);
+
+    if (values == null) {
+      setNull(columnIndex);
+      return;
+    }
+    checkValidityLength(values.length, validity);
+    addVarLengthData(columnIndex, Array1dSerdes.serializeInt16(values, validity));
+  }
+
+  public void addArrayInt16(String columnName, short[] values, boolean[] validity) {
+    addArrayInt16(schema.getColumnIndex(columnName), values, validity);
+  }
+
+  public void addArrayInt16(int columnIndex, short[] values) {
+    addArrayInt16(columnIndex, values, null);
+  }
+
+  public void addArrayInt16(String columnName, short[] values) {
+    addArrayInt16(schema.getColumnIndex(columnName), values, null);
+  }
+
+  public void addArrayInt32(int columnIndex, int[] values, boolean[] validity) {
+    checkNotFrozen();
+    checkColumn(schema.getColumnByIndex(columnIndex), ARRAY_TYPE);
+
+    if (values == null) {
+      setNull(columnIndex);
+      return;
+    }
+    checkValidityLength(values.length, validity);
+    addVarLengthData(columnIndex, Array1dSerdes.serializeInt32(values, validity));
+  }
+
+  public void addArrayInt32(String columnName, int[] values, boolean[] validity) {
+    addArrayInt32(schema.getColumnIndex(columnName), values, validity);
+  }
+
+  public void addArrayInt32(int columnIndex, int[] values) {
+    addArrayInt32(columnIndex, values, null);
+  }
+
+  public void addArrayInt32(String columnName, int[] values) {
+    addArrayInt32(schema.getColumnIndex(columnName), values, null);
+  }
+
+  public void addArrayInt64(int columnIndex, long[] values, boolean[] validity) {
+    checkNotFrozen();
+    checkColumn(schema.getColumnByIndex(columnIndex), ARRAY_TYPE);
+
+    if (values == null) {
+      setNull(columnIndex);
+      return;
+    }
+    checkValidityLength(values.length, validity);
+    addVarLengthData(columnIndex, Array1dSerdes.serializeInt64(values, validity));
+  }
+
+  public void addArrayInt64(String columnName, long[] values, boolean[] validity) {
+    addArrayInt64(schema.getColumnIndex(columnName), values, validity);
+  }
+
+  public void addArrayInt64(int columnIndex, long[] values) {
+    addArrayInt64(columnIndex, values, null);
+  }
+
+  public void addArrayInt64(String columnName, long[] values) {
+    addArrayInt64(schema.getColumnIndex(columnName), values, null);
+  }
+
+
+  public void addArrayFloat(int columnIndex, float[] values, boolean[] validity) {
+    checkNotFrozen();
+    checkColumn(schema.getColumnByIndex(columnIndex), ARRAY_TYPE);
+
+    if (values == null) {
+      setNull(columnIndex);
+      return;
+    }
+    checkValidityLength(values.length, validity);
+    addVarLengthData(columnIndex, Array1dSerdes.serializeFloat(values, validity));
+  }
+
+  public void addArrayFloat(String columnName, float[] values, boolean[] validity) {
+    addArrayFloat(schema.getColumnIndex(columnName), values, validity);
+  }
+
+  public void addArrayFloat(int columnIndex, float[] values) {
+    addArrayFloat(columnIndex, values, null);
+  }
+
+  public void addArrayFloat(String columnName, float[] values) {
+    addArrayFloat(schema.getColumnIndex(columnName), values, null);
+  }
+
+  public void addArrayDouble(int columnIndex, double[] values, boolean[] validity) {
+    checkNotFrozen();
+    checkColumn(schema.getColumnByIndex(columnIndex), ARRAY_TYPE);
+
+    if (values == null) {
+      setNull(columnIndex);
+      return;
+    }
+    checkValidityLength(values.length, validity);
+    addVarLengthData(columnIndex, Array1dSerdes.serializeDouble(values, validity));
+  }
+
+  public void addArrayDouble(String columnName, double[] values, boolean[] validity) {
+    addArrayDouble(schema.getColumnIndex(columnName), values, validity);
+  }
+
+  public void addArrayDouble(int columnIndex, double[] values) {
+    addArrayDouble(columnIndex, values, null);
+  }
+
+  public void addArrayDouble(String columnName, double[] values) {
+    addArrayDouble(schema.getColumnIndex(columnName), values, null);
+  }
+
+  public void addArrayString(int columnIndex, String[] values, boolean[] validity) {
+    checkNotFrozen();
+    checkColumn(schema.getColumnByIndex(columnIndex), ARRAY_TYPE);
+
+    if (values == null) {
+      setNull(columnIndex);
+      return;
+    }
+
+    boolean[] valids = normalizeValidity(values, validity);
+    addVarLengthData(columnIndex, Array1dSerdes.serializeString(values, valids));
+  }
+
+
+  public void addArrayString(String columnName, String[] values, boolean[] validity) {
+    addArrayString(schema.getColumnIndex(columnName), values, validity);
+  }
+
+  public void addArrayString(int columnIndex, String[] values) {
+    addArrayString(columnIndex, values, null);
+  }
+
+  public void addArrayString(String columnName, String[] values) {
+    addArrayString(schema.getColumnIndex(columnName), values, null);
+  }
+
+  public void addArrayBinary(int columnIndex, byte[][] values, boolean[] validity) {
+    checkNotFrozen();
+    checkColumn(schema.getColumnByIndex(columnIndex), ARRAY_TYPE);
+
+    if (values == null) {
+      setNull(columnIndex);
+      return;
+    }
+
+    boolean[] valids = normalizeValidity(values, validity);
+    addVarLengthData(columnIndex, Array1dSerdes.serializeBinary(values, valids));
+  }
+
+  public void addArrayBinary(String columnName, byte[][] values, boolean[] validity) {
+    addArrayBinary(schema.getColumnIndex(columnName), values, validity);
+  }
+
+  public void addArrayBinary(int columnIndex, byte[][] values) {
+    addArrayBinary(columnIndex, values, null);
+  }
+
+  public void addArrayBinary(String columnName, byte[][] values) {
+    addArrayBinary(schema.getColumnIndex(columnName), values, null);
+  }
+
+  public void addArrayBool(int columnIndex, boolean[] values, boolean[] validity) {
+    checkNotFrozen();
+    checkColumn(schema.getColumnByIndex(columnIndex), ARRAY_TYPE);
+
+    if (values == null) {
+      setNull(columnIndex);
+      return;
+    }
+    checkValidityLength(values.length, validity);
+    byte[] asBytes = new byte[values.length];
+    for (int i = 0; i < values.length; i++) {
+      asBytes[i] = (byte)(values[i] ? 1 : 0);
+    }
+
+    addVarLengthData(columnIndex, Array1dSerdes.serializeUInt8(asBytes, validity));
+  }
+
+  public void addArrayBool(String columnName, boolean[] values, boolean[] validity) {
+    addArrayBool(schema.getColumnIndex(columnName), values, validity);
+  }
+
+  public void addArrayBool(int columnIndex, boolean[] values) {
+    addArrayBool(columnIndex, values, null);
+  }
+
+  public void addArrayBool(String columnName, boolean[] values) {
+    addArrayBool(schema.getColumnIndex(columnName), values, null);
+  }
+
+  public void addArrayTimestamp(int columnIndex, Timestamp[] values) {
+    addArrayTimestampInternal(columnIndex, values, null);
+  }
+
+  public void addArrayTimestamp(String columnName, Timestamp[] values) {
+    addArrayTimestamp(schema.getColumnIndex(columnName), values);
+  }
+
+  public void addArrayTimestamp(int columnIndex,
+                                Timestamp[] values,
+                                boolean[] validity) {
+    addArrayTimestampInternal(columnIndex, values, validity);
+  }
+
+  public void addArrayTimestamp(String columnName,
+                                Timestamp[] values,
+                                boolean[] validity) {
+    addArrayTimestamp(schema.getColumnIndex(columnName), values, validity);
+  }
+
+  public void addArrayDate(int columnIndex, Date[] values) {
+    addArrayDateInternal(columnIndex, values, null);
+  }
+
+  public void addArrayDate(String columnName, Date[] values) {
+    addArrayDate(schema.getColumnIndex(columnName), values);
+  }
+
+  public void addArrayDate(int columnIndex, Date[] values, boolean[] validity) {
+    addArrayDateInternal(columnIndex, values, validity);
+  }
+
+  public void addArrayDate(String columnName, Date[] values, boolean[] validity) {
+    addArrayDate(schema.getColumnIndex(columnName), values, validity);
+  }
+
+  public void addArrayVarchar(int columnIndex, String[] values) {
+    addArrayVarcharInternal(columnIndex, values, null);
+  }
+
+  public void addArrayVarchar(String columnName, String[] values) {
+    addArrayVarchar(schema.getColumnIndex(columnName), values, null);
+  }
+
+  public void addArrayVarchar(int columnIndex, String[] values, boolean[] validity) {
+    addArrayVarcharInternal(columnIndex, values, validity);
+  }
+
+  public void addArrayVarchar(String columnName, String[] values, boolean[] validity) {
+    addArrayVarchar(schema.getColumnIndex(columnName), values, validity);
+  }
+
+  public void addArrayDecimal(int columnIndex, BigDecimal[] values) {
+    addArrayDecimalInternal(columnIndex, values, null);
+  }
+
+  public void addArrayDecimal(String columnName, BigDecimal[] values) {
+    addArrayDecimal(schema.getColumnIndex(columnName), values);
+  }
+
+  public void addArrayDecimal(int columnIndex,
+                              BigDecimal[] values,
+                              boolean[] validity) {
+    addArrayDecimalInternal(columnIndex, values, validity);
+  }
+
+  public void addArrayDecimal(String columnName,
+                              BigDecimal[] values,
+                              boolean[] validity) {
+    addArrayDecimal(schema.getColumnIndex(columnName), values, validity);
+  }
+
+  private ArrayCellView getArray(int columnIndex) {
+    checkColumn(schema.getColumnByIndex(columnIndex), ARRAY_TYPE);
+    checkValue(columnIndex);
+    return new ArrayCellView(getVarLenBytes(columnIndex));
+  }
+
+  private void addArrayTimestampInternal(int columnIndex,
+                                         Timestamp[] values,
+                                         boolean[] validity) {
+    checkNotFrozen();
+
+    if (values == null) {
+      setNull(columnIndex);
+      return;
+    }
+
+    boolean[] valids = normalizeValidity(values, validity);
+    long[] micros = new long[values.length];
+
+    for (int i = 0; i < values.length; i++) {
+      if (valids[i]) {
+        micros[i] = TimestampUtil.timestampToMicros(values[i]);
+      }
+    }
+
+    addArrayInt64(columnIndex, micros, valids);
+  }
+
+  private void addArrayVarcharInternal(int columnIndex,
+                                       String[] values,
+                                       boolean[] validity) {
+    checkNotFrozen();
+    ColumnSchema col = schema.getColumnByIndex(columnIndex);
+    int maxLen = col.getTypeAttributes().getLength();
+
+    if (values == null) {
+      setNull(columnIndex);
+      return;
+    }
+
+    boolean[] valids = normalizeValidity(values, validity);
+    String[] truncated = new String[values.length];
+
+    for (int i = 0; i < values.length; i++) {
+      if (valids[i]) {
+        String s = values[i];
+        truncated[i] = (s.length() > maxLen) ? s.substring(0, maxLen) : s;
+      } else {
+        truncated[i] = ""; // content unused when validity[i] is false
+      }
+    }
+
+    addVarLengthData(columnIndex, Array1dSerdes.serializeString(truncated, valids));
+  }
+
+  private void addArrayDateInternal(int columnIndex, Date[] values, boolean[] validity) {
+    checkNotFrozen();
+
+    if (values == null) {
+      setNull(columnIndex);
+      return;
+    }
+
+    boolean[] valids = normalizeValidity(values, validity);
+    int[] days = new int[values.length];
+
+    for (int i = 0; i < values.length; i++) {
+      if (valids[i]) {
+        days[i] = DateUtil.sqlDateToEpochDays(values[i]);
+      }
+    }
+
+    addArrayInt32(columnIndex, days, valids);
+  }
+
+  private void addArrayDecimalInternal(int columnIndex,
+                                       BigDecimal[] values,
+                                       boolean[] validity) {
+    checkNotFrozen();
+    ColumnSchema col = schema.getColumnByIndex(columnIndex);
+    ColumnTypeAttributes attrs = col.getTypeAttributes();
+    int precision = attrs.getPrecision();
+    int scale = attrs.getScale();
+
+    if (values == null) {
+      setNull(columnIndex);
+      return;
+    }
+
+    boolean[] valids = normalizeValidity(values, validity);
+
+    if (precision <= 9) {
+      int[] unscaled = new int[values.length];
+      for (int i = 0; i < values.length; i++) {
+        if (valids[i]) {
+          BigDecimal bd = values[i].setScale(scale, RoundingMode.UNNECESSARY);
+          unscaled[i] = bd.unscaledValue().intValueExact();
+        }
+      }
+      addVarLengthData(columnIndex, Array1dSerdes.serializeInt32(unscaled, valids));
+
+    } else if (precision <= 18) {
+      long[] unscaled = new long[values.length];
+      for (int i = 0; i < values.length; i++) {
+        if (valids[i]) {
+          BigDecimal bd = values[i].setScale(scale, RoundingMode.UNNECESSARY);
+          unscaled[i] = bd.unscaledValue().longValueExact();
+        }
+      }
+      addVarLengthData(columnIndex, Array1dSerdes.serializeInt64(unscaled, valids));
+
+    } else {
+      throw new IllegalStateException("DECIMAL128 arrays not supported yet");
+    }
+  }
+
   private void addVarLengthData(int columnIndex, byte[] val) {
     addVarLengthData(columnIndex, ByteBuffer.wrap(val));
   }
@@ -1063,11 +1572,27 @@ public class PartialRow {
    *  Type.BINARY -> byte[] or java.lang.ByteBuffer
    *  Type.DECIMAL -> java.math.BigDecimal
    *  Type.DATE -> java.sql.Date
+   *  Type.NESTED (array)    -> one of:
+   *     - Primitive arrays: byte[], short[], int[], long[], float[], double[], boolean[]
+   *     - Object arrays: java.lang.String[], java.sql.Date[], java.sql.Timestamp[],
+   *                      java.math.BigDecimal[], byte[][]
+   *     - Already-wrapped: {@link ArrayCellView} (serialized form)
+   *
+   * For arrays, {@code validity} is always passed as {@code null} from here:
+   *  - Primitive arrays cannot contain null elements, so all entries are valid.
+   *  - Object arrays may contain nulls; the corresponding addArray* methods
+   *    internally reconstruct validity masks via {@code normalizeValidity()}.
+   * This keeps {@code addObject()} simple while ensuring correct null handling.
+   *
+   * Array serializers also treat {@code validity.length == 0}
+   * the same as {@code null}, meaning "all elements valid". This allows callers
+   * to omit the validity vector for fully non-null data.
    *
    * @param columnIndex column index in the schema
    * @param val the value to add as an Object
    * @throws IllegalStateException if the row was already applied
    * @throws IndexOutOfBoundsException if the column doesn't exist
+   * @throws IllegalArgumentException if the value type is incompatible
    */
   public void addObject(int columnIndex, Object val) {
     checkNotFrozen();
@@ -1126,6 +1651,77 @@ public class PartialRow {
         case DECIMAL:
           addDecimal(columnIndex, (BigDecimal) val);
           break;
+        case /*ARRAY*/ NESTED: {
+          // Note: we always pass `validity = null` here.
+          //   - For primitive arrays: elements cannot be null. Hence, all entries valid.
+          //   - For object arrays: the addArray* methods call normalizeValidity()
+          //     to infer nulls from the values[]. So validity is reconstructed.
+          // This keeps addObject() simple while ensuring nulls are handled correctly.
+          if (val instanceof byte[]) {
+            addArrayInt8(columnIndex, (byte[]) val, null);
+            break;
+          }
+          if (val instanceof short[]) {
+            addArrayInt16(columnIndex, (short[]) val, null);
+            break;
+          }
+          if (val instanceof int[]) {
+            addArrayInt32(columnIndex, (int[]) val, null);
+            break;
+          }
+          if (val instanceof long[]) {
+            addArrayInt64(columnIndex, (long[]) val, null);
+            break;
+          }
+          if (val instanceof boolean[]) {
+            addArrayBool(columnIndex, (boolean[]) val, null);
+            break;
+          }
+          if (val instanceof float[]) {
+            addArrayFloat(columnIndex, (float[]) val, null);
+            break;
+          }
+          if (val instanceof double[]) {
+            addArrayDouble(columnIndex, (double[]) val, null);
+            break;
+          }
+          if (val instanceof Timestamp[]) {
+            addArrayTimestamp(columnIndex, (Timestamp[]) val);
+            break;
+          }
+          if (val instanceof String[]) {
+            if (col.getNestedTypeDescriptor().getArrayDescriptor().getElemType() == Type.VARCHAR) {
+              addArrayVarchar(columnIndex, (String[]) val, null);
+            } else {
+              addArrayString(columnIndex, (String[]) val, null);
+            }
+            break;
+          }
+          if (val instanceof Date[]) {
+            addArrayDate(columnIndex, (Date[]) val);
+            break;
+          }
+          if (val instanceof byte[][]) {
+            addArrayBinary(columnIndex, (byte[][]) val, null);
+            break;
+          }
+          if (val instanceof BigDecimal[]) {
+            addArrayDecimal(columnIndex, (BigDecimal[]) val, null);
+            break;
+          }
+          // Allow pre-built serialized FlatBuffer payloads.
+          if (val instanceof ByteBuffer) {
+            addVarLengthData(columnIndex, (ByteBuffer) val);
+            break;
+          }
+          if (val instanceof ArrayCellView) {
+            addVarLengthData(columnIndex, ((ArrayCellView) val).toBytes());
+            break;
+          }
+
+          throw new IllegalArgumentException(
+              "Unsupported object type for array column " + col.getName());
+        }
         default:
           throw new IllegalArgumentException("Unsupported column type: " + col.getType());
       }
@@ -1209,6 +1805,7 @@ public class PartialRow {
       case STRING: return getString(columnIndex);
       case BINARY: return getBinaryCopy(columnIndex);
       case DECIMAL: return getDecimal(columnIndex);
+      case NESTED: return getArray(columnIndex);
       default: throw new UnsupportedOperationException("Unsupported type: " + type);
     }
   }
@@ -1420,11 +2017,46 @@ public class PartialRow {
     ColumnSchema col = schema.getColumnByIndex(idx);
     Preconditions.checkState(columnsBitSet.get(idx), "Column %s is not set", col.getName());
 
+    // Handle nulls
     if (nullsBitSet != null && nullsBitSet.get(idx)) {
-      sb.append("NULL");
+      if (col.isArray()) {
+        sb.append(col.getType().getName())
+                .append("[] ")
+                .append(col.getName())
+                .append("=NULL");
+      } else {
+        sb.append("NULL");
+      }
       return;
     }
 
+    // Handle arrays
+    if (col.isArray()) {
+      ByteBuffer buf = getVarLengthData(idx);
+      if (buf == null || !buf.hasRemaining()) {
+        sb.append(col.getType().getName())
+                .append("[] ")
+                .append(col.getName())
+                .append("=NULL");
+        return;
+      }
+
+      ByteBuffer dup = buf.duplicate();
+      byte[] raw = new byte[dup.remaining()];
+      dup.get(raw);
+
+      try {
+        ArrayCellView view = new ArrayCellView(raw);
+        sb.append(col.getType().getName())
+                .append("[] ")
+                .append(col.getName())
+                .append("=")
+                .append(view);
+      } catch (RuntimeException e) {
+        sb.append("<invalid array data>");
+      }
+      return;
+    }
     switch (col.getType()) {
       case BOOL:
         sb.append(Bytes.getBoolean(rowAlloc, schema.getColumnOffset(idx)));
@@ -1475,6 +2107,45 @@ public class PartialRow {
           sb.append(Bytes.pretty(data));
         }
         return;
+      case /*ARRAY*/ NESTED: {
+        ArrayCellView view = getArray(idx);
+        sb.append("ARRAY[len=").append(view.length()).append("]");
+        try {
+          Object arr = view.toJavaArray();
+          String s;
+          if (arr instanceof Object[]) {
+            Object[] objs = (Object[]) arr;
+            if (objs instanceof byte[][]) {
+              // Pretty-print nested binary arrays
+              s = java.util.Arrays.deepToString(objs);
+            } else {
+              // Strings, Dates, Timestamps, BigDecimals, etc.
+              s = java.util.Arrays.toString(objs);
+            }
+          } else if (arr instanceof int[]) {
+            s = java.util.Arrays.toString((int[]) arr);
+          } else if (arr instanceof long[]) {
+            s = java.util.Arrays.toString((long[]) arr);
+          } else if (arr instanceof short[]) {
+            s = java.util.Arrays.toString((short[]) arr);
+          } else if (arr instanceof byte[]) {
+            s = java.util.Arrays.toString((byte[]) arr);
+          } else if (arr instanceof float[]) {
+            s = java.util.Arrays.toString((float[]) arr);
+          } else if (arr instanceof double[]) {
+            s = java.util.Arrays.toString((double[]) arr);
+          } else if (arr instanceof boolean[]) {
+            s = java.util.Arrays.toString((boolean[]) arr);
+          } else {
+            // Fallback for unexpected array types
+            s = arr.toString();
+          }
+          sb.append(s);
+        } catch (RuntimeException ignore) {
+          sb.append("<invalid array>");
+        }
+        return;
+      }
       default:
         throw new RuntimeException("unreachable");
     }
@@ -1558,7 +2229,8 @@ public class PartialRow {
       }
       case VARCHAR:
       case STRING:
-      case BINARY: {
+      case BINARY:
+      case /*ARRAY*/ NESTED: {
         addVarLengthData(index, value);
         break;
       }

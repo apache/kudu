@@ -235,6 +235,6 @@ public enum Type {
    * @return true if this type has a pre-determined fixed size, false otherwise
    */
   public boolean isFixedSize() {
-    return this != BINARY && this != STRING && this != VARCHAR;
+    return this != BINARY && this != STRING && this != VARCHAR && this != NESTED;
   }
 }
