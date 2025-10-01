@@ -23,7 +23,9 @@ apply from: "$rootDir/gradle/shadow.gradle"
 apply from: "$rootDir/gradle/benchmarks.gradle"
 
 dependencies {
+  implementation project(path: ":kudu-flatbuffers")
   implementation project(path: ":kudu-proto")
+  compileOnly libs.flatbuffersJava
   compileOnly libs.protobufJava
 
   // Not shaded in the client JAR because it's part of the public API.

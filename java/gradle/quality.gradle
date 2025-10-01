@@ -31,6 +31,8 @@ if (propertyExists("ignoreCheckFailures")) {
 // code style verification tasks since the code is assumed to be already
 // passed those in various pre-commit builds.  For that, define the
 // 'skipCodeStyleChecks' property.
+// We also do not need to run it on kudu-flatbuffers module as it only contains
+// auto-generated code.
 if (!propertyExists("skipCodeStyleChecks")) {
   // Ensures Java code follows the defined coding style.
   apply plugin: "checkstyle"
@@ -112,9 +114,11 @@ if(!JavaVersion.current().isJava11Compatible()) {
   }
 }
 
-// Don't enable code coverage for kudu-proto given it is exclusively generated code.
+// Don't enable code coverage for kudu-proto and kudu-flatbuffers given it is exclusively
+// generated code.
 // Don't enable code coverage for kudu-jepsen given it is exclusively test code.
-if (project.name != "kudu-proto" && project.name != "kudu-jepsen") {
+if (project.name != "kudu-proto" && project.name != "kudu-jepsen" &&
+        project.name != "kudu-flatbuffers") {
   apply plugin: "jacoco" // Provides code coverage metrics for Java code.
   jacoco {
     toolVersion = versions.jacoco

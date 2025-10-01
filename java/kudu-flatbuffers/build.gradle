@@ -1,0 +1,87 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+plugins {
+  id("java-library")
+}
+
+dependencies {
+  implementation libs.flatbuffersJava
+}
+
+def fbsDir = file("$rootDir/../src/kudu/common/serdes")
+def flatcOutputDir = file("$buildDir/generated/flatbuffers")
+
+// Allow override with -Pflatc=/path/to/flatc or FLATC env var
+def flatcOverride = (findProperty("flatc") ?: System.getenv("FLATC")) as String
+def flatcExe
+
+if (flatcOverride) {
+  def f = file(flatcOverride)
+  if (!f.exists()) {
+    throw new GradleException("FLATC override not found: $flatcOverride")
+  }
+  flatcExe = f.absolutePath
+} else{
+    def flatcPath = file("${projectDir}/../../thirdparty/installed/uninstrumented/bin/flatc")
+    if (!flatcPath.exists()) {
+      throw new GradleException("No flatc binary found at ${flatcPath}")
+    }
+    flatcExe = flatcPath.absolutePath
+  }
+
+logger.lifecycle("Using flatc: $flatcExe")
+
+tasks.register("generateFlatBuffers", Exec) {
+  inputs.files fileTree(dir: fbsDir, include: "**/*.fbs")
+  outputs.dir flatcOutputDir
+
+  doFirst {
+    def fbsFiles = fileTree(dir: fbsDir, include: "**/*.fbs").files
+    if (fbsFiles.isEmpty()) {
+      println "No .fbs files found in ${fbsDir}. Skipping FlatBuffers generation."
+      enabled = false
+      return
+    }
+    flatcOutputDir.mkdirs()
+    commandLine = [flatcExe, "--java", "--java-package-prefix", "org.apache.",
+                   "-o", flatcOutputDir.absolutePath] + fbsFiles.collect { it.path }
+  }
+}
+
+sourceSets {
+  main {
+    java {
+      srcDir flatcOutputDir
+    }
+  }
+}
+
+compileJava.dependsOn(tasks.named("generateFlatBuffers"))
+
+// kudu-flatbuffers has no public Javadoc.
+javadoc {
+  enabled = false
+}
+
+// Disable checkstyle
+tasks.withType(Checkstyle).configureEach {
+  enabled = false
+}
+// Skip publishing kudu-flatbuffers artifact because it will always be shaded into kudu-client.
+publish.enabled = false
+publishToMavenLocal.enabled = false

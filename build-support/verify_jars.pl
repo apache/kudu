@@ -38,7 +38,7 @@ my $pat_allow_non_java =
 # Allowed filenames of shaded dependencies in JARs.
 my $pat_allow_kudu_shaded =
     qr{^org/apache/kudu/shaded/
-        (?:com/google/(?:common|gson|gradle/osdetector|protobuf|thirdparty/publicsuffix)|
+        (?:com/google/(?:common|flatbuffers|gson|gradle/osdetector|protobuf|thirdparty/publicsuffix)|
            com/sangupta/murmur|
            kr/motd/maven|
            org/apache/(?:commons|http)|

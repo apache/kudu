@@ -63,6 +63,7 @@ shadowJar {
   // https://docs.gradle.org/current/userguide/compatibility.html#java_runtime
   exclude "META-INF/versions/2?/"
   relocate "com.google.common", "org.apache.kudu.shaded.com.google.common"
+  relocate "com.google.flatbuffers", "org.apache.kudu.shaded.com.google.flatbuffers"
   relocate "com.google.gradle.osdetector", "org.apache.kudu.shaded.com.google.gradle.osdetector"
   relocate "com.google.gson", "org.apache.kudu.shaded.com.google.gson"
   relocate "com.google.protobuf", "org.apache.kudu.shaded.com.google.protobuf"
