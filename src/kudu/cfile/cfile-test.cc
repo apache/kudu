@@ -1373,9 +1373,7 @@ class TestCFileBinaryArrayValues : public TestCFileArrayValues {
 };
 INSTANTIATE_TEST_SUITE_P(ArrayBasics, TestCFileBinaryArrayValues,
                          ::testing::Combine(
-                             // TODO(aserbin): address DICT_ENCODING issues
-                             //::testing::Values(PLAIN_ENCODING, PREFIX_ENCODING, DICT_ENCODING),
-                             ::testing::Values(PLAIN_ENCODING, PREFIX_ENCODING),
+                             ::testing::Values(PLAIN_ENCODING, PREFIX_ENCODING, DICT_ENCODING),
                              ::testing::Values(NO_COMPRESSION, SNAPPY, LZ4, ZLIB)));
 
 // Write/read a file with random string values in array cells.

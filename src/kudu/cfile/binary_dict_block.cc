@@ -67,6 +67,7 @@ BinaryDictBlockBuilder::BinaryDictBlockBuilder(const WriterOptions* options)
 }
 
 void BinaryDictBlockBuilder::Reset() {
+  DCHECK(!IsBlockFullMasked());
   if (mode_ == kCodeWordMode &&
       dict_block_.IsBlockFullImpl()) {
     mode_ = kPlainBinaryMode;
@@ -97,8 +98,12 @@ void BinaryDictBlockBuilder::Finish(rowid_t ordinal_pos, vector<Slice>* slices) 
 // If it is the latter case, all the subsequent data blocks will switch to
 // StringPlainBlock automatically.
 bool BinaryDictBlockBuilder::IsBlockFullImpl() const {
-  if (data_builder_->IsBlockFullImpl()) return true;
-  if (dict_block_.IsBlockFullImpl() && (mode_ == kCodeWordMode)) return true;
+  if (data_builder_->IsBlockFullImpl()) {
+    return true;
+  }
+  if (dict_block_.IsBlockFullImpl() && (mode_ == kCodeWordMode)) {
+    return true;
+  }
   return false;
 }
 
@@ -146,10 +151,9 @@ bool BinaryDictBlockBuilder::AddToDict(Slice val, uint32_t* codeword) {
 int BinaryDictBlockBuilder::Add(const uint8_t* vals, size_t count) {
   if (mode_ == kCodeWordMode) {
     return AddCodeWords(vals, count);
-  } else {
-    DCHECK_EQ(mode_, kPlainBinaryMode);
-    return data_builder_->Add(vals, count);
   }
+  DCHECK_EQ(mode_, kPlainBinaryMode);
+  return data_builder_->Add(vals, count);
 }
 
 Status BinaryDictBlockBuilder::AppendExtraInfo(CFileWriter* c_writer, CFileFooterPB* footer) {
@@ -158,8 +162,8 @@ Status BinaryDictBlockBuilder::AppendExtraInfo(CFileWriter* c_writer, CFileFoote
 
   BlockPointer ptr;
   Status s = c_writer->AppendDictBlock(std::move(dict_v), &ptr, "Append dictionary block");
-  if (!s.ok()) {
-    LOG(WARNING) << "Unable to append block to file: " << s.ToString();
+  if (PREDICT_FALSE(!s.ok())) {
+    LOG(ERROR) << "Unable to append block to file: " << s.ToString();
     return s;
   }
   ptr.CopyToPB(footer->mutable_dict_block_ptr());
@@ -187,10 +191,23 @@ Status BinaryDictBlockBuilder::GetLastKey(void* key_void) const {
     uint32_t last_codeword;
     RETURN_NOT_OK(data_builder_->GetLastKey(reinterpret_cast<void*>(&last_codeword)));
     return dict_block_.GetKeyAtIdx(key_void, last_codeword);
-  } else {
-    DCHECK_EQ(mode_, kPlainBinaryMode);
-    return data_builder_->GetLastKey(key_void);
   }
+  DCHECK_EQ(mode_, kPlainBinaryMode);
+  return data_builder_->GetLastKey(key_void);
+}
+
+void BinaryDictBlockBuilder::SetBlockFullMasked(bool block_full_masked) {
+  DCHECK(data_builder_);
+  DCHECK(!(data_builder_->IsBlockFullMasked() ^ dict_block_.IsBlockFullMasked()));
+  data_builder_->SetBlockFullMasked(block_full_masked);
+  dict_block_.SetBlockFullMasked(block_full_masked);
+}
+
+bool BinaryDictBlockBuilder::IsBlockFullMasked() const {
+  DCHECK(data_builder_);
+  DCHECK(!(data_builder_->IsBlockFullMasked() ^ dict_block_.IsBlockFullMasked()));
+  return data_builder_->IsBlockFullMasked() &&
+         dict_block_.IsBlockFullMasked();
 }
 
 ////////////////////////////////////////////////////////////

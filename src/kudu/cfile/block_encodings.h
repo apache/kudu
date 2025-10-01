@@ -56,7 +56,7 @@ class BlockBuilder {
   // WriterOptions' cfile_block_size.
   // If it is full, the cfile writer will call FinishCurDataBlock().
   bool IsBlockFull() const {
-    if (block_full_masked_) {
+    if (IsBlockFullMasked()) {
       return false;
     }
     return IsBlockFullImpl();
@@ -109,12 +109,12 @@ class BlockBuilder {
   // different array data blocks. The cfile writer uses this to make sure the
   // encoder isn't switching to a new block when writing data within
   // a single array cell.
-  void SetBlockFullMasked(bool block_full_masked) {
+  virtual void SetBlockFullMasked(bool block_full_masked) {
     block_full_masked_ = block_full_masked;
   }
 
   // Whether the 'block is full' is masked.
-  bool IsBlockFullMasked() const {
+  virtual bool IsBlockFullMasked() const {
     return block_full_masked_;
   }
 

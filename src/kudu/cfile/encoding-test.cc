@@ -24,6 +24,7 @@
 #include <cstdlib>
 #include <functional>
 #include <initializer_list>
+#include <iterator>
 #include <limits>
 #include <memory>
 #include <ostream>
@@ -50,6 +51,7 @@
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/bitmap.h"
+#include "kudu/util/compression/compression.pb.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/group_varint-inl.h"
 #include "kudu/util/hexdump.h"
@@ -464,6 +466,113 @@ class TestEncoding : public KuduTest {
     ASSERT_OK(bd->ParseHeader());
     ASSERT_EQ(0, bd->Count());
     ASSERT_FALSE(bd->HasNext());
+  }
+
+  template<DataType T>
+  void TestBlockFullMasked(EncodingType encoding,
+                           CompressionType compression,
+                           Random* rng) {
+    typedef typename DataTypeTraits<T>::cpp_type ElemType;
+
+    constexpr const uint32_t kBlockSize = 16;
+    WriterOptions write_options;
+    write_options.storage_attributes = {
+      encoding,
+      compression,
+      kBlockSize
+    };
+
+    const TypeInfo* ti = GetArrayTypeInfo(T);
+    ASSERT_NE(nullptr, ti);
+
+    const TypeEncodingInfo* tei;
+    ASSERT_OK(TypeEncodingInfo::Get(ti, encoding, &tei));
+
+    // In case of binary/string types, the Slice's memory from 'values'
+    // is backed by strings in 'values_str'.
+    vector<string> values_str;
+    values_str.reserve(3 * kBlockSize);
+
+    vector<ElemType> values;
+    values.reserve(3 * kBlockSize);
+    if constexpr (std::is_integral<ElemType>::value) {
+      values = CreateRandomIntegersInRange<ElemType, Random>(
+          3 * kBlockSize, 0, std::numeric_limits<ElemType>::max(), rng);
+    } else {
+      vector<int64_t> tmp = CreateRandomIntegersInRange<int64_t, Random>(
+          3 * kBlockSize, 0, std::numeric_limits<int64_t>::max(), rng);
+      std::transform(tmp.begin(), tmp.end(),
+                     std::back_inserter(values_str),
+                     [&](int64_t e) { return std::to_string(e); });
+      std::transform(values_str.begin(), values_str.end(),
+                     std::back_inserter(values),
+                     [&](const string& e) { return Slice(e); });
+    }
+
+    // Write significantly more than the configured cfile block size,
+    // and make sure 'IsBlockFull()' returns true.
+    {
+      auto bb = tei->CreateBlockBuilder(&write_options);
+      ASSERT_NE(nullptr, bb.get());
+      ASSERT_FALSE(bb->IsBlockFullMasked());
+      ASSERT_FALSE(bb->IsBlockFull());
+      ASSERT_FALSE(bb->IsBlockFullImpl());
+      const auto count = bb->Add(reinterpret_cast<const uint8_t*>(values.data()),
+                                 values.size());
+      ASSERT_GT(count, 0);
+      ASSERT_FALSE(bb->IsBlockFullMasked());
+      ASSERT_TRUE(bb->IsBlockFull());
+      ASSERT_TRUE(bb->IsBlockFullImpl());
+    }
+
+    // Same as above, but now mask the 'block is full' bit, make sure
+    // 'IsBlockFull()' returns false, all the data is being written
+    // and read back as-is.
+    {
+      auto bb = tei->CreateBlockBuilder(&write_options);
+      ASSERT_NE(nullptr, bb.get());
+      bb->SetBlockFullMasked(true);
+      ASSERT_TRUE(bb->IsBlockFullMasked());
+      ASSERT_FALSE(bb->IsBlockFull());
+      ASSERT_FALSE(bb->IsBlockFullImpl());
+      const auto count = bb->Add(reinterpret_cast<const uint8_t*>(values.data()),
+                                 values.size());
+      ASSERT_EQ(values.size(), count);
+      ASSERT_TRUE(bb->IsBlockFullMasked());
+      ASSERT_FALSE(bb->IsBlockFull());
+      ASSERT_TRUE(bb->IsBlockFullImpl());
+
+      bb->SetBlockFullMasked(false);
+      ASSERT_FALSE(bb->IsBlockFullMasked());
+      ASSERT_TRUE(bb->IsBlockFull());
+      ASSERT_TRUE(bb->IsBlockFullImpl());
+
+      scoped_refptr<BlockHandle> block = FinishAndMakeContiguous(
+          bb.get(), values.size());
+      ASSERT_GT(block->data().size(), 0);
+
+      // A dictionary decoder requires parent CFileIterator to be provided,
+      // but that's absent in this mock context. Even if the comparison with
+      // the source data is omitted here, it is covered by array data type
+      // scenarios in cfile-test.cc involving DICT_ENCODING.
+      if (encoding == DICT_ENCODING) {
+        return;
+      }
+
+      auto bd = CreateBlockDecoderOrDie(ti, encoding, std::move(block));
+      ASSERT_OK(bd->ParseHeader());
+      ASSERT_EQ(values.size(), bd->Count());
+
+      for (size_t idx = 0; idx < values.size(); ++idx) {
+        SCOPED_TRACE(Substitute("idx $0", idx));
+        ASSERT_EQ(idx, bd->GetCurrentIndex());
+        ASSERT_TRUE(bd->HasNext());
+        typename DataTypeTraits<T>::cpp_type read;
+        CopyOne<T>(bd.get(), &read);
+        ASSERT_EQ(values[idx], read);
+      }
+      ASSERT_FALSE(bd->HasNext());
+    }
   }
 
   template <DataType Type>
@@ -915,6 +1024,36 @@ TEST_F(TestEncoding, TestBinaryPlainBlockBuilderTruncation) {
 
 TEST_F(TestEncoding, TestBinaryPrefixBlockBuilderTruncation) {
   TestBinaryBlockTruncation<BinaryPrefixBlockDecoder>(PREFIX_ENCODING);
+}
+
+TEST_F(TestEncoding, BlockFullMaskingInt) {
+  // Run the scenario for a few generic integer types and all the suitable
+  // encodings and compression types.
+  Random rng(SeedRandom());
+  for (const auto encoding : { PLAIN_ENCODING, RLE, BIT_SHUFFLE }) {
+    for (const auto compression : { NO_COMPRESSION, SNAPPY, LZ4, ZLIB }) {
+      SCOPED_TRACE(Substitute("encoding: $0 compression: $1",
+                              EncodingType_Name(encoding),
+                              CompressionType_Name(compression)));
+      NO_FATALS(TestBlockFullMasked<INT32>(encoding, compression, &rng));
+      NO_FATALS(TestBlockFullMasked<INT64>(encoding, compression, &rng));
+    }
+  }
+}
+
+TEST_F(TestEncoding, BlockFullBitMaskingBin) {
+  // Run the scenario for a few generic binary types and all the suitable
+  // encodings and compression types.
+  Random rng(SeedRandom());
+  for (const auto encoding : { PLAIN_ENCODING, PREFIX_ENCODING, DICT_ENCODING, }) {
+    for (const auto compression : { NO_COMPRESSION, SNAPPY, LZ4, ZLIB }) {
+      SCOPED_TRACE(Substitute("encoding: $0 compression: $1",
+                              EncodingType_Name(encoding),
+                              CompressionType_Name(compression)));
+      NO_FATALS(TestBlockFullMasked<BINARY>(encoding, compression, &rng));
+      NO_FATALS(TestBlockFullMasked<STRING>(encoding, compression, &rng));
+    }
+  }
 }
 
 class IntEncodingTest : public TestEncoding, public ::testing::WithParamInterface<EncodingType> {

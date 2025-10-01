@@ -98,6 +98,10 @@ class BinaryDictBlockBuilder final : public BlockBuilder {
 
   Status GetLastKey(void* key) const override;
 
+  void SetBlockFullMasked(bool block_full_masked) override;
+
+  bool IsBlockFullMasked() const override;
+
  private:
   int AddCodeWords(const uint8_t* vals, size_t count);
 
