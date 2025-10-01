@@ -3698,6 +3698,8 @@ void ToolTest::RunLoadgen(int num_tservers,
         ColumnSchema("unixtime_micros_val", UNIXTIME_MICROS),
         ColumnSchema("string_val", STRING),
         ColumnSchema("binary_val", BINARY),
+        ColumnSchemaBuilder().name("arr_bool").type(BOOL).array(true),
+        ColumnSchemaBuilder().name("arr_int64").type(INT64).array(true).nullable(true),
       }, 1);
 
     shared_ptr<KuduClient> client;
@@ -3867,24 +3869,29 @@ TEST_F(ToolTest, TestLoadgenAutoFlushBackgroundUseUpsert) {
       "bench_auto_flush_background_use_upsert"));
 }
 
-// Run the loadgen benchmark in MANUAL_FLUSH mode.
+// Run the loadgen benchmark in MANUAL_FLUSH mode, flushing the buffers as
+// specified by the --flush_per_n_rows flag.
 TEST_F(ToolTest, TestLoadgenManualFlush) {
   NO_FATALS(RunLoadgen(3,
       {
-        "--buffer_size_bytes=524288",
+        "--buffer_size_bytes=1048576",
         "--buffers_num=2",
-        "--flush_per_n_rows=1024",
+        "--flush_per_n_rows=256",
         "--num_rows_per_thread=4096",
         "--num_threads=3",
         "--run_scan",
         "--show_first_n_errors=3",
-        "--string_len=16",
+        "--string_len=10",
       },
       "bench_manual_flush"));
 }
 
 TEST_F(ToolTest, TestLoadgenServerSideDefaultNumReplicas) {
   NO_FATALS(RunLoadgen(3, { "--table_num_replicas=0" }));
+}
+
+TEST_F(ToolTest, LoadgenEnableArrayColumn) {
+  NO_FATALS(RunLoadgen(1, { "--enable_array_columns", "--run_scan" }));
 }
 
 TEST_F(ToolTest, TestLoadgenDatabaseName) {

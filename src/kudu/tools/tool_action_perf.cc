@@ -202,6 +202,7 @@
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/strcat.h"
@@ -221,6 +222,7 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/oid_generator.h"
 #include "kudu/util/random.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
 
@@ -385,6 +387,13 @@ DEFINE_bool(txn_rollback, false,
             "Whether to rollback the multi-row transaction which contains all "
             "the inserted rows. Setting --txn_rollback=true implies setting "
             "--txn_start=true as well.");
+DEFINE_bool(enable_array_columns, false,
+            "Whether to add and populate with data array data type columns "
+            "in the automatically created table (a.k.a. auto-table): "
+            "'arr_int64' (INT64 1D array) and 'arr_string' (STRING 1D array) "
+            "columns. If array columns are present in already existing table "
+            "specified by the --table_name flag, the tool populates such "
+            "columns regardless of this flag's setting.");
 
 DECLARE_bool(show_values);
 DECLARE_int32(num_threads);
@@ -394,6 +403,18 @@ DECLARE_string(table_name);
 
 namespace kudu {
 namespace tools {
+
+class PartialRow final {
+ public:
+  template<typename T>
+  static Status SetArray(
+      KuduPartialRow* row,
+      int col_idx,
+      const std::vector<typename T::element_cpp_type>& val,
+      const std::vector<bool>& validity) {
+    return row->SetArray<T>(col_idx, val, validity);
+  }
+};
 
 namespace {
 
@@ -515,8 +536,114 @@ int64_t SpanPerThread(int num_key_columns) {
       : FLAGS_num_rows_per_thread * num_key_columns;
 }
 
-Status GenerateRowData(Generator* key_gen, Generator* value_gen, KuduPartialRow* row,
-                       const string& fixed_string, KuduWriteOperation::Type op_type) {
+template <DataType T>
+Status SetBinaryArrayContent(int col_idx,
+                             Generator* gen,
+                             size_t array_elem_num,
+                             const string& value_prefix,
+                             KuduPartialRow* row) {
+  static_assert(std::is_same<typename DataTypeTraits<T>::cpp_type, Slice>::value);
+
+  vector<string> values_store(array_elem_num);
+  vector<Slice> values(array_elem_num);
+  vector<bool> validity(array_elem_num);
+
+  for (size_t i = 0; i < array_elem_num; ++i) {
+    const uint64_t val = gen->NextImpl();
+    const bool not_null = (val % 16 != 0);
+    validity[i] = not_null;
+    if (not_null) {
+      values_store[i] = value_prefix + std::to_string(val);
+      values[i] = Slice(values_store[i].data(), values_store[i].size());
+    }
+  }
+  return PartialRow::SetArray<ArrayTypeTraits<T>>(row, col_idx, values, validity);
+}
+
+template <DataType T>
+Status SetIntegerArrayContent(int col_idx,
+                              Generator* gen,
+                              size_t array_elem_num,
+                              KuduPartialRow* row) {
+  static_assert(!std::is_same<typename DataTypeTraits<T>::cpp_type, Slice>::value);
+
+  vector<typename DataTypeTraits<T>::cpp_type> values(array_elem_num);
+  vector<bool> validity(array_elem_num);
+
+  for (size_t i = 0; i < array_elem_num; ++i) {
+    const uint64_t val = gen->Next<uint64_t>();
+    const bool not_null = (val % 16 != 0);
+    validity[i] = not_null;
+    if (not_null) {
+      if constexpr (T == DATE) {
+        auto value = static_cast<typename DataTypeTraits<T>::cpp_type>(val);
+        value = std::max(value, *DataTypeTraits<DATE>::min_value());
+        value = std::min(value, *DataTypeTraits<DATE>::max_value());
+        values[i] = value;
+      } else {
+        values[i] = static_cast<typename DataTypeTraits<T>::cpp_type>(val);
+      }
+    }
+  }
+  return PartialRow::SetArray<ArrayTypeTraits<T>>(row, col_idx, values, validity);
+}
+
+Status PopulateArrayCell(int col_idx,
+                         const TypeInfo& elem_tinfo,
+                         const string& fixed_string,
+                         Generator* gen,
+                         KuduPartialRow* row) {
+  // Up to 256 array elements in one cell.
+  const size_t elem_num = gen->Next<uint8_t>();
+  const auto& column_schema = row->schema()->column(col_idx);
+  if (column_schema.is_nullable() && elem_num != 0 && elem_num % 16 == 0) {
+    // OK, let it be a null array cell.
+    return row->SetNull(col_idx);
+  }
+  switch (elem_tinfo.type()) {
+    case BOOL:
+      return SetIntegerArrayContent<BOOL>(col_idx, gen, elem_num, row);
+    case INT8:
+      return SetIntegerArrayContent<INT8>(col_idx, gen, elem_num, row);
+    case INT16:
+      return SetIntegerArrayContent<INT16>(col_idx, gen, elem_num, row);
+    case INT32:
+      return SetIntegerArrayContent<INT32>(col_idx, gen, elem_num, row);
+    case INT64:
+      return SetIntegerArrayContent<INT64>(col_idx, gen, elem_num, row);
+    case UNIXTIME_MICROS:
+      return SetIntegerArrayContent<UNIXTIME_MICROS>(col_idx, gen, elem_num, row);
+    case DATE:
+      return SetIntegerArrayContent<DATE>(col_idx, gen, elem_num, row);
+    case FLOAT:
+      return SetIntegerArrayContent<FLOAT>(col_idx, gen, elem_num, row);
+    case DOUBLE:
+      return SetIntegerArrayContent<DOUBLE>(col_idx, gen, elem_num, row);
+    case DECIMAL32:
+      return SetIntegerArrayContent<DECIMAL32>(col_idx, gen, elem_num, row);
+    case DECIMAL64:
+      return SetIntegerArrayContent<DECIMAL64>(col_idx, gen, elem_num, row);
+    case BINARY:
+      return SetBinaryArrayContent<BINARY>(col_idx, gen, elem_num, fixed_string, row);
+    case STRING:
+      return SetBinaryArrayContent<STRING>(col_idx, gen, elem_num, fixed_string, row);
+    case VARCHAR:
+      return SetBinaryArrayContent<VARCHAR>(col_idx, gen, elem_num, fixed_string, row);
+    default:
+      return Status::NotSupported(
+          Substitute("$0: unsupported array column data type",
+                     DataType_Name(elem_tinfo.type())),
+          column_schema.ToString());
+  }
+
+  return Status::OK();
+}
+
+Status GenerateRowData(Generator* key_gen,
+                       Generator* value_gen,
+                       KuduPartialRow* row,
+                       const string& fixed_string,
+                       KuduWriteOperation::Type op_type) {
   const vector<ColumnSchema>& columns(row->schema()->columns());
   DCHECK(op_type == KuduWriteOperation::INSERT ||
          op_type == KuduWriteOperation::DELETE ||
@@ -603,8 +730,17 @@ Status GenerateRowData(Generator* key_gen, Generator* value_gen, KuduPartialRow*
           RETURN_NOT_OK(row->SetStringNoCopy(idx, fixed_string));
         }
         break;
+      case NESTED:
+        if (const auto* elem_tinfo = GetArrayElementTypeInfo(*tinfo);
+            PREDICT_TRUE(elem_tinfo)) {
+          RETURN_NOT_OK(PopulateArrayCell(idx, *elem_tinfo, fixed_string, gen, row));
+        } else {
+          return Status::NotSupported("non-array NESTED columns not supported");
+        }
+        break;
       default:
-        return Status::InvalidArgument("unknown data type");
+        return Status::InvalidArgument(Substitute("unknown data type '$0'",
+                                                  DataType_Name(tinfo->type())));
     }
   }
   return Status::OK();
@@ -824,6 +960,15 @@ Status TestLoadGenerator(const RunnerContext& context) {
     b.AddColumn(kKeyColumnName)->Type(KuduColumnSchema::INT64)->NotNull()->PrimaryKey();
     b.AddColumn("int_val")->Type(KuduColumnSchema::INT32);
     b.AddColumn("string_val")->Type(KuduColumnSchema::STRING);
+    if (FLAGS_enable_array_columns) {
+      KuduColumnSchema::KuduArrayTypeDescriptor ai_int64(KuduColumnSchema::INT64);
+      KuduColumnSchema::KuduNestedTypeDescriptor nti_int64(ai_int64);
+      b.AddColumn("arr_int64")->Type(KuduColumnSchema::NESTED)->NestedType(nti_int64);
+
+      KuduColumnSchema::KuduArrayTypeDescriptor ai_str(KuduColumnSchema::STRING);
+      KuduColumnSchema::KuduNestedTypeDescriptor nti_str(ai_str);
+      b.AddColumn("arr_string")->Type(KuduColumnSchema::NESTED)->NestedType(nti_str);
+    }
     RETURN_NOT_OK(b.Build(&schema));
 
     unique_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
