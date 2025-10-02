@@ -47,6 +47,7 @@
 #endif
 #include "kudu/util/status.h"
 
+using kudu::serdes::Serialize;
 using std::string;
 using std::vector;
 using strings::Substitute;

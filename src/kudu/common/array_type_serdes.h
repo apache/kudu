@@ -34,6 +34,7 @@
 #include "kudu/util/status.h"
 
 namespace kudu {
+namespace serdes {
 
 template<DataType KUDU_DATA_TYPE, typename FB_TYPE>
 void BuildFlatbuffers(
@@ -281,4 +282,5 @@ inline Status SerializeIntoArena(
   }
 }
 
+} // namespace serdes
 } // namespace kudu

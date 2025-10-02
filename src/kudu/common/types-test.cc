@@ -41,6 +41,7 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+using kudu::serdes::Serialize;
 using std::get;
 using std::make_tuple;
 using std::nextafter;

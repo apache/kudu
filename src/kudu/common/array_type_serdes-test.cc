@@ -50,18 +50,18 @@ TEST(ArrayTypeSerdesTest, Basic) {
 
   unique_ptr<uint8_t[]> buf_data;
   size_t buf_data_size = 0;
-  ASSERT_OK(Serialize(GetTypeInfo(INT32),
-                      reinterpret_cast<const uint8_t*>(val.data()),
-                      val.size(),
-                      validity_vector,
-                      &buf_data,
-                      &buf_data_size));
+  ASSERT_OK(serdes::Serialize(GetTypeInfo(INT32),
+                              reinterpret_cast<const uint8_t*>(val.data()),
+                              val.size(),
+                              validity_vector,
+                              &buf_data,
+                              &buf_data_size));
   ASSERT_TRUE(buf_data);
   const Slice cell(buf_data.get(), buf_data_size);
 
   Arena arena(128);
   Slice arena_cell;
-  ASSERT_OK(SerializeIntoArena(
+  ASSERT_OK(serdes::SerializeIntoArena(
       GetTypeInfo(INT32),
       reinterpret_cast<const uint8_t*>(val.data()),
       validity_bitmap,

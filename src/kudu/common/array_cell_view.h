@@ -94,13 +94,13 @@ class ArrayCellMetadataView final {
   Status Init() {
     DCHECK(!is_initialized_);
     if (size_ == 0) {
-      DCHECK(!data_);
       content_ = nullptr;
       is_initialized_ = true;
       return Status::OK();
     }
 
     DCHECK_GT(size_, 0);
+    DCHECK(data_);
     {
       flatbuffers::Verifier::Options opt;
       // While verifying the input data, rely on the built-in constant of
@@ -257,7 +257,7 @@ class ArrayCellMetadataView final {
   }
 
   // Flatbuffer-encoded data; a non-owning raw pointer.
-  const uint8_t* data_;
+  const uint8_t* const data_;
 
   // Size of the encoded data, i.e. the number of bytes in the memory after
   // the 'data_' pointer that represent the serialized array.

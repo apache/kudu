@@ -432,7 +432,16 @@ class ArrayDataGenerator {
         values_vector_[i].clear();
         values_vector_str_[i].clear();
 
-        array_cells_[i] = Slice(static_cast<uint8_t*>(nullptr), 0);
+#if DCHECK_IS_ON()
+        // As an extra provision to catch mistakes in debug builds, supply
+        // null pointers for empty (i.e. zero-sized) Slices instances.
+        // For an empty Slice, the code shouldn't try dereferencing its data
+        // pointer, and that would be a mistake doing otherwise.
+        array_cells_[i] = (i % 2 == 0) ? Slice(static_cast<uint8_t*>(nullptr), 0)
+                                       : Slice();
+#else
+        array_cells_[i] = Slice();
+#endif
       } else {
         // Helper container for flatbuffer's serialization.
         std::vector<bool> validity_src(array_elem_num, false);
@@ -488,7 +497,7 @@ class ArrayDataGenerator {
         }
 
         size_t buf_size = 0;
-        const auto s = Serialize<DATA_TYPE, FB_TYPE>(
+        const auto s = serdes::Serialize<DATA_TYPE, FB_TYPE>(
             reinterpret_cast<uint8_t*>(values_vector_[i].data()),
             array_elem_num,
             validity_src,

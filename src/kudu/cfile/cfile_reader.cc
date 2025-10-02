@@ -1372,7 +1372,7 @@ Status CFileIterator::Scan(ColumnMaterializationContext* ctx) {
 
             // Serialize the read data into dst->arena().
             Slice cell_out;
-            RETURN_NOT_OK(SerializeIntoArena(
+            RETURN_NOT_OK(serdes::SerializeIntoArena(
                 elem_type_info,
                 cblock_data.get(),
                 cblock_not_null_bitmap.get(),
