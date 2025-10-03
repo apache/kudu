@@ -228,6 +228,33 @@ public abstract class ClientTestUtil {
     return new Schema(columns);
   }
 
+  public static Schema getSchemaWithArrayTypes() {
+    List<ColumnSchema> columns = ImmutableList.of(
+        new ColumnSchema.ColumnSchemaBuilder("key", Type.INT32).key(true).build(),
+        new ColumnSchema.ColumnSchemaBuilder("int8_arr", Type.INT8)
+            .array(true).nullable(true).build(),
+        new ColumnSchema.ColumnSchemaBuilder("bool_arr", Type.BOOL)
+            .array(true).nullable(true).build(),
+        new ColumnSchema.ColumnSchemaBuilder("binary_arr", Type.BINARY)
+            .array(true).nullable(true).build(),
+        new ColumnSchema.ColumnSchemaBuilder("int32_arr", Type.INT32)
+            .array(true).nullable(true).build(),
+        new ColumnSchema.ColumnSchemaBuilder("string_arr", Type.STRING)
+            .array(true).nullable(true).build(),
+        new ColumnSchema.ColumnSchemaBuilder("decimal_arr", Type.DECIMAL)
+            .typeAttributes(DecimalUtil.typeAttributes(5, 2))
+            .array(true).nullable(true).build(),
+        new ColumnSchema.ColumnSchemaBuilder("date_arr", Type.DATE)
+            .array(true).build(),
+        new ColumnSchema.ColumnSchemaBuilder("ts_arr", Type.UNIXTIME_MICROS)
+            .array(true).build(),
+        new ColumnSchema.ColumnSchemaBuilder("varchar_arr", Type.VARCHAR)
+            .typeAttributes(CharUtil.typeAttributes(10))
+            .array(true).build()
+    );
+    return new Schema(columns);
+  }
+
   public static PartialRow getPartialRowWithAllTypes(PartialRow row, byte int8Value) {
     if (row == null) {
       Schema schema = getSchemaWithAllTypes();
@@ -262,6 +289,11 @@ public abstract class ClientTestUtil {
 
   public static CreateTableOptions getAllTypesCreateTableOptions() {
     return new CreateTableOptions().setRangePartitionColumns(ImmutableList.of("int8"));
+  }
+
+  public static CreateTableOptions getArrayTypesCreateTableOptions() {
+    return new CreateTableOptions()
+        .setRangePartitionColumns(ImmutableList.of("key"));
   }
 
   public static Schema getBasicSchema() {

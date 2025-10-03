@@ -174,8 +174,8 @@
     </Match>
 
     <!-- kudu-client exclusions -->
+    <!-- For invalid elements we return null. -->
     <Match>
-        <!-- For invalid elements we return null. -->
         <Class name="org.apache.kudu.client.ArrayCellView"/>
         <Method name="getBinary" />
         <Bug pattern="PZLA_PREFER_ZERO_LENGTH_ARRAYS" />
@@ -184,6 +184,65 @@
         <Class name="org.apache.kudu.client.PartialRow"/>
         <Method name="normalizeValidity" />
         <Bug pattern="PZLA_PREFER_ZERO_LENGTH_ARRAYS" />
+    </Match>
+    <Match>
+        <Class name="org.apache.kudu.client.RowResult"/>
+        <Method name="getArrayBytes" />
+        <Bug pattern="PZLA_PREFER_ZERO_LENGTH_ARRAYS" />
+    </Match>
+    <!-- FlatBuffers union accessors always return the correct subclass;
+    safe cast verified by ensureTag()
+    -->
+    <Match>
+        <Class name="org.apache.kudu.client.ArrayCellView"/>
+        <Method name="asBinaryFB" />
+        <Bug pattern="PZLA_PREFER_ZERO_LENGTH_ARRAYS" />
+    </Match>
+
+    <Match>
+        <Class name="org.apache.kudu.client.ArrayCellView"/>
+        <Method name="asDoubleFB" />
+        <Bug pattern="BC_UNCONFIRMED_CAST_OF_RETURN_VALUE" />
+    </Match>
+    <Match>
+        <Class name="org.apache.kudu.client.ArrayCellView"/>
+        <Method name="asBinaryFB" />
+        <Bug pattern="BC_UNCONFIRMED_CAST_OF_RETURN_VALUE" />
+    </Match>
+    <Match>
+        <Class name="org.apache.kudu.client.ArrayCellView"/>
+        <Method name="asFloatFB" />
+        <Bug pattern="BC_UNCONFIRMED_CAST_OF_RETURN_VALUE" />
+    </Match>
+    <Match>
+        <Class name="org.apache.kudu.client.ArrayCellView"/>
+        <Method name="asInt16FB" />
+        <Bug pattern="BC_UNCONFIRMED_CAST_OF_RETURN_VALUE" />
+    </Match>
+    <Match>
+        <Class name="org.apache.kudu.client.ArrayCellView"/>
+        <Method name="asInt32FB" />
+        <Bug pattern="BC_UNCONFIRMED_CAST_OF_RETURN_VALUE" />
+    </Match>
+    <Match>
+        <Class name="org.apache.kudu.client.ArrayCellView"/>
+        <Method name="asInt64FB" />
+        <Bug pattern="BC_UNCONFIRMED_CAST_OF_RETURN_VALUE" />
+    </Match>
+    <Match>
+        <Class name="org.apache.kudu.client.ArrayCellView"/>
+        <Method name="asInt8FB" />
+        <Bug pattern="BC_UNCONFIRMED_CAST_OF_RETURN_VALUE" />
+    </Match>
+    <Match>
+        <Class name="org.apache.kudu.client.ArrayCellView"/>
+        <Method name="asStringFB" />
+        <Bug pattern="BC_UNCONFIRMED_CAST_OF_RETURN_VALUE" />
+    </Match>
+    <Match>
+        <Class name="org.apache.kudu.client.ArrayCellView"/>
+        <Method name="asUInt8FB" />
+        <Bug pattern="BC_UNCONFIRMED_CAST_OF_RETURN_VALUE" />
     </Match>
     <Match>
         <!-- Reference equality is intended here. -->

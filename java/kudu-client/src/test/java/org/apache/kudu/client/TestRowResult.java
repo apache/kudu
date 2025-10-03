@@ -19,14 +19,18 @@ package org.apache.kudu.client;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.kudu.test.ClientTestUtil.getAllTypesCreateTableOptions;
+import static org.apache.kudu.test.ClientTestUtil.getArrayTypesCreateTableOptions;
 import static org.apache.kudu.test.ClientTestUtil.getSchemaWithAllTypes;
+import static org.apache.kudu.test.ClientTestUtil.getSchemaWithArrayTypes;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
+import java.sql.Date;
 import java.sql.Timestamp;
 
 import org.junit.Before;
@@ -217,5 +221,140 @@ public class TestRowResult {
         assertEquals(Type.DATE, rr.getColumnType(14));
       }
     }
+  }
+
+  @Test
+  public void testArrayColumns() throws Exception {
+    String tableName = "TestRowResult-Arrays-" + System.currentTimeMillis();
+    Schema schema = getSchemaWithArrayTypes();
+    harness.getClient().createTable(tableName, schema, getArrayTypesCreateTableOptions());
+    KuduTable table = harness.getClient().openTable(tableName);
+
+    final KuduSession session = harness.getClient().newSession();
+    Insert insert = table.newInsert();
+    PartialRow row = insert.getRow();
+    row.addInt("key", 1);
+
+    row.addArrayInt8(schema.getColumnIndex("int8_arr"),
+        new byte[]{1, 2, 3}, new boolean[]{true, false, true});
+
+    row.addArrayBool(schema.getColumnIndex("bool_arr"),
+        new boolean[]{true, false, true}, new boolean[]{true, false, true});
+
+    row.addArrayBinary(schema.getColumnIndex("binary_arr"),
+        new byte[][]{"a".getBytes(UTF_8), "b".getBytes(UTF_8), "c".getBytes(UTF_8)},
+        new boolean[]{true, false, true});
+
+    row.addArrayInt32(schema.getColumnIndex("int32_arr"), new int[]{1, 2, 3});
+    row.addArrayString(schema.getColumnIndex("string_arr"),
+        new String[]{"a", null, "c"});
+
+    row.addArrayDecimal(schema.getColumnIndex("decimal_arr"),
+        new BigDecimal[]{BigDecimal.valueOf(123, 2), null, BigDecimal.valueOf(456, 2)},
+        /*validity*/ null);
+
+    row.addArrayDate(schema.getColumnIndex("date_arr"),
+        new Date[]{DateUtil.epochDaysToSqlDate(0), DateUtil.epochDaysToSqlDate(10)});
+
+    row.addArrayTimestamp(schema.getColumnIndex("ts_arr"),
+        new Timestamp[]{new Timestamp(1000), new Timestamp(2000)});
+
+    row.addArrayVarchar(schema.getColumnIndex("varchar_arr"),
+        new String[]{"abc", "xyz"}, /*validity*/ null);
+
+    session.apply(insert);
+
+    // Scan back
+    KuduScanner scanner = harness.getClient().newScannerBuilder(table).build();
+    RowResult rr = scanner.nextRows().next();
+
+    // int8[]
+    ArrayCellView int8Arr = rr.getArray("int8_arr");
+    assertEquals(3, int8Arr.length());
+    assertEquals(1, int8Arr.getInt8(0));
+    assertFalse(int8Arr.isValid(1));
+    assertEquals(3, int8Arr.getInt8(2));
+
+    // bool[]
+    ArrayCellView boolArr = rr.getArray("bool_arr");
+    assertEquals(3, boolArr.length());
+    assertTrue(boolArr.getBoolean(0));
+    assertFalse(boolArr.isValid(1));
+    assertTrue(boolArr.getBoolean(2));
+
+    // binary[]
+    ArrayCellView binArr = rr.getArray("binary_arr");
+    assertEquals(3, binArr.length());
+    assertArrayEquals("a".getBytes(UTF_8), binArr.getBinary(0));
+    assertFalse(binArr.isValid(1));
+    assertArrayEquals("c".getBytes(UTF_8), binArr.getBinary(2));
+
+    // int32[]
+    ArrayCellView intArr = rr.getArray("int32_arr");
+    assertEquals(3, intArr.length());
+    assertEquals(1, intArr.getInt32(0));
+    assertEquals(2, intArr.getInt32(1));
+    assertEquals(3, intArr.getInt32(2));
+
+    // string[]
+    ArrayCellView strArr = rr.getArray("string_arr");
+    assertEquals(3, strArr.length());
+    assertEquals("a", strArr.getString(0));
+    assertFalse(strArr.isValid(1));
+    assertEquals("c", strArr.getString(2));
+
+    // decimal[]
+    BigDecimal[] decimals = ArrayCellViewHelper.toDecimalArray(rr.getArray("decimal_arr"), 9, 2);
+    assertEquals(new BigDecimal("1.23"), decimals[0]);
+    assertNull(decimals[1]);
+    assertEquals(new BigDecimal("4.56"), decimals[2]);
+
+    // date[]
+    Date[] dates = ArrayCellViewHelper.toDateArray(rr.getArray("date_arr"));
+    assertEquals(DateUtil.epochDaysToSqlDate(0), dates[0]);
+    assertEquals(DateUtil.epochDaysToSqlDate(10), dates[1]);
+
+    // timestamp[]
+    Timestamp[] ts = ArrayCellViewHelper.toTimestampArray(rr.getArray("ts_arr"));
+    assertEquals(new Timestamp(1000), ts[0]);
+    assertEquals(new Timestamp(2000), ts[1]);
+
+    // varchar[]
+    String[] vch = ArrayCellViewHelper.toVarcharArray(rr.getArray("varchar_arr"));
+    assertArrayEquals(new String[]{"abc", "xyz"}, vch);
+
+    // Verify schema-aware conversions
+    Byte[] int8Boxed = (Byte[]) rr.getArrayData("int8_arr");
+    assertArrayEquals(new Byte[]{1, null, 3}, int8Boxed);
+
+    Integer[] intBoxed = (Integer[]) rr.getArrayData("int32_arr");
+    assertArrayEquals(new Integer[]{1, 2, 3}, intBoxed);
+
+    String[] strBoxed = (String[]) rr.getArrayData("string_arr");
+    assertArrayEquals(new String[]{"a", null, "c"}, strBoxed);
+
+    BigDecimal[] decBoxed = (BigDecimal[]) rr.getArrayData("decimal_arr");
+    assertEquals(new BigDecimal("1.23"), decBoxed[0]);
+    assertNull(decBoxed[1]);
+    assertEquals(new BigDecimal("4.56"), decBoxed[2]);
+
+    Date[] dateBoxed = (Date[]) rr.getArrayData("date_arr");
+    assertEquals(DateUtil.epochDaysToSqlDate(0), dateBoxed[0]);
+    assertEquals(DateUtil.epochDaysToSqlDate(10), dateBoxed[1]);
+
+    Timestamp[] tsBoxed = (Timestamp[]) rr.getArrayData("ts_arr");
+    assertEquals(new Timestamp(1000), tsBoxed[0]);
+    assertEquals(new Timestamp(2000), tsBoxed[1]);
+
+    String[] vchBoxed = (String[]) rr.getArrayData("varchar_arr");
+    assertArrayEquals(new String[]{"abc", "xyz"}, vchBoxed);
+
+    Boolean[] boolBoxed = (Boolean[]) rr.getArrayData("bool_arr");
+    assertArrayEquals(new Boolean[]{true, null, true}, boolBoxed);
+
+    byte[][] binBoxed = (byte[][]) rr.getArrayData("binary_arr");
+    assertArrayEquals("a".getBytes(UTF_8), binBoxed[0]);
+    assertNull(binBoxed[1]);
+    assertArrayEquals("c".getBytes(UTF_8), binBoxed[2]);
   }
 }

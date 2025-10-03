@@ -22,6 +22,8 @@ import java.nio.ByteOrder;
 import java.util.Arrays;
 import java.util.function.IntFunction;
 
+import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.Type;
 import org.apache.kudu.serdes.BinaryArray;
 import org.apache.kudu.serdes.Content;
 import org.apache.kudu.serdes.DoubleArray;
@@ -40,7 +42,7 @@ import org.apache.kudu.serdes.UInt8Array;
 /**
  * Lightweight view over a FlatBuffers Content blob representing a single array cell.
  */
-public final class ArrayCellView {
+class ArrayCellView {
 
   private final byte[] rawBytes;
   private final Content content;
@@ -48,7 +50,14 @@ public final class ArrayCellView {
 
   private static final String NULL_ELEMENT_MSG = "Element %d is NULL";
 
-  public ArrayCellView(byte[] buf) {
+  /**
+   * Construct an {@code ArrayCellView} from a serialized FlatBuffer blob.
+   * The byte array is not copied; callers must ensure it remains valid.
+   *
+   * @param buf the FlatBuffer bytes for a {@code Content} object
+   */
+
+  ArrayCellView(byte[] buf) {
     this.rawBytes = buf;
     ByteBuffer bb = ByteBuffer.wrap(buf).order(ByteOrder.LITTLE_ENDIAN);
     this.content = Content.getRootAsContent(bb);
@@ -56,12 +65,13 @@ public final class ArrayCellView {
   }
 
   /** Return the underlying FlatBuffer bytes exactly as passed in. */
-  public byte[] toBytes() {
+
+  byte[] toBytes() {
     return rawBytes;
   }
 
   /** Number of logical elements (driven by the data vector). */
-  public int length() {
+  int length() {
     switch (typeTag) {
       case ScalarArray.Int8Array: {
         Int8Array arr = new Int8Array();
@@ -130,7 +140,7 @@ public final class ArrayCellView {
   }
 
   /** Returns true iff element i is valid (non-null). */
-  public boolean isValid(int i) {
+  boolean isValid(int i) {
     int n = length();
     if (i < 0 || i >= n) {
       throw new IndexOutOfBoundsException(
@@ -151,12 +161,38 @@ public final class ArrayCellView {
     return content.validity(i);
   }
 
+  /**
+   * Returns a boolean array of element validity flags.
+   *
+   * @param n expected number of elements in the values vector
+   * @throws IllegalStateException if validity length and value length mismatch
+   */
+
+  boolean[] validityOrAllTrue(int n) {
+    int len = content.validityLength();
+    if (len == 0) {
+      boolean[] allTrue = new boolean[n];
+      java.util.Arrays.fill(allTrue, true);
+      return allTrue;
+    }
+    if (len != n) {
+      throw new IllegalStateException(
+          String.format("Validity length %d does not match values length %d", len, n));
+    }
+    boolean[] v = new boolean[n];
+    for (int i = 0; i < n; i++) {
+      v[i] = content.validity(i);
+    }
+    return v;
+  }
+
   // ----------------------------------------------------------------------
   // Types single element accessors
   // ----------------------------------------------------------------------
 
   /** BOOL is encoded as UInt8 (0/1). */
-  public boolean getBoolean(int i) {
+
+  boolean getBoolean(int i) {
     ensureTag(ScalarArray.UInt8Array);
     if (!isValid(i)) {
       throw new IllegalStateException(String.format(NULL_ELEMENT_MSG, i));
@@ -166,7 +202,8 @@ public final class ArrayCellView {
     return arr.values(i) != 0;
   }
 
-  public byte getInt8(int i) {
+
+  byte getInt8(int i) {
     ensureTag(ScalarArray.Int8Array);
     if (!isValid(i)) {
       throw new IllegalStateException(String.format(NULL_ELEMENT_MSG, i));
@@ -176,7 +213,8 @@ public final class ArrayCellView {
     return arr.values(i);
   }
 
-  public short getInt16(int i) {
+
+  short getInt16(int i) {
     ensureTag(ScalarArray.Int16Array);
     if (!isValid(i)) {
       throw new IllegalStateException(String.format(NULL_ELEMENT_MSG, i));
@@ -187,7 +225,8 @@ public final class ArrayCellView {
   }
 
   /** INT32 (also used by DATE, DECIMAL32 on the wire). */
-  public int getInt32(int i) {
+
+  int getInt32(int i) {
     ensureTag(ScalarArray.Int32Array);
     if (!isValid(i)) {
       throw new IllegalStateException(String.format(NULL_ELEMENT_MSG, i));
@@ -198,7 +237,8 @@ public final class ArrayCellView {
   }
 
   /** INT64 (also used by DECIMAL64, UNIXTIME_MICROS on the wire). */
-  public long getInt64(int i) {
+
+  long getInt64(int i) {
     ensureTag(ScalarArray.Int64Array);
     if (!isValid(i)) {
       throw new IllegalStateException(String.format(NULL_ELEMENT_MSG, i));
@@ -208,7 +248,8 @@ public final class ArrayCellView {
     return arr.values(i);
   }
 
-  public float getFloat(int i) {
+
+  float getFloat(int i) {
     ensureTag(ScalarArray.FloatArray);
     if (!isValid(i)) {
       throw new IllegalStateException(String.format(NULL_ELEMENT_MSG, i));
@@ -218,7 +259,8 @@ public final class ArrayCellView {
     return arr.values(i);
   }
 
-  public double getDouble(int i) {
+
+  double getDouble(int i) {
     ensureTag(ScalarArray.DoubleArray);
     if (!isValid(i)) {
       throw new IllegalStateException(String.format(NULL_ELEMENT_MSG, i));
@@ -228,27 +270,28 @@ public final class ArrayCellView {
     return arr.values(i);
   }
 
-  public String getString(int i) {
+
+  String getString(int i) {
     ensureTag(ScalarArray.StringArray);
     if (!isValid(i)) {
-      return null;
+      throw new IllegalStateException(String.format(NULL_ELEMENT_MSG, i));
     }
     StringArray arr = new StringArray();
     content.data(arr);
     return arr.values(i);
   }
 
-  public byte[] getBinary(int i) {
+
+  byte[] getBinary(int i) {
     ensureTag(ScalarArray.BinaryArray);
     if (!isValid(i)) {
-      return null;
+      throw new IllegalStateException(String.format(NULL_ELEMENT_MSG, i));
     }
     BinaryArray arr = new BinaryArray();
     content.data(arr);
     UInt8Array elem = arr.values(new UInt8Array(), i);
     if (elem == null) {
-      throw new IllegalStateException(
-          String.format("Corrupt BinaryArray: missing element at index %d", i));
+      throw new IllegalStateException(String.format(NULL_ELEMENT_MSG, i));
     }
     ByteBuffer bb = elem.valuesAsByteBuffer();
     byte[] out = new byte[bb.remaining()];
@@ -257,33 +300,12 @@ public final class ArrayCellView {
   }
 
 
-  // ----------------------------------------------------------------------
-  // Bulk conversion for callers that want plain Java arrays
-  // ----------------------------------------------------------------------
-
-  public Object toJavaArray() {
-    switch (typeTag) {
-      case ScalarArray.Int32Array:   return Array1dSerdes.parseInt32(rawBytes).getValues();
-      case ScalarArray.Int64Array:   return Array1dSerdes.parseInt64(rawBytes).getValues();
-      case ScalarArray.Int16Array:   return Array1dSerdes.parseInt16(rawBytes).getValues();
-      case ScalarArray.Int8Array:    return Array1dSerdes.parseInt8(rawBytes).getValues();
-      case ScalarArray.UInt8Array:   return Array1dSerdes.parseUInt8(rawBytes).getValues();
-      case ScalarArray.UInt16Array:  return Array1dSerdes.parseUInt16(rawBytes).getValues();
-      case ScalarArray.UInt32Array:  return Array1dSerdes.parseUInt32(rawBytes).getValues();
-      case ScalarArray.UInt64Array:  return Array1dSerdes.parseUInt64(rawBytes).getValues();
-      case ScalarArray.FloatArray:   return Array1dSerdes.parseFloat(rawBytes).getValues();
-      case ScalarArray.DoubleArray:  return Array1dSerdes.parseDouble(rawBytes).getValues();
-      case ScalarArray.StringArray:  return Array1dSerdes.parseString(rawBytes).getValues();
-      case ScalarArray.BinaryArray:  return Array1dSerdes.parseBinary(rawBytes).getValues();
-      default:
-        throw new UnsupportedOperationException("Unsupported array type tag: " + typeTag);
-    }
-  }
-
-  // ----------------------------------------------------------------------
-  // Pretty print with NULLs preserved
-  // ----------------------------------------------------------------------
-
+  /**
+   * Returns a human-readable string representation of the array contents,
+   * preserving {@code NULL} markers for invalid elements.
+   *
+   * <p>This is intended for debugging and should not be parsed.</p>
+   */
   @Override
   public String toString() {
     final int n = length();
@@ -383,6 +405,12 @@ public final class ArrayCellView {
     return sb.toString();
   }
 
+  /**
+   * Verifies that this array's type tag matches the expected
+   * physical array type.
+   *
+   * @throws IllegalStateException if the tag does not match
+   */
   private void ensureTag(byte expectedTag) {
     if (typeTag != expectedTag) {
       String expectedName = ScalarArray.name(expectedTag);
@@ -394,6 +422,10 @@ public final class ArrayCellView {
     }
   }
 
+  /**
+   * Appends formatted element values to the provided {@link StringBuilder},
+   * substituting {@code NULL} for invalid entries.
+   */
   private void appendArrayValuesToString(
       StringBuilder sb, int n,
       IntFunction<Object> valueFn) {
@@ -407,6 +439,109 @@ public final class ArrayCellView {
       }
       sb.append(valueFn.apply(i));
     }
+  }
+
+  /**
+   * Converts this array cell into a boxed Java array using the column schema
+   * to resolve the element's logical type and column attributes.
+   *
+   * <p>This variant interprets the element type (for example,
+   * {@code DATE}, {@code TIMESTAMP}, or {@code DECIMAL}) using the
+   * provided {@link ColumnSchema}, and applies precision and scale
+   * information when relevant.</p>
+   *
+   * <p>Internally delegates to
+   * {@link ArrayCellViewHelper#toJavaArray(ArrayCellView, ColumnSchema)}.</p>
+   *
+   * @param columnSchema the schema describing this array column, including
+   *                     logical type, precision, and scale
+   * @return a boxed Java array corresponding to the logical element type
+   */
+
+  Object toJavaArray(ColumnSchema columnSchema) {
+    return ArrayCellViewHelper.toJavaArray(this, columnSchema);
+  }
+
+  /**
+   * Converts this array cell into a boxed Java array without schema context.
+   *
+   * <p>This variant performs a physical-to-Java mapping based only on
+   * the array's storage type and does not apply any logical-type
+   * conversions or precision/scale metadata.</p>
+   *
+   * <p>For {@code DECIMAL} arrays, prefer
+   * {@link #toJavaArray(ColumnSchema)} to ensure correct precision and
+   * scale are applied.</p>
+   *
+   * @return a boxed Java array corresponding to the underlying storage type
+   */
+
+  Object toJavaArray() {
+    return ArrayCellViewHelper.toJavaArray(this, null);
+  }
+
+
+  byte typeTag() {
+    return typeTag;
+  }
+
+  /**
+   * Returns the underlying FlatBuffer view of this array's physical values
+   * (for internal use or advanced diagnostics). Validates that the
+   * {@code typeTag} matches the expected array type.
+   */
+
+  Int8Array asInt8FB() {
+    ensureTag(ScalarArray.Int8Array);
+    return (Int8Array) content.data(new Int8Array());
+  }
+
+
+  Int16Array asInt16FB() {
+    ensureTag(ScalarArray.Int16Array);
+    return (Int16Array) content.data(new Int16Array());
+  }
+
+
+  Int32Array asInt32FB() {
+    ensureTag(ScalarArray.Int32Array);
+    return (Int32Array) content.data(new Int32Array());
+  }
+
+
+  Int64Array asInt64FB() {
+    ensureTag(ScalarArray.Int64Array);
+    return (Int64Array) content.data(new Int64Array());
+  }
+
+
+  FloatArray asFloatFB() {
+    ensureTag(ScalarArray.FloatArray);
+    return (FloatArray) content.data(new FloatArray());
+  }
+
+
+  DoubleArray asDoubleFB() {
+    ensureTag(ScalarArray.DoubleArray);
+    return (DoubleArray) content.data(new DoubleArray());
+  }
+
+
+  UInt8Array asUInt8FB() {
+    ensureTag(ScalarArray.UInt8Array);
+    return (UInt8Array) content.data(new UInt8Array());
+  }
+
+
+  StringArray asStringFB() {
+    ensureTag(ScalarArray.StringArray);
+    return (StringArray) content.data(new StringArray());
+  }
+
+
+  BinaryArray asBinaryFB() {
+    ensureTag(ScalarArray.BinaryArray);
+    return (BinaryArray) content.data(new BinaryArray());
   }
 
 }

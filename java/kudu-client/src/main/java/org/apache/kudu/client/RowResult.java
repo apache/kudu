@@ -19,10 +19,13 @@ package org.apache.kudu.client;
 
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.sql.Date;
 import java.sql.Timestamp;
 import java.util.Arrays;
+import javax.annotation.Nullable;
 
+import com.google.common.base.Preconditions;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 
@@ -458,7 +461,8 @@ public abstract class RowResult {
    * This method is useful when you don't care about autoboxing
    * and your existing type handling logic is based on Java types.
    *
-   * The Object type is based on the column's {@link Type}:
+   * The returned Object type depends on the column's definition:
+   *  Array columns -> {@link ArrayCellView}
    *  Type.BOOL -> java.lang.Boolean
    *  Type.INT8 -> java.lang.Byte
    *  Type.INT16 -> java.lang.Short
@@ -476,13 +480,20 @@ public abstract class RowResult {
    * @param columnIndex Column index in the schema
    * @return the column's value as an Object, null if the value is null
    * @throws IndexOutOfBoundsException if the column doesn't exist
+   * @throws UnsupportedOperationException if the column type is unsupported
    */
   public final Object getObject(int columnIndex) {
     checkValidColumn(columnIndex);
     if (isNull(columnIndex)) {
       return null;
     }
-    Type type = schema.getColumnByIndex(columnIndex).getType();
+    ColumnSchema col = schema.getColumnByIndex(columnIndex);
+
+    // Special-case: array columns -> return ArrayCellView
+    if (col.isArray()) {
+      return getArrayData(columnIndex);
+    }
+    Type type = col.getType();
     switch (type) {
       case BOOL: return getBoolean(columnIndex);
       case INT8: return getByte(columnIndex);
@@ -595,16 +606,96 @@ public abstract class RowResult {
       if (i != 0) {
         buf.append(", ");
       }
-      Type type = col.getType();
-      buf.append(type.name());
+      // Show the element type for arrays; otherwise the scalar column type.
+      final Type shownType = col.isArray() ?
+          col.getNestedTypeDescriptor().getArrayDescriptor().getElemType()
+          : col.getType();
+
+      buf.append(shownType.name());
+      if (col.isArray()) {
+        buf.append("[]");
+      }
       buf.append(" ").append(col.getName());
       if (col.getTypeAttributes() != null) {
-        buf.append(col.getTypeAttributes().toStringForType(type));
+        buf.append(col.getTypeAttributes().toStringForType(shownType));
       }
       buf.append("=");
       if (isNull(i)) {
         buf.append("NULL");
       } else {
+        if (col.isArray()) {
+          ArrayCellView arr = getArray(i);
+          Preconditions.checkNotNull(arr, "array is null");
+          switch (col.getNestedTypeDescriptor().getArrayDescriptor().getElemType()) {
+            case INT8:
+              appendArrayValues(buf, arr, arr::getInt8);
+              break;
+            case INT16:
+              appendArrayValues(buf, arr, arr::getInt16);
+              break;
+            case INT32:
+              appendArrayValues(buf, arr, arr::getInt32);
+              break;
+            case INT64:
+              appendArrayValues(buf, arr, arr::getInt64);
+              break;
+            case FLOAT:
+              appendArrayValues(buf, arr, arr::getFloat);
+              break;
+            case DOUBLE:
+              appendArrayValues(buf, arr, arr::getDouble);
+              break;
+            case BOOL:
+              appendArrayValues(buf, arr, arr::getBoolean);
+              break;
+            case STRING:
+            case VARCHAR:
+              buf.append(Arrays.toString(ArrayCellViewHelper.toStringArray(arr)));
+              break;
+            case BINARY:
+              byte[][] binaries = ArrayCellViewHelper.toBinaryArray(arr);
+              buf.append("[");
+              for (int j = 0; j < binaries.length; j++) {
+                if (j > 0) {
+                  buf.append(", ");
+                }
+                if (binaries[j] == null) {
+                  buf.append("null");
+                } else {
+                  buf.append(new String(binaries[j], StandardCharsets.UTF_8));
+                }
+              }
+              buf.append("]");
+              break;
+            case DECIMAL: {
+              int precision = col.getTypeAttributes().getPrecision();
+              int scale = col.getTypeAttributes().getScale();
+              buf.append(Arrays.toString(
+                  ArrayCellViewHelper.toDecimalArray(arr, precision, scale)));
+              break;
+            }
+            case DATE:
+              buf.append(Arrays.toString(ArrayCellViewHelper.toDateArray(arr)));
+              break;
+            case UNIXTIME_MICROS:
+              Timestamp[] tsArr = ArrayCellViewHelper.toTimestampArray(arr);
+              buf.append("[");
+              for (int j = 0; j < tsArr.length; j++) {
+                if (j > 0) {
+                  buf.append(", ");
+                }
+                buf.append(tsArr[j] == null ?
+                    "NULL"
+                    : TimestampUtil.timestampToString(tsArr[j]));
+              }
+              buf.append("]");
+              break;
+            default:
+              buf.append(arr);
+              break;
+          }
+          continue;
+        }
         switch (col.getType()) {
           case INT8:
             buf.append(getByte(i));
@@ -654,6 +745,133 @@ public abstract class RowResult {
     return buf.toString();
   }
 
+  // ----------------------------------------------------------------------
+  // Array column accessors
+  // ----------------------------------------------------------------------
+
+  /**
+   * Safely extract the serialized FlatBuffer bytes for an array column.
+   * <p>
+   * This method handles nulls and copies the correct slice of the
+   * underlying {@link ByteBuffer}. It is used internally by
+   * {@link #getArray(int)} and {@link #getArrayData(int)}.
+   *
+   * @param columnIndex Column index in the schema
+   * @return the serialized FlatBuffer bytes for the array cell,
+   *         or null if the cell itself is null
+   */
+  @Nullable
+  protected byte[] getArrayBytes(int columnIndex) {
+    ByteBuffer buf = getBinary(columnIndex);
+    if (buf == null || !buf.hasRemaining()) {
+      return null;
+    }
+    ByteBuffer dup = buf.duplicate();
+    byte[] raw = new byte[dup.remaining()];
+    dup.get(raw);
+    return raw;
+  }
+
+  /**
+   * Returns a lightweight FlatBuffer view of an array column.
+   * <p>
+   * The returned {@link ArrayCellView} provides element-level accessors,
+   * validity bits, and pretty-print formatting. No data copying or
+   * boxing occurs. Intended for internal use, debugging, or specialized
+   * integrations.
+   *
+   * <p>For application-level use, prefer {@link #getArrayData(int)},
+   * which returns a fully decoded Java array.
+   *
+   * @param columnIndex Column index in the schema
+   * @return an {@link ArrayCellView}, or null if the column is null
+   * @throws IllegalArgumentException if the column is not declared as an array
+   * @throws IndexOutOfBoundsException if the column doesn't exist
+   */
+  @InterfaceAudience.Private
+  ArrayCellView getArray(int columnIndex) {
+    checkValidColumn(columnIndex);
+    if (isNull(columnIndex)) {
+      return null;
+    }
+    ColumnSchema col = schema.getColumnByIndex(columnIndex);
+    if (!col.isArray()) {
+      throw new IllegalArgumentException(
+          String.format("Column (name: %s, index: %d) is not an array",
+              col.getName(), columnIndex));
+    }
+
+    byte[] raw = getArrayBytes(columnIndex);
+    if (raw == null) {
+      return null;
+    }
+    return new ArrayCellView(raw);
+  }
+
+  /**
+   * Convenience overload for {@link #getArray(int)} by column name.
+   */
+  @InterfaceAudience.Private
+  ArrayCellView getArray(String columnName) {
+    return getArray(this.schema.getColumnIndex(columnName));
+  }
+
+  /**
+   * Returns the specified array column as a plain Java array
+   * (boxed elements) decoded using the column schema's
+   * precision and scale attributes where applicable.
+   * <p>
+   * The returned object type depends on the array's element type:
+   * <ul>
+   *   <li>INT8[] -> {@code Byte[]}</li>
+   *   <li>INT32[] -> {@code Integer[]}</li>
+   *   <li>INT64[] -> {@code Long[]}</li>
+   *   <li>FLOAT[] -> {@code Float[]}</li>
+   *   <li>DOUBLE[] -> {@code Double[]}</li>
+   *   <li>BOOL[] -> {@code Boolean[]}</li>
+   *   <li>STRING[] / VARCHAR[] -> {@code String[]}</li>
+   *   <li>DATE[] -> {@code java.sql.Date[]}</li>
+   *   <li>UNIXTIME_MICROS[] -> {@code java.sql.Timestamp[]}</li>
+   *   <li>DECIMAL(p,s)[] -> {@code java.math.BigDecimal[]}</li>
+   * </ul>
+   *
+   * @param columnIndex Column index in the schema
+   * @return a boxed Java array, or null if the column cell is null
+   * @throws IllegalArgumentException if the column is not an array
+   * @throws IndexOutOfBoundsException if the column doesn't exist
+   */
+
+  @Nullable
+  public final Object getArrayData(int columnIndex) {
+    checkValidColumn(columnIndex);
+    if (isNull(columnIndex)) {
+      return null;
+    }
+
+    ColumnSchema col = schema.getColumnByIndex(columnIndex);
+    if (!col.isArray()) {
+      throw new IllegalArgumentException(
+          String.format("Column (name: %s, index: %d) is not an array",
+              col.getName(), columnIndex));
+    }
+
+    byte[] raw = getArrayBytes(columnIndex);
+    if (raw == null) {
+      return null;
+    }
+
+    ArrayCellView view = new ArrayCellView(raw);
+    return ArrayCellViewHelper.toJavaArray(view, col);
+  }
+
+  /**
+   * Convenience overload for {@link #getArrayData(int)} by column name.
+   */
+  @Nullable
+  public final Object getArrayData(String columnName) {
+    return getArrayData(this.schema.getColumnIndex(columnName));
+  }
+
   /**
    * @return a string describing the location of this row result within
    * the iterator as well as its data.
@@ -665,5 +883,22 @@ public abstract class RowResult {
     buf.append(rowToString());
     buf.append("}");
     return buf.toString();
+  }
+
+  private static void appendArrayValues(StringBuilder sb,
+                                        ArrayCellView arr,
+                                        java.util.function.IntFunction<Object> getter) {
+    sb.append("[");
+    for (int j = 0; j < arr.length(); j++) {
+      if (j > 0) {
+        sb.append(", ");
+      }
+      if (!arr.isValid(j)) {
+        sb.append("NULL");
+      } else {
+        sb.append(getter.apply(j));
+      }
+    }
+    sb.append("]");
   }
 }

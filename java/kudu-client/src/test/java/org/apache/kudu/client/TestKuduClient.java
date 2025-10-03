@@ -34,6 +34,7 @@ import static org.apache.kudu.test.ClientTestUtil.createSchemaWithNonUniqueKey;
 import static org.apache.kudu.test.ClientTestUtil.createSchemaWithTimestampColumns;
 import static org.apache.kudu.test.ClientTestUtil.getBasicCreateTableOptions;
 import static org.apache.kudu.test.ClientTestUtil.getBasicTableOptionsWithNonCoveredRange;
+import static org.apache.kudu.test.ClientTestUtil.getSchemaWithArrayTypes;
 import static org.apache.kudu.test.ClientTestUtil.scanTableToStrings;
 import static org.hamcrest.CoreMatchers.containsString;
 import static org.junit.Assert.assertArrayEquals;
@@ -53,11 +54,14 @@ import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.security.cert.CertificateException;
 import java.sql.Date;
+import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -2203,5 +2207,397 @@ public class TestKuduClient {
       client.trustedCertificates(Arrays.asList(ByteString.copyFrom(caCert)));
     });
     assertTrue(e.getMessage().contains("Could not parse certificate"));
+  }
+
+  /**
+   * Test inserting and retrieving array columns.
+   */
+  @Test
+  public void testArrayColumns() throws Exception {
+    Schema schema = getSchemaWithArrayTypes();
+    client.createTable(TABLE_NAME, schema, getBasicCreateTableOptions());
+
+    KuduSession session = client.newSession();
+    KuduTable table = client.openTable(TABLE_NAME);
+
+    for (int i = 0; i < 10; i++) {
+      Insert insert = table.newInsert();
+      PartialRow row = insert.getRow();
+
+      row.addInt("key", i);
+
+      // INT8 array (nullable elements)
+      byte[] int8Values = new byte[]{(byte) i, (byte) (i + 1), (byte) (i + 2)};
+      boolean[] int8Validity = new boolean[]{true, i % 2 == 0, true};
+      row.addArrayInt8("int8_arr", int8Values, int8Validity);
+
+      // BOOL array (nullable elements)
+      boolean[] boolValues = new boolean[]{true, i % 2 == 0, false};
+      boolean[] boolValidity = new boolean[]{true, false, true};
+      row.addArrayBool("bool_arr", boolValues, boolValidity);
+
+      // BINARY array (nullable elements)
+      byte[][] binValues = new byte[][]{
+          ("bin_" + i).getBytes(StandardCharsets.UTF_8),
+          null,
+          ("bin_last_" + i).getBytes(StandardCharsets.UTF_8)
+      };
+      row.addArrayBinary("binary_arr", binValues, null);
+
+      // INT32 array with some nulls
+      if (i % 3 == 0) {
+        row.setNull("int32_arr");
+      } else {
+        int[] values = new int[]{i, i + 1, i + 2};
+        boolean[] validity = new boolean[]{true, i % 2 == 0, true};
+        row.addArrayInt32("int32_arr", values, validity);
+      }
+
+      // STRING array
+      row.addArrayString("string_arr", new String[]{
+          "row" + i,
+          null,
+          "long_string_" + i
+      });
+
+      // DECIMAL array (scale = 2 for testing)
+      row.addArrayDecimal("decimal_arr", new BigDecimal[]{
+          BigDecimal.valueOf(123, 2),
+          null,
+          BigDecimal.valueOf(i * 100L, 2)
+      }, null);
+
+      // DATE array
+      row.addArrayDate("date_arr", new java.sql.Date[]{
+          DateUtil.epochDaysToSqlDate(i),
+          null,
+          DateUtil.epochDaysToSqlDate(i + 5)
+      });
+
+      // TIMESTAMP array
+      row.addArrayTimestamp("ts_arr", new Timestamp[]{
+          TimestampUtil.microsToTimestamp(i * 1000L),
+          null,
+          TimestampUtil.microsToTimestamp((i + 1) * 1000L)
+      });
+
+      // VARCHAR array
+      row.addArrayVarchar("varchar_arr", new String[]{
+          "row" + i,
+          null,
+          "varchar" + i
+      });
+
+      session.apply(insert);
+    }
+    session.flush();
+
+    // Scan back stringified form and verify logical output
+    List<String> rowStrings = scanTableToStrings(table);
+    assertEquals(10, rowStrings.size());
+
+    for (int i = 0; i < rowStrings.size(); i++) {
+      StringBuilder expectedRow = new StringBuilder();
+      expectedRow.append("INT32 key=").append(i);
+
+      // INT8[] column
+      expectedRow.append(", INT8[] int8_arr=[")
+          .append(i).append(", ")
+          .append(i % 2 == 0 ? i + 1 : "NULL").append(", ")
+          .append(i + 2).append("]");
+
+      // BOOL[] column
+      expectedRow.append(", BOOL[] bool_arr=[true, NULL, false]");
+
+      // BINARY[] column
+      expectedRow.append(", BINARY[] binary_arr=[bin_").append(i)
+          .append(", null, bin_last_").append(i).append("]");
+
+
+      // INT32[] column
+      expectedRow.append(", INT32[] int32_arr=");
+      if (i % 3 == 0) {
+        expectedRow.append("NULL");
+      } else {
+        expectedRow.append("[");
+        expectedRow.append(i); // always valid
+        expectedRow.append(", ");
+        if (i % 2 == 0) {
+          expectedRow.append(i + 1);
+        } else {
+          expectedRow.append("NULL");
+        }
+        expectedRow.append(", ");
+        expectedRow.append(i + 2);
+        expectedRow.append("]");
+      }
+
+      // STRING[] column
+      expectedRow.append(", STRING[] string_arr=[row").append(i)
+          .append(", null, long_string_").append(i).append("]");
+
+      // DECIMAL[] column
+      expectedRow.append(", DECIMAL[] decimal_arr(5, 2)=[1.23, null, ")
+          .append(BigDecimal.valueOf(i * 100L, 2)).append("]");
+
+      // DATE[] column
+      expectedRow.append(", DATE[] date_arr=[");
+      expectedRow.append(DateUtil.epochDaysToSqlDate(i));
+      expectedRow.append(", null, ");
+      expectedRow.append(DateUtil.epochDaysToSqlDate(i + 5));
+      expectedRow.append("]");
+
+      // TIMESTAMP[] column
+      expectedRow.append(", UNIXTIME_MICROS[] ts_arr=[");
+      expectedRow.append(TimestampUtil.timestampToString(
+          TimestampUtil.microsToTimestamp(i * 1000L)));
+      expectedRow.append(", NULL, ");
+      expectedRow.append(TimestampUtil.timestampToString(
+          TimestampUtil.microsToTimestamp((i + 1) * 1000L)));
+      expectedRow.append("]");
+
+      // VARCHAR[] column
+      expectedRow.append(", VARCHAR[] varchar_arr(10)=[row").append(i)
+          .append(", null, varchar").append(i).append("]");
+
+      assertEquals(expectedRow.toString(), rowStrings.get(i));
+    }
+
+    // Verify actual array decoding by logical type
+    KuduScanner scanner = client.newScannerBuilder(table).build();
+    while (scanner.hasMoreRows()) {
+      for (RowResult rr : scanner.nextRows()) {
+        int key = rr.getInt("key");
+
+        // INT8[]
+        Object int8Obj = rr.getArrayData("int8_arr");
+        assertTrue(int8Obj instanceof Byte[]);
+        Byte[] int8Vals = (Byte[]) int8Obj;
+        assertEquals(3, int8Vals.length);
+        assertEquals(Byte.valueOf((byte) key), int8Vals[0]);
+        if (key % 2 == 0) {
+          assertEquals(Byte.valueOf((byte) (key + 1)), int8Vals[1]);
+        } else {
+          assertNull(int8Vals[1]);
+        }
+        assertEquals(Byte.valueOf((byte) (key + 2)), int8Vals[2]);
+
+        // BOOL[]
+        Object boolObj = rr.getArrayData("bool_arr");
+        assertTrue(boolObj instanceof Boolean[]);
+        Boolean[] boolVals = (Boolean[]) boolObj;
+        assertEquals(3, boolVals.length);
+        assertEquals(Boolean.TRUE, boolVals[0]);
+        assertNull(boolVals[1]);
+        assertEquals(Boolean.FALSE, boolVals[2]);
+
+        // BINARY[]
+        Object binObj = rr.getArrayData("binary_arr");
+        assertTrue(binObj instanceof byte[][]);
+        byte[][] binVals = (byte[][]) binObj;
+        assertEquals(3, binVals.length);
+        assertEquals(("bin_" + key), new String(binVals[0], StandardCharsets.UTF_8));
+        assertNull(binVals[1]);
+        assertEquals(("bin_last_" + key), new String(binVals[2], StandardCharsets.UTF_8));
+
+        // INT32[] -> Integer[]
+        Object intObj = rr.getArrayData("int32_arr");
+        if (key % 3 == 0) {
+          // Entire array was intentionally NULL
+          assertNull(intObj);
+        } else {
+          assertTrue(intObj instanceof Integer[]);
+          Integer[] intVals = (Integer[]) intObj;
+          assertEquals(3, intVals.length);
+          assertEquals(Integer.valueOf(key), intVals[0]);
+          if (key % 2 == 0) {
+            assertEquals(Integer.valueOf(key + 1), intVals[1]);
+          } else {
+            assertNull(intVals[1]);
+          }
+          assertEquals(Integer.valueOf(key + 2), intVals[2]);
+        }
+
+        // STRING[] -> String[]
+        Object strObj = rr.getArrayData("string_arr");
+        assertTrue(strObj instanceof String[]);
+        String[] strVals = (String[]) strObj;
+        assertEquals(3, strVals.length);
+        assertEquals("row" + key, strVals[0]);
+        assertNull(strVals[1]);
+        assertEquals("long_string_" + key, strVals[2]);
+
+        // DECIMAL[] -> BigDecimal[]
+        Object decObj = rr.getArrayData("decimal_arr");
+        assertTrue(decObj instanceof BigDecimal[]);
+        BigDecimal[] decVals = (BigDecimal[]) decObj;
+        assertEquals(3, decVals.length);
+        assertEquals(new BigDecimal("1.23"), decVals[0]);
+        assertNull(decVals[1]);
+        assertEquals(BigDecimal.valueOf(key * 100L, 2), decVals[2]);
+
+        // DATE[] -> java.sql.Date[]
+        Object dateObj = rr.getArrayData("date_arr");
+        assertTrue(dateObj instanceof java.sql.Date[]);
+        java.sql.Date[] dateVals = (java.sql.Date[]) dateObj;
+        assertEquals(3, dateVals.length);
+        assertEquals(DateUtil.epochDaysToSqlDate(key), dateVals[0]);
+        assertNull(dateVals[1]);
+        assertEquals(DateUtil.epochDaysToSqlDate(key + 5), dateVals[2]);
+
+        // TIMESTAMP[] -> java.sql.Timestamp[]
+        Object tsObj = rr.getArrayData("ts_arr");
+        assertTrue(tsObj instanceof java.sql.Timestamp[]);
+        java.sql.Timestamp[] tsVals = (java.sql.Timestamp[]) tsObj;
+        assertEquals(3, tsVals.length);
+        assertEquals(TimestampUtil.microsToTimestamp(key * 1000L), tsVals[0]);
+        assertNull(tsVals[1]);
+        assertEquals(TimestampUtil.microsToTimestamp((key + 1) * 1000L), tsVals[2]);
+
+        // VARCHAR[] -> String[]
+        Object vchObj = rr.getArrayData("varchar_arr");
+        assertTrue(vchObj instanceof String[]);
+        String[] vchVals = (String[]) vchObj;
+        assertEquals(3, vchVals.length);
+        assertEquals("row" + key, vchVals[0]);
+        assertNull(vchVals[1]);
+        assertEquals("varchar" + key, vchVals[2]);
+      }
+
+    }
+  }
+
+  @Test
+  public void testArrayEmptyValidityOptimization() throws Exception {
+    Schema schema = getSchemaWithArrayTypes();
+    client.createTable(TABLE_NAME, schema, getBasicCreateTableOptions());
+    KuduTable table = client.openTable(TABLE_NAME);
+    final KuduSession session = client.newSession();
+
+    Insert insert = table.newInsert();
+    PartialRow row = insert.getRow();
+    row.addInt("key", 100);
+
+    // INT8[]
+    row.addArrayInt8("int8_arr", new byte[]{1, 2, 3}, new boolean[0]);
+
+    // DECIMAL[]
+    row.addArrayDecimal("decimal_arr",
+        new BigDecimal[]{new BigDecimal("1.23"), new BigDecimal("4.56"), new BigDecimal("7.89")},
+        new boolean[0]);  // all valid
+
+    // DATE[]
+    row.addArrayDate("date_arr", new Date[]{
+        DateUtil.epochDaysToSqlDate(1),
+        DateUtil.epochDaysToSqlDate(2),
+        DateUtil.epochDaysToSqlDate(3)
+    }, new boolean[0]);
+
+    // TIMESTAMP[]
+    row.addArrayTimestamp("ts_arr", new Timestamp[]{
+        TimestampUtil.microsToTimestamp(1000L),
+        TimestampUtil.microsToTimestamp(2000L),
+        TimestampUtil.microsToTimestamp(3000L)
+    }, new boolean[0]);
+
+    // VARCHAR[]
+    row.addArrayVarchar("varchar_arr", new String[]{"x", "y", "z"}, new boolean[0]);
+
+    // Optional nullable ones can be left null
+    row.setNull("bool_arr");
+    row.setNull("binary_arr");
+    row.setNull("int32_arr");
+    row.setNull("string_arr");
+
+    session.apply(insert);
+
+    // Insert second row with null validity vector
+    Insert insert2 = table.newInsert();
+    PartialRow row2 = insert2.getRow();
+    row2.addInt("key", 200);
+    row2.addArrayInt8("int8_arr", new byte[]{1, 2, 3});
+    row2.addArrayDecimal("decimal_arr",
+        new BigDecimal[]{new BigDecimal("1.23"), null, new BigDecimal("7.89")},
+        null);
+    row2.addArrayDate("date_arr", new Date[]{
+        DateUtil.epochDaysToSqlDate(10),
+        DateUtil.epochDaysToSqlDate(11),
+        DateUtil.epochDaysToSqlDate(12)
+    });
+    row2.addArrayTimestamp("ts_arr", new Timestamp[]{
+        TimestampUtil.microsToTimestamp(10_000L),
+        TimestampUtil.microsToTimestamp(20_000L),
+        TimestampUtil.microsToTimestamp(30_000L)
+    });
+    row2.addArrayVarchar("varchar_arr", new String[]{"a", null, "c"});
+    row2.setNull("bool_arr");
+    row2.setNull("binary_arr");
+    row2.setNull("int32_arr");
+    row2.setNull("string_arr");
+
+    session.apply(insert2);
+    session.flush();
+
+    // --- Verify readback ---
+    KuduScanner scanner = client.newScannerBuilder(table).build();
+    List<RowResult> rows = new ArrayList<>();
+    while (scanner.hasMoreRows()) {
+      RowResultIterator it = scanner.nextRows();
+      while (it.hasNext()) {
+        rows.add(it.next());
+      }
+    }
+    assertEquals(2, rows.size());
+    RowResult r1 = rows.get(0);
+
+    // INT8[]
+    Byte[] int8Vals = (Byte[]) r1.getArrayData("int8_arr");
+    assertArrayEquals(new Byte[]{1, 2, 3}, int8Vals);
+
+    // DECIMAL[]
+    BigDecimal[] decVals = (BigDecimal[]) r1.getArrayData("decimal_arr");
+    assertArrayEquals(
+        new BigDecimal[]{new BigDecimal("1.23"), new BigDecimal("4.56"), new BigDecimal("7.89")},
+        decVals);
+
+    // DATE[]
+    Date[] dateVals = (Date[]) r1.getArrayData("date_arr");
+    assertEquals(DateUtil.epochDaysToSqlDate(1), dateVals[0]);
+    assertEquals(DateUtil.epochDaysToSqlDate(3), dateVals[2]);
+
+    // TIMESTAMP[]
+    Timestamp[] tsVals = (Timestamp[]) r1.getArrayData("ts_arr");
+    assertEquals(TimestampUtil.microsToTimestamp(1000L), tsVals[0]);
+    assertEquals(TimestampUtil.microsToTimestamp(3000L), tsVals[2]);
+
+    // VARCHAR[]
+    String[] vcharVals = (String[]) r1.getArrayData("varchar_arr");
+    assertArrayEquals(new String[]{"x", "y", "z"}, vcharVals);
+
+    RowResult r2 = rows.get(1);
+
+    // INT8[]
+    Byte[] int8Vals2 = (Byte[]) r2.getArrayData("int8_arr");
+    assertArrayEquals(new Byte[]{1, 2, 3}, int8Vals2);
+
+    // DECIMAL[]
+    BigDecimal[] decVals2 = (BigDecimal[]) r2.getArrayData("decimal_arr");
+    assertArrayEquals(
+        new BigDecimal[]{new BigDecimal("1.23"), null, new BigDecimal("7.89")},
+        decVals2);
+
+    // DATE[]
+    Date[] dateVals2 = (Date[]) r2.getArrayData("date_arr");
+    assertEquals(DateUtil.epochDaysToSqlDate(10), dateVals2[0]);
+    assertEquals(DateUtil.epochDaysToSqlDate(12), dateVals2[2]);
+
+    // TIMESTAMP[]
+    Timestamp[] tsVals2 = (Timestamp[]) r2.getArrayData("ts_arr");
+    assertEquals(TimestampUtil.microsToTimestamp(10_000L), tsVals2[0]);
+    assertEquals(TimestampUtil.microsToTimestamp(30_000L), tsVals2[2]);
+
+    // VARCHAR[]
+    String[] vcharVals2 = (String[]) r2.getArrayData("varchar_arr");
+    assertArrayEquals(new String[]{"a", null, "c"}, vcharVals2);
   }
 }

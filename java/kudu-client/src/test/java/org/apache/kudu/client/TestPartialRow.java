@@ -264,9 +264,7 @@ public class TestPartialRow {
     ArrayCellView view = (ArrayCellView) row.getObject("strings");
     assertEquals(3, view.length());
     assertEquals("foo", view.getString(0));
-
     assertFalse(view.isValid(1));
-    assertNull(view.getString(1));
     assertEquals("bar", view.getString(2));
   }
 

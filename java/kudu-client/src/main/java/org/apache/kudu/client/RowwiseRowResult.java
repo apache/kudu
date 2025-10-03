@@ -77,7 +77,8 @@ class RowwiseRowResult extends RowResult {
     // If the schema has nullables, we also add the offset for the null bitmap at the end.
     for (int i = 1; i < columnOffsetsSize; i++) {
       org.apache.kudu.ColumnSchema column = schema.getColumnByIndex(i - 1);
-      int previousSize = column.getTypeSize();
+      int previousSize;
+      previousSize = column.getTypeSize();
       columnOffsets[i] = previousSize + currentOffset;
       currentOffset += previousSize;
     }
@@ -276,12 +277,15 @@ class RowwiseRowResult extends RowResult {
     checkType(columnIndex, Type.STRING, Type.VARCHAR);
     // C++ puts a Slice in rowData which is 16 bytes long for simplicity, but we only support ints.
     long offset = getOffset(columnIndex);
-    long length = rowData.getLong(getCurrentRowDataOffsetForColumn(columnIndex) + 8);
+    long length = Bytes.getLong(
+        this.rowData.getRawArray(),
+        this.rowData.getRawOffset() + getCurrentRowDataOffsetForColumn(columnIndex) + 8);
     assert offset < Integer.MAX_VALUE;
     assert length < Integer.MAX_VALUE;
-    return Bytes.getString(indirectData.getRawArray(),
-            indirectData.getRawOffset() + (int)offset,
-            (int)length);
+    return Bytes.getString(
+        indirectData.getRawArray(),
+        indirectData.getRawOffset() + (int) offset,
+        (int) length);
   }
 
   /**
@@ -296,15 +300,17 @@ class RowwiseRowResult extends RowResult {
   public byte[] getBinaryCopy(int columnIndex) {
     checkValidColumn(columnIndex);
     checkNull(columnIndex);
-    // C++ puts a Slice in rowData which is 16 bytes long for simplicity,
-    // but we only support ints.
     long offset = getOffset(columnIndex);
-    long length = rowData.getLong(getCurrentRowDataOffsetForColumn(columnIndex) + 8);
+    long length = Bytes.getLong(
+        this.rowData.getRawArray(),
+        this.rowData.getRawOffset() + getCurrentRowDataOffsetForColumn(columnIndex) + 8);
     assert offset < Integer.MAX_VALUE;
     assert length < Integer.MAX_VALUE;
-    byte[] ret = new byte[(int)length];
-    System.arraycopy(indirectData.getRawArray(), indirectData.getRawOffset() + (int) offset,
-                     ret, 0, (int) length);
+    byte[] ret = new byte[(int) length];
+    System.arraycopy(
+        indirectData.getRawArray(),
+        indirectData.getRawOffset() + (int) offset,
+        ret, 0, (int) length);
     return ret;
   }
 
@@ -323,14 +329,25 @@ class RowwiseRowResult extends RowResult {
   public ByteBuffer getBinary(int columnIndex) {
     checkValidColumn(columnIndex);
     checkNull(columnIndex);
-    checkType(columnIndex, Type.BINARY);
-    // C++ puts a Slice in rowData which is 16 bytes long for simplicity,
-    // but we only support ints.
+
+    ColumnSchema col = schema.getColumnByIndex(columnIndex);
+    if (!(col.getType() == Type.BINARY ||
+        col.getType() == Type.STRING ||
+        col.getType() == Type.VARCHAR ||
+        col.isArray())) {
+      throw new IllegalArgumentException(
+          String.format("Column %s is not varlen", col.getName()));
+    }
+
     long offset = getOffset(columnIndex);
-    long length = rowData.getLong(getCurrentRowDataOffsetForColumn(columnIndex) + 8);
+    long length = Bytes.getLong(
+        this.rowData.getRawArray(),
+        this.rowData.getRawOffset() + getCurrentRowDataOffsetForColumn(columnIndex) + 8);
     assert offset < Integer.MAX_VALUE;
     assert length < Integer.MAX_VALUE;
-    return ByteBuffer.wrap(indirectData.getRawArray(), indirectData.getRawOffset() + (int) offset,
+    return ByteBuffer.wrap(
+        indirectData.getRawArray(),
+        indirectData.getRawOffset() + (int) offset,
         (int) length);
   }
 
