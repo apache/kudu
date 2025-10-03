@@ -35,7 +35,6 @@
 #include <thread>
 #include <tuple>
 #include <type_traits>
-#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -47,6 +46,7 @@
 #include <google/protobuf/util/message_differencer.h>
 #include <gtest/gtest.h>
 
+#include "kudu/client/array_cell.h"
 #include "kudu/client/batcher.h"
 #include "kudu/client/callbacks.h"
 #include "kudu/client/client-internal.h"
@@ -61,6 +61,7 @@
 #include "kudu/client/scan_configuration.h"
 #include "kudu/client/scan_predicate.h"
 #include "kudu/client/scanner-internal.h"
+#include "kudu/client/schema-internal.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/session-internal.h"
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
@@ -70,11 +71,13 @@
 #include "kudu/client/write_op.h"
 #include "kudu/clock/clock.h"
 #include "kudu/clock/hybrid_clock.h"
+#include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/timestamp.h"
 #include "kudu/common/txn_id.h"
+#include "kudu/common/types.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/metadata.pb.h"
@@ -227,8 +230,8 @@ using std::pair;
 using std::set;
 using std::string;
 using std::thread;
+using std::tuple;
 using std::unique_ptr;
-using std::unordered_map;
 using std::unordered_set;
 using std::vector;
 using strings::Substitute;
@@ -893,6 +896,58 @@ class ClientTest : public KuduTest {
                             .Create());
 
     return client_->OpenTable(table_name, table);
+  }
+
+  // Create table with INT64 'key' column and array columns of the specified
+  // scalar types in 'array_elem_types'. The key column is named 'key', and
+  // the array columns named 'arr_x', where 'x' is the index corresponding
+  // to the scalar type in the 'x' index of the 'array_elem_types' vector.
+  Status CreateTableWithArrayColumns(
+      const string& table_name,
+      const vector<KuduColumnSchema::DataType>& array_elem_types,
+      const KuduColumnTypeAttributes& attributes = {},
+      KuduSchema* result_table_schema = nullptr) {
+    KuduSchemaBuilder builder;
+    builder.AddColumn("key")->Type(KuduColumnSchema::INT64)->NotNull()->PrimaryKey();
+    for (size_t idx = 0; idx < array_elem_types.size(); ++idx) {
+      const auto elem_type = array_elem_types[idx];
+      const string col_name = Substitute("arr_$0", idx);
+      KuduColumnSchema::KuduArrayTypeDescriptor array_info(elem_type);
+      KuduColumnSchema::KuduNestedTypeDescriptor nested_type_info(array_info);
+      auto* col_spec = builder.AddColumn(col_name)->
+          NestedType(nested_type_info)->
+          Encoding(KuduColumnStorageAttributes::PLAIN_ENCODING);
+      // Set mandatory attributes for the columns of particular types.
+      if (elem_type == KuduColumnSchema::DECIMAL) {
+        col_spec->
+            Precision(attributes.precision())->
+            Scale(attributes.scale());
+      } else if (elem_type == KuduColumnSchema::VARCHAR) {
+        col_spec->Length(attributes.length());
+      }
+    }
+    KuduSchema schema;
+    RETURN_NOT_OK(builder.Build(&schema));
+
+    unique_ptr<KuduPartialRow> lower_bound(schema.NewRow());
+    RETURN_NOT_OK(lower_bound->SetInt64("key", -1));
+    unique_ptr<KuduPartialRow> upper_bound(schema.NewRow());
+    RETURN_NOT_OK(upper_bound->SetInt64("key", 99));
+
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    table_creator->add_range_partition(lower_bound.release(), upper_bound.release(),
+                                        KuduTableCreator::EXCLUSIVE_BOUND,
+                                        KuduTableCreator::INCLUSIVE_BOUND);
+    RETURN_NOT_OK(table_creator->table_name(table_name)
+        .schema(&schema)
+        .num_replicas(1)
+        .set_range_partition_columns({ "key" })
+        .Create());
+
+    if (result_table_schema) {
+      *result_table_schema = std::move(schema);
+    }
+    return Status::OK();
   }
 
   // Kills a tablet server.
@@ -10604,5 +10659,190 @@ TEST_F(ClientTestMetacache, TestClientMetacacheInvalidation) {
   FLAGS_prevent_kudu_3461_infinite_recursion = true;
   TestClientMetacacheHelper(CURRENT_TEST_NAME());
 }
+
+namespace {
+const vector<DataType> kArrayElemTypes = {
+  DataType::BOOL,
+  DataType::INT8,
+  DataType::INT16,
+  DataType::INT32,
+  DataType::INT64,
+  DataType::BINARY,
+  DataType::STRING,
+  DataType::FLOAT,
+  DataType::DOUBLE,
+  DataType::UNIXTIME_MICROS,
+  DataType::DATE,
+  DataType::DECIMAL32,
+  DataType::DECIMAL64,
+  DataType::VARCHAR,
+};
+} // anonymous namespace
+
+class ArrayColumnParamTest :
+    public ClientTest,
+    public ::testing::WithParamInterface<tuple<DataType, bool, bool>> {
+ public:
+
+  template<DataType T>
+  void TestEmptyAndNullArraysImpl() {
+    typedef ArrayTypeTraits<T> ArrayType;
+    typedef typename ArrayTypeTraits<T>::element_cpp_type ElementType;
+
+    const bool is_null_array_cell = std::get<1>(GetParam());
+    const bool flush_tablet_data = std::get<2>(GetParam());
+    const string table_name = Substitute("table_ea_$0_$1",
+        flush_tablet_data ? "flush" : "noflush", DataType_Name(T));
+
+    KuduColumnTypeAttributes attrs;
+    if constexpr (T == DECIMAL32) {
+      attrs = KuduColumnTypeAttributes(6, 2);
+    } else if constexpr (T == DECIMAL64) {
+      attrs = KuduColumnTypeAttributes(18, 2);
+    } else if constexpr (T == VARCHAR) {
+      attrs = KuduColumnTypeAttributes(10);
+    }
+    ASSERT_OK(CreateTableWithArrayColumns(
+        table_name, { FromInternalDataType(T) }, attrs));
+
+    shared_ptr<KuduTable> table;
+    ASSERT_OK(client_->OpenTable(table_name, &table));
+    {
+      const auto& schema = table->schema();
+      ASSERT_EQ(2, schema.num_columns());
+    }
+
+    shared_ptr<KuduSession> session = client_->NewSession();
+    ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+
+    unique_ptr<KuduInsert> insert(table->NewInsert());
+    ASSERT_OK(insert->mutable_row()->SetInt64(0, 42));
+    if (is_null_array_cell) {
+      ASSERT_OK(insert->mutable_row()->SetNull(1));
+    } else {
+      ASSERT_OK(insert->mutable_row()->SetArray<ArrayType>(1, {}, {}));
+    }
+    ASSERT_OK(session->Apply(insert.release()));
+    FlushSessionOrDie(session);
+
+    if (flush_tablet_data) {
+      // Flush data to disk, so it's read from there, not from MRS.
+      const string tablet_id = GetFirstTabletId(table.get());
+      ASSERT_OK(cluster_->FlushTablet(tablet_id));
+    }
+
+    // To read the written data back, use a projection with the index
+    // and the array columns.
+    KuduScanner scanner(table.get());
+    ASSERT_OK(scanner.SetProjectedColumnIndexes({ 0, 1 }));
+    ASSERT_OK(scanner.Open());
+
+    const auto& schema = KuduSchema::ToSchema(scanner.GetProjectionSchema());
+    size_t row_stride = ContiguousRowHelper::row_size(schema);
+
+    size_t row_count = 0;
+    KuduScanBatch batch;
+    while (scanner.HasMoreRows()) {
+      ASSERT_OK(scanner.NextBatch(&batch));
+      for (const KuduScanBatch::RowPtr& row : batch) {
+        int64_t key_val;
+        ASSERT_OK(row.GetInt64(0, &key_val));
+        ASSERT_EQ(42, key_val);
+
+        if (is_null_array_cell) {
+          ASSERT_TRUE(row->IsNull(1));
+        } else {
+          ASSERT_FALSE(row->IsNull(1));
+        }
+
+        // Retrive array data using typed getters.
+        {
+          vector<ElementType> data;
+          vector<bool> validity;
+          if (is_null_array_cell) {
+            const auto s = row->GetArray<TypeTraits<T>>(1, &data, &validity);
+            ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+            ASSERT_STR_CONTAINS(s.ToString(), "column is NULL");
+          } else {
+            ASSERT_OK(row->GetArray<TypeTraits<T>>(1, &data, &validity));
+            ASSERT_TRUE(data.empty());
+            ASSERT_TRUE(validity.empty());
+          }
+        }
+
+        // Retrieve raw array cell data. From the raw data access point,
+        // both empty and null array cells look similar when accessing
+        // the data via KuduArrayCellView: both the KuduArrayCellView::data()
+        // and KuduArrayCellView::not_null_bitmap() should return nullptr.
+        {
+          const void* cell_raw = row.cell(1);
+          ASSERT_NE(nullptr, cell_raw);
+
+          const uint8_t* row_data =
+              batch.direct_data().data() + row_stride * row_count;
+          const Slice* raw_array_cell = reinterpret_cast<const Slice*>(
+              ContiguousRowHelper::cell_ptr(schema, row_data, 1));
+
+          KuduArrayCellView view(raw_array_cell->data(), raw_array_cell->size());
+          ASSERT_OK(view.Init());
+          ASSERT_TRUE(view.empty());
+          ASSERT_EQ(0, view.elem_num());
+          const auto* raw_values = view.data(FromInternalDataType(T), {});
+          ASSERT_EQ(nullptr, raw_values);
+          const auto* validity_bitmap = view.not_null_bitmap();
+          ASSERT_EQ(nullptr, validity_bitmap);
+        }
+        ++row_count;
+      }
+    }
+    ASSERT_EQ(1, row_count);
+    ASSERT_OK(client_->DeleteTable(table_name));
+  }
+
+  void TestEmptyAndNullArrays() {
+    const auto elem_type = std::get<0>(GetParam());
+    switch (elem_type) {
+      case DataType::BOOL:
+        return TestEmptyAndNullArraysImpl<DataType::BOOL>();
+      case DataType::INT8:
+        return TestEmptyAndNullArraysImpl<DataType::INT8>();
+      case DataType::INT16:
+        return TestEmptyAndNullArraysImpl<DataType::INT16>();
+      case DataType::INT32:
+        return TestEmptyAndNullArraysImpl<DataType::INT32>();
+      case DataType::INT64:
+        return TestEmptyAndNullArraysImpl<DataType::INT64>();
+      case DataType::BINARY:
+        return TestEmptyAndNullArraysImpl<DataType::BINARY>();
+      case DataType::STRING:
+        return TestEmptyAndNullArraysImpl<DataType::STRING>();
+      case DataType::FLOAT:
+        return TestEmptyAndNullArraysImpl<DataType::FLOAT>();
+      case DataType::DOUBLE:
+        return TestEmptyAndNullArraysImpl<DataType::DOUBLE>();
+      case DataType::UNIXTIME_MICROS:
+        return TestEmptyAndNullArraysImpl<DataType::UNIXTIME_MICROS>();
+      case DataType::DATE:
+        return TestEmptyAndNullArraysImpl<DataType::DATE>();
+      case DataType::DECIMAL32:
+        return TestEmptyAndNullArraysImpl<DataType::DECIMAL32>();
+      case DataType::DECIMAL64:
+        return TestEmptyAndNullArraysImpl<DataType::DECIMAL64>();
+      case DataType::VARCHAR:
+        return TestEmptyAndNullArraysImpl<DataType::VARCHAR>();
+      default:
+        FAIL() << "unexpected array element type " << DataType_Name(elem_type);
+    }
+  }
+};
+INSTANTIATE_TEST_SUITE_P(Params, ArrayColumnParamTest,
+                         testing::Combine(testing::ValuesIn(kArrayElemTypes),
+                                          testing::Bool(),  // is null
+                                          testing::Bool()));// flush/no flush
+
+TEST_P(ArrayColumnParamTest, EmptyAndNullArrays) {
+  NO_FATALS(TestEmptyAndNullArrays());
+}
+
 } // namespace client
 } // namespace kudu

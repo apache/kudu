@@ -43,6 +43,7 @@
 namespace kudu {
 class ColumnSchema;
 namespace client {
+class ArrayColumnParamTest;
 class ClientTest_TestProjectionPredicatesFuzz_Test;
 class KuduWriteOperation;
 namespace internal {
@@ -741,6 +742,7 @@ class KUDU_EXPORT KuduPartialRow {
   const Schema* schema() const { return schema_; }
 
  private:
+  friend class client::ArrayColumnParamTest;
   friend class client::KuduWriteOperation;  // for row_data_
   friend class client::internal::WriteRpc;  // for row_data_
   friend class tools::PartialRow;           // for Set<T>(), SetArray<T>()

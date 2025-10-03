@@ -18,9 +18,10 @@
 #include "kudu/client/scan_batch.h"
 
 #include <algorithm>
-#include <iterator>
 #include <cstring>
+#include <iterator>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include <glog/logging.h>
@@ -304,50 +305,31 @@ Status KuduScanBatch::RowPtr::GetArray(int col_idx,
   ArrayCellMetadataView view(cell_data->data(), cell_data->size());
   RETURN_NOT_OK(view.Init());
 
+  const size_t elem_num = view.elem_num();
   if (data_out) {
-    data_out->resize(view.elem_num());
+    data_out->resize(elem_num);
     if (!view.empty()) {
       const uint8_t* data_raw = view.data_as(T::type);
       DCHECK(data_raw);
-      memcpy(data_out->data(), data_raw, view.elem_num() * sizeof(typename T::cpp_type));
+      if constexpr (std::is_same<T, TypeTraits<BOOL>>::value) {
+        // Since std::vector<bool> isn't a standard vector container, the data()
+        // accessor isn't available and copying the data using memcpy() isn't
+        // feasible. So, copying the data element by element: it's not as
+        // performant as memcpy(), but it works.
+        data_out->clear();
+        data_out->reserve(elem_num);
+        std::copy(data_raw, data_raw + elem_num, std::back_inserter(*data_out));
+      } else {
+        memcpy(data_out->data(), data_raw, elem_num * sizeof(typename T::cpp_type));
+      }
     }
   }
   if (validity_out) {
-    validity_out->resize(view.elem_num());
+    validity_out->resize(elem_num);
     if (!view.empty()) {
-      *validity_out = BitmapToVector(view.not_null_bitmap(), view.elem_num());
+      DCHECK(view.not_null_bitmap());
+      *validity_out = BitmapToVector(view.not_null_bitmap(), elem_num);
     }
-  }
-  return Status::OK();
-}
-
-// Since std::vector<bool> isn't a standard container, the data() accessor
-// isn't available and copying the data requires an alternative approach.
-template<>
-Status KuduScanBatch::RowPtr::GetArray<TypeTraits<BOOL>>(
-    int col_idx,
-    vector<bool>* data_out,
-    vector<bool>* validity) const {
-  const ColumnSchema& col = schema_->column(col_idx);
-  RETURN_NOT_OK(ArrayValidation(col, TypeTraits<BOOL>::name()));
-  if (PREDICT_FALSE(col.is_nullable() && IsNull(col_idx))) {
-    return Status::NotFound("column is NULL");
-  }
-  const Slice* cell_data = reinterpret_cast<const Slice*>(
-      row_data_ + schema_->column_offset(col_idx));
-  ArrayCellMetadataView view(cell_data->data(), cell_data->size());
-  RETURN_NOT_OK(view.Init());
-
-  if (data_out) {
-    const size_t elem_num = view.elem_num();
-    data_out->clear();
-    data_out->reserve(elem_num);
-    const uint8_t* data_raw = view.data_as(BOOL);
-    DCHECK(data_raw);
-    std::copy(data_raw, data_raw + elem_num, std::back_inserter(*data_out));
-  }
-  if (validity) {
-    *validity = BitmapToVector(view.not_null_bitmap(), view.elem_num());
   }
   return Status::OK();
 }
@@ -524,6 +506,150 @@ Status KuduScanBatch::RowPtr::Get<TypeTraits<DECIMAL64> >(int col_idx, int64_t* 
 
 template
 Status KuduScanBatch::RowPtr::Get<TypeTraits<DECIMAL128> >(int col_idx, int128_t* val) const;
+
+
+template
+Status KuduScanBatch::RowPtr::GetArray<TypeTraits<BOOL>>(
+    const Slice& col_name,
+    vector<bool>* data,
+    vector<bool>* validity) const;
+template
+Status KuduScanBatch::RowPtr::GetArray<TypeTraits<INT8>>(
+    const Slice& col_name,
+    vector<int8_t>* data,
+    vector<bool>* validity) const;
+template
+Status KuduScanBatch::RowPtr::GetArray<TypeTraits<INT16>>(
+    const Slice& col_name,
+    vector<int16_t>* data,
+    vector<bool>* validity) const;
+template
+Status KuduScanBatch::RowPtr::GetArray<TypeTraits<INT32>>(
+    const Slice& col_name,
+    vector<int32_t>* data,
+    vector<bool>* validity) const;
+template
+Status KuduScanBatch::RowPtr::GetArray<TypeTraits<INT64>>(
+    const Slice& col_name,
+    vector<int64_t>* data,
+    vector<bool>* validity) const;
+template
+Status KuduScanBatch::RowPtr::GetArray<TypeTraits<UNIXTIME_MICROS>>(
+    const Slice& col_name,
+    vector<int64_t>* data,
+    vector<bool>* validity) const;
+template
+Status KuduScanBatch::RowPtr::GetArray<TypeTraits<DATE>>(
+    const Slice& col_name,
+    vector<int32_t>* data,
+    vector<bool>* validity) const;
+template
+Status KuduScanBatch::RowPtr::GetArray<TypeTraits<FLOAT>>(
+    const Slice& col_name,
+    vector<float>* data,
+    vector<bool>* validity) const;
+template
+Status KuduScanBatch::RowPtr::GetArray<TypeTraits<DOUBLE>>(
+    const Slice& col_name,
+    vector<double>* data,
+    vector<bool>* validity) const;
+template
+Status KuduScanBatch::RowPtr::GetArray<TypeTraits<STRING>>(
+    const Slice& col_name,
+    vector<Slice>* data,
+    vector<bool>* validity) const;
+template
+Status KuduScanBatch::RowPtr::GetArray<TypeTraits<BINARY>>(
+    const Slice& col_name,
+    vector<Slice>* data,
+    vector<bool>* validity) const;
+template
+Status KuduScanBatch::RowPtr::GetArray<TypeTraits<VARCHAR>>(
+    const Slice& col_name,
+    vector<Slice>* data,
+    vector<bool>* validity) const;
+template
+Status KuduScanBatch::RowPtr::GetArray<TypeTraits<DECIMAL32>>(
+    const Slice& col_name,
+    vector<int32_t>* data,
+    vector<bool>* validity) const;
+template
+Status KuduScanBatch::RowPtr::GetArray<TypeTraits<DECIMAL64>>(
+    const Slice& col_name,
+    vector<int64_t>* data,
+    vector<bool>* validity) const;
+
+template
+Status KuduScanBatch::RowPtr::GetArray<TypeTraits<BOOL>>(
+    int col_idx,
+    vector<bool>* data,
+    vector<bool>* validity) const;
+template
+Status KuduScanBatch::RowPtr::GetArray<TypeTraits<INT8>>(
+    int col_idx,
+    vector<int8_t>* data,
+    vector<bool>* validity) const;
+template
+Status KuduScanBatch::RowPtr::GetArray<TypeTraits<INT16>>(
+    int col_idx,
+    vector<int16_t>* data,
+    vector<bool>* validity) const;
+template
+Status KuduScanBatch::RowPtr::GetArray<TypeTraits<INT32>>(
+    int col_idx,
+    vector<int32_t>* data,
+    vector<bool>* validity) const;
+template
+Status KuduScanBatch::RowPtr::GetArray<TypeTraits<INT64>>(
+    int col_idx,
+    vector<int64_t>* data,
+    vector<bool>* validity) const;
+template
+Status KuduScanBatch::RowPtr::GetArray<TypeTraits<UNIXTIME_MICROS>>(
+    int col_idx,
+    vector<int64_t>* data,
+    vector<bool>* validity) const;
+template
+Status KuduScanBatch::RowPtr::GetArray<TypeTraits<DATE>>(
+    int col_idx,
+    vector<int32_t>* data,
+    vector<bool>* validity) const;
+template
+Status KuduScanBatch::RowPtr::GetArray<TypeTraits<FLOAT>>(
+    int col_idx,
+    vector<float>* data,
+    vector<bool>* validity) const;
+template
+Status KuduScanBatch::RowPtr::GetArray<TypeTraits<DOUBLE>>(
+    int col_idx,
+    vector<double>* data,
+    vector<bool>* validity) const;
+template
+Status KuduScanBatch::RowPtr::GetArray<TypeTraits<STRING>>(
+    int col_idx,
+    vector<Slice>* data,
+    vector<bool>* validity) const;
+template
+Status KuduScanBatch::RowPtr::GetArray<TypeTraits<BINARY>>(
+    int col_idx,
+    vector<Slice>* data,
+    vector<bool>* validity) const;
+template
+Status KuduScanBatch::RowPtr::GetArray<TypeTraits<VARCHAR>>(
+    int col_idx,
+    vector<Slice>* data,
+    vector<bool>* validity) const;
+template
+Status KuduScanBatch::RowPtr::GetArray<TypeTraits<DECIMAL32>>(
+    int col_idx,
+    vector<int32_t>* data,
+    vector<bool>* validity) const;
+template
+Status KuduScanBatch::RowPtr::GetArray<TypeTraits<DECIMAL64>>(
+    int col_idx,
+    vector<int64_t>* data,
+    vector<bool>* validity) const;
+
 
 Status KuduScanBatch::RowPtr::GetUnscaledDecimal(int col_idx, int128_t* val) const {
   const ColumnSchema& col = schema_->column(col_idx);

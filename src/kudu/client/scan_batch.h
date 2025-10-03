@@ -442,6 +442,7 @@ class KUDU_EXPORT KuduScanBatch::RowPtr {
   friend class tools::TableScanner;
   template<typename KeyTypeWrapper> friend struct SliceKeysTestSetup;
   template<typename KeyTypeWrapper> friend struct IntKeysTestSetup;
+  friend class ArrayColumnParamTest;
 
   // Only invoked by KuduScanner.
   RowPtr(const Schema* schema,
