@@ -10660,6 +10660,59 @@ TEST_F(ClientTestMetacache, TestClientMetacacheInvalidation) {
   TestClientMetacacheHelper(CURRENT_TEST_NAME());
 }
 
+// KUDU-3704 regression test.
+TEST_F(ClientTestMetacache, VerboseLogCrash) {
+  const string table_name = "kudu3704";
+
+  // Set very short TTL for table locations.
+  FLAGS_table_locations_ttl_ms = 100;
+
+  {
+    // Create the test table with a single range partition and the rest of the
+    // key space non-covered. Use the 'client_' for the DDL operation.
+    unique_ptr<KuduPartialRow> lower_bound(schema_.NewRow());
+    ASSERT_OK(lower_bound->SetInt32("key", 0));
+    unique_ptr<KuduPartialRow> upper_bound(schema_.NewRow());
+    ASSERT_OK(upper_bound->SetInt32("key", 1));
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    table_creator->add_range_partition(lower_bound.release(), upper_bound.release());
+    ASSERT_OK(table_creator->table_name(table_name)
+                            .schema(&schema_)
+                            .num_replicas(1)
+                            .set_range_partition_columns({ "key" })
+                            .Create());
+  }
+
+  // Create a separate client for DML operations.
+  shared_ptr<KuduClient> dml_client;
+  ASSERT_OK(cluster_->CreateClient(nullptr, &dml_client));
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(dml_client->OpenTable(table_name, &table));
+
+  // Insert a single row into the existing range: this is at least to populate
+  // the client's metacache with entries.
+  NO_FATALS(InsertTestRows(dml_client.get(), table.get(), 1, 0));
+
+  {
+    unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(table_name));
+    unique_ptr<KuduPartialRow> lower_bound(schema_.NewRow());
+    ASSERT_OK(lower_bound->SetInt32("key", 1));
+    unique_ptr<KuduPartialRow> upper_bound(schema_.NewRow());
+    ASSERT_OK(upper_bound->SetInt32("key", 2));
+    alterer->AddRangePartition(lower_bound.release(), upper_bound.release());
+    ASSERT_OK(alterer->Alter());
+  }
+
+  // Increase log level to print out verlbose logs up to level 2.
+  client::SetVerboseLogLevel(2);
+
+  // Let the entries in the dml_client's meta-cache expire, and try to insert
+  // a row into the newly added range partition. Of course this should succeed,
+  // but prior to KUDU-3704 fix it would crash.
+  SleepFor(MonoDelta::FromMilliseconds(FLAGS_table_locations_ttl_ms));
+  NO_FATALS(InsertTestRows(dml_client.get(), table.get(), 1, 1));
+}
+
 namespace {
 const vector<DataType> kArrayElemTypes = {
   DataType::BOOL,
