@@ -325,6 +325,16 @@ cdef extern from "kudu/client/scan_batch.h" namespace "kudu::client" nogil:
         Status GetArrayInt64(int col_idx, vector[int64_t]* data,
                             vector[c_bool]* validity)
 
+        # DECIMAL array getters (unscaled values)
+        Status GetArrayUnscaledDecimal(const Slice& col_name, vector[int32_t]* data,
+                                       vector[c_bool]* validity)
+        Status GetArrayUnscaledDecimal(int col_idx, vector[int32_t]* data,
+                                       vector[c_bool]* validity)
+        Status GetArrayUnscaledDecimal(const Slice& col_name, vector[int64_t]* data,
+                                       vector[c_bool]* validity)
+        Status GetArrayUnscaledDecimal(int col_idx, vector[int64_t]* data,
+                                       vector[c_bool]* validity)
+
         Status GetArrayFloat(const Slice& col_name, vector[float]* data,
                             vector[c_bool]* validity)
         Status GetArrayFloat(int col_idx, vector[float]* data,
@@ -494,6 +504,16 @@ cdef extern from "kudu/common/partial_row.h" namespace "kudu" nogil:
                             const vector[c_bool]& validity)
         Status SetArrayInt64(int col_idx, const vector[int64_t]& val,
                             const vector[c_bool]& validity)
+
+        # DECIMAL array setters (unscaled values)
+        Status SetArrayUnscaledDecimal(const Slice& col_name, const vector[int32_t]& val,
+                                       const vector[c_bool]& validity)
+        Status SetArrayUnscaledDecimal(int col_idx, const vector[int32_t]& val,
+                                       const vector[c_bool]& validity)
+        Status SetArrayUnscaledDecimal(const Slice& col_name, const vector[int64_t]& val,
+                                       const vector[c_bool]& validity)
+        Status SetArrayUnscaledDecimal(int col_idx, const vector[int64_t]& val,
+                                       const vector[c_bool]& validity)
 
         Status SetArrayFloat(const Slice& col_name, const vector[float]& val,
                             const vector[c_bool]& validity)

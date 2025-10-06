@@ -24,6 +24,7 @@ import kudu
 
 from kudu.schema import Schema
 import datetime
+from decimal import Decimal
 
 class TestSchema(CompatUnitTest):
 
@@ -566,8 +567,25 @@ class TestArrayDataTypeSchema(CompatUnitTest):
     ]
 
     SPECIAL_PARAM_TYPES = [
-        ('varchar', kudu.varchar, {'length': 50})
+        ('varchar', kudu.varchar, {'length': 50}),
+        ('decimal', kudu.decimal, {'precision': 8, 'scale': 2}),
     ]
+
+    EXPECTED_ARRAY_TYPE_STRINGS = {
+        'arr_int8': 'INT8 1D-ARRAY NULLABLE',
+        'arr_int16': 'INT16 1D-ARRAY NULLABLE',
+        'arr_int32': 'INT32 1D-ARRAY NULLABLE',
+        'arr_int64': 'INT64 1D-ARRAY NULLABLE',
+        'arr_float': 'FLOAT 1D-ARRAY NULLABLE',
+        'arr_double': 'DOUBLE 1D-ARRAY NULLABLE',
+        'arr_bool': 'BOOL 1D-ARRAY NULLABLE',
+        'arr_string': 'STRING 1D-ARRAY NULLABLE',
+        'arr_binary': 'BINARY 1D-ARRAY NULLABLE',
+        'arr_unixtime_micros': 'UNIXTIME_MICROS 1D-ARRAY NULLABLE',
+        'arr_date': 'DATE 1D-ARRAY NULLABLE',
+        'arr_varchar': 'VARCHAR(50) 1D-ARRAY NULLABLE',
+        'arr_decimal': 'DECIMAL(8, 2) 1D-ARRAY NULLABLE',
+    }
 
     def test_array_type_descriptors_all_types(self):
         for type_name, kudu_type in self.SUPPORTED_ARRAY_TYPES:
@@ -606,8 +624,30 @@ class TestArrayDataTypeSchema(CompatUnitTest):
         schema = builder.build()
 
         # Verify schema structure
-        # 3 scalar + 11 basic arrays + 1 special array (varchar)
-        self.assertEqual(len(schema), 15)
+        # 3 scalar + 11 basic arrays + 2 special arrays (varchar, decimal)
+        self.assertEqual(len(schema), 16)
+
+        # Verify complete schema string representation
+        expected_schema_str = """kudu.Schema {
+  id                   INT32 NOT NULL
+  name                 STRING NULLABLE
+  age                  INT32 NULLABLE
+  arr_int8             INT8 1D-ARRAY NULLABLE
+  arr_int16            INT16 1D-ARRAY NULLABLE
+  arr_int32            INT32 1D-ARRAY NULLABLE
+  arr_int64            INT64 1D-ARRAY NULLABLE
+  arr_float            FLOAT 1D-ARRAY NULLABLE
+  arr_double           DOUBLE 1D-ARRAY NULLABLE
+  arr_bool             BOOL 1D-ARRAY NULLABLE
+  arr_string           STRING 1D-ARRAY NULLABLE
+  arr_binary           BINARY 1D-ARRAY NULLABLE
+  arr_unixtime_micros  UNIXTIME_MICROS 1D-ARRAY NULLABLE
+  arr_date             DATE 1D-ARRAY NULLABLE
+  arr_varchar          VARCHAR(50) 1D-ARRAY NULLABLE
+  arr_decimal          DECIMAL(8, 2) 1D-ARRAY NULLABLE
+  PRIMARY KEY (id)
+}"""
+        self.assertEqual(str(schema), expected_schema_str)
 
         self.assertEqual(schema[0].name, 'id')
         self.assertEqual(schema[0].type.name, 'int32')
@@ -628,11 +668,22 @@ class TestArrayDataTypeSchema(CompatUnitTest):
             self.assertEqual(col.type.name, 'nested')
             # Arrays nullable by default
             self.assertTrue(col.nullable)
+            # Verify type_to_string matches expected format
+            self.assertEqual(col.type_to_string(), self.EXPECTED_ARRAY_TYPE_STRINGS[expected_name])
 
-        # Verify special parameter types
+        # Verify special parameter types (with element type attributes)
         varchar_col = schema[14]
         self.assertEqual(varchar_col.name, 'arr_varchar')
         self.assertEqual(varchar_col.type.name, 'nested')
+        self.assertEqual(varchar_col.type_attributes.length, 50)
+        self.assertEqual(varchar_col.type_to_string(), 'VARCHAR(50) 1D-ARRAY NULLABLE')
+
+        decimal_col = schema[15]
+        self.assertEqual(decimal_col.name, 'arr_decimal')
+        self.assertEqual(decimal_col.type.name, 'nested')
+        self.assertEqual(decimal_col.type_attributes.precision, 8)
+        self.assertEqual(decimal_col.type_attributes.scale, 2)
+        self.assertEqual(decimal_col.type_to_string(), 'DECIMAL(8, 2) 1D-ARRAY NULLABLE')
 
     def test_array_schema_introspection_and_writing(self):
         builder = kudu.schema_builder()
@@ -670,6 +721,7 @@ class TestArrayDataTypeSchema(CompatUnitTest):
             ('arr_unixtime_micros', [datetime.datetime(2020, 1, 1), datetime.datetime(2020, 1, 2), None]),
             ('arr_date', [datetime.date(2020, 1, 1), datetime.date(2020, 1, 2), None]),
             ('arr_varchar', ['short', 'text', None]),
+            ('arr_decimal', [Decimal('1.23'), Decimal('4.56'), None]),
         ]
 
         for col_name, data in test_data:
@@ -693,9 +745,34 @@ class TestArrayDataTypeSchema(CompatUnitTest):
             ('arr_unixtime_micros', []),
             ('arr_date', []),
             ('arr_varchar', []),
+            ('arr_decimal', []),
         ]
 
         for col_name, data in empty_test_data:
             row2[col_name] = data
 
         self.assertIsNotNone(row2)
+
+        row3 = schema.new_row()
+        row3['key'] = 3
+
+        null_test_data = [
+            ('arr_int8', None),
+            ('arr_int16', None),
+            ('arr_int32', None),
+            ('arr_int64', None),
+            ('arr_float', None),
+            ('arr_double', None),
+            ('arr_bool', None),
+            ('arr_string', None),
+            ('arr_binary', None),
+            ('arr_unixtime_micros', None),
+            ('arr_date', None),
+            ('arr_varchar', None),
+            ('arr_decimal', None),
+        ]
+
+        for col_name, data in null_test_data:
+            row3[col_name] = data
+
+        self.assertIsNotNone(row3)

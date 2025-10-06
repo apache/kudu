@@ -20,6 +20,7 @@ from kudu.compat import CompatUnitTest
 from kudu.tests.common import KuduTestBase
 from kudu.client import Partitioning
 import datetime
+from decimal import Decimal
 from pytz import utc
 
 class TestArrayDataTypeIntegration(KuduTestBase, CompatUnitTest):
@@ -42,11 +43,7 @@ class TestArrayDataTypeIntegration(KuduTestBase, CompatUnitTest):
     # Types that require special parameters
     SPECIAL_PARAM_TYPES = [
         ('varchar', kudu.varchar, {'length': 50}),
-        # TODO: Decimal arrays out of scope for this patch
-        # - C++ API has overloaded methods (int32/int64) but no int128 version
-        # - Regular decimals use int128, creating API inconsistency
-        # - Will be addressed in future patch with proper int128 support
-        # ('decimal', kudu.decimal, {'precision': 8, 'scale': 2}),
+        ('decimal', kudu.decimal, {'precision': 8, 'scale': 2}),
     ]
 
     @classmethod
@@ -115,6 +112,7 @@ class TestArrayDataTypeIntegration(KuduTestBase, CompatUnitTest):
             ('arr_unixtime_micros', [v if v is None else datetime.datetime(2020, 1, min(v, 28), tzinfo=utc) for v in values]),
             ('arr_date', [v if v is None else datetime.date(2020, 1, min(v, 28)) for v in values]),
             ('arr_varchar', [v if v is None else 'varchar{0}'.format(v) for v in values]),
+            ('arr_decimal', [None if v is None else Decimal(v / 100).quantize(Decimal('0.01')) for v in values]),
         ]
 
     def test_insert_all_array_types(self):
@@ -218,13 +216,11 @@ class TestArrayDataTypeIntegration(KuduTestBase, CompatUnitTest):
             insert['arr_string'] = ['row', str(row_id)]
             insert['arr_double'] = [row_id * 1.1]
             insert['arr_bool'] = [True]
-            remaining_types = ['int8', 'int16', 'int32', 'float', 'binary', 'unixtime_micros', 'date']
+            remaining_types = ['int8', 'int16', 'int32', 'float', 'binary', 'unixtime_micros', 'date', 'decimal']
             for type_name in remaining_types:
                 col_name = 'arr_' + type_name
                 insert[col_name] = []
             insert['arr_varchar'] = []
-            # TODO: Add decimal arrays once Cython overloading issue is resolved
-            # insert['arr_decimal'] = []
             session.apply(insert)
         session.flush()
 
@@ -259,6 +255,7 @@ class TestArrayDataTypeIntegration(KuduTestBase, CompatUnitTest):
             col_name = 'arr_' + type_name
             insert[col_name] = []
         insert['arr_varchar'] = []
+        insert['arr_decimal'] = []
 
         session.apply(insert)
         session.flush()
@@ -313,3 +310,101 @@ class TestArrayDataTypeIntegration(KuduTestBase, CompatUnitTest):
                 actual_array = row[idx]
                 self.assertEqual(actual_array, expected_array,
                                "Row {0} {1} mismatch".format(row_id, col_name))
+
+    def test_decimal32_array(self):
+        builder = kudu.schema_builder()
+        builder.add_column('key', kudu.int32, nullable=False).primary_key()
+        builder.add_column('decimal32_arr').nested_type(kudu.array_type(kudu.decimal)).precision(9).scale(4)
+
+        schema = builder.build()
+        partitioning = Partitioning().set_range_partition_columns(['key'])
+        table_name = 'decimal32-array-test'
+
+        if self.client.table_exists(table_name):
+            self.client.delete_table(table_name)
+
+        self.client.create_table(table_name, schema, partitioning)
+        table = self.client.table(table_name)
+        session = self.client.new_session()
+
+        mixed_values = [
+            Decimal('12345.6789'),
+            Decimal('0.0001'),
+            Decimal('-9999.9999'),
+            None,
+            Decimal('0.0000'),
+        ]
+        all_nulls = [None, None, None]
+
+        insert1 = table.new_insert()
+        insert1['key'] = 1
+        insert1['decimal32_arr'] = mixed_values
+        session.apply(insert1)
+
+        insert2 = table.new_insert()
+        insert2['key'] = 2
+        insert2['decimal32_arr'] = all_nulls
+        session.apply(insert2)
+
+        session.flush()
+
+        scanner = table.scanner().open()
+        tuples = scanner.read_all_tuples()
+        self.assertEqual(len(tuples), 2)
+
+        for row in tuples:
+            if row[0] == 1:
+                self.assertEqual(row[1], mixed_values)
+            elif row[0] == 2:
+                self.assertEqual(row[1], all_nulls)
+
+        self.client.delete_table(table_name)
+
+    def test_decimal64_array(self):
+        builder = kudu.schema_builder()
+        builder.add_column('key', kudu.int32, nullable=False).primary_key()
+        builder.add_column('decimal64_arr').nested_type(kudu.array_type(kudu.decimal)).precision(18).scale(6)
+
+        schema = builder.build()
+        partitioning = Partitioning().set_range_partition_columns(['key'])
+        table_name = 'decimal64-array-test'
+
+        if self.client.table_exists(table_name):
+            self.client.delete_table(table_name)
+
+        self.client.create_table(table_name, schema, partitioning)
+        table = self.client.table(table_name)
+        session = self.client.new_session()
+
+        mixed_values = [
+            Decimal('123456789012.123456'),
+            Decimal('0.000001'),
+            Decimal('-999999999999.999999'),
+            None,
+            Decimal('1.000000'),
+        ]
+        all_nulls = [None, None, None, None]
+
+        insert1 = table.new_insert()
+        insert1['key'] = 1
+        insert1['decimal64_arr'] = mixed_values
+        session.apply(insert1)
+
+        insert2 = table.new_insert()
+        insert2['key'] = 2
+        insert2['decimal64_arr'] = all_nulls
+        session.apply(insert2)
+
+        session.flush()
+
+        scanner = table.scanner().open()
+        tuples = scanner.read_all_tuples()
+        self.assertEqual(len(tuples), 2)
+
+        for row in tuples:
+            if row[0] == 1:
+                self.assertEqual(row[1], mixed_values)
+            elif row[0] == 2:
+                self.assertEqual(row[1], all_nulls)
+
+        self.client.delete_table(table_name)

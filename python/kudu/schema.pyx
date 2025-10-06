@@ -367,6 +367,46 @@ cdef class ColumnSchema:
             return False
         return self.schema.Equals(deref((<ColumnSchema> other).schema))
 
+    def type_to_string(self):
+        """
+        Return a string representation of the column type including nullability.
+        For arrays, includes element type and '1D-ARRAY' marker.
+        Examples: 'INT32 NOT NULL', 'STRING 1D-ARRAY NULLABLE', 'DECIMAL(8, 2) 1D-ARRAY NOT NULL'
+        """
+        cdef:
+            const KuduNestedTypeDescriptor* nested_desc
+            const KuduArrayTypeDescriptor* array_desc
+            DataType elem_type
+
+        type_name = self.type.name.upper()
+        nullable_str = "NULLABLE" if self.nullable else "NOT NULL"
+
+        if self.schema.type() == KUDU_NESTED:
+            nested_desc = self.schema.nested_type()
+            if nested_desc != NULL and nested_desc.is_array():
+                array_desc = nested_desc.array()
+                if array_desc != NULL:
+                    elem_type = array_desc.type()
+                    elem_type_name = _type_names.get(elem_type, 'UNKNOWN').replace('KUDU_', '').upper()
+                    type_attrs = self.type_attributes
+
+                    if elem_type == KUDU_DECIMAL:
+                        return '{0}({1}, {2}) 1D-ARRAY {3}'.format(
+                            elem_type_name, type_attrs.precision, type_attrs.scale, nullable_str)
+                    elif elem_type == KUDU_VARCHAR:
+                        return '{0}({1}) 1D-ARRAY {2}'.format(
+                            elem_type_name, type_attrs.length, nullable_str)
+                    else:
+                        return '{0} 1D-ARRAY {1}'.format(elem_type_name, nullable_str)
+
+        type_attrs = self.type_attributes
+        if self.schema.type() == KUDU_DECIMAL:
+            return '{0}({1}, {2}) {3}'.format(type_name, type_attrs.precision, type_attrs.scale, nullable_str)
+        elif self.schema.type() == KUDU_VARCHAR:
+            return '{0}({1}) {2}'.format(type_name, type_attrs.length, nullable_str)
+        else:
+            return '{0} {1}'.format(type_name, nullable_str)
+
     def __repr__(self):
         return ('ColumnSchema(name=%s, type=%s, nullable=%s)'
                 % (self.name, self.type.name,
@@ -900,25 +940,23 @@ cdef class Schema:
             return result
 
     def __repr__(self):
+        # Python-style schema representation following Python best practices.
         # Got to be careful with huge schemas, maybe some kind of summary repr
         # when more than 20-30 columns?
-        buf = six.StringIO()
+        lines = []
 
         col_names = self.names
         space = 2 + max(len(x) for x in col_names)
 
         for i in range(len(self)):
             col = self.at(i)
-            not_null = '' if col.nullable else ' NOT NULL'
-
-            buf.write('\n{0}{1}{2}'
-                      .format(col.name.ljust(space),
-                              col.type.name, not_null))
+            lines.append('  {0}{1}'.format(col.name.ljust(space),
+                                          col.type_to_string()))
 
         pk_string = ', '.join(col_names[i] for i in self.primary_key_indices())
-        buf.write('\nPRIMARY KEY ({0})'.format(pk_string))
+        lines.append('  PRIMARY KEY ({0})'.format(pk_string))
 
-        return "kudu.Schema {{{0}\n}}".format(util.indent(buf.getvalue(), 2))
+        return "kudu.Schema {{\n{0}\n}}".format('\n'.join(lines))
 
     def __len__(self):
         return self.schema.num_columns()
