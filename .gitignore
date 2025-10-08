@@ -62,3 +62,5 @@ python/kudu/*.cpp
 # CLion default build directories
 cmake-build-*
 
+# Cursor
+.cursor/
