@@ -674,6 +674,12 @@ if [ "$BUILD_PYTHON" == "1" ]; then
     FAILURES="$FAILURES"$'Python tests failed\n'
   fi
 
+  # Run the Python examples tests
+  if ! ./test-python-examples.sh python2 ; then
+    TESTS_FAILED=1
+    FAILURES="$FAILURES"$'Python examples tests failed\n'
+  fi
+
   deactivate
   popd
 fi
@@ -721,6 +727,12 @@ if [ "$BUILD_PYTHON3" == "1" ]; then
       2> $TEST_LOGDIR/python3_client.log ; then
     TESTS_FAILED=1
     FAILURES="$FAILURES"$'Python 3 tests failed\n'
+  fi
+
+  # Run the Python examples tests
+  if ! ./test-python-examples.sh python3 ; then
+    TESTS_FAILED=1
+    FAILURES="$FAILURES"$'Python 3 examples tests failed\n'
   fi
 
   deactivate

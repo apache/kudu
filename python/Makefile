@@ -10,6 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+.PHONY: all build requirements test install clean test-examples
+
 build:
 	python setup.py build_ext --inplace
 
@@ -26,6 +28,19 @@ else
 	python setup.py test
 endif
 
+# Run Python client examples against a local Kudu cluster.
+# Optional: PYTHON=python2|python3 (default: python3)
+# Optional: EXAMPLE=<example_name.py> (default: all examples)
+test-examples:
+ifndef PYTHON
+	$(eval PYTHON := python3)
+endif
+ifdef EXAMPLE
+	./test-python-examples.sh $(PYTHON) $(EXAMPLE)
+else
+	./test-python-examples.sh $(PYTHON)
+endif
+
 clean:
 	find . -name "*.pyc" -exec rm -rf {} \;
 	find . -name "*.so" -exec rm -rf {} \;
@@ -36,3 +51,6 @@ clean:
 	rm -f kudu/schema.cpp
 	rm -f kudu/config.pxi
 	rm -f kudu/version.py
+
+install:
+	python setup.py install
