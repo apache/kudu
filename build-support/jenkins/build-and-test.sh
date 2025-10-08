@@ -602,6 +602,12 @@ if [ "$BUILD_JAVA" == "1" ]; then
       EXIT_STATUS=1
       FAILURES="$FAILURES"$'Could not submit Java distributed test job\n'
     fi
+
+    # Run the Java examples tests
+    if ! ./test-java-examples.sh ; then
+      TESTS_FAILED=1
+      FAILURES="$FAILURES"$'Java examples tests failed\n'
+    fi
   else
     if [ "$DO_COVERAGE" == "1" ]; then
       # Clean previous report results
@@ -622,6 +628,12 @@ if [ "$BUILD_JAVA" == "1" ]; then
       if ! ./gradlew $EXTRA_GRADLE_FLAGS clean test $EXTRA_GRADLE_TEST_FLAGS; then
         TESTS_FAILED=1
         FAILURES="$FAILURES"$'Java Gradle build/test failed\n'
+      fi
+
+      # Run the Java examples tests
+      if ! ./test-java-examples.sh ; then
+        TESTS_FAILED=1
+        FAILURES="$FAILURES"$'Java examples tests failed\n'
       fi
     fi
   fi

@@ -23,10 +23,13 @@ import java.util.List;
 import java.util.Random;
 import java.util.UUID;
 
+import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
-import org.apache.kudu.client.Insert;
+import org.apache.kudu.client.CreateTableOptions;
+import org.apache.kudu.client.Upsert;
 import org.apache.kudu.client.KuduClient;
+import org.apache.kudu.client.KuduException;
 import org.apache.kudu.client.KuduSession;
 import org.apache.kudu.client.KuduTable;
 import org.apache.kudu.client.PartialRow;
@@ -95,6 +98,32 @@ public class InsertLoadgen {
     }
   }
 
+  private static void createTableIfNotExists(KuduClient client, String tableName)
+      throws KuduException {
+    if (client.tableExists(tableName)) {
+      System.out.println("Table '" + tableName + "' already exists");
+      return;
+    }
+
+    System.out.println("Table '" + tableName + "' does not exist, creating it...");
+    List<ColumnSchema> columns = new ArrayList<>(3);
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.INT32).key(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("string_val", Type.STRING)
+        .nullable(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("int_val", Type.INT32)
+        .nullable(true).build());
+    Schema schema = new Schema(columns);
+
+    CreateTableOptions cto = new CreateTableOptions();
+    List<String> hashKeys = new ArrayList<>(1);
+    hashKeys.add("key");
+    cto.addHashPartitions(hashKeys, 4);
+    cto.setNumReplicas(1);
+
+    client.createTable(tableName, schema, cto);
+    System.out.println("Table '" + tableName + "' created successfully");
+  }
+
   public static void main(String[] args) throws Exception {
     if (args.length != 2) {
       System.err.println("Usage: InsertLoadgen master_addresses table_name");
@@ -105,6 +134,7 @@ public class InsertLoadgen {
     String tableName = args[1];
 
     try (KuduClient client = new KuduClient.KuduClientBuilder(masterAddrs).build()) {
+      createTableIfNotExists(client, tableName);
       KuduTable table = client.openTable(tableName);
       Schema schema = table.getSchema();
       List<RandomDataGenerator> generators = new ArrayList<>(schema.getColumnCount());
@@ -114,16 +144,16 @@ public class InsertLoadgen {
 
       KuduSession session = client.newSession();
       session.setFlushMode(SessionConfiguration.FlushMode.AUTO_FLUSH_BACKGROUND);
-      for (int insertCount = 0; ; insertCount++) {
-        Insert insert = table.newInsert();
-        PartialRow row = insert.getRow();
+      for (int upsertCount = 0; ; upsertCount++) {
+        Upsert upsert= table.newUpsert();
+        PartialRow row = upsert.getRow();
         for (int i = 0; i < schema.getColumnCount(); i++) {
           generators.get(i).generateColumnData(row);
         }
-        session.apply(insert);
+        session.apply(upsert);
 
         // Check for errors. This is done periodically since inserts are batched.
-        if (insertCount % 1000 == 0 && session.countPendingErrors() > 0) {
+        if (upsertCount % 1000 == 0 && session.countPendingErrors() > 0) {
           throw new RuntimeException(session.getPendingErrors().getRowErrors()[0].toString());
         }
       }

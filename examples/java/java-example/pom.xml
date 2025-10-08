@@ -95,18 +95,32 @@
     </dependency>
 
     <dependency>
-      <groupId>org.apache.kudu</groupId>
-      <artifactId>kudu-binary</artifactId>
-      <version>${kudu-version}</version>
-      <scope>test</scope>
-      <classifier>${os.detected.classifier}</classifier>
-    </dependency>
-
-    <dependency>
       <groupId>junit</groupId>
       <artifactId>junit</artifactId>
       <version>4.13.1</version>
       <scope>test</scope>
     </dependency>
   </dependencies>
+
+  <profiles>
+    <!-- Profile to include kudu-binary JAR for running tests with packaged mini-cluster binaries.
+         Activated by default. Disable with -DuseLocalKuduBin=true when using locally built Kudu. -->
+    <profile>
+      <id>kudu-binary</id>
+      <activation>
+        <property>
+          <name>!useLocalKuduBin</name>
+        </property>
+      </activation>
+      <dependencies>
+        <dependency>
+          <groupId>org.apache.kudu</groupId>
+          <artifactId>kudu-binary</artifactId>
+          <version>${kudu-version}</version>
+          <scope>test</scope>
+          <classifier>${os.detected.classifier}</classifier>
+        </dependency>
+      </dependencies>
+    </profile>
+  </profiles>
 </project>

@@ -27,13 +27,24 @@ This is an example program that uses the synchronous Kudu Java client APIs to
 - Scan some rows
 - Delete the table
 
-To build and run, ensure maven is installed and from the java-example directory run:
+== Building for client application development
+
+If you are developing a Kudu client application and want to use published Kudu
+artifacts from Maven Central, ensure maven is installed and from the java-example
+directory run:
 
 [source,bash]
 ----
 $ mvn package
 $ java -jar target/kudu-java-example-1.0-SNAPSHOT.jar
 ----
+
+This will:
+
+- Download `kudu-client` and all dependencies from Maven Central
+- Download `kudu-binary` (mini-cluster binaries) for running unit tests
+- Run unit tests using the packaged mini-cluster
+- Build the executable JAR
 
 By default, the example assumes the Kudu cluster has a single master running on
 localhost with the default port 7051. To specify a different set of masters for
@@ -43,4 +54,44 @@ the form `host:port`, as shown:
 [source,bash]
 ----
 $ java -DkuduMasters=master-0:7051,master-1:7051,master-2:7051 -jar target/kudu-java-example-1.0-SNAPSHOT.jar
+----
+
+== Building for Kudu development (using locally built binaries)
+
+If you are developing Kudu itself and have built it from source, you should use your
+locally built Kudu client and binaries. This ensures you're testing against your
+local changes rather than the published versions from Maven Central.
+
+First, publish your local build to your local Maven repository:
+
+[source,bash]
+----
+$ cd $KUDU_HOME/java
+$ ./gradlew publishToMavenLocal
+----
+
+Then build the example with the `-DuseLocalKuduBin=true` property. You must also
+specify the Kudu version via `-Dkudu-version` to match your local build (found in
+`$KUDU_HOME/version.txt`, e.g., `1.19.0-SNAPSHOT`):
+
+[source,bash]
+----
+$ cd $KUDU_HOME/examples/java/java-example
+$ mvn package -DuseLocalKuduBin=true -Dkudu-version=$(cat "$KUDU_HOME/version.txt")
+----
+
+This will:
+
+- Use the locally published `kudu-client` from `~/.m2/repository`
+- Skip downloading the `kudu-binary` artifact (large, only in releases)
+- Run unit tests using your local Kudu binaries (auto-discovered via PATH or `which kudu`)
+- Build the executable JAR
+
+If `kudu` is not in your PATH, you can explicitly specify the binary directory:
+
+[source,bash]
+----
+$ mvn package -DuseLocalKuduBin=true \
+    -Dkudu-version=1.19.0-SNAPSHOT \
+    -DkuduBinDir=$KUDU_HOME/build/latest/bin
 ----
