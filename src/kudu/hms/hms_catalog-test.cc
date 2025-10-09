@@ -530,5 +530,87 @@ TEST_F(HmsCatalogTest, TestMetastoreUuid) {
   });
 }
 
+TEST_F(HmsCatalogTest, TestArrayTypes) {
+  const string kTableId = "test-array-table-id";
+  const string kClusterId = "test-cluster-id";
+  const string kComment = "array types table";
+
+  SchemaBuilder b;
+  ASSERT_OK(b.AddKeyColumn("key", DataType::INT32));
+  ASSERT_OK(b.AddColumn(ColumnSchemaBuilder()
+                            .name("int32_array")
+                            .type(INT32)
+                            .array(true)));
+  ASSERT_OK(b.AddColumn(ColumnSchemaBuilder()
+                            .name("int64_array")
+                            .type(INT64)
+                            .array(true)
+                            .nullable(true)));
+  ASSERT_OK(b.AddColumn(ColumnSchemaBuilder()
+                            .name("string_array")
+                            .type(STRING)
+                            .array(true)));
+  ASSERT_OK(b.AddColumn(ColumnSchemaBuilder()
+                            .name("bool_array")
+                            .type(BOOL)
+                            .array(true)));
+  ASSERT_OK(b.AddColumn(ColumnSchemaBuilder()
+                            .name("float_array")
+                            .type(FLOAT)
+                            .array(true)));
+  ASSERT_OK(b.AddColumn(ColumnSchemaBuilder()
+                            .name("double_array")
+                            .type(DOUBLE)
+                            .array(true)));
+  ASSERT_OK(b.AddColumn(ColumnSchemaBuilder()
+                            .name("decimal_array")
+                            .type(DECIMAL64)
+                            .type_attributes(ColumnTypeAttributes(18, 10))
+                            .array(true)));
+  ASSERT_OK(b.AddColumn(ColumnSchemaBuilder()
+                            .name("varchar_array")
+                            .type(VARCHAR)
+                            .type_attributes(ColumnTypeAttributes(50))
+                            .array(true)));
+  ASSERT_OK(b.AddColumn(ColumnSchemaBuilder()
+                            .name("date_array")
+                            .type(DATE)
+                            .array(true)));
+  Schema schema = b.Build();
+
+  const string table_name = "default.array_table";
+  ASSERT_OK(hms_catalog_->CreateTable(kTableId, table_name, kClusterId,
+                                      nullopt, schema, kComment));
+
+  hive::Table table;
+  ASSERT_OK(hms_client_->GetTable("default", "array_table", &table));
+  ASSERT_EQ(table.parameters[HmsClient::kKuduTableIdKey], kTableId);
+  ASSERT_EQ(table.parameters[HmsClient::kKuduClusterIdKey], kClusterId);
+  ASSERT_EQ(table.parameters[HmsClient::kStorageHandlerKey], HmsClient::kKuduStorageHandler);
+  ASSERT_EQ(table.parameters[HmsClient::kTableCommentKey], kComment);
+
+  ASSERT_EQ(schema.num_columns(), table.sd.cols.size());
+  EXPECT_EQ("key", table.sd.cols[0].name);
+  EXPECT_EQ("int", table.sd.cols[0].type);
+  EXPECT_EQ("int32_array", table.sd.cols[1].name);
+  EXPECT_EQ("array<int>", table.sd.cols[1].type);
+  EXPECT_EQ("int64_array", table.sd.cols[2].name);
+  EXPECT_EQ("array<bigint>", table.sd.cols[2].type);
+  EXPECT_EQ("string_array", table.sd.cols[3].name);
+  EXPECT_EQ("array<string>", table.sd.cols[3].type);
+  EXPECT_EQ("bool_array", table.sd.cols[4].name);
+  EXPECT_EQ("array<boolean>", table.sd.cols[4].type);
+  EXPECT_EQ("float_array", table.sd.cols[5].name);
+  EXPECT_EQ("array<float>", table.sd.cols[5].type);
+  EXPECT_EQ("double_array", table.sd.cols[6].name);
+  EXPECT_EQ("array<double>", table.sd.cols[6].type);
+  EXPECT_EQ("decimal_array", table.sd.cols[7].name);
+  EXPECT_EQ("array<decimal(18,10)>", table.sd.cols[7].type);
+  EXPECT_EQ("varchar_array", table.sd.cols[8].name);
+  EXPECT_EQ("array<varchar(50)>", table.sd.cols[8].type);
+  EXPECT_EQ("date_array", table.sd.cols[9].name);
+  EXPECT_EQ("array<date>", table.sd.cols[9].type);
+}
+
 } // namespace hms
 } // namespace kudu

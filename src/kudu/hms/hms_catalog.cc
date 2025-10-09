@@ -326,9 +326,8 @@ Status HmsCatalog::GetUuid(string* uuid) {
 
 namespace {
 
-string column_to_field_type(const ColumnSchema& column) {
-  // See org.apache.hadoop.hive.serde.serdeConstants.
-  switch (column.type_info()->type()) {
+string element_type_to_field_type(DataType type, const ColumnTypeAttributes& type_attrs) {
+  switch (type) {
     case BOOL: return "boolean";
     case INT8: return "tinyint";
     case INT16: return "smallint";
@@ -337,19 +336,37 @@ string column_to_field_type(const ColumnSchema& column) {
     case DECIMAL32:
     case DECIMAL64:
     case DECIMAL128: return Substitute("decimal($0,$1)",
-                                       column.type_attributes().precision,
-                                       column.type_attributes().scale);
+                                       type_attrs.precision,
+                                       type_attrs.scale);
     case FLOAT: return "float";
     case DOUBLE: return "double";
     case STRING: return "string";
     case BINARY: return "binary";
-    case VARCHAR: return Substitute("varchar($0)",
-                                    column.type_attributes().length);
+    case VARCHAR: return Substitute("varchar($0)", type_attrs.length);
     case UNIXTIME_MICROS: return "timestamp";
     case DATE: return "date";
-    default: LOG(FATAL) << "unhandled column type: " << column.TypeToString();
+    default: LOG(FATAL) << "unhandled element type: " << DataType_Name(type);
   }
   __builtin_unreachable();
+}
+
+string column_to_field_type(const ColumnSchema& column) {
+  // See org.apache.hadoop.hive.serde.serdeConstants.
+  const auto* type_info = column.type_info();
+  const DataType type = type_info->type();
+
+  if (type == NESTED) {
+    const TypeInfo* elem_type_info = GetArrayElementTypeInfo(*type_info);
+    DCHECK(elem_type_info);
+    const DataType elem_type = elem_type_info->type();
+    // Kudu only supports 1D arrays of scalar types currently.
+    DCHECK_NE(elem_type, NESTED) << "nested arrays are not supported";
+    const string elem_type_str = element_type_to_field_type(
+        elem_type, column.type_attributes());
+    return Substitute("array<$0>", elem_type_str);
+  }
+
+  return element_type_to_field_type(type, column.type_attributes());
 }
 
 hive::FieldSchema column_to_field(const ColumnSchema& column) {
