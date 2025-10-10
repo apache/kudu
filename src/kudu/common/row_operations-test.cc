@@ -21,6 +21,7 @@
 #include <cstdlib>
 #include <initializer_list>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <type_traits>
@@ -47,12 +48,15 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+using std::nullopt;
+using std::optional;
 using std::shared_ptr;
 using std::string;
 using std::vector;
 using strings::Substitute;
 
 DECLARE_int32(max_cell_size_bytes);
+DECLARE_uint32(array_cell_max_elem_num);
 
 namespace kudu {
 
@@ -948,6 +952,98 @@ void CheckSplitExceedCellLimit(const Schema& client_schema,
     NO_FATALS(CheckExceedCellLimit(client_schema, col_values, op_type, expect_status, expect_msg));
   }
 }
+
+void CheckArrayMaxElemNumLimit(const Schema& schema,
+                               size_t elem_num,
+                               RowOperationsPB::Type op_type,
+                               const Status& expected_status = Status::OK(),
+                               const optional<string>& expected_msg = nullopt) {
+  switch (op_type) {
+    case RowOperationsPB::INSERT:
+    case RowOperationsPB::UPDATE:
+    case RowOperationsPB::DELETE:
+    case RowOperationsPB::UPSERT:
+    case RowOperationsPB::INSERT_IGNORE:
+    case RowOperationsPB::UPDATE_IGNORE:
+    case RowOperationsPB::DELETE_IGNORE:
+    case RowOperationsPB::UPSERT_IGNORE:
+      break;
+    default:
+      LOG(FATAL) << "unsupported op_type: " << RowOperationsPB::Type_Name(op_type);
+      break;  // unreachable
+  }
+
+  KuduPartialRow row(&schema);
+  for (size_t i = 0; i < schema.num_key_columns(); ++i) {
+    const ColumnSchema& cs = schema.column(i);
+    switch (cs.type_info()->type()) {
+      case INT32:
+        ASSERT_OK(row.SetInt32(i, 0));
+        break;
+      default:
+        LOG(FATAL) << "non-INT32 key column";
+        break;  // unreachable
+    }
+  }
+  for (size_t i = schema.num_key_columns(); i < schema.num_columns(); ++i) {
+    if (op_type == RowOperationsPB::DELETE || op_type == RowOperationsPB::DELETE_IGNORE) {
+      // DELETE should not have a value for non-key column.
+      break;
+    }
+    const ColumnSchema& cs = schema.column(i);
+    if (!cs.type_info()->is_array()) {
+      // Testing only array cells, so any non-key non-array column supposed to
+      // be nullable and is not set here.
+      continue;
+    }
+
+    const TypeInfo* elem_type_info = GetArrayElementTypeInfo(*cs.type_info());
+    ASSERT_NE(nullptr, elem_type_info);
+    switch (elem_type_info->type()) {
+      case BOOL:
+        ASSERT_OK(row.SetArrayBool(
+            i, vector<bool>(elem_num, true), vector<bool>(elem_num, true)));
+        break;
+      case INT32:
+        ASSERT_OK(row.SetArrayInt32(
+            i, vector<int32_t>(elem_num, 0), vector<bool>(elem_num, true)));
+        break;
+      case DOUBLE:
+        ASSERT_OK(row.SetArrayDouble(
+            i, vector<double>(elem_num, 0), vector<bool>(elem_num, true)));
+        break;
+      case STRING:
+        ASSERT_OK(row.SetArrayString(
+            i, vector<Slice>(elem_num, Slice()), vector<bool>(elem_num, true)));
+        break;
+      default:
+        LOG(FATAL) << Substitute("not implemented for arrays of type $0",
+                                 DataType_Name(elem_type_info->type()));
+        break;  // unreachable
+    }
+  }
+
+  RowOperationsPB pb;
+  RowOperationsPBEncoder(&pb).Add(op_type, row);
+
+  Arena arena(1024 * 1024);
+  Schema result_schema = schema.CopyWithColumnIds();
+  RowOperationsPBDecoder decoder(&pb, &schema, &result_schema, &arena);
+
+  vector<DecodedRowOperation> ops;
+  const auto s = decoder.DecodeOperations<WRITE_OPS>(&ops);
+  ASSERT_OK(s);
+
+  for (const auto& op : ops) {
+    SCOPED_TRACE(Substitute("op_type $0", RowOperationsPB::Type_Name(op_type)));
+    ASSERT_EQ(expected_status.CodeAsString(), op.result.CodeAsString())
+        << op.result.message().ToString();
+    if (expected_msg.has_value()) {
+      ASSERT_STR_CONTAINS(op.result.ToString(), expected_msg.value());
+    }
+  }
+}
+
 } // anonymous namespace
 
 // Decodes a split row using RowOperationsPBDecoder with DecoderMode::SPLIT_ROWS under
@@ -1013,6 +1109,66 @@ TEST_F(RowOperationsTest, ExceedCellLimit) {
     auto col_values(base_col_values);
     col_values[i] = too_long_string;
     NO_FATALS(CheckSplitExceedCellLimit(client_schema, col_values, Status::OK(), ""));
+  }
+}
+
+// Make sure it's possible to update the setting for --array_cell_max_elem_num
+// in runtime and it effectively limits how many elements can in one as expected.
+TEST_F(RowOperationsTest, ArrayCellElementNumberLimit) {
+  for (const DataType elem_type : { BOOL, INT32, DOUBLE, STRING }) {
+    SCOPED_TRACE(Substitute("array element type $0", DataType_Name(elem_type)));
+    const Schema schema(
+        {
+            ColumnSchema("key", INT32),
+            ColumnSchemaBuilder()
+                .name("arr")
+                .type(elem_type)
+                .nullable(true)
+                .array(true)
+                .Build(),
+        },
+        /*key_columns*/1);
+    for (auto op_type : { RowOperationsPB::INSERT,
+                          RowOperationsPB::INSERT_IGNORE,
+                          RowOperationsPB::UPSERT,
+                          RowOperationsPB::UPSERT_IGNORE,
+                          RowOperationsPB::UPDATE,
+                          RowOperationsPB::UPDATE_IGNORE, }) {
+      FLAGS_max_cell_size_bytes = 64 * 1024;
+      FLAGS_array_cell_max_elem_num = 100;
+      NO_FATALS(CheckArrayMaxElemNumLimit(schema, 100, op_type));
+      NO_FATALS(CheckArrayMaxElemNumLimit(schema, 101, op_type,
+          Status::InvalidArgument({}),
+          "too many array elements for column 'arr' (101, maximum is 100)"));
+      FLAGS_array_cell_max_elem_num = 2048;
+      NO_FATALS(CheckArrayMaxElemNumLimit(schema, 2000, op_type));
+      NO_FATALS(CheckArrayMaxElemNumLimit(schema, 8192, op_type,
+          Status::InvalidArgument({}),
+          "too many array elements for column 'arr' (8192, maximum is 2048)"));
+
+      // Run with boundary settings of --array_cell_max_elem_num: 0 and 64K.
+      FLAGS_array_cell_max_elem_num = 0;
+      NO_FATALS(CheckArrayMaxElemNumLimit(schema, 0, op_type));
+      NO_FATALS(CheckArrayMaxElemNumLimit(schema, 1, op_type,
+          Status::InvalidArgument({}),
+          "too many array elements for column 'arr' (1, maximum is 0)"));
+
+      // The limit on the cell size is enforced before the limit on the maximum
+      // number of elements in an array.
+      FLAGS_max_cell_size_bytes = 8192;
+      FLAGS_array_cell_max_elem_num = 64 * 1024;
+      NO_FATALS(CheckArrayMaxElemNumLimit(schema, 64 * 1024, op_type,
+          Status::InvalidArgument({}),
+          "value too large for column 'arr'"));
+
+      // Set the cell size limit very high to make sure it's not hit even with
+      // 64K elements in an array.
+      FLAGS_max_cell_size_bytes = 1 * 1024 * 1024;
+      NO_FATALS(CheckArrayMaxElemNumLimit(schema, 64 * 1024, op_type));
+      NO_FATALS(CheckArrayMaxElemNumLimit(schema, 64 * 1024 + 1, op_type,
+          Status::InvalidArgument({}),
+          "too many array elements for column 'arr' (65537, maximum is 65536)"));
+    }
   }
 }
 

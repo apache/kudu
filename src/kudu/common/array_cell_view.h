@@ -82,6 +82,8 @@ constexpr serdes::ScalarArray KuduToScalarArrayType(DataType data_type) {
 
 class ArrayCellMetadataView final {
  public:
+  static constexpr const size_t kArrayMaxElemNum = 65536;
+
   // buf: data raw pointer
   // len: size of the buffer (bytes) pointed at by the 'buf' pointer
   ArrayCellMetadataView(const uint8_t* buf, const size_t size)
@@ -123,7 +125,7 @@ class ArrayCellMetadataView final {
       //     comparison criteria in the flatbuffers' logic that asserts the
       //     buffers size restriction
       opt.max_depth = 3;
-      opt.max_tables = 65536 + 1;
+      opt.max_tables = kArrayMaxElemNum + 1;
       opt.max_size = size_ + 1;
 
       flatbuffers::Verifier verifier(data_, size_, opt);

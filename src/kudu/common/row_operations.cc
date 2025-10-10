@@ -26,6 +26,7 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
+#include "kudu/common/array_cell_view.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row.h"
@@ -51,6 +52,25 @@ DEFINE_int32(max_cell_size_bytes, 64 * 1024,
              "string or binary columns with a size greater than this will result "
              "in errors.");
 TAG_FLAG(max_cell_size_bytes, unsafe);
+
+DEFINE_uint32(array_cell_max_elem_num, 1024,
+              "The maximum number of elements in any individual cell of array "
+              "type column in a table. Attempting to store arrays of a length "
+              "greater than this will result in errors.");
+TAG_FLAG(array_cell_max_elem_num, advanced);
+TAG_FLAG(array_cell_max_elem_num, runtime);
+
+// Validate that log_min_segments_to_retain >= 1
+static bool ValidateArrayCellMaxElemNum(const char* flagname, uint32_t value) {
+  if (value > kudu::ArrayCellMetadataView::kArrayMaxElemNum) {
+    LOG(ERROR) << Substitute(
+        "'$0' set to invalid value $1; must not be greater than $2",
+        flagname, value, kudu::ArrayCellMetadataView::kArrayMaxElemNum);
+    return false;
+  }
+  return true;
+}
+DEFINE_validator(array_cell_max_elem_num, &ValidateArrayCellMaxElemNum);
 
 namespace kudu {
 
@@ -290,6 +310,20 @@ Status RowOperationsPBDecoder::GetColumnSlice(const ColumnSchema& col,
       // validate subsequent columns and rows.
     }
     *slice = Slice(&pb_->indirect_data()[offset_in_indirect], ptr_slice->size());
+    if (col.is_array()) {
+      // Apply restrictions specific to array columns.
+      ArrayCellMetadataView view(slice->data(), slice->size());
+      const auto s = view.Init();
+      if (PREDICT_FALSE(!s.ok())) {
+        return Status::Corruption(
+            Substitute("column '$0': corrupted array cell data", col.name()));
+      }
+      if (PREDICT_FALSE(view.elem_num() > FLAGS_array_cell_max_elem_num)) {
+        *row_status = Status::InvalidArgument(Substitute(
+          "too many array elements for column '$0' ($1, maximum is $2)",
+          col.name(), view.elem_num(), FLAGS_array_cell_max_elem_num));
+      }
+    }
   }
   src_.remove_prefix(size);
   return Status::OK();
