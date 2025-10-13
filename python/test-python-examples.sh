@@ -35,6 +35,7 @@
 VALID_EXAMPLES=(
   "basic_example.py"
   "non_unique_primary_key.py"
+  "array_example.py"
 )
 
 PYTHON_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")"; pwd)
@@ -94,6 +95,14 @@ test_example() {
           --masters $LOCALHOST_IP \
           --ports $MASTER_RPC_PORT ; then
         exit_error "non_unique_primary_key.py failed with $python_version"
+      fi
+      ;;
+    array_example.py)
+      echo "Testing array_example.py..."
+      if ! "$python_version" "$EXAMPLES_DIR/basic-python-example/array_example.py" \
+          --masters $LOCALHOST_IP \
+          --ports $MASTER_RPC_PORT ; then
+        exit_error "array_example.py failed with $python_version"
       fi
       ;;
     *)

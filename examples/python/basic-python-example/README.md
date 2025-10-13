@@ -12,9 +12,13 @@ See the License for the specific language governing permissions and
 limitations under the License.
 -->
 
-# Basic Kudu-Python example
-This is a very basic example of usage for the Kudu Python client.
-It demonstrates much of the standard capabilities within the client.
+# Basic Kudu-Python examples
+This directory contains basic examples of usage for the Kudu Python client.
+These examples demonstrate the standard capabilities within the client:
+
+- **basic_example.py**: Basic CRUD operations (create, read, update, delete)
+- **non_unique_primary_key.py**: Working with non-unique primary keys and auto-incrementing columns
+- **array_example.py**: Using array data types with insert, scan, update, and delete operations
 
 ## To install the Python client
 
@@ -53,7 +57,14 @@ export DYLD_LIBRARY_PATH=$KUDU_HOME/build/latest/lib/exported
 pip install kudu-python
 ```
 
-## Running the example
+## Running the examples
 ```
+# Run the basic example
 python basic_example.py --masters master1.address --ports 7051
+
+# Run the non-unique primary key example
+python non_unique_primary_key.py --masters master1.address --ports 7051
+
+# Run the array data type example
+python array_example.py --masters master1.address --ports 7051
 ```
