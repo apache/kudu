@@ -388,6 +388,9 @@ def create_archive_input(staging, execution, dep_extractor,
     for data_file in execution.env['KUDU_DATA_FILES'].split(","):
       # Paths are relative to the test binary.
       path = os.path.join(os.path.dirname(abs_test_exe), data_file)
+      # If it's a directory, add a trailing slash so isolate knows to include it recursively
+      if os.path.isdir(path):
+        path += "/"
       files.append(abs_to_rel(path, staging))
 
   out_archive = os.path.join(staging.dir, '%s.gen.json' % (execution.test_name))
