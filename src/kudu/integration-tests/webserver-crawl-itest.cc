@@ -168,6 +168,8 @@ TEST_P(WebserverCrawlITest, TestAllWebPages) {
   opts.num_tablet_servers = 3;
   opts.extra_master_flags = flags;
   opts.extra_tserver_flags = flags;
+  opts.enable_rest_api = true;
+
   ExternalMiniCluster cluster(std::move(opts));
   ASSERT_OK(cluster.Start());
 
@@ -214,6 +216,21 @@ TEST_P(WebserverCrawlITest, TestAllWebPages) {
     if (HasPrefixString(link, "#")) {
       // An anchor without a path doesn't need to be crawled.
       return;
+    }
+
+    // Skip large JavaScript bundles to avoid HTML parser issues.
+    // The HTML parser treats minified JS as parseable content and extracts
+    // code fragments (like "'+escapeHtml(s[o].href)+'") as malformed URLs,
+    // causing test failures when curl tries to fetch them. These JS files are
+    // still validated by the initial HTTP fetch; we just skip parsing them for links.
+    static const vector<string> kExcludedPaths = {
+      "/swagger/swagger-ui-bundle.js",
+    };
+
+    for (const auto& excluded : kExcludedPaths) {
+      if (link.find(excluded) != string::npos) {
+        return;
+      }
     }
 
     // Verify that the link's scheme matches how we've configured the web UI.
