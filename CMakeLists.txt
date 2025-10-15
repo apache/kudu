@@ -891,7 +891,8 @@ function(ADD_KUDU_TEST REL_TEST_NAME)
     file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/${DATA_FILE}
       # Copy with read and execute permissions, since tests should not modify
       # the data files in place, but data files may be scripts used by tests.
-      DIRECTORY_PERMISSIONS OWNER_READ OWNER_EXECUTE GROUP_READ GROUP_EXECUTE
+      # Directories need write permission to allow cleanup during builds.
+      DIRECTORY_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE
       FILE_PERMISSIONS OWNER_READ OWNER_EXECUTE GROUP_READ GROUP_EXECUTE
       DESTINATION ${DST_DIR})
   endforeach()
