@@ -390,8 +390,8 @@ DEFINE_bool(txn_rollback, false,
 DEFINE_bool(enable_array_columns, false,
             "Whether to add and populate with data array data type columns "
             "in the automatically created table (a.k.a. auto-table): "
-            "'arr_int64' (INT64 1D array) and 'arr_string' (STRING 1D array) "
-            "columns. If array columns are present in already existing table "
+            "'arr_int64' (INT64 1D array) and 'arr_string' (STRING 1D array). "
+            "If array columns are present in already existing table "
             "specified by the --table_name flag, the tool populates such "
             "columns regardless of this flag's setting.");
 
@@ -1177,6 +1177,7 @@ unique_ptr<Mode> BuildPerfMode() {
       .AddOptionalParameter("buffer_flush_watermark_pct")
       .AddOptionalParameter("buffer_size_bytes")
       .AddOptionalParameter("buffers_num")
+      .AddOptionalParameter("enable_array_columns")
       .AddOptionalParameter("error_buffer_size_bytes")
       .AddOptionalParameter("flush_per_n_rows")
       .AddOptionalParameter("keep_auto_table")

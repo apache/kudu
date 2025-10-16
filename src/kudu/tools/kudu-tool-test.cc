@@ -1591,6 +1591,38 @@ TEST_F(ToolTest, TestModeHelp) {
     };
     NO_FATALS(RunTestHelp(kCmd, kPerfRegexes));
     NO_FATALS(RunTestHelpRpcFlags(kCmd, {"loadgen", "table_scan"}));
+
+    const vector<string> kLoadgenHelpRegexes = {
+      "-auto_database.*The database in which to create the automatically generated",
+      "-buffer_flush_watermark_pct.*Mutation buffer flush watermark",
+      "-buffer_size_bytes.*Size of the mutation buffer, per session",
+      "-buffers_num.*Number of mutation buffers per session",
+      "-enable_array_columns.*Whether to add and populate with data",
+      "-error_buffer_size_bytes.*Size of the error buffer, per session",
+      "-flush_per_n_rows.*Perform async flush per given number of rows added",
+      "-keep_auto_table.*If using the auto-generated table",
+      "-num_rows_per_thread.*Number of rows each thread generates and inserts",
+      "-num_threads.*Number of threads to run",
+      "-run_cleanup.*Whether to run post-insertion deletion",
+      "-run_scan.*Whether to run post-insertion scan",
+      "-seq_start.*Initial value for the generator in sequential mode",
+      "-show_first_n_errors.*Output detailed information",
+      "-string_fixed.*Pre-defined string to write",
+      "-string_len.*Length of strings to put into string and binary columns",
+      "-table_name.*Name of an existing table to use for the test",
+      "-table_num_hash_partitions.*The number of hash partitions to create",
+      "-table_num_range_partitions.*The number of range partitions to create",
+      "-table_num_replicas.*The number of replicas for the auto-created table",
+      "-txn_start.*Whether the generated rows are inserted",
+      "-txn_commit.*Whether to commit the multi-row transaction",
+      "-txn_rollback.*Whether to rollback the multi-row transaction",
+      "-use_client_per_thread.*Use a separate KuduClient instance",
+      "-use_random.*Whether to use random numbers",
+      "-use_random_pk.*Whether to use random numbers",
+      "-use_random_non_pk.*Whether to use random numbers",
+      "-use_upsert.*Whether to use UPSERT instead of INSERT",
+    };
+    NO_FATALS(RunTestHelp("perf loadgen --help", kLoadgenHelpRegexes));
   }
   {
     const string kCmd = "remote_replica";
