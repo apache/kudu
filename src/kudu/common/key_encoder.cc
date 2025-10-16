@@ -31,14 +31,14 @@ namespace kudu {
 
 // A resolver for Encoders
 template <typename Buffer>
-class EncoderResolver {
+class EncoderResolver final {
  public:
   const KeyEncoder<Buffer>& GetKeyEncoder(DataType t) {
     DCHECK(HasKeyEncoderForType(t));
     return *encoders_[t];
   }
 
-  bool HasKeyEncoderForType(DataType t) {
+  bool HasKeyEncoderForType(DataType t) const {
     return t < encoders_.size() && encoders_[t];
   }
 
@@ -79,6 +79,15 @@ const KeyEncoder<Buffer>& GetKeyEncoder(const TypeInfo* typeinfo) {
 
 // Returns true if the type is allowed in keys.
 bool IsTypeAllowableInKey(const TypeInfo* typeinfo) {
+  if (typeinfo->nested_type_info()) {
+    // An artificial constraint: NESTED types (e.g., array) aren't yet supported
+    // as primary key columns.
+    //
+    // TODO(aserbin): implement array-specific key encoding instead of just
+    //                encoding raw data in the buffer that backs run-time
+    //                in-memory representation of array cells
+    return false;
+  }
   return Singleton<EncoderResolver<faststring>>::get()->HasKeyEncoderForType(
       typeinfo->physical_type());
 }

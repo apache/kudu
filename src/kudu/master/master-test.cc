@@ -2055,7 +2055,61 @@ TEST_F(MasterTest, TestCreateTableInvalidKeyType) {
     Status s = CreateTable(kTableName, kTableSchema, vector<KuduPartialRow>());
     ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(),
-        "key column may not have type of BOOL, FLOAT, or DOUBLE");
+        "key column may not have type of BOOL, FLOAT, DOUBLE, or NESTED");
+  }
+}
+
+// NESTED type columns (e.g., arrays) aren't yet supported in primary keys.
+TEST_F(MasterTest, CreateTableWithArrayKeyType) {
+  constexpr const char* const kTableName = "array_primary_key_column";
+  constexpr const char* const kErrMsg =
+      "key column may not have type of BOOL, FLOAT, DOUBLE, or NESTED";
+
+  const Schema table_schemas[] = {
+    {
+      {
+        ColumnSchemaBuilder().type(INT32).array(true).name("key"),
+      }, 1
+    },
+    {
+      {
+        ColumnSchemaBuilder().type(STRING).array(true).name("key"),
+        ColumnSchemaBuilder().type(INT64).name("c1").nullable(true),
+      }, 1
+    },
+    {
+      {
+        ColumnSchemaBuilder().type(INT16).array(true).name("key"),
+        ColumnSchemaBuilder().type(INT8).name("c1").nullable(true),
+      }, 1
+    },
+    {
+      {
+        ColumnSchema("key", INT32),
+        ColumnSchemaBuilder().type(INT64).array(true).name("arr0"),
+      }, 2
+    },
+    {
+      {
+        ColumnSchemaBuilder().type(STRING).array(true).name("arr0"),
+        ColumnSchema("key", INT32),
+        ColumnSchemaBuilder().type(INT64).array(true).name("arr1"),
+      }, 3
+    },
+    {
+      {
+        ColumnSchemaBuilder().type(BOOL).array(true).name("arr0"),
+        ColumnSchema("key", BINARY),
+      }, 2
+    },
+  };
+
+  const vector<KuduPartialRow> split_rows{};
+  for (const auto& schema : table_schemas) {
+    SCOPED_TRACE(schema.ToString(Schema::BASE_INFO));
+    const auto s = CreateTable(kTableName, schema, split_rows);
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), kErrMsg);
   }
 }
 

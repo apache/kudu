@@ -1871,7 +1871,7 @@ Status ValidateClientSchema(const optional<string>& name,
   for (int i = 0; i < schema.num_key_columns(); i++) {
     if (!IsTypeAllowableInKey(schema.column(i).type_info())) {
       return Status::InvalidArgument(
-          "key column may not have type of BOOL, FLOAT, or DOUBLE");
+          "key column may not have type of BOOL, FLOAT, DOUBLE, or NESTED (e.g., array)");
     }
   }
 
