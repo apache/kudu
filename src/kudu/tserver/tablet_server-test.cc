@@ -186,6 +186,7 @@ DECLARE_bool(fail_dns_resolution);
 DECLARE_bool(rowset_metadata_store_keys);
 DECLARE_bool(scanner_unregister_on_invalid_seq_id);
 DECLARE_bool(show_slow_scans);
+DECLARE_bool(tserver_support_1d_array_columns);
 DECLARE_double(cfile_inject_corruption);
 DECLARE_double(env_inject_eio);
 DECLARE_double(env_inject_full);
@@ -4172,6 +4173,42 @@ TEST_F(TabletServerTest, TestCreateTablet_TabletExists) {
     ASSERT_TRUE(resp.has_error());
     ASSERT_EQ(TabletServerErrorPB::TABLET_ALREADY_EXISTS, resp.error().code());
   }
+}
+
+TEST_F(TabletServerTest, CreateTabletWithArrayColumnUnsupportedFeatureFlag) {
+  // Pretend the tablet server doesn't support the ARRAY_1D_COLUMN_TYPE feature.
+  FLAGS_tserver_support_1d_array_columns = false;
+
+  CreateTabletRequestPB req;
+  req.set_dest_uuid(mini_server_->server()->fs_manager()->uuid());
+
+  Schema schema;
+  {
+    SchemaBuilder sb;
+    ASSERT_OK(sb.AddKeyColumn("key", INT32));
+    ASSERT_OK(sb.AddColumn(
+        ColumnSchemaBuilder().name("arr").type(INT8).array(true).Build()));
+    schema = sb.Build();
+  }
+  ASSERT_OK(SchemaToPB(schema, req.mutable_schema()));
+
+  RpcController rpc;
+  rpc.RequireServerFeature(TabletServerFeatures::ARRAY_1D_COLUMN_TYPE);
+  CreateTabletResponsePB resp;
+  const auto s = admin_proxy_->CreateTablet(req, &resp, &rpc);
+
+  ASSERT_TRUE(s.IsRemoteError()) << s.ToString();
+  // It's not an application-level response, so 'resp' isn't populated.
+  ASSERT_FALSE(resp.has_error());
+  const auto* err = rpc.error_response();
+  ASSERT_NE(nullptr, err);
+  ASSERT_EQ(1, err->unsupported_feature_flags_size());
+  ASSERT_EQ(TabletServerFeatures::ARRAY_1D_COLUMN_TYPE,
+            err->unsupported_feature_flags(0));
+  ASSERT_TRUE(err->has_code());
+  ASSERT_EQ(rpc::ErrorStatusPB::ERROR_INVALID_REQUEST, err->code());
+  ASSERT_TRUE(err->has_message());
+  ASSERT_EQ("unsupported feature flags", err->message());
 }
 
 TEST_F(TabletServerTest, TestDeleteTablet) {

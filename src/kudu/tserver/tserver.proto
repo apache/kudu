@@ -541,4 +541,7 @@ enum TabletServerFeatures {
   // Update to implementation of Fast hash for Bloom filter predicate leads
   // to incorrect results if incompatible client and server versions are used.
   BLOOM_FILTER_PREDICATE_V2 = 6;
+  // Whether the server supports working with tables having one-dimensional
+  // array type columns.
+  ARRAY_1D_COLUMN_TYPE = 7;
 }

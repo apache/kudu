@@ -117,6 +117,7 @@
 #include "kudu/rpc/remote_user.h"
 #include "kudu/rpc/rpc_context.h"
 #include "kudu/rpc/rpc_controller.h"
+#include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/security/cert.h"
 #include "kudu/security/crypto.h"
 #include "kudu/security/tls_context.h"
@@ -322,6 +323,12 @@ DEFINE_bool(catalog_manager_support_live_row_count, true,
 TAG_FLAG(catalog_manager_support_live_row_count, hidden);
 TAG_FLAG(catalog_manager_support_live_row_count, runtime);
 
+DEFINE_bool(catalog_manager_retry_tserver_task_on_unsupported_feature_flags, false,
+            "Whether to retry tasks that send asynchronous RPCs to tablet "
+            "servers if receiving unsupported feature flags error");
+TAG_FLAG(catalog_manager_retry_tserver_task_on_unsupported_feature_flags, advanced);
+TAG_FLAG(catalog_manager_retry_tserver_task_on_unsupported_feature_flags, runtime);
+
 DEFINE_bool(catalog_manager_enable_chunked_tablet_reports, true,
             "Whether to split the tablet report data received from one tablet "
             "server into chunks when persisting it in the system catalog. "
@@ -492,6 +499,7 @@ using kudu::tablet::TabletDataState;
 using kudu::tablet::TabletReplica;
 using kudu::tablet::TabletStatePB;
 using kudu::tserver::TabletServerErrorPB;
+using kudu::tserver::TabletServerFeatures;
 using std::make_optional;
 using std::nullopt;
 using std::optional;
@@ -4684,15 +4692,31 @@ Status RetryingTSRpcTask::Run() {
 }
 
 void RetryingTSRpcTask::RpcCallback() {
-  if (!rpc_.status().ok()) {
-    KLOG_EVERY_N_SECS(WARNING, 1) << Substitute("TS $0: $1 RPC failed for tablet $2: $3",
-                                                target_ts_desc_->ToString(), type_name(),
-                                                tablet_id(), rpc_.status().ToString());
-  } else if (state() != kStateAborted) {
-    HandleResponse(attempt_); // Modifies state_.
+  const auto& s = rpc_.status();
+  if (s.ok()) {
+    if (state() != kStateAborted) {
+      HandleResponse(attempt_); // Modifies state_.
+    }
+  } else {
+    DCHECK(!s.IsRemoteError() || (s.IsRemoteError() && rpc_.error_response()));
+    if (s.IsRemoteError() &&
+        rpc_.error_response() &&
+        rpc_.error_response()->unsupported_feature_flags_size() > 0 &&
+        !FLAGS_catalog_manager_retry_tserver_task_on_unsupported_feature_flags) {
+      // Once marked as failed, the task is unregistered below.
+      MarkFailed();
+      LOG(WARNING) << Substitute(
+          "TS $0: $1 RPC failed for tablet $2, no further retry: $3",
+          target_ts_desc_->ToString(), type_name(), tablet_id(), s.ToString());
+    } else {
+      KLOG_EVERY_N_SECS(WARNING, 1) << Substitute(
+          "TS $0: $1 RPC failed for tablet $2: $3",
+          target_ts_desc_->ToString(), type_name(), tablet_id(), s.ToString());
+    }
   }
 
-  // Schedule a retry if the RPC call was not successful.
+  // Schedule a retry if the RPC call was not successful and the task's overall
+  // status is still 'running'.
   if (RescheduleWithBackoffDelay()) {
     return;
   }
@@ -4807,12 +4831,13 @@ class AsyncCreateReplica : public RetrySpecificTSRpcTask {
  public:
 
   // The tablet lock must be acquired for reading before making this call.
-  AsyncCreateReplica(Master *master,
+  AsyncCreateReplica(Master* master,
                      const string& permanent_uuid,
                      const scoped_refptr<TabletInfo>& tablet,
                      const TabletMetadataLock& tablet_lock)
-    : RetrySpecificTSRpcTask(master, permanent_uuid, tablet->table().get()),
-      tablet_id_(tablet->id()) {
+      : RetrySpecificTSRpcTask(master, permanent_uuid, tablet->table().get()),
+        tablet_id_(tablet->id()),
+        schema_has_nested_columns_(false) {
     deadline_ = start_ts_ + MonoDelta::FromMilliseconds(FLAGS_tablet_creation_timeout_ms);
 
     TableMetadataLock table_lock(tablet->table().get(), LockMode::READ);
@@ -4830,6 +4855,15 @@ class AsyncCreateReplica : public RetrySpecificTSRpcTask {
         table_lock.data().pb.extra_config());
     req_.set_dimension_label(tablet_lock.data().pb.dimension_label());
     req_.set_table_type(table_lock.data().pb.table_type());
+
+    Schema schema;
+    const auto s = SchemaFromPB(req_.schema(), &schema);
+    if (PREDICT_TRUE(s.ok())) {
+      schema_has_nested_columns_ = schema.has_nested_columns();
+    } else {
+      KLOG_EVERY_N_SECS(WARNING, 60) << Substitute(
+          "could not convert table's $0 schema from PB: $1", req_.table_id(), s.ToString());
+    }
   }
 
   string type_name() const override { return "CreateTablet"; }
@@ -4863,6 +4897,11 @@ class AsyncCreateReplica : public RetrySpecificTSRpcTask {
     VLOG(1) << Substitute("Sending $0 request to $1 (attempt $2): $3",
                           type_name(), target_ts_desc_->ToString(), attempt,
                           SecureDebugString(req_));
+    if (schema_has_nested_columns_) {
+      DCHECK(!ContainsKey(rpc_.required_server_features(),
+                          TabletServerFeatures::ARRAY_1D_COLUMN_TYPE));
+      rpc_.RequireServerFeature(TabletServerFeatures::ARRAY_1D_COLUMN_TYPE);
+    }
     ts_proxy_->CreateTabletAsync(req_, &resp_, &rpc_,
                                  [this]() { this->RpcCallback(); });
     return true;
@@ -4872,6 +4911,7 @@ class AsyncCreateReplica : public RetrySpecificTSRpcTask {
   const string tablet_id_;
   tserver::CreateTabletRequestPB req_;
   tserver::CreateTabletResponsePB resp_;
+  bool schema_has_nested_columns_;
 };
 
 // Send a DeleteTablet() RPC request.
@@ -5051,6 +5091,16 @@ class AsyncAlterTable : public RetryingTSRpcTask {
 
     l.Unlock();
 
+    Schema schema;
+    const auto s = SchemaFromPB(req.schema(), &schema);
+    if (PREDICT_TRUE(s.ok()) && schema.has_nested_columns()) {
+      DCHECK(!ContainsKey(rpc_.required_server_features(),
+                          TabletServerFeatures::ARRAY_1D_COLUMN_TYPE));
+      rpc_.RequireServerFeature(TabletServerFeatures::ARRAY_1D_COLUMN_TYPE);
+    } else {
+      KLOG_EVERY_N_SECS(WARNING, 60) << Substitute(
+          "could not convert tablet's $0 schema from PB: $1", req.tablet_id(), s.ToString());
+    }
     VLOG(1) << Substitute("Sending $0 request to $1 (attempt $2): $3",
                           type_name(), target_ts_desc_->ToString(), attempt,
                           SecureDebugString(req));

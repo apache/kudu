@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <type_traits>
@@ -29,11 +30,14 @@
 #include "kudu/common/common.pb.h"
 #include "kudu/common/schema.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
+#include "kudu/util/logging_test_util.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 DECLARE_bool(master_support_1d_array_columns);
+DECLARE_bool(tserver_support_1d_array_columns);
 
 using kudu::client::sp::shared_ptr;
 using kudu::cluster::InternalMiniCluster;
@@ -143,6 +147,118 @@ TEST_F(ServiceFeaturesITest, ArrayColumnSupportMaster) {
     vector<string> tables;
     ASSERT_OK(client_->ListTables(&tables));
     ASSERT_TRUE(tables.empty());
+  }
+}
+
+TEST_F(ServiceFeaturesITest, ArrayColumnSupportTabletServer) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+  constexpr const char* const kTableName = "array_columns_support_t";
+  constexpr const char* const kErrMsgPattern =
+      "Remote error: unsupported feature flags";
+
+  const Schema array_schema({
+      ColumnSchema("key", INT32),
+      ColumnSchemaBuilder().name("val").type(INT32).array(true).nullable(true)
+  }, 1);
+
+  // Make tablet server not declaring its ARRAY_1D_COLUMN_TYPE feature.
+  FLAGS_tserver_support_1d_array_columns = false;
+
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  KuduSchema schema(KuduSchema::FromSchema(array_schema));
+  table_creator->table_name(kTableName)
+      .schema(&schema)
+      .add_hash_partitions({ "key" }, 2)
+      .num_replicas(1)
+      .timeout(MonoDelta::FromSeconds(1));
+
+  {
+    StringVectorSink capture_logs;
+    {
+      // Capture the log messages during attempts to create tablets for the new table.
+      ScopedRegisterSink reg(&capture_logs);
+      const auto s = table_creator->Create();
+      // Since the only tablet server doesn't support creating tablets with schemas
+      // containing array columns, waiting for tablets' creation eventually times out.
+      ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
+      ASSERT_STR_CONTAINS(s.ToString(), "Timed out waiting for Table Creation");
+    }
+
+    bool pattern_found = false;
+    for (const string& s : capture_logs.logged_msgs()) {
+      if (string::npos != s.find("CreateTablet RPC failed for tablet") &&
+          string::npos != s.find(kErrMsgPattern)) {
+        pattern_found = true;
+      }
+    }
+    ASSERT_TRUE(pattern_found);
+  }
+
+  // Since the system catalog retries adding tablet replicas, re-enable the
+  // feature for the tablet server and wait until the system catalog succeeds
+  // in creating all the tablet replicas.
+  FLAGS_tserver_support_1d_array_columns = true;
+  ASSERT_EVENTUALLY([&] {
+    bool in_progress = true;
+    ASSERT_OK(client_->IsCreateTableInProgress(kTableName, &in_progress));
+    ASSERT_FALSE(in_progress);
+  });
+
+  // Disable the feature at the server side again.
+  FLAGS_tserver_support_1d_array_columns = false;
+  {
+    unique_ptr<KuduTableAlterer> alt(client_->NewTableAlterer(kTableName));
+    alt->AddColumn("c0")->NestedType(
+        KuduColumnSchema::KuduNestedTypeDescriptor(
+            KuduColumnSchema::KuduArrayTypeDescriptor(KuduColumnSchema::INT8)));
+    alt->timeout(MonoDelta::FromSeconds(1));
+
+    StringVectorSink capture_logs;
+    {
+      // Capture the log messages during attempts to alter tablets for the new table.
+      ScopedRegisterSink reg(&capture_logs);
+      const auto s = alt->Alter();
+      ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
+      ASSERT_STR_CONTAINS(s.ToString(), "Timed out waiting for AlterTable");
+    }
+
+    bool pattern_found = false;
+    for (const string& s : capture_logs.logged_msgs()) {
+      if (string::npos != s.find("AlterTable RPC failed for tablet") &&
+          string::npos != s.find(kErrMsgPattern)) {
+        pattern_found = true;
+      }
+    }
+    ASSERT_TRUE(pattern_found);
+  }
+
+  // It should be possible to drop the table with array columns, even if
+  // the tablet server doesn't support the ARRAY_1D_COLUMN_TYPE feature.
+  ASSERT_OK(client_->DeleteTable(kTableName));
+
+  {
+    // The tablet server doesn't need to support the new ARRAY_1D_COLUMN_TYPE
+    // feature if creating a new table without array columns.
+    const Schema table_schema({
+        ColumnSchema("key", INT32),
+        ColumnSchema("val", INT64),
+    }, 1);
+
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    KuduSchema schema(KuduSchema::FromSchema(table_schema));
+    table_creator->table_name(kTableName)
+        .schema(&schema)
+        .add_hash_partitions({ "key" }, 2)
+        .num_replicas(1);
+
+    ASSERT_OK(table_creator->Create());
+
+    // Adding a non-array column is possible as well.
+    unique_ptr<KuduTableAlterer> alt(client_->NewTableAlterer(kTableName));
+    alt->AddColumn("c0")->Type(KuduColumnSchema::INT8)->Nullable();
+    ASSERT_OK(alt->Alter());
+
+    ASSERT_OK(client_->DeleteTable(kTableName));
   }
 }
 
