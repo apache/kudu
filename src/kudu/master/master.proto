@@ -1214,6 +1214,9 @@ enum MasterFeatures {
   IMMUTABLE_COLUMN_ATTRIBUTE = 10;
   // Whether master supports auto incrementing column.
   AUTO_INCREMENTING_COLUMN = 11;
+  // Whether the system catalog supports tables with one-dimensional array
+  // type columns.
+  ARRAY_1D_COLUMN_TYPE = 12;
 }
 
 service MasterService {

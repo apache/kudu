@@ -24,7 +24,6 @@
 #include <utility>
 
 #include <glog/logging.h>
-#include <google/protobuf/stubs/common.h>
 
 #include "kudu/client/schema-internal.h"
 #include "kudu/client/schema.h"
@@ -33,6 +32,7 @@
 #include "kudu/common/row_operations.h"
 #include "kudu/common/row_operations.pb.h"
 #include "kudu/common/schema.h"
+#include "kudu/common/types.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/master/master.pb.h"
 
@@ -46,6 +46,7 @@ KuduTableAlterer::Data::Data(KuduClient* client, string name)
     : client_(client),
       table_name_(std::move(name)),
       wait_(true),
+      has_nested_column_update_(false),
       schema_(nullptr) {
 }
 
@@ -121,6 +122,9 @@ Status KuduTableAlterer::Data::ToRequest(AlterTableRequestPB* req) {
         ColumnSchemaToPB(*col.col_,
                          pb_step->mutable_add_column()->mutable_schema(),
                          SCHEMA_PB_WITHOUT_WRITE_DEFAULT);
+        if (col.col_->type_info()->type() == DataType::NESTED) {
+          has_nested_column_update_ = true;
+        }
         break;
       }
       case AlterTableRequestPB::DROP_COLUMN:

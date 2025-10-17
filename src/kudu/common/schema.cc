@@ -228,6 +228,7 @@ void Schema::CopyFrom(const Schema& other) {
 
   first_is_deleted_virtual_column_idx_ = other.first_is_deleted_virtual_column_idx_;
   has_nullables_ = other.has_nullables_;
+  has_nested_columns_ = other.has_nested_columns_;
   auto_incrementing_col_idx_ = other.auto_incrementing_col_idx_;
 }
 
@@ -241,6 +242,7 @@ Schema::Schema(Schema&& other) noexcept
       id_to_index_(std::move(other.id_to_index_)),
       first_is_deleted_virtual_column_idx_(other.first_is_deleted_virtual_column_idx_),
       has_nullables_(other.has_nullables_),
+      has_nested_columns_(other.has_nested_columns_),
       auto_incrementing_col_idx_(other.auto_incrementing_col_idx_) {
 }
 
@@ -254,6 +256,7 @@ Schema& Schema::operator=(Schema&& other) noexcept {
     id_to_index_ = std::move(other.id_to_index_);
     first_is_deleted_virtual_column_idx_ = other.first_is_deleted_virtual_column_idx_;
     has_nullables_ = other.has_nullables_;
+    has_nested_columns_ = other.has_nested_columns_;
     name_to_index_ = std::move(other.name_to_index_);
     auto_incrementing_col_idx_ = other.auto_incrementing_col_idx_;
   }
@@ -299,6 +302,7 @@ Status Schema::Reset(vector<ColumnSchema> cols,
     }
   }
 
+  has_nested_columns_ = false;
   auto_incrementing_col_idx_ = auto_incrementing_col_idx;
   // Calculate the offset of each column in the row format.
   col_offsets_.clear();
@@ -325,6 +329,9 @@ Status Schema::Reset(vector<ColumnSchema> cols,
 
     col_offsets_.push_back(off);
     off += col.type_info()->size();
+    if (col.type_info()->type() == DataType::NESTED) {
+      has_nested_columns_ = true;
+    }
   }
 
   // Add an extra element on the end for the total

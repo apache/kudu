@@ -31,7 +31,6 @@
 #include <vector>
 
 #include <glog/logging.h>
-#include <google/protobuf/stubs/common.h>
 
 #include "kudu/client/callbacks.h"
 #include "kudu/client/client-internal.h"
@@ -1125,7 +1124,6 @@ Status KuduTableCreator::Create() {
       break;
     }
   }
-  bool has_auto_incrementing_column = data_->schema_->schema_->has_auto_incrementing();
 
   if (data_->table_type_) {
     req.set_table_type(*data_->table_type_);
@@ -1138,6 +1136,8 @@ Status KuduTableCreator::Create() {
     deadline += data_->client_->default_admin_operation_timeout();
   }
 
+  const bool has_auto_incrementing_column = data_->schema_->schema_->has_auto_incrementing();
+  const bool has_nested_columns = data_->schema_->schema_->has_nested_columns();
   CreateTableResponsePB resp;
   RETURN_NOT_OK_PREPEND(
       data_->client_->data_->CreateTable(data_->client_,
@@ -1147,7 +1147,8 @@ Status KuduTableCreator::Create() {
                                          !data_->range_partitions_.empty(),
                                          has_range_with_custom_hash_schema,
                                          has_immutable_column_schema,
-                                         has_auto_incrementing_column),
+                                         has_auto_incrementing_column,
+                                         has_nested_columns),
       Substitute("Error creating table $0 on the master", data_->table_name_));
   // Spin until the table is fully created, if requested.
   if (data_->wait_) {
@@ -1778,7 +1779,8 @@ Status KuduTableAlterer::Alter() {
       data_->client_, req, &resp, deadline,
       data_->has_alter_partitioning_steps,
       data_->adding_range_with_custom_hash_schema,
-      has_immutable_column_schema));
+      has_immutable_column_schema,
+      data_->has_nested_column_update_));
 
   if (data_->has_alter_partitioning_steps) {
     // If the table partitions change, clear the local meta cache so that the

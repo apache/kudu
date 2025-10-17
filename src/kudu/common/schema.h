@@ -886,6 +886,16 @@ class Schema {
     return has_nullables_;
   }
 
+  // Returns true if the schema contains at least one nested column.
+  //
+  // NOTE: As of time of writing, a nested column can only be of 1D array type.
+  //   When more nested types are supported, the 'has_nested_columns' parameter
+  //   needs to become an integer where different bits stands for particular
+  //   features required at the server-side.
+  bool has_nested_columns() const {
+    return has_nested_columns_;
+  }
+
   // Returns true if the specified column (by name) is a key
   bool is_key_column(const StringPiece col_name) const {
     return is_key_column(find_column(col_name));
@@ -1281,6 +1291,9 @@ class Schema {
 
   // Cached indicator whether any columns are nullable.
   bool has_nullables_;
+
+  // Cached indicator whether any columns are of array type.
+  bool has_nested_columns_ = false;
 
   // Cached index of the auto-incrementing column, or kColumnNotFound if no
   // such column exists in the schema.

@@ -36,7 +36,6 @@
 #include <boost/container/vector.hpp>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
-#include <google/protobuf/stubs/common.h>
 
 #include "kudu/client/authz_token_cache.h"
 #include "kudu/client/master_proxy_rpc.h"
@@ -328,7 +327,8 @@ Status KuduClient::Data::CreateTable(KuduClient* client,
                                      bool has_range_partition_bounds,
                                      bool has_range_specific_hash_schema,
                                      bool has_immutable_column_schema,
-                                     bool has_auto_incrementing_column) {
+                                     bool has_auto_incrementing_column,
+                                     bool has_nested_columns) {
   vector<uint32_t> features;
   if (has_range_partition_bounds) {
     features.push_back(MasterFeatures::RANGE_PARTITION_BOUNDS);
@@ -341,6 +341,13 @@ Status KuduClient::Data::CreateTable(KuduClient* client,
   }
   if (has_auto_incrementing_column) {
     features.push_back(MasterFeatures::AUTO_INCREMENTING_COLUMN);
+  }
+  if (has_nested_columns) {
+    // As of time of writing, a nested column can only be of 1D array type.
+    // When more nested types are supported, the 'has_nested_columns' parameter
+    // needs to become an integer where different bits stands for particular
+    // features required at the server-side.
+    features.push_back(MasterFeatures::ARRAY_1D_COLUMN_TYPE);
   }
   Synchronizer sync;
   AsyncLeaderMasterRpc<CreateTableRequestPB, CreateTableResponsePB> rpc(
@@ -434,7 +441,8 @@ Status KuduClient::Data::AlterTable(KuduClient* client,
                                     const MonoTime& deadline,
                                     bool has_add_drop_partition,
                                     bool adding_range_with_custom_hash_schema,
-                                    bool has_immutable_column_schema) {
+                                    bool has_immutable_column_schema,
+                                    bool has_nested_columns) {
   vector<uint32_t> required_feature_flags;
   if (has_add_drop_partition) {
     required_feature_flags.push_back(MasterFeatures::ADD_DROP_RANGE_PARTITIONS);
@@ -444,6 +452,9 @@ Status KuduClient::Data::AlterTable(KuduClient* client,
   }
   if (has_immutable_column_schema) {
     required_feature_flags.push_back(MasterFeatures::IMMUTABLE_COLUMN_ATTRIBUTE);
+  }
+  if (has_nested_columns) {
+    required_feature_flags.push_back(MasterFeatures::ARRAY_1D_COLUMN_TYPE);
   }
   Synchronizer sync;
   AsyncLeaderMasterRpc<AlterTableRequestPB, AlterTableResponsePB> rpc(

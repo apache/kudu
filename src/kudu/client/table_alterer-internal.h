@@ -37,7 +37,7 @@ namespace client {
 
 class KuduColumnSpec;
 
-class KuduTableAlterer::Data {
+class KuduTableAlterer::Data final {
  public:
   Data(KuduClient* client, std::string name);
   ~Data();
@@ -83,6 +83,9 @@ class KuduTableAlterer::Data {
 
   // Set to true if a new range with custom hash schema is being added.
   bool adding_range_with_custom_hash_schema = false;
+
+  // Set to true if a nested type column is being added or altered.
+  bool has_nested_column_update_ = false;
 
   // Schema of add/drop range partition bound rows.
   const Schema* schema_;

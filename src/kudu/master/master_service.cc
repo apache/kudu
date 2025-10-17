@@ -125,6 +125,12 @@ TAG_FLAG(master_support_auto_incrementing_column, unsafe);
 TAG_FLAG(master_support_auto_incrementing_column, experimental);
 TAG_FLAG(master_support_auto_incrementing_column, runtime);
 
+DEFINE_bool(master_support_1d_array_columns, true,
+            "Whether the system catalog supports creating tables with "
+            "one-dimensional columns");
+TAG_FLAG(master_support_1d_array_columns, hidden);
+TAG_FLAG(master_support_1d_array_columns, runtime);
+
 using google::protobuf::Message;
 using kudu::consensus::ReplicaManagementInfoPB;
 using kudu::pb_util::SecureDebugString;
@@ -991,6 +997,8 @@ bool MasterServiceImpl::SupportsFeature(uint32_t feature) const {
       return FLAGS_master_support_immutable_column_attribute;
     case MasterFeatures::AUTO_INCREMENTING_COLUMN:
       return FLAGS_master_support_auto_incrementing_column;
+    case MasterFeatures::ARRAY_1D_COLUMN_TYPE:
+      return FLAGS_master_support_1d_array_columns;
     default:
       return false;
   }
