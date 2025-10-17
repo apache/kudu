@@ -34,6 +34,7 @@
 #include "kudu/hms/hms_client.h"
 #include "kudu/hms/mini_hms.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
+#include "kudu/util/char_util.h"
 #include "kudu/util/decimal_util.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
@@ -81,27 +82,68 @@ Status HmsITestHarness::CreateKuduTable(const string& database_name,
                                         const string& table_name,
                                         const shared_ptr<client::KuduClient>& client,
                                         MonoDelta timeout) {
-  // Get coverage of all column types.
+  static constexpr const KuduColumnSchema::DataType kScalarTypes[] = {
+    KuduColumnSchema::INT8,
+    KuduColumnSchema::INT16,
+    KuduColumnSchema::INT32,
+    KuduColumnSchema::INT64,
+    KuduColumnSchema::UNIXTIME_MICROS,
+    KuduColumnSchema::DATE,
+    KuduColumnSchema::STRING,
+    KuduColumnSchema::BOOL,
+    KuduColumnSchema::FLOAT,
+    KuduColumnSchema::DOUBLE,
+    KuduColumnSchema::BINARY,
+    KuduColumnSchema::DECIMAL,
+    KuduColumnSchema::VARCHAR,
+  };
+  // Get coverage of all supported column types.
   KuduSchemaBuilder b;
   b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()
                     ->PrimaryKey()->Comment("The Primary Key");
-  b.AddColumn("int8_val")->Type(KuduColumnSchema::INT8);
-  b.AddColumn("int16_val")->Type(KuduColumnSchema::INT16);
-  b.AddColumn("int32_val")->Type(KuduColumnSchema::INT32);
-  b.AddColumn("int64_val")->Type(KuduColumnSchema::INT64);
-  b.AddColumn("timestamp_val")->Type(KuduColumnSchema::UNIXTIME_MICROS);
-  b.AddColumn("date_val")->Type(KuduColumnSchema::DATE);
-  b.AddColumn("string_val")->Type(KuduColumnSchema::STRING);
-  b.AddColumn("bool_val")->Type(KuduColumnSchema::BOOL);
-  b.AddColumn("float_val")->Type(KuduColumnSchema::FLOAT);
-  b.AddColumn("double_val")->Type(KuduColumnSchema::DOUBLE);
-  b.AddColumn("binary_val")->Type(KuduColumnSchema::BINARY);
-  b.AddColumn("decimal32_val")->Type(KuduColumnSchema::DECIMAL)
-                              ->Precision(kMaxDecimal32Precision);
-  b.AddColumn("decimal64_val")->Type(KuduColumnSchema::DECIMAL)
-                              ->Precision(kMaxDecimal64Precision);
-  b.AddColumn("decimal128_val")->Type(KuduColumnSchema::DECIMAL)
-                               ->Precision(kMaxDecimal128Precision);
+  for (const auto col_type : kScalarTypes) {
+    string col_type_str;
+    ToLowerCase(KuduColumnSchema::DataTypeToString(col_type), &col_type_str);
+    if (col_type == KuduColumnSchema::DECIMAL) {
+      string col_type_str_bits = col_type_str + "32";
+      b.AddColumn(col_type_str + "32_val")->
+          Type(KuduColumnSchema::DECIMAL)->Precision(kMaxDecimal32Precision);
+      b.AddColumn(col_type_str + "64_val")->
+          Type(KuduColumnSchema::DECIMAL)->Precision(kMaxDecimal64Precision);
+      b.AddColumn(col_type_str + "128_val")->
+          Type(KuduColumnSchema::DECIMAL)->Precision(kMaxDecimal128Precision);
+    } else {
+      auto* spec = b.AddColumn(Substitute("$0_val", col_type_str))->Type(col_type);
+      if (col_type == KuduColumnSchema::VARCHAR) {
+        spec->Length(kMaxVarcharLength);
+      }
+    }
+  }
+  for (const auto col_type : kScalarTypes) {
+    string col_type_str;
+    ToLowerCase(KuduColumnSchema::DataTypeToString(col_type), &col_type_str);
+    if (col_type == KuduColumnSchema::DECIMAL) {
+      b.AddColumn(Substitute("$0$1_array", col_type_str, 32))->
+          Type(KuduColumnSchema::NESTED)->
+          NestedType(KuduColumnSchema::KuduNestedTypeDescriptor(
+              KuduColumnSchema::KuduArrayTypeDescriptor(KuduColumnSchema::DECIMAL)))->
+          Precision(kMaxDecimal32Precision);
+      b.AddColumn(Substitute("$0$1_array", col_type_str, 64))->
+          Type(KuduColumnSchema::NESTED)->
+          NestedType(KuduColumnSchema::KuduNestedTypeDescriptor(
+              KuduColumnSchema::KuduArrayTypeDescriptor(KuduColumnSchema::DECIMAL)))->
+          Precision(kMaxDecimal64Precision);
+    } else {
+      auto* spec = b.AddColumn(Substitute("$0_array", col_type_str))->
+          Type(KuduColumnSchema::NESTED)->
+          NestedType(KuduColumnSchema::KuduNestedTypeDescriptor(
+              KuduColumnSchema::KuduArrayTypeDescriptor(col_type)));
+      if (col_type == KuduColumnSchema::VARCHAR) {
+        spec->Length(kMaxVarcharLength);
+      }
+    }
+  }
+
   KuduSchema schema;
   RETURN_NOT_OK(b.Build(&schema));
   unique_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
