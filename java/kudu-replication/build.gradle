@@ -17,13 +17,27 @@
 
 apply from: "$rootDir/gradle/shadow.gradle"
 
+configurations {
+    // Ensure tests see the unshaded (provided) Flink APIs for compilation
+    testImplementation.extendsFrom compileUnshaded
+}
+
 dependencies {
-    // todo(zchovan) confirm if any dependencies should be shaded to avoid classpath issues
-    implementation libs.flinkStreamingJava
-    implementation libs.flinkConnectorKudu
-    implementation libs.flinkCore
-    implementation libs.flinkClients
-    implementation libs.flinkConnectorBase
+    // Flink core APIs are marked as 'compileUnshaded' (Maven 'provided' scope
+    // per 35fce9ba24b2e376c65fd7a2c50a65ec0a33e02f).
+    // These are supplied by the Flink cluster at runtime and should NOT be bundled
+    // to avoid classpath conflicts and JAR bloat.
+    // See: https://nightlies.apache.org/flink/flink-docs-release-1.20/docs/dev/configuration/overview/
+    compileUnshaded libs.flinkStreamingJava
+    compileUnshaded libs.flinkCore
+    compileUnshaded libs.flinkClients
+    compileUnshaded libs.flinkConnectorBase
+
+    // Bundle flink-connector-kudu but exclude its kudu-client to avoid duplicates
+    implementation(libs.flinkConnectorKudu) {
+        exclude group: "org.apache.kudu", module: "kudu-client"
+    }
+    // Bundle our kudu-client (shaded) - will be used by connector at runtime
     implementation project(path: ":kudu-client", configuration: "shadow")
 
     testImplementation libs.junit
@@ -52,6 +66,15 @@ shadowJar {
         exclude "javax/annotation/**"
         exclude "one/profiler/**"
         exclude "org/snakeyaml/**"
+        // Do not bundle Hadoop classes; provided by the cluster
+        exclude "org/apache/hadoop/**"
+        // Avoid bundling commons-cli; use Flink's CLI at runtime
+        exclude "org/apache/commons/cli/**"
+        // Avoid bundling logging bindings; let cluster provide
+        exclude "org/slf4j/impl/**"
+        exclude "ch/qos/logback/**"
+        exclude "org/apache/log4j/**"
+        exclude "META-INF/*log4j*"
     }
 
     minimize()
@@ -61,3 +84,4 @@ shadowJar {
 javadoc {
     enabled = false
 }
+
