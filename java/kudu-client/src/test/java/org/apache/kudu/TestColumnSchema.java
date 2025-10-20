@@ -18,7 +18,10 @@
 package org.apache.kudu;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertThrows;
+import static org.junit.Assert.assertTrue;
 
 import org.junit.Assert;
 import org.junit.Rule;
@@ -70,15 +73,15 @@ public class TestColumnSchema {
     ColumnSchema isKey = new ColumnSchemaBuilder("col1", Type.STRING)
         .key(true)
         .build();
-    Assert.assertTrue(isKey.isKey());
+    assertTrue(isKey.isKey());
     assertNotEquals(stringCol1, isKey);
 
     // Difference between key and nonUniqueKey
     ColumnSchema isNonUniqueKey = new ColumnSchemaBuilder("col1", Type.STRING)
         .nonUniqueKey(true)
         .build();
-    Assert.assertTrue(isNonUniqueKey.isKey());
-    Assert.assertFalse(isNonUniqueKey.isKeyUnique());
+    assertTrue(isNonUniqueKey.isKey());
+    assertFalse(isNonUniqueKey.isKeyUnique());
     assertNotEquals(isKey, isNonUniqueKey);
 
     // Different by type
@@ -113,26 +116,26 @@ public class TestColumnSchema {
 
   @Test
   public void testOutOfRangeVarchar() throws Exception {
-    Throwable thrown = Assert.assertThrows(IllegalArgumentException.class, new ThrowingRunnable() {
+    Throwable thrown = assertThrows(IllegalArgumentException.class, new ThrowingRunnable() {
       @Override
       public void run() throws Exception {
         new ColumnSchemaBuilder("col1", Type.VARCHAR)
                 .typeAttributes(CharUtil.typeAttributes(70000)).build();
       }
     });
-    Assert.assertTrue(thrown.getMessage()
+    assertTrue(thrown.getMessage()
             .contains("VARCHAR's length must be set and between 1 and 65535"));
   }
 
   @Test
   public void testVarcharWithoutLength() throws Exception {
-    Throwable thrown = Assert.assertThrows(IllegalArgumentException.class, new ThrowingRunnable() {
+    Throwable thrown = assertThrows(IllegalArgumentException.class, new ThrowingRunnable() {
       @Override
       public void run() throws Exception {
         new ColumnSchemaBuilder("col1", Type.VARCHAR).build();
       }
     });
-    Assert.assertTrue(thrown.getMessage()
+    assertTrue(thrown.getMessage()
             .contains("VARCHAR's length must be set and between 1 and 65535"));
   }
 
@@ -140,23 +143,23 @@ public class TestColumnSchema {
   public void testAutoIncrementing() throws Exception {
     // Create auto-incrementing column with AutoIncrementingColumnSchemaBuilder
     ColumnSchema autoIncrementing = new AutoIncrementingColumnSchemaBuilder().build();
-    Assert.assertTrue(autoIncrementing.isAutoIncrementing());
+    assertTrue(autoIncrementing.isAutoIncrementing());
     assertEquals(Schema.getAutoIncrementingColumnType(), autoIncrementing.getType());
-    Assert.assertTrue(autoIncrementing.isKey());
-    Assert.assertFalse(autoIncrementing.isKeyUnique());
-    Assert.assertFalse(autoIncrementing.isNullable());
-    Assert.assertFalse(autoIncrementing.isImmutable());
+    assertTrue(autoIncrementing.isKey());
+    assertFalse(autoIncrementing.isKeyUnique());
+    assertFalse(autoIncrementing.isNullable());
+    assertFalse(autoIncrementing.isImmutable());
     assertEquals(null, autoIncrementing.getDefaultValue());
 
     // Create column with auto-incrementing column name with ColumnSchemaBuilder
-    Throwable thrown = Assert.assertThrows(IllegalArgumentException.class, new ThrowingRunnable() {
+    Throwable thrown = assertThrows(IllegalArgumentException.class, new ThrowingRunnable() {
       @Override
       public void run() throws Exception {
         new ColumnSchemaBuilder(Schema.getAutoIncrementingColumnName(),
             Schema.getAutoIncrementingColumnType()).build();
       }
     });
-    Assert.assertTrue(thrown.getMessage().contains("Column name " +
+    assertTrue(thrown.getMessage().contains("Column name " +
         Schema.getAutoIncrementingColumnName() + " is reserved by Kudu engine"));
   }
 
@@ -170,7 +173,7 @@ public class TestColumnSchema {
 
     assertEquals("str_arr", strArrayCol.getName());
     assertEquals(Type.NESTED, strArrayCol.getType());
-    Assert.assertTrue(strArrayCol.isNullable());
+    assertTrue(strArrayCol.isNullable());
     assertEquals(Type.STRING,
         strArrayCol.getNestedTypeDescriptor().getArrayDescriptor().getElemType());
 
@@ -188,7 +191,7 @@ public class TestColumnSchema {
 
     assertEquals("dec_arr", decimalArrayCol.getName());
     assertEquals(Type.NESTED, decimalArrayCol.getType());
-    Assert.assertTrue(decimalArrayCol.isNullable());
+    assertTrue(decimalArrayCol.isNullable());
     assertEquals(Type.DECIMAL,
         decimalArrayCol.getNestedTypeDescriptor().getArrayDescriptor().getElemType());
 
@@ -200,7 +203,7 @@ public class TestColumnSchema {
 
     assertEquals("int_arr", intArrayCol.getName());
     assertEquals(Type.NESTED, intArrayCol.getType());
-    Assert.assertFalse(intArrayCol.isNullable());
+    assertFalse(intArrayCol.isNullable());
     assertEquals(Type.INT32,
         intArrayCol.getNestedTypeDescriptor().getArrayDescriptor().getElemType());
 
@@ -217,17 +220,50 @@ public class TestColumnSchema {
 
     assertEquals("varchar_arr", varcharArrayCol.getName());
     assertEquals(Type.NESTED, varcharArrayCol.getType());
-    Assert.assertTrue(varcharArrayCol.isNullable());
+    assertTrue(varcharArrayCol.isNullable());
     assertEquals(Type.VARCHAR,
         varcharArrayCol.getNestedTypeDescriptor().getArrayDescriptor().getElemType());
 
     // Test constructor restriction: cannot pass NESTED directly
-    IllegalArgumentException thrown = Assert.assertThrows(IllegalArgumentException.class, () ->
+    IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class, () ->
             new ColumnSchema.ColumnSchemaBuilder("nested", Type.NESTED)
     );
-    Assert.assertTrue(thrown.getMessage().contains(
+    assertTrue(thrown.getMessage().contains(
         "Column nested cannot be set to NESTED type. Use ColumnSchemaBuilder.array(true) instead"
     ));
 
   }
+
+  @Test
+  public void testColumnSchemaBuilderCopyConstructor() {
+    // --- Scalar column setup ---
+    ColumnSchema scalarCol =
+        new ColumnSchema.ColumnSchemaBuilder("age", Type.INT32)
+            .nullable(false)
+            .key(true)
+            .comment("scalar column")
+            .build();
+
+    ColumnSchemaBuilder scalarBuilderCopy = new ColumnSchemaBuilder(scalarCol);
+    ColumnSchema scalarCopy = scalarBuilderCopy.build();
+    // Verify the ColumnSchema objects are identical
+    assertEquals(scalarCopy, scalarCol);
+
+
+    // --- Array column setup ---
+    ColumnSchema arrayCol =
+        new ColumnSchema.ColumnSchemaBuilder("scores", Type.INT16)
+            .array(true)
+            .nullable(true)
+            .comment("array column")
+            .build();
+
+    ColumnSchemaBuilder arrayBuilderCopy = new ColumnSchemaBuilder(arrayCol);
+    ColumnSchema arrayCopy = arrayBuilderCopy.build();
+    assertEquals(arrayCopy, arrayCol);
+    // Ensure nestedTypeDescriptor and attributes are copied
+    assertEquals(arrayCol.getNestedTypeDescriptor(), arrayCopy.getNestedTypeDescriptor());
+    assertEquals(arrayCol.getTypeAttributes(), arrayCopy.getTypeAttributes());
+  }
+
 }

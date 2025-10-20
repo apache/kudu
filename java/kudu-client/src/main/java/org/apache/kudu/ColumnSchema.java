@@ -412,7 +412,8 @@ public class ColumnSchema {
         Objects.equals(keyUnique, that.keyUnique) &&
         Objects.equals(autoIncrementing, that.autoIncrementing) &&
         Objects.equals(typeAttributes, that.typeAttributes) &&
-        Objects.equals(comment, that.comment);
+        Objects.equals(comment, that.comment) &&
+        Objects.equals(nestedTypeDescriptor, that.nestedTypeDescriptor);
   }
 
   @Override
@@ -458,9 +459,6 @@ public class ColumnSchema {
     private ColumnTypeAttributes typeAttributes = null;
     private Common.DataType wireType = null;
     private String comment = "";
-    // Nested descriptor captured when array(true) called
-    private NestedTypeDescriptor nestedTypeDescriptor = null;
-
     private boolean isArray = false;
 
 
@@ -490,7 +488,13 @@ public class ColumnSchema {
      */
     public ColumnSchemaBuilder(ColumnSchema that) {
       this.name = that.name;
-      this.type = that.type;
+      if (that.isArray()) {
+        this.type = that.getNestedTypeDescriptor().getArrayDescriptor().getElemType();
+        this.isArray = true;
+      } else {
+        this.type = that.getType();
+        this.isArray = false;
+      }
       this.key = that.key;
       this.keyUnique = that.keyUnique;
       this.nullable = that.nullable;
@@ -502,7 +506,6 @@ public class ColumnSchema {
       this.typeAttributes = that.typeAttributes;
       this.wireType = that.wireType;
       this.comment = that.comment;
-      this.nestedTypeDescriptor = that.nestedTypeDescriptor;
     }
 
     /**
@@ -667,18 +670,16 @@ public class ColumnSchema {
      */
     public ColumnSchema build() {
       final Type finalType;
+      final ColumnSchema.NestedTypeDescriptor nestedDesc;
 
       if (this.isArray) {
-        // The builder's `type` currently holds the element (scalar) type.
-        if (this.type == Type.NESTED) {
-          throw new IllegalArgumentException("Builder.type must be scalar when creating " +
-              "an array column");
-        }
-        ColumnSchema.ArrayTypeDescriptor arrDesc = new ColumnSchema.ArrayTypeDescriptor(this.type);
-        nestedTypeDescriptor = ColumnSchema.NestedTypeDescriptor.forArray(arrDesc);
+        // Always promote the scalar element type to a 1D array descriptor.
+        ColumnSchema.ArrayTypeDescriptor arrDesc =
+            new ColumnSchema.ArrayTypeDescriptor(this.type);
+        nestedDesc = ColumnSchema.NestedTypeDescriptor.forArray(arrDesc);
         finalType = Type.NESTED;
       } else {
-        nestedTypeDescriptor = null;
+        nestedDesc = null;
         finalType = this.type;
       }
 
@@ -697,7 +698,7 @@ public class ColumnSchema {
         }
       } else {
         // For arrays, element type rules apply.
-        Type elemType = nestedTypeDescriptor.getArrayDescriptor().getElemType();
+        Type elemType = nestedDesc.getArrayDescriptor().getElemType();
         if (elemType == Type.VARCHAR) {
           if (typeAttributes == null || !typeAttributes.hasLength() ||
               typeAttributes.getLength() < CharUtil.MIN_VARCHAR_LENGTH ||
@@ -716,7 +717,7 @@ public class ColumnSchema {
       // Finally build immutable ColumnSchema with nested descriptor if any.
       return new ColumnSchema(name, finalType, key, keyUnique, nullable, immutable,
               /* autoIncrementing */ false, defaultValue, desiredBlockSize, encoding,
-              compressionAlgorithm, typeAttributes, wireType, comment, nestedTypeDescriptor);
+              compressionAlgorithm, typeAttributes, wireType, comment, nestedDesc);
     }
   }
 
