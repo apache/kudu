@@ -381,7 +381,14 @@ class KuduContext(
           s"adding ${newColumns.length} columns to table '$tableName' to handle schema drift")
         val alter = new AlterTableOptions()
         newColumns.foreach { col =>
-          alter.addNullableColumn(col.name, sparkTypeToKuduType(col.dataType))
+          col.dataType match {
+            case at: org.apache.spark.sql.types.ArrayType =>
+              val elemType = sparkTypeToKuduType(at.elementType)
+              alter.addNullableArrayColumn(col.name, elemType)
+
+            case _ =>
+              alter.addNullableColumn(col.name, sparkTypeToKuduType(col.dataType))
+          }
         }
         try {
           syncClient.alterTable(tableName, alter)

@@ -17,6 +17,7 @@
 
 package org.apache.kudu.spark.kudu
 
+import java.nio.charset.StandardCharsets.UTF_8
 import scala.collection.JavaConverters._
 import scala.collection.immutable.IndexedSeq
 import scala.util.control.NonFatal
@@ -530,5 +531,121 @@ class SparkSQLTest extends KuduTestSuite with Matchers {
     // Verify result.
     val results = sqlContext.sql(sqlStr).collectAsList()
     assert(results.size() == rowCount)
+  }
+
+  @Test
+  def testSelectArrayColumns(): Unit = {
+    val spark = ss
+    import spark.implicits._
+
+    val base = sqlContext
+      .sql(s"SELECT key, c19_int32_array, c25_string_array FROM $tableName ORDER BY key")
+      .collectAsList()
+
+    assert(base.size() == rowCount)
+
+    val first = base.get(0)
+    val intArray = first.getAs[Seq[Integer]]("c19_int32_array")
+    val strArray = first.getAs[Seq[String]]("c25_string_array")
+
+    // existing coverage: arrays with a null in the middle
+    assert(intArray == Seq(Integer.valueOf(0), null, Integer.valueOf(2)))
+    assert(strArray == Seq("val-0", null, "val-2"))
+    assert(intArray(1) == null)
+    assert(strArray(1) == null)
+
+    // Insert extra test rows for edge cases: empty arrays + null arrays
+    // Provide all NOT NULL fields.
+    val specialDF = Seq(
+      // Row with empty arrays
+      (
+        999, // key
+        999, // c1_i
+        "dummy", // c2_s
+        1.0, // c3_double
+        1L, // c4_long
+        true, // c5_bool
+        1.toShort, // c6_short
+        1.0f, // c7_float
+        "bytes-999".getBytes(UTF_8), // c8_binary
+        System.currentTimeMillis() * 1000, // c9_unixtime_micros
+        1.toByte, // c10_byte
+        BigDecimal.valueOf(1),
+        BigDecimal.valueOf(1),
+        BigDecimal.valueOf(1), // decimals
+        "varchar-999", // c14_varchar
+        java.sql.Date.valueOf("2020-01-01"), // c15_date
+        Seq.empty[Int], // c19_int32_array
+        Seq.empty[String], // c25_string_array
+        Seq.empty[String] //c29_string_array
+      ),
+      // Row with null arrays (except c29_non_nullable_string_array column)
+      (
+        1000,
+        1000,
+        "dummy",
+        2.0,
+        2L,
+        false,
+        2.toShort,
+        2.0f,
+        "bytes-1000".getBytes(UTF_8),
+        System.currentTimeMillis() * 1000,
+        2.toByte,
+        BigDecimal.valueOf(2),
+        BigDecimal.valueOf(2),
+        BigDecimal.valueOf(2),
+        "varchar-1000",
+        java.sql.Date.valueOf("2020-01-01"),
+        null.asInstanceOf[Seq[Int]],
+        null.asInstanceOf[Seq[String]],
+        Seq.empty[String]
+      )
+    ).toDF(
+      "key",
+      "c1_i",
+      "c2_s",
+      "c3_double",
+      "c4_long",
+      "c5_bool",
+      "c6_short",
+      "c7_float",
+      "c8_binary",
+      "c9_unixtime_micros",
+      "c10_byte",
+      "c11_decimal32",
+      "c12_decimal64",
+      "c13_decimal128",
+      "c14_varchar",
+      "c15_date",
+      "c19_int32_array",
+      "c25_string_array",
+      "c29_non_nullable_string_array"
+    )
+
+    kuduContext.insertRows(specialDF, tableName)
+
+    // Re-read and verify edge cases
+    val checkDF = spark.read
+      .options(Map("kudu.master" -> harness.getMasterAddressesAsString, "kudu.table" -> tableName))
+      .format("kudu")
+      .load()
+      .filter("key >= 999")
+      .orderBy("key")
+      .collect()
+
+    // Row 999: empty arrays
+    val rowEmpty = checkDF(0)
+    val emptyInts = rowEmpty.getAs[Seq[Integer]]("c19_int32_array")
+    val emptyStrs = rowEmpty.getAs[Seq[String]]("c25_string_array")
+    assert(emptyInts != null && emptyInts.isEmpty, "Empty int array should return Seq()")
+    assert(emptyStrs != null && emptyStrs.isEmpty, "Empty string array should return Seq()")
+
+    // Row 1000: null arrays
+    val rowNull = checkDF(1)
+    val nullInts = rowNull.getAs[Seq[Integer]]("c19_int32_array")
+    val nullStrs = rowNull.getAs[Seq[String]]("c25_string_array")
+    assert(nullInts == null, "Null int array cell should map to null")
+    assert(nullStrs == null, "Null string array cell should map to null")
   }
 }

@@ -1188,8 +1188,9 @@ class TestKuduBackup extends KuduTestSuite {
     Objects.equal(before.getEncoding, after.getEncoding) &&
     Objects
       .equal(before.getCompressionAlgorithm, after.getCompressionAlgorithm) &&
-    Objects.equal(before.getTypeAttributes, after.getTypeAttributes)
-    Objects.equal(before.getComment, after.getComment)
+    Objects.equal(before.getTypeAttributes, after.getTypeAttributes) &&
+    Objects.equal(before.getComment, after.getComment) &&
+    Objects.equal(before.isArray, after.isArray)
   }
 
   // Special handling because default values can be a byte array which is not

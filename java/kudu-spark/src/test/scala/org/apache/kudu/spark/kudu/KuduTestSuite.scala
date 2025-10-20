@@ -96,7 +96,70 @@ trait KuduTestSuite {
         .typeAttributes(CharUtil.typeAttributes(CharUtil.MAX_VARCHAR_LENGTH))
         .nullable(true)
         .build(),
-      new ColumnSchemaBuilder("c15_date", Type.DATE).build()
+      new ColumnSchemaBuilder("c15_date", Type.DATE).build(),
+      // ===== ARRAY TYPES =====
+      new ColumnSchemaBuilder("c16_bool_array", Type.BOOL)
+        .nullable(true)
+        .array(true)
+        .build(),
+      new ColumnSchemaBuilder("c17_int8_array", Type.INT8)
+        .nullable(true)
+        .array(true)
+        .build(),
+      new ColumnSchemaBuilder("c18_int16_array", Type.INT16)
+        .nullable(true)
+        .array(true)
+        .build(),
+      new ColumnSchemaBuilder("c19_int32_array", Type.INT32)
+        .nullable(true)
+        .array(true)
+        .build(),
+      new ColumnSchemaBuilder("c20_int64_array", Type.INT64)
+        .nullable(true)
+        .array(true)
+        .build(),
+      new ColumnSchemaBuilder("c21_float_array", Type.FLOAT)
+        .nullable(true)
+        .array(true)
+        .build(),
+      new ColumnSchemaBuilder("c22_double_array", Type.DOUBLE)
+        .nullable(true)
+        .array(true)
+        .build(),
+      new ColumnSchemaBuilder("c23_date_array", Type.DATE)
+        .nullable(true)
+        .array(true)
+        .build(),
+      new ColumnSchemaBuilder("c24_unixtime_array", Type.UNIXTIME_MICROS)
+        .nullable(true)
+        .array(true)
+        .build(),
+      new ColumnSchemaBuilder("c25_string_array", Type.STRING)
+        .nullable(true)
+        .array(true)
+        .build(),
+      new ColumnSchemaBuilder("c26_varchar_array", Type.VARCHAR)
+        .typeAttributes(CharUtil.typeAttributes(CharUtil.MAX_VARCHAR_LENGTH))
+        .nullable(true)
+        .array(true)
+        .build(),
+      new ColumnSchemaBuilder("c27_binary_array", Type.BINARY)
+        .nullable(true)
+        .array(true)
+        .build(),
+      new ColumnSchemaBuilder("c28_decimal_array", Type.DECIMAL)
+        .typeAttributes(
+          new ColumnTypeAttributesBuilder()
+            .precision(10)
+            .scale(2)
+            .build()
+        )
+        .nullable(true)
+        .array(true)
+        .build(),
+      new ColumnSchemaBuilder("c29_non_nullable_string_array", Type.STRING)
+        .array(true)
+        .build()
     )
     new Schema(columns.asJava)
   }
@@ -268,6 +331,50 @@ trait KuduTestSuite {
       row.addDecimal(13, BigDecimal.valueOf(i))
       row.addDate(15, DateUtil.epochDaysToSqlDate(i))
 
+      val bools = Array(true, i % 2 == 0, false)
+      row.addArrayBool(16, bools, Array(true, false, true))
+      val bytes = Array(i.toByte, (i + 1).toByte, (i + 2).toByte)
+      row.addArrayInt8(17, bytes, Array(true, false, true))
+      val shorts = Array(i.toShort, (i + 1).toShort, (i + 2).toShort)
+      row.addArrayInt16(18, shorts, Array(true, false, true))
+      val ints = Array(i, i + 1, i + 2)
+      row.addArrayInt32(19, ints, Array(true, false, true))
+      val longs = Array(i.toLong, i.toLong + 10, i.toLong + 20)
+      row.addArrayInt64(20, longs, Array(true, false, true))
+      val floats = Array(i.toFloat, i.toFloat + 0.5f, i.toFloat + 1.0f)
+      row.addArrayFloat(21, floats, Array(true, false, true))
+      val doubles = Array(i.toDouble, i.toDouble + 0.5, i.toDouble + 1.0)
+      row.addArrayDouble(22, doubles, Array(true, false, true))
+      val dates = Array(
+        DateUtil.epochDaysToSqlDate(i),
+        DateUtil.epochDaysToSqlDate(i + 1),
+        DateUtil.epochDaysToSqlDate(i + 2)
+      )
+      row.addArrayDate(23, dates, Array(true, false, true))
+      val timestamps = Array(
+        new java.sql.Timestamp(ts / 1000),
+        new java.sql.Timestamp(ts / 1000 + 1000000),
+        new java.sql.Timestamp(ts / 1000 + 2000000)
+      )
+      row.addArrayTimestamp(24, timestamps, Array(true, false, true))
+      val strings = Array(s"val-$i", s"val-${i + 1}", s"val-${i + 2}")
+      row.addArrayString(25, strings, Array(true, false, true))
+      val varchars = Array(s"vchar-$i", s"vchar-${i + 1}", s"vchar-${i + 2}")
+      row.addArrayVarchar(26, varchars, Array(true, false, true))
+      val binaries = Array(
+        s"bin-$i".getBytes(UTF_8),
+        s"bin-${i + 1}".getBytes(UTF_8),
+        s"bin-${i + 2}".getBytes(UTF_8)
+      )
+      row.addArrayBinary(27, binaries, Array(true, false, true))
+      val decimals = Array(
+        BigDecimal.valueOf(i, 2),
+        BigDecimal.valueOf(i + 1, 2),
+        BigDecimal.valueOf(i + 2, 2)
+      )
+      row.addArrayDecimal(28, decimals, Array(true, false, true))
+      row.addArrayString(29, strings, Array(true, true, true))
+
       // Sprinkling some nulls so that queries see them.
       val s = if (i % 2 == 0) {
         row.addString(2, i.toString)
@@ -316,6 +423,50 @@ trait KuduTestSuite {
       row.addDecimal(13, BigDecimal.valueOf(i))
       row.addVarchar(14, i.toString)
       row.addDate(15, DateUtil.epochDaysToSqlDate(i))
+
+      val bools = Array(true, i % 2 == 0, false)
+      row.addArrayBool(16, bools, Array(true, false, true))
+      val bytes = Array(i.toByte, (i + 1).toByte, (i + 2).toByte)
+      row.addArrayInt8(17, bytes, Array(true, false, true))
+      val shorts = Array(i.toShort, (i + 1).toShort, (i + 2).toShort)
+      row.addArrayInt16(18, shorts, Array(true, false, true))
+      val ints = Array(i, i + 1, i + 2)
+      row.addArrayInt32(19, ints, Array(true, false, true))
+      val longs = Array(i.toLong, i.toLong + 10, i.toLong + 20)
+      row.addArrayInt64(20, longs, Array(true, false, true))
+      val floats = Array(i.toFloat, i.toFloat + 0.5f, i.toFloat + 1.0f)
+      row.addArrayFloat(21, floats, Array(true, false, true))
+      val doubles = Array(i.toDouble, i.toDouble + 0.5, i.toDouble + 1.0)
+      row.addArrayDouble(22, doubles, Array(true, false, true))
+      val dates = Array(
+        DateUtil.epochDaysToSqlDate(i),
+        DateUtil.epochDaysToSqlDate(i + 1),
+        DateUtil.epochDaysToSqlDate(i + 2)
+      )
+      row.addArrayDate(23, dates, Array(true, false, true))
+      val timestamps = Array(
+        new java.sql.Timestamp(ts / 1000),
+        new java.sql.Timestamp(ts / 1000 + 1000000),
+        new java.sql.Timestamp(ts / 1000 + 2000000)
+      )
+      row.addArrayTimestamp(24, timestamps, Array(true, false, true))
+      val strings = Array(s"val-$i", s"val-${i + 1}", s"val-${i + 2}")
+      row.addArrayString(25, strings, Array(true, false, true))
+      val varchars = Array(s"vchar-$i", s"vchar-${i + 1}", s"vchar-${i + 2}")
+      row.addArrayVarchar(26, varchars, Array(true, false, true))
+      val binaries = Array(
+        s"bin-$i".getBytes(UTF_8),
+        s"bin-${i + 1}".getBytes(UTF_8),
+        s"bin-${i + 2}".getBytes(UTF_8)
+      )
+      row.addArrayBinary(27, binaries, Array(true, false, true))
+      val decimals = Array(
+        BigDecimal.valueOf(i, 2),
+        BigDecimal.valueOf(i + 1, 2),
+        BigDecimal.valueOf(i + 2, 2)
+      )
+      row.addArrayDecimal(28, decimals, Array(true, false, true))
+      row.addArrayString(29, strings, Array(true, true, true))
 
       // Sprinkling some nulls so that queries see them.
       val s = if (i % 2 == 0) {

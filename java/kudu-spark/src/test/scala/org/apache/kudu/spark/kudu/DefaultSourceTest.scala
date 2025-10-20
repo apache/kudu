@@ -781,7 +781,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
       ))
 
     val dfDefaultSchema = sqlContext.read.options(kuduOptions).format("kudu").load
-    assertEquals(16, dfDefaultSchema.schema.fields.length)
+    assertEquals(30, dfDefaultSchema.schema.fields.length)
 
     val dfWithUserSchema =
       sqlContext.read.options(kuduOptions).schema(userSchema).format("kudu").load

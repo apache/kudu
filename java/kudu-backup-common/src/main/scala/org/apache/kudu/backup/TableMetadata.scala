@@ -18,7 +18,6 @@
 package org.apache.kudu.backup
 
 import java.math.BigDecimal
-import java.nio.ByteBuffer
 import java.sql.Date
 import java.util
 
@@ -77,6 +76,21 @@ object TableMetadata {
       }
       if (col.getDefaultValue != null) {
         builder.setDefaultValue(StringValue.of(valueToString(col.getDefaultValue, col.getType)))
+      }
+      if (col.getType == Type.NESTED && col.getNestedTypeDescriptor != null) {
+        val nestedDesc = col.getNestedTypeDescriptor
+        if (nestedDesc.isArray) {
+          val arrDesc = nestedDesc.getArrayDescriptor
+          val arrayBuilder = ArrayTypeDescriptorMetadataPB
+            .newBuilder()
+            .setElemType(arrDesc.getElemType.name())
+          val nestedBuilder = NestedTypeDescriptorMetadataPB
+            .newBuilder()
+            .setArrayDescriptor(arrayBuilder.build())
+          builder
+            .setType(Type.NESTED.name())
+            .setNestedTypeDescriptor(nestedBuilder.build())
+        }
       }
       builder.build()
     }
@@ -249,13 +263,33 @@ object TableMetadata {
     val toId = metadata.getColumnIdsMap.asScala
     metadata.getColumnsList.asScala.foreach { col =>
       if (!col.getIsAutoIncrementing) {
-        val colType = Type.getTypeForName(col.getType)
+        var colType = Type.getTypeForName(col.getType)
+        var isArray = false
+
+        // Detect and reconstruct array columns
+        if (colType == Type.NESTED) {
+          if (!col.hasNestedTypeDescriptor) {
+            throw new IllegalArgumentException(
+              s"Column ${col.getName} is marked NESTED but missing NestedTypeDescriptor")
+          }
+          val nestedPB = col.getNestedTypeDescriptor
+          if (!nestedPB.hasArrayDescriptor) {
+            throw new IllegalArgumentException(
+              s"Column ${col.getName} is NESTED but not an ARRAY (unsupported nested subtype)")
+          }
+          val arrayPB = nestedPB.getArrayDescriptor
+          colType = Type.getTypeForName(arrayPB.getElemType)
+          isArray = true
+        }
+
         val builder = new ColumnSchemaBuilder(col.getName, colType)
           .nullable(col.getIsNullable)
           .encoding(Encoding.valueOf(col.getEncoding))
           .compressionAlgorithm(CompressionAlgorithm.valueOf(col.getCompression))
           .desiredBlockSize(col.getBlockSize)
           .comment(col.getComment)
+          .array(isArray)
+
         if (IsAutoIncrementingPresent) {
           builder.nonUniqueKey(col.getIsKey)
         } else {
@@ -277,10 +311,12 @@ object TableMetadata {
               .build()
           )
         }
+
         colIds.add(toId(col.getName))
         columns.add(builder.build())
       }
     }
+
     new Schema(columns, colIds)
   }
 

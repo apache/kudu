@@ -165,7 +165,17 @@ private class RowIterator(
     val columnCount = rowResult.getColumnProjection.getColumnCount
     val columns = Array.ofDim[Any](columnCount)
     for (i <- 0 until columnCount) {
-      columns(i) = rowResult.getObject(i)
+      val col = rowResult.getColumnProjection.getColumnByIndex(i)
+      if (col.isArray) {
+        val arrObj = rowResult.getArrayData(i)
+        columns(i) = if (arrObj == null) {
+          null
+        } else {
+          arrObj.asInstanceOf[Array[_]].toIndexedSeq
+        }
+      } else {
+        columns(i) = rowResult.getObject(i)
+      }
     }
     Row.fromSeq(columns)
   }
