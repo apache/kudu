@@ -22,6 +22,7 @@ import static org.apache.kudu.test.ClientTestUtil.getSchemaWithAllTypes;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -33,6 +34,7 @@ import java.sql.Date;
 import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.util.Arrays;
+import java.util.function.IntFunction;
 
 import org.junit.Rule;
 import org.junit.Test;
@@ -43,11 +45,37 @@ import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.test.junit.RetryRule;
 import org.apache.kudu.util.DateUtil;
+import org.apache.kudu.util.TimestampUtil;
 
 public class TestPartialRow {
 
   @Rule
   public RetryRule retryRule = new RetryRule();
+
+  // For when getArrayData() returns decoded typed arrays (e.g., Short[], Float[], etc.)
+  private static <T> void assertArrayDataEquals(
+      ArrayCellView view, Object data, IntFunction<T> elementGetter) {
+    assertNotNull("getArrayData() returned null", data);
+    assertTrue("Expected array but got " + data.getClass(), data.getClass().isArray());
+
+    Object[] boxed = (Object[]) data;
+    assertEquals("Array lengths differ", view.length(), boxed.length);
+
+    for (int i = 0; i < boxed.length; i++) {
+      if (view.isValid(i)) {
+        T expected = elementGetter.apply(i);
+        Object actual = boxed[i];
+        if (expected instanceof byte[] && actual instanceof byte[]) {
+          assertArrayEquals("Mismatch at index " + i, (byte[]) expected, (byte[]) actual);
+        } else {
+          assertEquals("Mismatch at index " + i, expected, actual);
+        }
+      } else {
+        assertNull("Expected null at index " + i, boxed[i]);
+      }
+    }
+  }
+
 
   @Test
   public void testGetters() {
@@ -160,6 +188,8 @@ public class TestPartialRow {
     assertEquals(42, view.getInt8(0));
     assertEquals(-5, view.getInt8(1));
     assertEquals(100, view.getInt8(2));
+
+    assertArrayDataEquals(view, row.getArrayData("ints"), view::getInt8);
   }
 
   @Test
@@ -178,6 +208,8 @@ public class TestPartialRow {
     assertEquals((short) 123, view.getInt16(0));
     assertEquals((short) -456, view.getInt16(1));
     assertEquals((short) 789, view.getInt16(2));
+
+    assertArrayDataEquals(view, row.getArrayData("ints16"), view::getInt16);
   }
 
   @Test
@@ -196,6 +228,8 @@ public class TestPartialRow {
     assertEquals(1, view.getInt32(0));
     assertEquals(-2, view.getInt32(1));
     assertEquals(3, view.getInt32(2));
+
+    assertArrayDataEquals(view, row.getArrayData("ints32"), view::getInt32);
   }
 
   @Test
@@ -214,6 +248,9 @@ public class TestPartialRow {
     assertEquals(1L, view.getInt64(0));
     assertEquals(-2L, view.getInt64(1));
     assertEquals(3L, view.getInt64(2));
+
+    assertArrayDataEquals(view, row.getArrayData("ints64"), view::getInt64);
+
   }
 
   @Test
@@ -231,6 +268,8 @@ public class TestPartialRow {
     assertEquals(2, view.length());
     assertEquals(1.5f, view.getFloat(0), 0.0f);
     assertEquals(2.5f, view.getFloat(1), 0.0f);
+
+    assertArrayDataEquals(view, row.getArrayData("floats"), view::getFloat);
   }
 
   @Test
@@ -248,6 +287,8 @@ public class TestPartialRow {
     assertEquals(2, view.length());
     assertEquals(1.1, view.getDouble(0), 0.0);
     assertEquals(2.2, view.getDouble(1), 0.0);
+
+    assertArrayDataEquals(view, row.getArrayData("doubles"), view::getDouble);
   }
 
   @Test
@@ -266,6 +307,8 @@ public class TestPartialRow {
     assertEquals("foo", view.getString(0));
     assertFalse(view.isValid(1));
     assertEquals("bar", view.getString(2));
+
+    assertArrayDataEquals(view, row.getArrayData("strings"), view::getString);
   }
 
   @Test
@@ -283,6 +326,8 @@ public class TestPartialRow {
     assertEquals(2, view.length());
     assertArrayEquals(new byte[]{1,2}, view.getBinary(0));
     assertArrayEquals(new byte[]{3,4,5}, view.getBinary(1));
+
+    assertArrayDataEquals(view, row.getArrayData("binaries"), view::getBinary);
   }
 
   @Test
@@ -301,6 +346,8 @@ public class TestPartialRow {
     assertTrue(view.getBoolean(0));
     assertFalse(view.getBoolean(1));
     assertTrue(view.getBoolean(2));
+
+    assertArrayDataEquals(view, row.getArrayData("bools"), view::getBoolean);
   }
 
   @Test
@@ -322,7 +369,10 @@ public class TestPartialRow {
     assertFalse(view.isValid(1));
 
     int days2 = view.getInt32(2);
-    assertEquals(vals[2], (DateUtil.epochDaysToSqlDate(days2)));
+    assertEquals(vals[2], DateUtil.epochDaysToSqlDate(days2));
+
+    assertArrayDataEquals(view, row.getArrayData("dates"),
+        i -> DateUtil.epochDaysToSqlDate(view.getInt32(i)));
   }
 
   @Test
@@ -357,6 +407,9 @@ public class TestPartialRow {
     Timestamp ts2 = new Timestamp(millis2);
     ts2.setNanos(ts2.getNanos() + nanos2);
     assertEquals(vals[2], ts2);
+
+    assertArrayDataEquals(view, row.getArrayData("times"),
+        i -> TimestampUtil.microsToTimestamp(view.getInt64(i)));
   }
 
   @Test
@@ -377,6 +430,8 @@ public class TestPartialRow {
     assertEquals("abcde", view.getString(0));
     assertEquals("xy", view.getString(1));
     assertFalse(view.isValid(2));
+
+    assertArrayDataEquals(view, row.getArrayData("varchars"), view::getString);
   }
 
   @Test
@@ -403,6 +458,9 @@ public class TestPartialRow {
     assertFalse(view.isValid(1));
     long unscaled2 = view.getInt64(2);
     assertEquals(vals[2], new BigDecimal(BigInteger.valueOf(unscaled2), scale));
+
+    assertArrayDataEquals(view, row.getArrayData("decimals"),
+        i -> new BigDecimal(BigInteger.valueOf(view.getInt64(i)), scale));
   }
 
   @Test

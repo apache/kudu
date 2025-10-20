@@ -29,6 +29,7 @@ import java.util.BitSet;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.Objects;
+import javax.annotation.Nullable;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
@@ -940,6 +941,36 @@ public class PartialRow {
     checkColumn(schema.getColumnByIndex(columnIndex), Type.BINARY);
     checkValue(columnIndex);
     return getVarLengthData(columnIndex);
+  }
+
+  /**
+   * Returns the logical contents of an array column as a boxed Java array.
+   *
+   * <p>This mirrors {@link RowResult#getArrayData(int)} but for PartialRow.</p>
+   *
+   * @param columnIndex index of the array column
+   * @return a boxed Java array (e.g., {@code Integer[]}, {@code String[]}, {@code BigDecimal[]})
+   *         or {@code null} if the column is unset or null
+   * @throws IllegalArgumentException if the column is not an array type
+   */
+  @Nullable
+  public final Object getArrayData(int columnIndex) {
+    ColumnSchema col = schema.getColumnByIndex(columnIndex);
+    checkColumn(col, Type.NESTED);
+
+    if (col.getNestedTypeDescriptor() == null || !col.getNestedTypeDescriptor().isArray()) {
+      throw new IllegalArgumentException(String.format(
+          "Column %s is NESTED but not an array descriptor", col.getName()));
+    }
+    if (isNull(columnIndex) || !isSet(columnIndex)) {
+      return null;
+    }
+    ArrayCellView view = getArray(columnIndex);
+    return ArrayCellViewHelper.toJavaArray(view, col);
+  }
+
+  public final Object getArrayData(String columnName) {
+    return getArrayData(schema.getColumnIndex(columnName));
   }
 
   /**
