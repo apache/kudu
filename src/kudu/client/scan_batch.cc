@@ -327,8 +327,12 @@ Status KuduScanBatch::RowPtr::GetArray(int col_idx,
   if (validity_out) {
     validity_out->resize(elem_num);
     if (!view.empty()) {
-      DCHECK(view.not_null_bitmap());
-      *validity_out = BitmapToVector(view.not_null_bitmap(), elem_num);
+      if (view.not_null_bitmap()) {
+        *validity_out = BitmapToVector(view.not_null_bitmap(), elem_num);
+      } else {
+        // All elements are valid: the validity array is empty.
+        validity_out->clear();
+      }
     }
   }
   return Status::OK();

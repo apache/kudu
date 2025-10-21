@@ -957,10 +957,11 @@ struct ArrayTypeTraits : public ArrayDataTypeTraits<ARRAY_ELEMENT_TYPE> {
       if (idx != 0) {
         str->append(", ");
       }
-      if (BitmapTest(validity, idx)) {
-        DataTypeTraits<ARRAY_ELEMENT_TYPE>::AppendDebugStringForValue(data_ptr, str);
-      } else {
+      // Null validity bitmap means all elements are valid.
+      if (validity && !BitmapTest(validity, idx)) {
         str->append("NULL");
+      } else {
+        DataTypeTraits<ARRAY_ELEMENT_TYPE>::AppendDebugStringForValue(data_ptr, str);
       }
       data_ptr += sizeof(typename TypeTraits<ARRAY_ELEMENT_TYPE>::cpp_type);
     }
@@ -1030,7 +1031,7 @@ struct ArrayTypeTraits : public ArrayDataTypeTraits<ARRAY_ELEMENT_TYPE> {
     }
 
     const uint8_t* b_not_null_bitmap = b_view.not_null_bitmap();
-    if (BitmapTest(b_not_null_bitmap, a_elem_num)) {
+    if (!b_not_null_bitmap || BitmapTest(b_not_null_bitmap, a_elem_num)) {
       // The trailing extra element in 'b' must be NULL if 'b' goes
       // consecutively after 'a'.
       return false;
@@ -1051,7 +1052,7 @@ struct ArrayTypeTraits : public ArrayDataTypeTraits<ARRAY_ELEMENT_TYPE> {
  private:
   // Compare array represented by the specified array views facades up to
   // the specified number of elements. The comparison goes element-by-element,
-  // using Compare() method for the corresponding element scalar type.
+  // using Compare() method for the corresponding scalar type elements.
   static int Compare(const ArrayCellMetadataView& lhs,
                      const ArrayCellMetadataView& rhs,
                      size_t num_elems_to_compare) {
@@ -1072,18 +1073,16 @@ struct ArrayTypeTraits : public ArrayDataTypeTraits<ARRAY_ELEMENT_TYPE> {
     const uint8_t* lhs_data_ptr = lhs.data_as(ARRAY_ELEMENT_TYPE);
     DCHECK(lhs_data_ptr || lhs_elems == 0);
     const uint8_t* lhs_not_null_bitmap = lhs.not_null_bitmap();
-    DCHECK(lhs_not_null_bitmap || lhs_elems == 0);
 
     const uint8_t* rhs_data_ptr = rhs.data_as(ARRAY_ELEMENT_TYPE);
     DCHECK(rhs_data_ptr || rhs_elems == 0);
     const uint8_t* rhs_not_null_bitmap = rhs.not_null_bitmap();
-    DCHECK(rhs_not_null_bitmap || rhs_elems == 0);
 
     for (size_t idx = 0; idx < cap_num_elems; ++idx,
         lhs_data_ptr += sizeof(typename TypeTraits<ARRAY_ELEMENT_TYPE>::cpp_type),
         rhs_data_ptr += sizeof(typename TypeTraits<ARRAY_ELEMENT_TYPE>::cpp_type)) {
-      if (!BitmapTest(lhs_not_null_bitmap, idx)) {
-        if (!BitmapTest(rhs_not_null_bitmap, idx)) {
+      if (lhs_not_null_bitmap && !BitmapTest(lhs_not_null_bitmap, idx)) {
+        if (rhs_not_null_bitmap && !BitmapTest(rhs_not_null_bitmap, idx)) {
           // Both elements are NULL: continue with next elements in the arrays.
           continue;
         }
@@ -1092,7 +1091,7 @@ struct ArrayTypeTraits : public ArrayDataTypeTraits<ARRAY_ELEMENT_TYPE> {
         // same numbers (or two NULLs) up to the 'idx' position.
         return -1;
       } else {
-        if (!BitmapTest(rhs_not_null_bitmap, idx)) {
+        if (rhs_not_null_bitmap && !BitmapTest(rhs_not_null_bitmap, idx)) {
           // lhs > rhs: a non-NULL element in lhs at idx, but rhs non-NULL
           // at idx, while all the pairs of elements in the array contain
           // same numbers (or two NULLs) up to the 'idx' position.

@@ -69,6 +69,10 @@ bool KuduArrayCellView::empty() const {
   return data_->view_.empty();
 }
 
+bool KuduArrayCellView::has_nulls() const {
+  return data_->view_.has_nulls();
+}
+
 const uint8_t* KuduArrayCellView::not_null_bitmap() const {
   return data_->view_.not_null_bitmap();
 }

@@ -19,6 +19,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <initializer_list>
 #include <memory>
 #include <string>
 #include <vector>
@@ -78,7 +79,8 @@ TEST(ArrayTypeSerdesTest, Basic) {
   ASSERT_OK(view.Init());
   ASSERT_EQ(val.size(), view.elem_num());
   const auto* view_validity_bitmap = view.not_null_bitmap();
-  ASSERT_TRUE(BitmapEquals(validity_bitmap, view_validity_bitmap, view.elem_num()));
+  ASSERT_NE(nullptr, view_validity_bitmap);
+  ASSERT_TRUE(view.has_nulls());
 
   // Verify the data matches the source.
   {
@@ -96,6 +98,65 @@ TEST(ArrayTypeSerdesTest, Basic) {
   {
     ASSERT_EQ(nullptr, view.data_as(UINT32));
     ASSERT_EQ(nullptr, view.data_as(INT64));
+  }
+}
+
+// When all the elements in the array are non-null/valid, the validity bitmap
+// accessed via ArrayCellMetadataView is null in both two cases:
+//   * the supplied validity vector have all the elements set to 'true'
+//   * the supplied validity vector is empty
+TEST(ArrayTypeSerdesTest, AllNonNullElements) {
+  constexpr const uint8_t kThreeOnes[] = { 0b00000111 };
+  constexpr const uint8_t* kNull = nullptr;
+  const vector<bool> kEmpty{};
+
+  for (const uint8_t* validity_bitmap : { kNull, kThreeOnes }) {
+    const vector<int16_t> val{ 0, 1, 2, };
+    const vector<bool>& validity_vector =
+        validity_bitmap ? BitmapToVector(validity_bitmap, val.size()) : kEmpty;
+    if (validity_bitmap) {
+      ASSERT_EQ(val.size(), validity_vector.size());
+    }
+
+    unique_ptr<uint8_t[]> buf_data;
+    size_t buf_data_size = 0;
+    ASSERT_OK(serdes::Serialize(GetTypeInfo(INT16),
+                                reinterpret_cast<const uint8_t*>(val.data()),
+                                val.size(),
+                                validity_vector,
+                                &buf_data,
+                                &buf_data_size));
+    ASSERT_TRUE(buf_data);
+    const Slice cell(buf_data.get(), buf_data_size);
+
+    Arena arena(128);
+    Slice arena_cell;
+    ASSERT_OK(serdes::SerializeIntoArena(
+        GetTypeInfo(INT16),
+        reinterpret_cast<const uint8_t*>(val.data()),
+        validity_bitmap,
+        val.size(),
+        &arena,
+        &arena_cell));
+
+    // Make sure Serialize() an SerializeInfoArena() produce the same data.
+    ASSERT_EQ(cell, arena_cell);
+
+    // Peek into the serialized buffer using ArrayCellMetadataView and compare
+    // the source data with the view into the serialized buffer.
+    ArrayCellMetadataView view(cell.data(), cell.size());
+    ASSERT_OK(view.Init());
+    ASSERT_EQ(val.size(), view.elem_num());
+    const auto* view_validity_bitmap = view.not_null_bitmap();
+    ASSERT_EQ(nullptr, view_validity_bitmap);
+    ASSERT_FALSE(view.has_nulls());
+
+    // Verify the data matches the source.
+    {
+      const uint8_t* data_view = view.data_as(INT16);
+      ASSERT_NE(nullptr, data_view);
+      ASSERT_EQ(0, memcmp(data_view, val.data(), sizeof(int16_t) * val.size()));
+    }
   }
 }
 

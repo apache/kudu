@@ -141,8 +141,8 @@ class BitmapIterator {
  public:
   BitmapIterator(const uint8_t* map, size_t num_bits)
       : map_(map),
-        offset_(0),
-        num_bits_(num_bits) {
+        num_bits_(num_bits),
+        offset_(0) {
   }
 
   size_t Next(bool* value) {
@@ -150,6 +150,13 @@ class BitmapIterator {
     size_t len = num_bits_ - offset_;
     if (PREDICT_FALSE(len == 0)) {
       return 0;
+    }
+
+    if (!map_) {
+      // Null bitmap means all the elements are valid.
+      *value = true;
+      offset_ = num_bits_;
+      return num_bits_;
     }
 
     *value = BitmapTest(map_, offset_);
@@ -167,8 +174,8 @@ class BitmapIterator {
 
  private:
   const uint8_t* const map_;
+  const size_t num_bits_;
   size_t offset_;
-  size_t num_bits_;
 };
 
 // Iterate over the bits in 'bitmap' and call 'func' for each set bit.

@@ -21,6 +21,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <initializer_list>
 #include <set>
 #include <string>
 #include <vector>
@@ -425,6 +426,32 @@ TEST(TestBitMap, BitmapToVector) {
     ASSERT_TRUE(v.front());
     ASSERT_TRUE(v.back());
     ASSERT_TRUE(std::all_of(v.begin() + 1, v.end() - 1, [](bool e) { return !e; }));
+  }
+}
+
+TEST(TestBitMap, EmptyBitset) {
+  const uint8_t* kNull = nullptr;
+  const uint8_t kEmpty[] = {};
+  for (const uint8_t* buf : { kNull, kEmpty }) {
+    for (bool initial_value : { false, true }) {
+      BitmapIterator bit(buf, 0);
+      bool value = initial_value;
+      const auto next = bit.Next(&value);
+      ASSERT_EQ(0, next);
+      // The output parameter is untouched.
+      ASSERT_EQ(initial_value, value);
+    }
+  }
+}
+
+TEST(TestBitMap, BitmapIteratorOnNullBitmap) {
+  for (const size_t num_bits : { 1, 5, 8, 10, 64 }) {
+    SCOPED_TRACE(std::to_string(num_bits));
+    BitmapIterator bit(nullptr, num_bits);
+    bool value = false;
+    const auto next = bit.Next(&value);
+    ASSERT_EQ(num_bits, next);
+    ASSERT_TRUE(value);
   }
 }
 

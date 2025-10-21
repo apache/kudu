@@ -422,6 +422,53 @@ TEST_F(PartialRowTest, DecimalArray) {
   }
 }
 
+// An empty validity vector means all the elements in the array are valid.
+TEST_F(PartialRowTest, EmptyValidityVector) {
+  const Schema schema(
+      { ColumnSchema("key", INT32),
+        ColumnSchemaBuilder()
+           .name("bool_arr")
+           .type(BOOL)
+           .array(true)
+           .nullable(true),
+        ColumnSchemaBuilder()
+           .name("int32_arr")
+           .type(INT32)
+           .array(true)
+           .nullable(true),
+        ColumnSchemaBuilder()
+           .name("string_arr")
+           .type(STRING)
+           .array(true)
+           .nullable(true),
+      }, 1);
+
+  {
+    KuduPartialRow row(&schema);
+    ASSERT_OK(row.SetArrayBool(1, { false, true, }, {}));
+    ASSERT_TRUE(row.IsColumnSet(1));
+    ASSERT_FALSE(row.IsNull(1));
+    ASSERT_EQ("bool 1d-array bool_arr=[false, true]", row.ToString());
+  }
+  {
+    KuduPartialRow row(&schema);
+    ASSERT_OK(row.SetArrayInt32(2, {}, {}));
+    ASSERT_TRUE(row.IsColumnSet(2));
+    ASSERT_FALSE(row.IsNull(2));
+    ASSERT_EQ("int32 1d-array int32_arr=[]", row.ToString());
+  }
+  {
+    KuduPartialRow row(&schema);
+    const auto s = row.SetArrayInt32(2, { 0, 1 }, { true });
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(),
+                        "data and validity arrays must be the same length "
+                        "if the latter is non-empty");
+    ASSERT_FALSE(row.IsColumnSet(2));
+    ASSERT_FALSE(row.IsNull(2));
+  }
+}
+
 TEST_F(PartialRowTest, TestCopy) {
   KuduPartialRow row(&schema_);
 

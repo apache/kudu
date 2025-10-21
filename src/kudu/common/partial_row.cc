@@ -209,9 +209,10 @@ template<typename T>
 Status KuduPartialRow::SetArray(int col_idx,
                                 const vector<typename T::element_cpp_type>& val,
                                 const vector<bool>& validity) {
-  if (PREDICT_FALSE(val.size() != validity.size())) {
+  // An empty validity vector means all the elements in the array are valid.
+  if (PREDICT_FALSE(!validity.empty() && val.size() != validity.size())) {
     return Status::InvalidArgument(
-        "data and validity arrays must be the same length");
+        "data and validity arrays must be the same length if the latter is non-empty");
   }
 
   const ColumnSchema& col = schema_->column(col_idx);
@@ -255,9 +256,10 @@ Status KuduPartialRow::SetArray<ArrayTypeTraits<BOOL>>(
     int col_idx,
     const vector<bool>& val_bool,
     const vector<bool>& validity) {
-  if (PREDICT_FALSE(val_bool.size() != validity.size())) {
+  // An empty validity vector means all the elements in the array are valid.
+  if (PREDICT_FALSE(!validity.empty() && val_bool.size() != validity.size())) {
     return Status::InvalidArgument(
-        "data and validity arrays must be the same length");
+        "data and validity arrays must be the same length if the latter is non-empty");
   }
   vector<uint8_t> val;
   val.reserve(val_bool.size());

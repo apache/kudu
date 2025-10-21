@@ -43,6 +43,7 @@
 #include "kudu/util/safe_math.h"
 #include "kudu/util/slice.h"
 
+using kudu::ArrayCellMetadataView;
 using std::string;
 using std::vector;
 using strings::Substitute;
@@ -60,12 +61,11 @@ DEFINE_uint32(array_cell_max_elem_num, 1024,
 TAG_FLAG(array_cell_max_elem_num, advanced);
 TAG_FLAG(array_cell_max_elem_num, runtime);
 
-// Validate that log_min_segments_to_retain >= 1
 static bool ValidateArrayCellMaxElemNum(const char* flagname, uint32_t value) {
-  if (value > kudu::ArrayCellMetadataView::kArrayMaxElemNum) {
+  if (value > ArrayCellMetadataView::kArrayMaxElemNum) {
     LOG(ERROR) << Substitute(
         "'$0' set to invalid value $1; must not be greater than $2",
-        flagname, value, kudu::ArrayCellMetadataView::kArrayMaxElemNum);
+        flagname, value, ArrayCellMetadataView::kArrayMaxElemNum);
     return false;
   }
   return true;

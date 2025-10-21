@@ -90,7 +90,8 @@ class ArrayCellMetadataView final {
        : data_(buf),
          size_(size),
          content_(nullptr),
-         is_initialized_(false) {
+         is_initialized_(false),
+         has_nulls_(false) {
   }
 
   Status Init() {
@@ -98,6 +99,7 @@ class ArrayCellMetadataView final {
     if (size_ == 0) {
       content_ = nullptr;
       is_initialized_ = true;
+      has_nulls_ = false;
       return Status::OK();
     }
 
@@ -139,15 +141,33 @@ class ArrayCellMetadataView final {
       return Status::IllegalState("null flatbuffers of non-zero size");
     }
 
-    DCHECK(content_);
-    if (const size_t bit_num = content_->validity()->size(); bit_num != 0) {
+    const size_t values_size = elem_num_impl();
+    const size_t validity_size = content_->validity() ? content_->validity()->size() : 0;
+    if (validity_size != 0 && values_size != validity_size) {
+      return Status::Corruption("number of data and validity elements differ");
+    }
+
+    has_nulls_ = false;
+    if (validity_size != 0) {
+      // If the validity vector is supplied and with all its elements non-zero.
+      const auto& validity = *(DCHECK_NOTNULL(content_->validity()));
+      has_nulls_ = std::any_of(validity.cbegin(), validity.cend(),
+                               [&](uint8_t e) { return e == 0; });
+    }
+
+    if (has_nulls_) {
+      const size_t bit_num = values_size;
+      DCHECK_GT(bit_num, 0);
       bitmap_.reset(new uint8_t[BitmapSize(bit_num)]);
+      // Assuming the most of the elements are non-null/valid, it's usually less
+      // calls to flip particular bits from 1 to 0 than flipping them from 0 to 1.
+      // TODO(aserbin): consider counting alternating strategy based on the number
+      //                of non-zero values that comes from computing 'has_nulls_'
       auto* bm = bitmap_.get();
-      const auto* v = content_->validity();
+      memset(bm, 0xff, BitmapSize(bit_num));
+      const auto& v = *(DCHECK_NOTNULL(content_->validity()));
       for (size_t idx = 0; idx < bit_num; ++idx) {
-        if (v->Get(idx) != 0) {
-          BitmapSet(bm, idx);
-        } else {
+        if (v.Get(idx) == 0) {
           BitmapClear(bm, idx);
         }
       }
@@ -189,18 +209,24 @@ class ArrayCellMetadataView final {
   // Number of elements in the array.
   size_t elem_num() const {
     DCHECK(is_initialized_);
-    return content_ ? content_->validity()->size() : 0;
+    return elem_num_impl();
   }
 
   bool empty() const {
-    DCHECK(is_initialized_);
-    return content_ ? content_->validity()->empty() : true;
+    return elem_num() == 0;
   }
 
   // Non-null (a.k.a. validity) bitmap for the array elements.
   const uint8_t* not_null_bitmap() const {
     DCHECK(is_initialized_);
+    DCHECK((has_nulls_ && bitmap_) || (!has_nulls_ && !bitmap_));
     return bitmap_.get();
+  }
+
+  bool has_nulls() const {
+    DCHECK(is_initialized_);
+    DCHECK((has_nulls_ && bitmap_) || (!has_nulls_ && !bitmap_));
+    return has_nulls_;
   }
 
   const uint8_t* data_as(DataType data_type) const {
@@ -258,6 +284,47 @@ class ArrayCellMetadataView final {
     return content_ ? content_->data_as<T>()->values()->Data() : nullptr;
   }
 
+  size_t elem_num_impl() const {
+    if (!content_) {
+      return 0;
+    }
+    if (!content_->data()) {
+      return 0;
+    }
+    const auto data_type = content_->data_type();
+    switch (data_type) {
+      case serdes::ScalarArray::Int8Array:
+        return content_->data_as<serdes::Int8Array>()->values()->size();
+      case serdes::ScalarArray::UInt8Array:
+        return content_->data_as<serdes::UInt8Array>()->values()->size();
+      case serdes::ScalarArray::Int16Array:
+        return content_->data_as<serdes::Int16Array>()->values()->size();
+      case serdes::ScalarArray::UInt16Array:
+        return content_->data_as<serdes::UInt16Array>()->values()->size();
+      case serdes::ScalarArray::Int32Array:
+        return content_->data_as<serdes::Int32Array>()->values()->size();
+      case serdes::ScalarArray::UInt32Array:
+        return content_->data_as<serdes::UInt32Array>()->values()->size();
+      case serdes::ScalarArray::Int64Array:
+        return content_->data_as<serdes::Int64Array>()->values()->size();
+      case serdes::ScalarArray::UInt64Array:
+        return content_->data_as<serdes::UInt64Array>()->values()->size();
+      case serdes::ScalarArray::FloatArray:
+        return content_->data_as<serdes::FloatArray>()->values()->size();
+      case serdes::ScalarArray::DoubleArray:
+        return content_->data_as<serdes::DoubleArray>()->values()->size();
+      case serdes::ScalarArray::StringArray:
+        return content_->data_as<serdes::StringArray>()->values()->size();
+      case serdes::ScalarArray::BinaryArray:
+        return content_->data_as<serdes::BinaryArray>()->values()->size();
+      default:
+        LOG(DFATAL) << "unknown ScalarArray type: " << static_cast<size_t>(data_type);
+        break;
+    }
+
+    return 0;
+  }
+
   // Flatbuffer-encoded data; a non-owning raw pointer.
   const uint8_t* const data_;
 
@@ -279,6 +346,9 @@ class ArrayCellMetadataView final {
 
   // Whether the Init() method has been successfully run for this object.
   bool is_initialized_;
+
+  // Whether the underlying array has at least one null/invalid element.
+  bool has_nulls_;
 };
 
 } // namespace kudu

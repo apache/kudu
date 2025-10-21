@@ -52,7 +52,13 @@ class KUDU_EXPORT KuduArrayCellView {
   // Whether the array cell is empty, i.e. does not contain any elements.
   bool empty() const;
 
-  // Get non-null (a.k.a. validity) bitmap for the array elements.
+  // Whether at least one element in the array is null/invalid. If !has_nulls()
+  // holds true, it helps avoiding calls to 'not_null_bitmap()' and evaluating
+  // non-nullness/validity per element in particular usage scenarios.
+  bool has_nulls() const;
+
+  // Get non-null (a.k.a. validity) bitmap for the array elements. This returns
+  // null if has_nulls() == false.
   const uint8_t* not_null_bitmap() const;
 
   // Accessor for the cell's raw data in the format similar to what

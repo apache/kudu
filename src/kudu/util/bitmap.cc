@@ -155,6 +155,7 @@ void BitmapCopy(uint8_t* dst, size_t dst_offset,
 }
 
 vector<bool> BitmapToVector(const uint8_t* bitmap, size_t num_bits) {
+  DCHECK(bitmap);
   BitmapIterator it(bitmap, num_bits);
   vector<bool> result(num_bits);
   bool is_set = false;

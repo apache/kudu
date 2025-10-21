@@ -540,7 +540,7 @@ Status CFileWriter::AppendNullableArrayEntries(const uint8_t* bitmap,
         }
 
         const uint8_t* cell_non_null_bitmap = view.not_null_bitmap();
-        DCHECK(cell_non_null_bitmap);
+        DCHECK(cell_non_null_bitmap || !view.has_nulls());
         BitmapIterator elem_bitmap_iter(cell_non_null_bitmap,
                                         cell_elem_num);
         const uint8_t* data = view.data_as(elem_type_info->type());

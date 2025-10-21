@@ -1975,74 +1975,75 @@ cdef class Row:
             size_t j
             list result
 
+        # An empty validity vector means all the elements are non-null/valid.
         if elem_type == KUDU_INT8:
             check_status(self.row.GetArrayInt8(i, &cpp_data_int8, &cpp_validity))
             result = []
             for j in range(cpp_data_int8.size()):
-                result.append(cpp_data_int8[j] if cpp_validity[j] else None)
+                result.append(cpp_data_int8[j] if cpp_validity.empty() or cpp_validity[j] else None)
             return result
 
         elif elem_type == KUDU_INT16:
             check_status(self.row.GetArrayInt16(i, &cpp_data_int16, &cpp_validity))
             result = []
             for j in range(cpp_data_int16.size()):
-                result.append(cpp_data_int16[j] if cpp_validity[j] else None)
+                result.append(cpp_data_int16[j] if cpp_validity.empty() or cpp_validity[j] else None)
             return result
 
         elif elem_type == KUDU_INT32:
             check_status(self.row.GetArrayInt32(i, &cpp_data_int32, &cpp_validity))
             result = []
             for j in range(cpp_data_int32.size()):
-                result.append(cpp_data_int32[j] if cpp_validity[j] else None)
+                result.append(cpp_data_int32[j] if cpp_validity.empty() or cpp_validity[j] else None)
             return result
 
         elif elem_type == KUDU_INT64:
             check_status(self.row.GetArrayInt64(i, &cpp_data_int64, &cpp_validity))
             result = []
             for j in range(cpp_data_int64.size()):
-                result.append(cpp_data_int64[j] if cpp_validity[j] else None)
+                result.append(cpp_data_int64[j] if cpp_validity.empty() or cpp_validity[j] else None)
             return result
 
         elif elem_type == KUDU_FLOAT:
             check_status(self.row.GetArrayFloat(i, &cpp_data_float, &cpp_validity))
             result = []
             for j in range(cpp_data_float.size()):
-                result.append(cpp_data_float[j] if cpp_validity[j] else None)
+                result.append(cpp_data_float[j] if cpp_validity.empty() or cpp_validity[j] else None)
             return result
 
         elif elem_type == KUDU_DOUBLE:
             check_status(self.row.GetArrayDouble(i, &cpp_data_double, &cpp_validity))
             result = []
             for j in range(cpp_data_double.size()):
-                result.append(cpp_data_double[j] if cpp_validity[j] else None)
+                result.append(cpp_data_double[j] if cpp_validity.empty() or cpp_validity[j] else None)
             return result
 
         elif elem_type == KUDU_BOOL:
             check_status(self.row.GetArrayBool(i, &cpp_data_bool, &cpp_validity))
             result = []
             for j in range(cpp_data_bool.size()):
-                result.append(bool(cpp_data_bool[j]) if cpp_validity[j] else None)
+                result.append(bool(cpp_data_bool[j]) if cpp_validity.empty() or cpp_validity[j] else None)
             return result
 
         elif elem_type == KUDU_STRING:
             check_status(self.row.GetArrayString(i, &cpp_data_slice, &cpp_validity))
             result = []
             for j in range(cpp_data_slice.size()):
-                result.append(frombytes(cpp_data_slice[j].ToString()) if cpp_validity[j] else None)
+                result.append(frombytes(cpp_data_slice[j].ToString()) if cpp_validity.empty() or cpp_validity[j] else None)
             return result
 
         elif elem_type == KUDU_BINARY:
             check_status(self.row.GetArrayBinary(i, &cpp_data_slice, &cpp_validity))
             result = []
             for j in range(cpp_data_slice.size()):
-                result.append(cpp_data_slice[j].data()[:cpp_data_slice[j].size()] if cpp_validity[j] else None)
+                result.append(cpp_data_slice[j].data()[:cpp_data_slice[j].size()] if cpp_validity.empty() or cpp_validity[j] else None)
             return result
 
         elif elem_type == KUDU_VARCHAR:
             check_status(self.row.GetArrayVarchar(i, &cpp_data_slice, &cpp_validity))
             result = []
             for j in range(cpp_data_slice.size()):
-                result.append(frombytes(cpp_data_slice[j].ToString()) if cpp_validity[j] else None)
+                result.append(frombytes(cpp_data_slice[j].ToString()) if cpp_validity.empty() or cpp_validity[j] else None)
             return result
 
         elif elem_type == KUDU_DECIMAL:
@@ -2054,13 +2055,13 @@ cdef class Row:
                 check_status(self.row.GetArrayUnscaledDecimal(i, &cpp_data_int32, &cpp_validity))
                 result = []
                 for j in range(cpp_data_int32.size()):
-                    result.append(from_unscaled_decimal(cpp_data_int32[j], scale) if cpp_validity[j] else None)
+                    result.append(from_unscaled_decimal(cpp_data_int32[j], scale) if cpp_validity.empty() or cpp_validity[j] else None)
                 return result
             elif precision <= 18:
                 check_status(self.row.GetArrayUnscaledDecimal(i, &cpp_data_int64, &cpp_validity))
                 result = []
                 for j in range(cpp_data_int64.size()):
-                    result.append(from_unscaled_decimal(cpp_data_int64[j], scale) if cpp_validity[j] else None)
+                    result.append(from_unscaled_decimal(cpp_data_int64[j], scale) if cpp_validity.empty() or cpp_validity[j] else None)
                 return result
             else:
                 raise TypeError("Unsupported DECIMAL array precision: {0}".format(precision))
@@ -2069,14 +2070,14 @@ cdef class Row:
             check_status(self.row.GetArrayUnixTimeMicros(i, &cpp_data_int64, &cpp_validity))
             result = []
             for j in range(cpp_data_int64.size()):
-                result.append(from_unixtime_micros(cpp_data_int64[j]) if cpp_validity[j] else None)
+                result.append(from_unixtime_micros(cpp_data_int64[j]) if cpp_validity.empty() or cpp_validity[j] else None)
             return result
 
         elif elem_type == KUDU_DATE:
             check_status(self.row.GetArrayDate(i, &cpp_data_int32, &cpp_validity))
             result = []
             for j in range(cpp_data_int32.size()):
-                result.append(unix_epoch_days_to_date(cpp_data_int32[j]) if cpp_validity[j] else None)
+                result.append(unix_epoch_days_to_date(cpp_data_int32[j]) if cpp_validity.empty() or cpp_validity[j] else None)
             return result
 
         else:

@@ -55,7 +55,7 @@ void BuildFlatbuffers(
       static const Slice kEmptySlice(static_cast<uint8_t*>(nullptr), 0);
       const Slice* ptr = reinterpret_cast<const Slice*>(column_data);
       for (size_t idx = 0; idx < nrows; ++idx) {
-        val[idx] = validity[idx] ? *(ptr + idx) : kEmptySlice;
+        val[idx] = (validity.empty() || validity[idx]) ? *(ptr + idx) : kEmptySlice;
       }
     } else {
       static_assert(!std::is_same<Slice, ElementType>::value,
@@ -64,7 +64,8 @@ void BuildFlatbuffers(
     }
   }
 
-  auto validity_vector = builder.CreateVector(validity);
+  const auto validity_vector =
+      !validity.empty() ? builder.CreateVector(validity) : 0;
   if constexpr (KUDU_DATA_TYPE == STRING) {
     auto values = FB_TYPE::Traits::Create(
         builder, builder.CreateVectorOfStrings<ElementType>(val));
@@ -107,7 +108,7 @@ Status Serialize(
 
   DCHECK(out_buf);
   DCHECK(out_buf_size);
-  DCHECK_EQ(validity.size(), nrows);
+  DCHECK(validity.empty() || validity.size() == nrows);
 
   if (PREDICT_FALSE(column_data == nullptr && nrows > 0)) {
     return Status::InvalidArgument("inconsistent data and validity info for array");
@@ -141,6 +142,7 @@ Status SerializeIntoArena(
     size_t nrows,
     Arena* arena,
     Slice* out) {
+  static const std::vector<bool> kAllValid{};
   typedef typename DataTypeTraits<KUDU_DATA_TYPE>::cpp_type ElementType;
 
   DCHECK(arena);
@@ -148,7 +150,8 @@ Status SerializeIntoArena(
 
   flatbuffers::FlatBufferBuilder builder(
       nrows * sizeof(ElementType) + nrows + FLATBUFFERS_MIN_BUFFER_SIZE);
-  const std::vector<bool>& validity = BitmapToVector(validity_bitmap, nrows);
+  const std::vector<bool>& validity =
+      validity_bitmap ? BitmapToVector(validity_bitmap, nrows) : kAllValid;
   BuildFlatbuffers<KUDU_DATA_TYPE, FB_TYPE>(column_data, nrows, validity, &builder);
 
   // Copy the serialized data into the arena.

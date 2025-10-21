@@ -874,11 +874,14 @@ Status TimeReadFileForArrayDataType(
 
       const auto elem_num = view.elem_num();
       total_array_elements += elem_num;
-      BitmapIterator bit(view.not_null_bitmap(), elem_num);
-      bool is_not_null = false;
-      while (size_t elem_count = bit.Next(&is_not_null)) {
-        if (!is_not_null) {
-          null_array_elements += elem_count;
+      if (view.not_null_bitmap()) {
+        DCHECK(view.has_nulls());
+        BitmapIterator bit(view.not_null_bitmap(), elem_num);
+        bool is_not_null = false;
+        while (size_t elem_count = bit.Next(&is_not_null)) {
+          if (!is_not_null) {
+            null_array_elements += elem_count;
+          }
         }
       }
 
@@ -890,9 +893,8 @@ Status TimeReadFileForArrayDataType(
         const Slice* data = reinterpret_cast<const Slice*>(view.data_as(Type));
         DCHECK(data);
         const auto* bm = view.not_null_bitmap();
-        DCHECK(bm);
         for (size_t i = 0; i < elem_num; ++i, ++data) {
-          if (BitmapTest(bm, i)) {
+          if (!bm || BitmapTest(bm, i)) {
             total_elem_str_size += data->size();
           }
         }
