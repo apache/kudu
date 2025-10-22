@@ -52,14 +52,14 @@ union ScalarArray {
 // This is to represent a one-dimensional array of a particular scalar type
 // where some of the array's elements might be null/non-valid. The 'data'
 // field is a placeholder for the array's elements, and the 'validity' field
-// contains information on their validity/non-nullness: 'true' means 'valid',
-// 'false' means 'non-valid' (a.k.a. 'null').
-//
-// TODO(aserbin): consider storing 1 bit per data element in the 'validity'
-//                field instead of using whole 'ubyte/uint8'
+// contains information on their validity/non-nullness: one bit per element
+// in 'data'.  A set bit ('1') in the 'validity' field means 'non-null'
+// (a.k.a. 'valid'), 'false' means 'null' (a.k.a. 'non-valid'). If all the
+// elements in the 'data' field are non-null/valid, the 'validity' field
+// may be empty or absent to optimize for memory/space.
 table Content {
   data:ScalarArray;
-  validity:[bool];
+  validity:[uint8];
 }
 
 root_type Content;

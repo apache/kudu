@@ -169,6 +169,19 @@ vector<bool> BitmapToVector(const uint8_t* bitmap, size_t num_bits) {
   return result;
 }
 
+size_t VectorToBitmap(const std::vector<bool>& v, uint8_t* bitmap) {
+  DCHECK(bitmap);
+  const size_t num_bits = v.size();
+  for (size_t idx = 0; idx < num_bits; ++idx) {
+    if (v[idx]) {
+      BitmapSet(bitmap, idx);
+    } else {
+      BitmapClear(bitmap, idx);
+    }
+  }
+  return num_bits;
+}
+
 string BitmapToString(const uint8_t* bitmap, size_t num_bits) {
   string s;
   size_t index = 0;

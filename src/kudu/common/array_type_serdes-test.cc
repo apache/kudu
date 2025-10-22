@@ -81,6 +81,7 @@ TEST(ArrayTypeSerdesTest, Basic) {
   const auto* view_validity_bitmap = view.not_null_bitmap();
   ASSERT_NE(nullptr, view_validity_bitmap);
   ASSERT_TRUE(view.has_nulls());
+  ASSERT_EQ(0, memcmp(view_validity_bitmap, validity_bitmap, 1));
 
   // Verify the data matches the source.
   {
@@ -111,6 +112,7 @@ TEST(ArrayTypeSerdesTest, AllNonNullElements) {
   const vector<bool> kEmpty{};
 
   for (const uint8_t* validity_bitmap : { kNull, kThreeOnes }) {
+    SCOPED_TRACE(validity_bitmap ? "all ones" : "null");
     const vector<int16_t> val{ 0, 1, 2, };
     const vector<bool>& validity_vector =
         validity_bitmap ? BitmapToVector(validity_bitmap, val.size()) : kEmpty;

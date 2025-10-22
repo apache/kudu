@@ -23,6 +23,8 @@ import java.nio.ByteOrder;
 import java.util.Arrays;
 import java.util.Objects;
 
+import com.google.common.base.Preconditions;
+import com.google.flatbuffers.ByteVector;
 import com.google.flatbuffers.FlatBufferBuilder;
 
 // FlatBuffers generated classes
@@ -84,21 +86,31 @@ public class Array1dSerdes {
     if (validity == null || validity.length == 0) {
       return 0;
     }
-
-    // If all entries are true, omit encoding
-    boolean allTrue = true;
-    for (boolean v : validity) {
-      if (!v) {
-        allTrue = false;
+    // If all elements are valid, the validity field isn't populated,
+    // similar to null and empty validity vectors.
+    boolean allValid = true;
+    for (boolean elem : validity) {
+      if (!elem) {
+        allValid = false;
         break;
       }
     }
-    if (allTrue) {
+    if (allValid) {
       return 0;
     }
 
-    // Only encode if at least one false
-    return Content.createValidityVector(b, validity);
+    // NOTE: java.util.BitSet is unusable here since it automatically
+    //   truncates all trailing zero bits after the last set bit
+    final int validityBitNum = validity.length;
+    final int validityByteNum = (validityBitNum + 7) / 8;
+    byte[] validityBytes = new byte[validityByteNum];
+    Arrays.fill(validityBytes, (byte)0);
+    for (int idx = 0; idx < validityBitNum; ++idx) {
+      if (validity[idx]) {
+        validityBytes[idx >> 3] |= 1 << (idx & 7);
+      }
+    }
+    return Content.createValidityVector(b, validityBytes);
   }
 
   private static int finishContent(FlatBufferBuilder b, int discriminator,
@@ -125,12 +137,18 @@ public class Array1dSerdes {
       Arrays.fill(validity, true);
       return validity;
     }
-    if (n != m) {
+
+    final int expected_validity_len = (m + 7) / 8;
+    if (n != expected_validity_len) {
       throw new IllegalArgumentException(
-          String.format("Invalid validity length %d (expected %d)", n, m));
+          String.format("invalid validity length %d: expected %d for %d elements in array",
+                        n, expected_validity_len, m));
     }
-    for (int i = 0; i < m; i++) {
-      validity[i] = c.validity(i);
+    final ByteVector vv = c.validityVector();
+    Preconditions.checkState(vv.length() == n,
+        "unexpected length of validityVector: %d (expected %d)", vv.length(), n);
+    for (int idx = 0; idx < m; ++idx) {
+      validity[idx] = ((vv.get(idx >> 3) & (1 << (idx & 7))) != 0);
     }
     return validity;
   }

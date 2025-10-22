@@ -40,12 +40,17 @@ template<DataType KUDU_DATA_TYPE, typename FB_TYPE>
 void BuildFlatbuffers(
     const uint8_t* column_data,
     size_t nrows,
-    const std::vector<bool>& validity,
+    const uint8_t* validity_bitmap,
     flatbuffers::FlatBufferBuilder* bld) {
   typedef typename DataTypeTraits<KUDU_DATA_TYPE>::cpp_type ElementType;
 
   DCHECK(bld);
   auto& builder = *bld;
+
+  if (validity_bitmap && BitmapIsAllSet(validity_bitmap, 0, nrows)) {
+    // All bits in the validity bitmap are set: it's equivalent of null bitmap.
+    validity_bitmap = nullptr;
+  }
 
   std::vector<ElementType> val;
   val.resize(nrows);
@@ -55,7 +60,8 @@ void BuildFlatbuffers(
       static const Slice kEmptySlice(static_cast<uint8_t*>(nullptr), 0);
       const Slice* ptr = reinterpret_cast<const Slice*>(column_data);
       for (size_t idx = 0; idx < nrows; ++idx) {
-        val[idx] = (validity.empty() || validity[idx]) ? *(ptr + idx) : kEmptySlice;
+        val[idx] = (!validity_bitmap || BitmapTest(validity_bitmap, idx))
+            ? *(ptr + idx) : kEmptySlice;
       }
     } else {
       static_assert(!std::is_same<Slice, ElementType>::value,
@@ -64,15 +70,21 @@ void BuildFlatbuffers(
     }
   }
 
-  const auto validity_vector =
-      !validity.empty() ? builder.CreateVector(validity) : 0;
+  std::vector<uint8_t> validity_vector;
+  if (validity_bitmap) {
+    validity_vector.resize(BitmapSize(nrows));
+    memcpy(validity_vector.data(), validity_bitmap, validity_vector.size());
+  }
+  const auto validity_fb =
+      validity_vector.empty() ? 0 : builder.CreateVector(validity_vector);
+
   if constexpr (KUDU_DATA_TYPE == STRING) {
     auto values = FB_TYPE::Traits::Create(
         builder, builder.CreateVectorOfStrings<ElementType>(val));
     builder.Finish(CreateContent(builder,
                                  KuduToScalarArrayType(KUDU_DATA_TYPE),
                                  values.Union(),
-                                 validity_vector));
+                                 validity_fb));
   } else if constexpr (KUDU_DATA_TYPE == BINARY) {
     std::vector<flatbuffers::Offset<serdes::UInt8Array>> offsets;
     offsets.reserve(val.size());
@@ -86,14 +98,14 @@ void BuildFlatbuffers(
     builder.Finish(CreateContent(builder,
                                  KuduToScalarArrayType(KUDU_DATA_TYPE),
                                  values.Union(),
-                                 validity_vector));
+                                 validity_fb));
   } else {
     auto values = FB_TYPE::Traits::Create(
         builder, builder.CreateVector<ElementType>(val));
     builder.Finish(CreateContent(builder,
                                  KuduToScalarArrayType(KUDU_DATA_TYPE),
                                  values.Union(),
-                                 validity_vector));
+                                 validity_fb));
   }
 }
 
@@ -116,7 +128,16 @@ Status Serialize(
 
   flatbuffers::FlatBufferBuilder builder(
       nrows * sizeof(ElementType) + nrows + FLATBUFFERS_MIN_BUFFER_SIZE);
-  BuildFlatbuffers<KUDU_DATA_TYPE, FB_TYPE>(column_data, nrows, validity, &builder);
+
+  const uint8_t* validity_bitmap = nullptr;
+  std::vector<uint8_t> validity_vector;
+  if (!validity.empty() && std::any_of(validity.begin(), validity.end(),
+                                       [&](bool e) { return !e; })) {
+    validity_vector.resize(BitmapSize(nrows));
+    VectorToBitmap(validity, validity_vector.data());
+    validity_bitmap = validity_vector.data();
+  }
+  BuildFlatbuffers<KUDU_DATA_TYPE, FB_TYPE>(column_data, nrows, validity_bitmap, &builder);
   DCHECK(builder.GetBufferPointer());
 
   // TODO(aserbin): would it be better to copy the data from the builder
@@ -142,7 +163,6 @@ Status SerializeIntoArena(
     size_t nrows,
     Arena* arena,
     Slice* out) {
-  static const std::vector<bool> kAllValid{};
   typedef typename DataTypeTraits<KUDU_DATA_TYPE>::cpp_type ElementType;
 
   DCHECK(arena);
@@ -150,9 +170,7 @@ Status SerializeIntoArena(
 
   flatbuffers::FlatBufferBuilder builder(
       nrows * sizeof(ElementType) + nrows + FLATBUFFERS_MIN_BUFFER_SIZE);
-  const std::vector<bool>& validity =
-      validity_bitmap ? BitmapToVector(validity_bitmap, nrows) : kAllValid;
-  BuildFlatbuffers<KUDU_DATA_TYPE, FB_TYPE>(column_data, nrows, validity, &builder);
+  BuildFlatbuffers<KUDU_DATA_TYPE, FB_TYPE>(column_data, nrows, validity_bitmap, &builder);
 
   // Copy the serialized data into the arena.
   //

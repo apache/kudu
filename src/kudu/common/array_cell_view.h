@@ -90,6 +90,7 @@ class ArrayCellMetadataView final {
        : data_(buf),
          size_(size),
          content_(nullptr),
+         elem_num_(0),
          is_initialized_(false),
          has_nulls_(false) {
   }
@@ -98,6 +99,7 @@ class ArrayCellMetadataView final {
     DCHECK(!is_initialized_);
     if (size_ == 0) {
       content_ = nullptr;
+      elem_num_ = 0;
       is_initialized_ = true;
       has_nulls_ = false;
       return Status::OK();
@@ -141,36 +143,25 @@ class ArrayCellMetadataView final {
       return Status::IllegalState("null flatbuffers of non-zero size");
     }
 
-    const size_t values_size = elem_num_impl();
+    elem_num_ = GetElemNum();
     const size_t validity_size = content_->validity() ? content_->validity()->size() : 0;
-    if (validity_size != 0 && values_size != validity_size) {
-      return Status::Corruption("number of data and validity elements differ");
+    if (validity_size != 0 && BitmapSize(elem_num_) != validity_size) {
+      return Status::Corruption("'validity' and 'data' fields not in sync");
     }
 
     has_nulls_ = false;
     if (validity_size != 0) {
       // If the validity vector is supplied and with all its elements non-zero.
       const auto& validity = *(DCHECK_NOTNULL(content_->validity()));
-      has_nulls_ = std::any_of(validity.cbegin(), validity.cend(),
-                               [&](uint8_t e) { return e == 0; });
+      has_nulls_ = !BitmapIsAllSet(validity.Data(), 0, elem_num_);
     }
 
     if (has_nulls_) {
-      const size_t bit_num = values_size;
-      DCHECK_GT(bit_num, 0);
-      bitmap_.reset(new uint8_t[BitmapSize(bit_num)]);
-      // Assuming the most of the elements are non-null/valid, it's usually less
-      // calls to flip particular bits from 1 to 0 than flipping them from 0 to 1.
-      // TODO(aserbin): consider counting alternating strategy based on the number
-      //                of non-zero values that comes from computing 'has_nulls_'
-      auto* bm = bitmap_.get();
-      memset(bm, 0xff, BitmapSize(bit_num));
-      const auto& v = *(DCHECK_NOTNULL(content_->validity()));
-      for (size_t idx = 0; idx < bit_num; ++idx) {
-        if (v.Get(idx) == 0) {
-          BitmapClear(bm, idx);
-        }
-      }
+      DCHECK_GT(validity_size, 0);
+      DCHECK_GT(elem_num_, 0);
+      DCHECK_EQ(validity_size, BitmapSize(elem_num_));
+      bitmap_.reset(new uint8_t[validity_size]);
+      memcpy(bitmap_.get(), content_->validity()->Data(), validity_size);
     }
     const auto data_type = content_->data_type();
     if (data_type != serdes::ScalarArray::BinaryArray &&
@@ -209,7 +200,7 @@ class ArrayCellMetadataView final {
   // Number of elements in the array.
   size_t elem_num() const {
     DCHECK(is_initialized_);
-    return elem_num_impl();
+    return elem_num_;
   }
 
   bool empty() const {
@@ -284,7 +275,7 @@ class ArrayCellMetadataView final {
     return content_ ? content_->data_as<T>()->values()->Data() : nullptr;
   }
 
-  size_t elem_num_impl() const {
+  size_t GetElemNum() const {
     if (!content_) {
       return 0;
     }
@@ -335,6 +326,9 @@ class ArrayCellMetadataView final {
   // A non-owning raw pointer to the flatbuffers serialized buffer. It's nullptr
   // for an empty (size_ == 0) buffer.
   const serdes::Content* content_;
+
+  // Number of elements in the underlying flatbuffers buffer.
+  size_t elem_num_;
 
   // A bitmap built of the boolean validity vector.
   // TODO(aserbin): switch array1d to bitfield instead of bool vector for validity?

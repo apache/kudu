@@ -51,14 +51,6 @@ class ArrayCellViewHelper {
   }
 
   // ----------------------------------------------------------------------
-  // Common helpers
-  // ----------------------------------------------------------------------
-
-  private static boolean[] validity(ArrayCellView view, int n) {
-    return view.validityOrAllTrue(n);
-  }
-
-  // ----------------------------------------------------------------------
   // Boxed numeric arrays with null (validity) handling
   // ----------------------------------------------------------------------
 
@@ -70,14 +62,13 @@ class ArrayCellViewHelper {
   // which avoids position drift and unnecessary buffer slicing while remaining allocation-free.
   static Boolean[] toBoolArray(ArrayCellView view) {
     UInt8Array arr = view.asUInt8FB();
-    int n = arr.valuesLength();
-    boolean[] v = validity(view, n);
+    final int n = arr.valuesLength();
     ByteBuffer bb = arr.valuesAsByteBuffer();
     bb.order(ByteOrder.LITTLE_ENDIAN);
     int base = bb.position();
     Boolean[] out = new Boolean[n];
     for (int i = 0; i < n; i++) {
-      if (!v[i]) {
+      if (!view.isValid(i)) {
         out[i] = null;
         continue;
       }
@@ -96,84 +87,78 @@ class ArrayCellViewHelper {
   // Null elements are filled with Java nulls according to the validity bitmap.
   static Byte[] toInt8Array(ArrayCellView view) {
     Int8Array arr = view.asInt8FB();
-    int n = arr.valuesLength();
-    boolean[] v = validity(view, n);
     ByteBuffer bb = arr.valuesAsByteBuffer();
     bb.order(ByteOrder.LITTLE_ENDIAN);
+    final int n = arr.valuesLength();
     int base = bb.position();
     Byte[] out = new Byte[n];
     for (int i = 0; i < n; i++) {
-      out[i] = v[i] ? bb.get(base + i) : null;
+      out[i] = view.isValid(i) ? bb.get(base + i) : null;
     }
     return out;
   }
 
   static Short[] toInt16Array(ArrayCellView view) {
     Int16Array arr = view.asInt16FB();
-    int n = arr.valuesLength();
-    boolean[] v = validity(view, n);
-    ShortBuffer sb = arr.valuesAsByteBuffer().order(ByteOrder.LITTLE_ENDIAN).asShortBuffer();
+    final int n = arr.valuesLength();
     short[] tmp = new short[n];
+    ShortBuffer sb = arr.valuesAsByteBuffer().order(ByteOrder.LITTLE_ENDIAN).asShortBuffer();
     sb.get(tmp);
     Short[] out = new Short[n];
     for (int i = 0; i < n; i++) {
-      out[i] = v[i] ? tmp[i] : null;
+      out[i] = view.isValid(i) ? tmp[i] : null;
     }
     return out;
   }
 
   static Integer[] toInt32Array(ArrayCellView view) {
     Int32Array arr = view.asInt32FB();
-    int n = arr.valuesLength();
-    boolean[] v = validity(view, n);
-    IntBuffer ib = arr.valuesAsByteBuffer().order(ByteOrder.LITTLE_ENDIAN).asIntBuffer();
+    final int n = arr.valuesLength();
     int[] tmp = new int[n];
+    IntBuffer ib = arr.valuesAsByteBuffer().order(ByteOrder.LITTLE_ENDIAN).asIntBuffer();
     ib.get(tmp);
     Integer[] out = new Integer[n];
     for (int i = 0; i < n; i++) {
-      out[i] = v[i] ? tmp[i] : null;
+      out[i] = view.isValid(i) ? tmp[i] : null;
     }
     return out;
   }
 
   static Long[] toInt64Array(ArrayCellView view) {
     Int64Array arr = view.asInt64FB();
-    int n = arr.valuesLength();
-    boolean[] v = validity(view, n);
-    LongBuffer lb = arr.valuesAsByteBuffer().order(ByteOrder.LITTLE_ENDIAN).asLongBuffer();
+    final int n = arr.valuesLength();
     long[] tmp = new long[n];
+    LongBuffer lb = arr.valuesAsByteBuffer().order(ByteOrder.LITTLE_ENDIAN).asLongBuffer();
     lb.get(tmp);
     Long[] out = new Long[n];
     for (int i = 0; i < n; i++) {
-      out[i] = v[i] ? tmp[i] : null;
+      out[i] = view.isValid(i) ? tmp[i] : null;
     }
     return out;
   }
 
   static Float[] toFloatArray(ArrayCellView view) {
     FloatArray arr = view.asFloatFB();
-    int n = arr.valuesLength();
-    boolean[] v = validity(view, n);
-    FloatBuffer fb = arr.valuesAsByteBuffer().order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer();
+    final int n = arr.valuesLength();
     float[] tmp = new float[n];
+    FloatBuffer fb = arr.valuesAsByteBuffer().order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer();
     fb.get(tmp);
     Float[] out = new Float[n];
     for (int i = 0; i < n; i++) {
-      out[i] = v[i] ? tmp[i] : null;
+      out[i] = view.isValid(i) ? tmp[i] : null;
     }
     return out;
   }
 
   static Double[] toDoubleArray(ArrayCellView view) {
     DoubleArray arr = view.asDoubleFB();
-    int n = arr.valuesLength();
-    boolean[] v = validity(view, n);
-    DoubleBuffer db = arr.valuesAsByteBuffer().order(ByteOrder.LITTLE_ENDIAN).asDoubleBuffer();
+    final int n = arr.valuesLength();
     double[] tmp = new double[n];
+    DoubleBuffer db = arr.valuesAsByteBuffer().order(ByteOrder.LITTLE_ENDIAN).asDoubleBuffer();
     db.get(tmp);
     Double[] out = new Double[n];
     for (int i = 0; i < n; i++) {
-      out[i] = v[i] ? tmp[i] : null;
+      out[i] = view.isValid(i) ? tmp[i] : null;
     }
     return out;
   }
@@ -184,11 +169,10 @@ class ArrayCellViewHelper {
 
   static String[] toStringArray(ArrayCellView view) {
     StringArray arr = view.asStringFB();
-    int n = arr.valuesLength();
-    boolean[] v = validity(view, n);
+    final int n = arr.valuesLength();
     String[] out = new String[n];
     for (int i = 0; i < n; i++) {
-      out[i] = v[i] ? arr.values(i) : null;
+      out[i] = view.isValid(i) ? arr.values(i) : null;
     }
     return out;
   }
@@ -200,12 +184,11 @@ class ArrayCellViewHelper {
 
   static byte[][] toBinaryArray(ArrayCellView view) {
     BinaryArray arr = view.asBinaryFB();
-    int n = arr.valuesLength();
-    boolean[] v = validity(view, n);
+    final int n = arr.valuesLength();
     byte[][] out = new byte[n][];
     UInt8Array elem = new UInt8Array();
     for (int i = 0; i < n; i++) {
-      if (!v[i]) {
+      if (!view.isValid(i)) {
         out[i] = null;
         continue;
       }
@@ -223,28 +206,26 @@ class ArrayCellViewHelper {
 
   static Date[] toDateArray(ArrayCellView view) {
     Int32Array arr = view.asInt32FB();
-    int n = arr.valuesLength();
-    boolean[] v = validity(view, n);
-    IntBuffer ib = arr.valuesAsByteBuffer().order(ByteOrder.LITTLE_ENDIAN).asIntBuffer();
+    final int n = arr.valuesLength();
     int[] tmp = new int[n];
+    IntBuffer ib = arr.valuesAsByteBuffer().order(ByteOrder.LITTLE_ENDIAN).asIntBuffer();
     ib.get(tmp);
     Date[] out = new Date[n];
     for (int i = 0; i < n; i++) {
-      out[i] = v[i] ? DateUtil.epochDaysToSqlDate(tmp[i]) : null;
+      out[i] = view.isValid(i) ? DateUtil.epochDaysToSqlDate(tmp[i]) : null;
     }
     return out;
   }
 
   static Timestamp[] toTimestampArray(ArrayCellView view) {
     Int64Array arr = view.asInt64FB();
-    int n = arr.valuesLength();
-    boolean[] v = validity(view, n);
     LongBuffer lb = arr.valuesAsByteBuffer().order(ByteOrder.LITTLE_ENDIAN).asLongBuffer();
+    final int n = arr.valuesLength();
     long[] tmp = new long[n];
     lb.get(tmp);
     Timestamp[] out = new Timestamp[n];
     for (int i = 0; i < n; i++) {
-      out[i] = v[i] ? TimestampUtil.microsToTimestamp(tmp[i]) : null;
+      out[i] = view.isValid(i) ? TimestampUtil.microsToTimestamp(tmp[i]) : null;
     }
     return out;
   }
@@ -258,25 +239,23 @@ class ArrayCellViewHelper {
     BigDecimal[] out;
     if (precision <= 9) {
       Int32Array arr = view.asInt32FB();
-      int n = arr.valuesLength();
-      v = validity(view, n);
       IntBuffer ib = arr.valuesAsByteBuffer().order(ByteOrder.LITTLE_ENDIAN).asIntBuffer();
+      final int n = arr.valuesLength();
       int[] tmp = new int[n];
       ib.get(tmp);
       out = new BigDecimal[n];
       for (int i = 0; i < n; i++) {
-        out[i] = v[i] ? BigDecimal.valueOf(tmp[i], scale) : null;
+        out[i] = view.isValid(i) ? BigDecimal.valueOf(tmp[i], scale) : null;
       }
     } else if (precision <= 18) {
       Int64Array arr = view.asInt64FB();
-      int n = arr.valuesLength();
-      v = validity(view, n);
       LongBuffer lb = arr.valuesAsByteBuffer().order(ByteOrder.LITTLE_ENDIAN).asLongBuffer();
+      final int n = arr.valuesLength();
       long[] tmp = new long[n];
       lb.get(tmp);
       out = new BigDecimal[n];
       for (int i = 0; i < n; i++) {
-        out[i] = v[i] ? BigDecimal.valueOf(tmp[i], scale) : null;
+        out[i] = view.isValid(i) ? BigDecimal.valueOf(tmp[i], scale) : null;
       }
     } else {
       throw new IllegalStateException("DECIMAL128 arrays not yet supported");

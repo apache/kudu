@@ -386,12 +386,19 @@ TEST(TestBitMap, TestCopy) {
 TEST(TestBitMap, BitmapToVector) {
   constexpr size_t kNumBytes = 8;
   constexpr size_t kNumBits = kNumBytes * 8;
-  constexpr uint8_t kAllZeroes[kNumBytes] = { 0 };
+  constexpr uint8_t kAllZeroes[kNumBytes] = { 0x00 };
+  constexpr uint8_t kAllOnes[kNumBytes] =
+      { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
 
   {
     const auto v = BitmapToVector(kAllZeroes, kNumBits);
     ASSERT_EQ(kNumBits, v.size());
     ASSERT_TRUE(std::all_of(v.begin(), v.end(), [](bool e) { return !e; }));
+
+    ASSERT_EQ(kNumBytes, BitmapSize(kNumBits));
+    uint8_t buf[BitmapSize(kNumBits)] = { 0xff };
+    ASSERT_EQ(kNumBits, VectorToBitmap(v, buf));
+    ASSERT_EQ(0, memcmp(kAllZeroes, buf, sizeof(kAllZeroes)));
   }
   {
     uint8_t input[kNumBytes];
@@ -401,6 +408,11 @@ TEST(TestBitMap, BitmapToVector) {
     const auto v = BitmapToVector(input, kNumBits);
     ASSERT_EQ(kNumBits, v.size());
     ASSERT_TRUE(std::all_of(v.begin(), v.end(), [](bool e) { return e; }));
+
+    ASSERT_EQ(kNumBytes, BitmapSize(kNumBits));
+    uint8_t buf[BitmapSize(kNumBits)] = { 0x00 };
+    ASSERT_EQ(kNumBits, VectorToBitmap(v, buf));
+    ASSERT_EQ(0, memcmp(kAllOnes, buf, sizeof(kAllOnes)));
   }
   {
     uint8_t input[kNumBytes];
@@ -412,12 +424,21 @@ TEST(TestBitMap, BitmapToVector) {
     auto it_half = v.begin() + (v.size() / 2);
     ASSERT_TRUE(std::all_of(v.begin(), it_half, [](bool e) { return e; }));
     ASSERT_TRUE(std::all_of(it_half, v.end(), [](bool e) { return !e; }));
+
+    uint8_t output[kNumBytes] = { 0 };
+    ASSERT_EQ(kNumBits, VectorToBitmap(v, output));
+    ASSERT_EQ(0, memcmp(input, output, kNumBytes));
   }
   {
     uint8_t input[1] = { 0b00000001 };
     const auto v = BitmapToVector(input, 1);
     ASSERT_EQ(1, v.size());
     ASSERT_TRUE(v.front());
+
+    ASSERT_EQ(1, BitmapSize(1));
+    uint8_t output[1] = { 0x00 };
+    ASSERT_EQ(1, VectorToBitmap(v, output));
+    ASSERT_EQ(0, memcmp(input, output, 1));
   }
   {
     uint8_t input[1] = { 0b10000001 };
@@ -426,6 +447,11 @@ TEST(TestBitMap, BitmapToVector) {
     ASSERT_TRUE(v.front());
     ASSERT_TRUE(v.back());
     ASSERT_TRUE(std::all_of(v.begin() + 1, v.end() - 1, [](bool e) { return !e; }));
+
+    ASSERT_EQ(1, BitmapSize(8));
+    uint8_t output[1] = { 0x00 };
+    ASSERT_EQ(8, VectorToBitmap(v, output));
+    ASSERT_EQ(0, memcmp(input, output, 1));
   }
 }
 

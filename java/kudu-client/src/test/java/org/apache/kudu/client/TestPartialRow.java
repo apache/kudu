@@ -193,6 +193,34 @@ public class TestPartialRow {
   }
 
   @Test
+  public void testAddAndGetInt8ArrayAllNulls() {
+    Schema schema = new Schema(Arrays.asList(
+        new ColumnSchema.ColumnSchemaBuilder("tiny_ints", Type.INT8).array(true).build()
+    ));
+
+    // Test various number of NULL elements in the array to check various boundary
+    // conditions on the internal representation of the validity vector in ArrayCellView.
+    final int[] numberOfElements = new int[]{ 0, 1, 3, 7, 8, 9, 100, 127};
+    for (int elemNum : numberOfElements) {
+      PartialRow row = schema.newPartialRow();
+
+      byte[] vals = new byte[elemNum];
+      Arrays.fill(vals, (byte)0);
+
+      boolean[] validity = new boolean[elemNum];
+      Arrays.fill(validity, false);
+
+      row.addArrayInt8("tiny_ints", vals, validity);
+
+      ArrayCellView view = (ArrayCellView) row.getObject("tiny_ints");
+      assertEquals(elemNum, view.length());
+      for (int idx = 0; idx < elemNum; ++idx) {
+        assertFalse("elemNum: " + elemNum + " idx: " + idx, view.isValid(idx));
+      }
+    }
+  }
+
+  @Test
   public void testAddAndGetInt16Array() {
     Schema schema = new Schema(Arrays.asList(
         new ColumnSchema.ColumnSchemaBuilder("ints16", Type.INT16).array(true).build()

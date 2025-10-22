@@ -20,10 +20,10 @@ package org.apache.kudu.client;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.Arrays;
+import java.util.BitSet;
 import java.util.function.IntFunction;
 
 import org.apache.kudu.ColumnSchema;
-import org.apache.kudu.Type;
 import org.apache.kudu.serdes.BinaryArray;
 import org.apache.kudu.serdes.Content;
 import org.apache.kudu.serdes.DoubleArray;
@@ -47,6 +47,8 @@ class ArrayCellView {
   private final byte[] rawBytes;
   private final Content content;
   private final byte typeTag;
+  private final BitSet validityBitSet;
+  private final int elemNum;
 
   private static final String NULL_ELEMENT_MSG = "Element %d is NULL";
 
@@ -62,6 +64,24 @@ class ArrayCellView {
     ByteBuffer bb = ByteBuffer.wrap(buf).order(ByteOrder.LITTLE_ENDIAN);
     this.content = Content.getRootAsContent(bb);
     this.typeTag = content.dataType();
+    this.elemNum = getElemNum();
+
+    // Build validity/not-null BitSet.
+    final int validityElemNum = content.validityLength(); // number of bytes in the array
+    if (validityElemNum == 0) {
+      // Setting the validity bitset explicitly to null: all array elements are valid.
+      this.validityBitSet = null;
+    } else {
+      // One validity bit per element of the 'data' array.
+      final int dataElemNum = length();
+      final int expectedValidityElemNum = (dataElemNum + 7) / 8;
+      if (validityElemNum != expectedValidityElemNum) {
+        throw new IllegalArgumentException(
+            String.format("invalid validity length %d: expected %d for %d elements in array)",
+                validityElemNum, expectedValidityElemNum, dataElemNum));
+      }
+      this.validityBitSet = BitSet.valueOf(content.validityAsByteBuffer());
+    }
   }
 
   /** Return the underlying FlatBuffer bytes exactly as passed in. */
@@ -70,8 +90,13 @@ class ArrayCellView {
     return rawBytes;
   }
 
-  /** Number of logical elements (driven by the data vector). */
+  /** Number of logical elements in the array, including null/non-valid elements. */
   int length() {
+    return elemNum;
+  }
+
+  /** Get the number of array elements in the underlying flatbuffers contents. */
+  private int getElemNum() {
     switch (typeTag) {
       case ScalarArray.Int8Array: {
         Int8Array arr = new Int8Array();
@@ -141,49 +166,16 @@ class ArrayCellView {
 
   /** Returns true iff element i is valid (non-null). */
   boolean isValid(int i) {
-    int n = length();
+    final int n = length();
     if (i < 0 || i >= n) {
       throw new IndexOutOfBoundsException(
           String.format("Index %d out of bounds for array length %d", i, n));
     }
-
-    int vlen = content.validityLength();
-    if (vlen == 0) {
+    if (validityBitSet == null) {
       // No validity vector present => all elements are valid
       return true;
     }
-
-    if (i >= vlen) {
-      throw new IllegalStateException(
-          String.format("Validity vector shorter than array: i=%d, vlen=%d", i, vlen));
-    }
-
-    return content.validity(i);
-  }
-
-  /**
-   * Returns a boolean array of element validity flags.
-   *
-   * @param n expected number of elements in the values vector
-   * @throws IllegalStateException if validity length and value length mismatch
-   */
-
-  boolean[] validityOrAllTrue(int n) {
-    int len = content.validityLength();
-    if (len == 0) {
-      boolean[] allTrue = new boolean[n];
-      java.util.Arrays.fill(allTrue, true);
-      return allTrue;
-    }
-    if (len != n) {
-      throw new IllegalStateException(
-          String.format("Validity length %d does not match values length %d", len, n));
-    }
-    boolean[] v = new boolean[n];
-    for (int i = 0; i < n; i++) {
-      v[i] = content.validity(i);
-    }
-    return v;
+    return validityBitSet.get(i);
   }
 
   // ----------------------------------------------------------------------

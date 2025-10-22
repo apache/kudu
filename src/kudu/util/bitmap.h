@@ -33,7 +33,7 @@
 namespace kudu {
 
 // Return the number of bytes necessary to store the given number of bits.
-inline size_t BitmapSize(size_t num_bits) {
+constexpr size_t BitmapSize(size_t num_bits) {
   return (num_bits + 7) / 8;
 }
 
@@ -126,6 +126,7 @@ void BitmapCopy(uint8_t* dst, size_t dst_offset,
                 size_t num_bits);
 
 std::vector<bool> BitmapToVector(const uint8_t* bitmap, size_t num_bits);
+size_t VectorToBitmap(const std::vector<bool>& v, uint8_t* bitmap);
 
 std::string BitmapToString(const uint8_t* bitmap, size_t num_bits);
 
