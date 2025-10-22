@@ -22,10 +22,12 @@ import static org.apache.kudu.test.ClientTestUtil.scanTableToStrings;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -44,6 +46,7 @@ import org.junit.function.ThrowingRunnable;
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.ColumnSchema.CompressionAlgorithm;
 import org.apache.kudu.ColumnSchema.Encoding;
+import org.apache.kudu.ColumnTypeAttributes;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.test.KuduTestHarness;
@@ -369,6 +372,101 @@ public class TestAlterTable {
     assertEquals(Encoding.RLE, col.getEncoding());
     assertEquals(0, col.getDefaultValue());
   }
+
+  @Test
+  public void testAlterAddArrayColumns() throws Exception {
+    // Create a simple base table
+    KuduTable table = createTable(ImmutableList.of());
+    insertRows(table, 0, 3);
+    assertEquals(3, countRowsInTable(table));
+
+    // Add several array columns via AlterTableOptions
+    AlterTableOptions opts = new AlterTableOptions()
+        .addNullableArrayColumn("ints_array", Type.INT32)
+        .addNullableArrayColumn("strings_array", Type.STRING)
+        .addNullableArrayColumn("decimals_array", Type.DECIMAL,
+            new ColumnTypeAttributes.ColumnTypeAttributesBuilder()
+                .precision(5)
+                .scale(2)
+                .build());
+
+    client.alterTable(tableName, opts);
+
+    // Verify schema after alter
+    table = client.openTable(tableName);
+    Schema schema = table.getSchema();
+    assertNotNull(schema.getColumn("ints_array"));
+    assertTrue(schema.getColumn("ints_array").isArray());
+    assertEquals(Type.INT32, schema.getColumn("ints_array")
+        .getNestedTypeDescriptor().getArrayDescriptor().getElemType());
+
+    assertTrue(schema.getColumn("strings_array").isArray());
+    assertEquals(Type.STRING, schema.getColumn("strings_array")
+        .getNestedTypeDescriptor().getArrayDescriptor().getElemType());
+
+    assertTrue(schema.getColumn("decimals_array").isArray());
+    assertEquals(Type.DECIMAL, schema.getColumn("decimals_array")
+        .getNestedTypeDescriptor().getArrayDescriptor().getElemType());
+
+    // Insert a row with array values
+    final KuduSession session = client.newSession();
+    Insert insert = table.newInsert();
+    PartialRow row = insert.getRow();
+    row.addInt("c0", 10);
+    row.addInt("c1", 10);
+
+    row.addArrayInt32(schema.getColumnIndex("ints_array"),
+        new int[]{1, 2, 3}, new boolean[]{true, false, true});
+
+    row.addArrayString(schema.getColumnIndex("strings_array"),
+        new String[]{"a", null, "c"}, null);
+
+    row.addArrayDecimal(schema.getColumnIndex("decimals_array"),
+        new BigDecimal[]{BigDecimal.valueOf(123, 2), null, BigDecimal.valueOf(456, 2)},
+        null);
+
+    session.apply(insert);
+    session.flush();
+    RowError[] rowErrors = session.getPendingErrors().getRowErrors();
+    assertEquals(0, rowErrors.length);
+
+    // Read back and verify data
+    KuduScanner scanner = client.newScannerBuilder(table).build();
+    RowResult rr = scanner.nextRows().next();
+
+    // ints_array
+    ArrayCellView ints = rr.getArray("ints_array");
+    assertEquals(3, ints.length());
+    assertEquals(1, ints.getInt32(0));
+    assertFalse(ints.isValid(1)); // null element
+    assertEquals(3, ints.getInt32(2));
+
+    // strings_array
+    ArrayCellView strs = rr.getArray("strings_array");
+    assertEquals(3, strs.length());
+    assertEquals("a", strs.getString(0));
+    assertFalse(strs.isValid(1));
+    assertEquals("c", strs.getString(2));
+
+    // decimals_array
+    BigDecimal[] decs = ArrayCellViewHelper.toDecimalArray(rr.getArray("decimals_array"), 5, 2);
+    assertEquals(new BigDecimal("1.23"), decs[0]);
+    assertNull(decs[1]);
+    assertEquals(new BigDecimal("4.56"), decs[2]);
+
+    // Verify schema-aware getArrayData() dispatch works
+    Integer[] intsBoxed = (Integer[]) rr.getArrayData("ints_array");
+    assertArrayEquals(new Integer[]{1, null, 3}, intsBoxed);
+
+    String[] strsBoxed = (String[]) rr.getArrayData("strings_array");
+    assertArrayEquals(new String[]{"a", null, "c"}, strsBoxed);
+
+    BigDecimal[] decsBoxed = (BigDecimal[]) rr.getArrayData("decimals_array");
+    assertEquals(new BigDecimal("1.23"), decsBoxed[0]);
+    assertNull(decsBoxed[1]);
+    assertEquals(new BigDecimal("4.56"), decsBoxed[2]);
+  }
+
 
   @Test
   public void testRenameKeyColumn() throws Exception {
