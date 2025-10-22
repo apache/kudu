@@ -83,7 +83,7 @@ public class Schema {
   private final boolean hasNullableColumns;
   private final boolean hasImmutableColumns;
   private final boolean hasAutoIncrementingColumn;
-
+  private final boolean hasNestedTypeColumns;
   private final int isDeletedIndex;
   private static final int NO_IS_DELETED_INDEX = -1;
 
@@ -173,6 +173,7 @@ public class Schema {
     int offset = 0;
     boolean hasNulls = false;
     boolean hasImmutables = false;
+    boolean hasNestedTypeColumns = false;
     int isDeletedIndex = NO_IS_DELETED_INDEX;
     // pre-compute a few counts and offsets
     for (int index = 0; index < columns.size(); index++) {
@@ -183,6 +184,7 @@ public class Schema {
 
       hasNulls |= column.isNullable();
       hasImmutables |= column.isImmutable();
+      hasNestedTypeColumns |= column.isNestedType();
       columnOffsets[index] = offset;
       offset += column.getTypeSize();
       if (this.columnsByName.put(column.getName(), index) != null) {
@@ -216,6 +218,7 @@ public class Schema {
     this.hasNullableColumns = hasNulls;
     this.hasImmutableColumns = hasImmutables;
     this.hasAutoIncrementingColumn = hasAutoIncrementing;
+    this.hasNestedTypeColumns = hasNestedTypeColumns;
     this.isDeletedIndex = isDeletedIndex;
   }
 
@@ -368,6 +371,13 @@ public class Schema {
    */
   public boolean hasAutoIncrementingColumn() {
     return this.hasAutoIncrementingColumn;
+  }
+
+  /**
+   * @return true if the schema has at least one column of a nested type, false otherwise
+   */
+  public boolean hasNestedTypeColumns() {
+    return hasNestedTypeColumns;
   }
 
   /**

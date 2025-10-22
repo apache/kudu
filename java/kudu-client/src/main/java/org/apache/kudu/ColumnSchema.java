@@ -189,6 +189,13 @@ public class ColumnSchema {
   }
 
   /**
+   * @return true if the column is of a nested (i.e. non-scalar) type
+   */
+  public boolean isNestedType() {
+    return nestedTypeDescriptor != null;
+  }
+
+  /**
    * The Java object representation of the default value that's read
    * @return the default read value
    */

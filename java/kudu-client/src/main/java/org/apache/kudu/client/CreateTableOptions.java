@@ -352,6 +352,10 @@ public class CreateTableOptions {
       requiredFeatureFlags.add(
               Integer.valueOf(Master.MasterFeatures.RANGE_SPECIFIC_HASH_SCHEMA_VALUE));
     }
+    if (schema.hasNestedTypeColumns()) {
+      requiredFeatureFlags.add(
+          Integer.valueOf(Master.MasterFeatures.ARRAY_1D_COLUMN_TYPE_VALUE));
+    }
 
     return requiredFeatureFlags;
   }

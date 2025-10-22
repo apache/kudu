@@ -48,6 +48,7 @@ public class AlterTableOptions {
   private final AlterTableRequestPB.Builder pb = AlterTableRequestPB.newBuilder();
   private boolean wait = true;
   private boolean isAddingRangeWithCustomHashSchema = false;
+  private boolean isAddingNestedTypeColumn = false;
 
   /**
    * Change a table's name.
@@ -95,6 +96,7 @@ public class AlterTableOptions {
     if (colSchema.isKey()) {
       throw new IllegalArgumentException("Key columns cannot be added");
     }
+    this.isAddingNestedTypeColumn |= colSchema.isNestedType();
     AlterTableRequestPB.Step.Builder step = pb.addAlterSchemaStepsBuilder();
     step.setType(AlterTableRequestPB.StepType.ADD_COLUMN);
     step.setAddColumn(AlterTableRequestPB.AddColumn.newBuilder()
@@ -599,6 +601,10 @@ public class AlterTableOptions {
         requiredFeatureFlags.add(
                 Integer.valueOf(Master.MasterFeatures.RANGE_SPECIFIC_HASH_SCHEMA_VALUE));
       }
+    }
+    if (isAddingNestedTypeColumn) {
+      requiredFeatureFlags.add(
+          Integer.valueOf(Master.MasterFeatures.ARRAY_1D_COLUMN_TYPE_VALUE));
     }
     return requiredFeatureFlags;
   }

@@ -1243,6 +1243,48 @@ public class TestKuduClient {
   }
 
   /**
+   * Test an attempt to create a new table with array type column
+   * when the cluster doesn't support tables with 1D array columns.
+   */
+  @MasterServerConfig(flags = {
+      "--master_support_1d_array_columns=false",
+  })
+  @Test(timeout = 100000)
+  public void testCreateTableWithArrayColumnUnsupportedFeatureFlags() throws Exception {
+    try {
+      Schema schema = createSchemaWithArrayColumns();
+      client.createTable(TABLE_NAME, schema, getBasicCreateTableOptions());
+      fail("should have failed with 'unsupported feature flags' server-side error");
+    } catch (RpcRemoteException e) {
+      assertTrue(e.getMessage().contains("server sent error unsupported feature flags"));
+    }
+  }
+
+  /**
+   * Test an attempt to add a new array column into an existing table
+   * when the cluster doesn't support tables with 1D array columns.
+   */
+  @MasterServerConfig(flags = {
+      "--master_support_1d_array_columns=false",
+  })
+  @Test(timeout = 100000)
+  public void testAddArrayColumnUnsupportedFeatureFlags() throws Exception {
+    try {
+      AlterTableOptions alter = new AlterTableOptions();
+      ColumnSchema col =
+          new ColumnSchema.ColumnSchemaBuilder("int32_arr", Type.INT32)
+              .array(true)
+              .nullable(true)
+              .build();
+      alter.addColumn(col);
+      client.alterTable(TABLE_NAME, alter);
+      fail("should have failed with 'unsupported feature flags' server-side error");
+    } catch (RpcRemoteException e) {
+      assertTrue(e.getMessage().contains("server sent error unsupported feature flags"));
+    }
+  }
+
+  /**
    * Test inserting and retrieving rows from a table that has a range partition
    * with custom hash schema.
    */
