@@ -110,15 +110,15 @@ Status MultiColumnWriter::AppendBlock(const RowBlock& block) {
   DCHECK(open_);
   for (auto i = 0; i < schema_->num_columns(); ++i) {
     ColumnBlock column = block.column_block(i);
-    if (!column.is_nullable()) {
-      RETURN_NOT_OK(cfile_writers_[i]->AppendEntries(column.data(), column.nrows()));
+    if (column.type_info()->is_array()) {
+      RETURN_NOT_OK(cfile_writers_[i]->AppendNullableArrayEntries(
+          column.non_null_bitmap(), column.data(), column.nrows()));
     } else {
-      if (column.type_info()->is_array()) {
-        RETURN_NOT_OK(cfile_writers_[i]->AppendNullableArrayEntries(
-            column.non_null_bitmap(), column.data(), column.nrows()));
-      } else {
+      if (column.is_nullable()) {
         RETURN_NOT_OK(cfile_writers_[i]->AppendNullableEntries(
             column.non_null_bitmap(), column.data(), column.nrows()));
+      } else {
+        RETURN_NOT_OK(cfile_writers_[i]->AppendEntries(column.data(), column.nrows()));
       }
     }
   }
