@@ -266,4 +266,31 @@ public class TestColumnSchema {
     assertEquals(arrayCol.getTypeAttributes(), arrayCopy.getTypeAttributes());
   }
 
+  @Test
+  public void testArrayColumnWithDefaultValue() {
+    Throwable thrown = assertThrows(IllegalArgumentException.class, new ThrowingRunnable() {
+      @Override
+      public void run() throws Exception {
+        new ColumnSchema.ColumnSchemaBuilder("arr_col", Type.INT32)
+            .array(true)
+            .defaultValue(new int[]{1, 2, 3})
+            .build();
+      }
+    });
+    assertTrue(thrown.getMessage().contains("cannot have a default value"));
+  }
+
+  @Test
+  public void testArrayColumnBeingKeyColumn() {
+    Throwable thrown = assertThrows(IllegalArgumentException.class, new ThrowingRunnable() {
+      @Override
+      public void run() throws Exception {
+        new ColumnSchema.ColumnSchemaBuilder("arr_col", Type.INT32)
+            .array(true)
+            .key(true)
+            .build();
+      }
+    });
+    assertTrue(thrown.getMessage().contains("cannot be a key column"));
+  }
 }

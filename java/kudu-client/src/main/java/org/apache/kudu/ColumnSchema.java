@@ -678,6 +678,17 @@ public class ColumnSchema {
             new ColumnSchema.ArrayTypeDescriptor(this.type);
         nestedDesc = ColumnSchema.NestedTypeDescriptor.forArray(arrDesc);
         finalType = Type.NESTED;
+        // Array type columns cannot have default values or be key columns yet
+        if (this.defaultValue != null) {
+          throw new IllegalArgumentException(
+              String.format("Array type column: %s cannot have a default value",
+                  this.name));
+        }
+        if (this.key) {
+          throw new IllegalArgumentException(
+              String.format("Array type column: %s cannot be a key column",
+                  this.name));
+        }
       } else {
         nestedDesc = null;
         finalType = this.type;
