@@ -1240,6 +1240,7 @@ Status CFileIterator::Scan(ColumnMaterializationContext* ctx) {
   // Use views to advance the block and selection vector as we read into them.
   ColumnDataView remaining_dst(ctx->block());
   SelectionVectorView remaining_sel(ctx->sel());
+  const bool is_nullable_column = ctx->block()->is_nullable();
   uint32_t rem = last_prepare_count_;
   DCHECK_LE(rem, ctx->block()->nrows());
 
@@ -1384,7 +1385,11 @@ Status CFileIterator::Scan(ColumnMaterializationContext* ctx) {
             memcpy(dst->data(), &cell_out, sizeof(Slice));
           }
         }
-        dst->SetNonNullBits(1, array_not_null);
+        DCHECK(array_not_null || (!array_not_null && is_nullable_column));
+        if (is_nullable_column) {
+          // Store the non-null bit if it's a nullable column.
+          dst->SetNonNullBits(1, array_not_null);
+        }
         dst->Advance(1);
         remaining_sel.Advance(1);
         pb->idx_in_block_++;
@@ -1393,7 +1398,7 @@ Status CFileIterator::Scan(ColumnMaterializationContext* ctx) {
       }
       DCHECK_LE(cur_flattened_idx, pb->num_flattened_elems_in_block_);
     } else if (reader_->is_nullable()) {
-      DCHECK(ctx->block()->is_nullable());
+      DCHECK(is_nullable_column);
       DCHECK_GE(pb->num_rows_in_block_, pb->idx_in_block_);
 
       ssize_t count = std::min(rem, pb->num_rows_in_block_ - pb->idx_in_block_);
@@ -1451,7 +1456,7 @@ Status CFileIterator::Scan(ColumnMaterializationContext* ctx) {
       DCHECK_LE(this_batch, rem);
 
       // If the column is nullable, set all bits to true
-      if (ctx->block()->is_nullable()) {
+      if (is_nullable_column) {
         remaining_dst.SetNonNullBits(this_batch, true);
       }
 
