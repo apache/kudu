@@ -70,8 +70,6 @@ DEFINE_bool(cfile_support_arrays, true,
             "Support encoding/decoding of arrays in CFile data blocks");
 TAG_FLAG(cfile_support_arrays, experimental);
 
-DECLARE_uint32(array_cell_max_elem_num);
-
 using google::protobuf::RepeatedPtrField;
 using kudu::fs::BlockCreationTransaction;
 using kudu::fs::BlockManager;
@@ -276,12 +274,10 @@ Status CFileWriter::Start() {
     // case of all cells being single element arrays, and also takes into
     // account the possibility of going over the configured size for the
     // CFile block (that's why factor 2 appeared below).
-    const size_t cell_max_elem_num = FLAGS_array_cell_max_elem_num + 1;
     const size_t elem_size = GetArrayElementTypeInfo(*typeinfo_)->size();
     const size_t nrows =
         (2 * options_.storage_attributes.cfile_block_size + elem_size - 1) / elem_size;
-    array_non_null_bitmap_builder_.reset(new NonNullBitmapBuilder(
-        (nrows + cell_max_elem_num - 1) / cell_max_elem_num));
+    array_non_null_bitmap_builder_.reset(new NonNullBitmapBuilder((nrows + 1) / 2));
     non_null_bitmap_builder_.reset(new NonNullBitmapBuilder(nrows));
     array_elem_num_builder_.reset(new ArrayElemNumBuilder(nrows));
   } else if (is_nullable_) {
