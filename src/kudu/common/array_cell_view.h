@@ -35,6 +35,10 @@
 
 namespace kudu {
 
+namespace serdes {
+class ArrayTypeSerdesTest_Basic_Test;
+}
+
 constexpr serdes::ScalarArray KuduToScalarArrayType(DataType data_type) {
   switch (data_type) {
     case INT8:
@@ -100,8 +104,8 @@ class ArrayCellMetadataView final {
     if (size_ == 0) {
       content_ = nullptr;
       elem_num_ = 0;
-      is_initialized_ = true;
       has_nulls_ = false;
+      is_initialized_ = true;
       return Status::OK();
     }
 
@@ -143,6 +147,14 @@ class ArrayCellMetadataView final {
       return Status::IllegalState("null flatbuffers of non-zero size");
     }
 
+    // Short-curciut for the case when no fields are present.
+    if (PREDICT_FALSE(!content_->data() && !content_->validity())) {
+      elem_num_ = 0;
+      has_nulls_ = false;
+      is_initialized_ = true;
+      return Status::OK();
+    }
+
     elem_num_ = GetElemNum();
     const size_t validity_size = content_->validity() ? content_->validity()->size() : 0;
     if (validity_size != 0 && BitmapSize(elem_num_) != validity_size) {
@@ -173,21 +185,22 @@ class ArrayCellMetadataView final {
 
     // Build the metadata on the spans of binary/string elements
     // in the buffer.
+    DCHECK(content_->data());
     if (data_type == serdes::ScalarArray::StringArray) {
-      const auto* values = content_->data_as<serdes::StringArray>()->values();
+      const auto* values = DCHECK_NOTNULL(
+          content_->data_as<serdes::StringArray>())->values();
       binary_data_spans_.reserve(values->size());
-      for (auto cit = values->cbegin(); cit != values->end(); ++cit) {
-        const auto* str = *cit;
-        DCHECK(str);
+      for (auto cit = values->cbegin(); cit != values->cend(); ++cit) {
+        const auto* str = DCHECK_NOTNULL(*cit);
         binary_data_spans_.emplace_back(str->c_str(), str->size());
       }
     } else {
       DCHECK(serdes::ScalarArray::BinaryArray == data_type);
-      const auto* values = content_->data_as<serdes::BinaryArray>()->values();
+      const auto* values = DCHECK_NOTNULL(
+          content_->data_as<serdes::BinaryArray>())->values();
       binary_data_spans_.reserve(values->size());
-      for (auto cit = values->cbegin(); cit != values->end(); ++cit) {
-        const auto* byte_seq = cit->values();
-        DCHECK(byte_seq);
+      for (auto cit = values->cbegin(); cit != values->cend(); ++cit) {
+        const auto* byte_seq = DCHECK_NOTNULL(cit->values());
         binary_data_spans_.emplace_back(byte_seq->Data(), byte_seq->size());
       }
     }
@@ -267,7 +280,7 @@ class ArrayCellMetadataView final {
   }
 
  private:
-  FRIEND_TEST(ArrayTypeSerdesTest, Basic);
+  FRIEND_TEST(serdes::ArrayTypeSerdesTest, Basic);
 
   template<typename T>
   const uint8_t* data() const {
@@ -276,10 +289,10 @@ class ArrayCellMetadataView final {
   }
 
   size_t GetElemNum() const {
-    if (!content_) {
+    if (PREDICT_FALSE(!content_)) {
       return 0;
     }
-    if (!content_->data()) {
+    if (PREDICT_FALSE(!content_->data())) {
       return 0;
     }
     const auto data_type = content_->data_type();
