@@ -31,12 +31,13 @@ import org.apache.flink.connector.kudu.source.split.KuduSourceSplit;
 import org.apache.flink.core.io.SimpleVersionedSerializer;
 
 /**
- * A wrapper around KuduSource that adds metrics support until metrics are implemented
- * in the upstream Flink Kudu connector (FLINK-38187).
+ * A wrapper around KuduSource that adds metrics support and checkpoint race condition fixes.
  * Uses the delegate pattern - all Source methods are delegated to the wrapped KuduSource,
- * except for enumerator creation where we inject our own MetricWrappedKuduEnumerator
- * to collect and expose metrics.
- * TODO(mgreber): remove once FLINK-38187 is resolved.
+ * except for:
+ * - Enumerator creation: injects MetricWrappedKuduEnumerator for metrics and race fix
+ * - Reader creation: wraps with StatelessKuduReaderWrapper to prevent duplicate split assignment
+ *
+ * TODO(mgreber): remove once FLINK-38187 and FLINK-38575 are resolved.
  */
 public class MetricWrappedKuduSource<OUT> implements Source<OUT,
                                                             KuduSourceSplit,
@@ -72,7 +73,8 @@ public class MetricWrappedKuduSource<OUT> implements Source<OUT,
   @Override
   public SourceReader<OUT, KuduSourceSplit> createReader(
           SourceReaderContext readerContext) throws Exception {
-    return delegate.createReader(readerContext);
+    SourceReader<OUT, KuduSourceSplit> reader = delegate.createReader(readerContext);
+    return new StatelessKuduReaderWrapper<>(reader);
   }
 
   @Override

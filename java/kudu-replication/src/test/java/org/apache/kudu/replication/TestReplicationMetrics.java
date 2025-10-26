@@ -106,18 +106,22 @@ public class TestReplicationMetrics extends ReplicationTestBase {
     Map<String, Metric> metrics = reporter.getMetricsByIdentifiers(jobId);
 
     // Verify all expected metrics are present
-    Optional<Gauge<Long>> lastEndTimestamp = findMetric(metrics, "lastEndTimestamp");
-    Optional<Gauge<Integer>> pendingCount = findMetric(metrics, "pendingCount");
-    Optional<Gauge<Integer>> unassignedCount = findMetric(metrics, "unassignedCount");
+    final Optional<Gauge<Long>> lastEndTimestamp = findMetric(metrics, "lastEndTimestamp");
+    final Optional<Gauge<Integer>> pendingCount = findMetric(metrics, "pendingCount");
+    final Optional<Gauge<Integer>> unassignedCount = findMetric(metrics, "unassignedCount");
+    final Optional<Gauge<Integer>> pendingRemovalCount =
+        findMetric(metrics, "pendingRemovalCount");
 
     assertTrue("lastEndTimestamp metric should be present", lastEndTimestamp.isPresent());
     assertTrue("pendingCount metric should be present", pendingCount.isPresent());
     assertTrue("unassignedCount metric should be present", unassignedCount.isPresent());
+    assertTrue("pendingRemovalCount metric should be present", pendingRemovalCount.isPresent());
 
     // Basic sanity checks
     assertNotNull("lastEndTimestamp should have a value", lastEndTimestamp.get().getValue());
     assertNotNull("pendingCount should have a value", pendingCount.get().getValue());
     assertNotNull("unassignedCount should have a value", unassignedCount.get().getValue());
+    assertNotNull("pendingRemovalCount should have a value", pendingRemovalCount.get().getValue());
   }
 
   @Test(timeout = 100000)

@@ -21,6 +21,9 @@ import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.connector.source.Boundedness;
 import org.apache.flink.api.connector.source.Source;
+import org.apache.flink.configuration.CheckpointingOptions;
+import org.apache.flink.configuration.Configuration;
+import org.apache.flink.configuration.RestartStrategyOptions;
 import org.apache.flink.connector.kudu.connector.KuduTableInfo;
 import org.apache.flink.connector.kudu.connector.reader.KuduReaderConfig;
 import org.apache.flink.connector.kudu.connector.writer.KuduWriterConfig;
@@ -29,6 +32,8 @@ import org.apache.flink.connector.kudu.sink.KuduSinkBuilder;
 import org.apache.flink.connector.kudu.source.KuduSource;
 import org.apache.flink.connector.kudu.source.enumerator.KuduSourceEnumeratorState;
 import org.apache.flink.connector.kudu.source.split.KuduSourceSplit;
+import org.apache.flink.streaming.api.CheckpointingMode;
+import org.apache.flink.streaming.api.environment.CheckpointConfig;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.types.Row;
 
@@ -42,13 +47,22 @@ public class ReplicationEnvProvider {
   private final ReplicationJobConfig jobConfig;
   private final KuduReaderConfig readerConfig;
   private final KuduWriterConfig writerConfig;
+  private final boolean enableFailFast;
+
+  ReplicationEnvProvider(ReplicationJobConfig jobConfig,
+                         KuduReaderConfig readerConfig,
+                         KuduWriterConfig writerConfig,
+                         boolean enableFailFast) {
+    this.jobConfig = jobConfig;
+    this.readerConfig = readerConfig;
+    this.writerConfig = writerConfig;
+    this.enableFailFast = enableFailFast;
+  }
 
   ReplicationEnvProvider(ReplicationJobConfig jobConfig,
                          KuduReaderConfig readerConfig,
                          KuduWriterConfig writerConfig) {
-    this.jobConfig = jobConfig;
-    this.readerConfig = readerConfig;
-    this.writerConfig = writerConfig;
+    this(jobConfig, readerConfig, writerConfig, false);
   }
 
   /**
@@ -66,6 +80,26 @@ public class ReplicationEnvProvider {
     }
 
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+
+    env.enableCheckpointing(jobConfig.getCheckpointingIntervalMillis());
+    // Use AT_LEAST_ONCE mode since the replication job uses UPSERT semantics which are
+    // idempotent. This avoids the overhead of checkpoint barrier alignment while still
+    // providing fault tolerance.
+    env.getCheckpointConfig().setCheckpointingMode(CheckpointingMode.AT_LEAST_ONCE);
+    env.getCheckpointConfig().setExternalizedCheckpointCleanup(
+            CheckpointConfig.ExternalizedCheckpointCleanup.RETAIN_ON_CANCELLATION);
+    env.getCheckpointConfig().setMaxConcurrentCheckpoints(1);
+
+    // Configure filesystem-based checkpoint storage for production use.
+    // Checkpoints are required to be persisted to a filesystem path for fault tolerance.
+    Configuration config = new Configuration();
+    config.set(CheckpointingOptions.CHECKPOINT_STORAGE, "filesystem");
+    config.set(CheckpointingOptions.CHECKPOINTS_DIRECTORY, jobConfig.getCheckpointsDirectory());
+    if (enableFailFast) {
+      config.set(RestartStrategyOptions.RESTART_STRATEGY, "disable");
+    }
+    env.configure(config);
+
 
     KuduSource<Row> kuduSource = KuduSource.<Row>builder()
             .setReaderConfig(readerConfig)

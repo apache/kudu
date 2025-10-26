@@ -50,10 +50,15 @@ public class ReplicationConfigParser {
    *   <li>{@code job.tableSuffix} (optional) – suffix to append to the sink table name
    *   (default: empty string)</li>
    *   <li>{@code job.discoveryIntervalSeconds} (optional) – interval in seconds at which the source
-   *   tries to perform a diff scan to get new or changed data (default: 300)</li>
+   *   tries to perform a diff scan to get new or changed data (default: 600)</li>
    *   <li>{@code job.createTable} (optional) – whether to create the sink table if it not exists.
    *   This setting recreates the partition schema that is present on the source side.
    *   (default: false)</li>
+   *   <li>{@code job.checkpointingIntervalMillis} (optional) – interval in milliseconds at which
+   *   Flink takes checkpoints for fault tolerance (default: 60000).
+   *   Must be strictly less than discoveryIntervalSeconds to ensure timestamp progression.</li>
+   *   <li>{@code job.checkpointsDirectory} (required) – filesystem directory path where Flink
+   *   stores checkpoint data for recovery. Required for production fault tolerance.</li>
    * </ul>
    *
    * @param params the Flink {@code ParameterTool} containing command-line parameters
@@ -64,7 +69,8 @@ public class ReplicationConfigParser {
     ReplicationJobConfig.Builder builder = ReplicationJobConfig.builder()
             .setSourceMasterAddresses(params.getRequired("job.sourceMasterAddresses"))
             .setSinkMasterAddresses(params.getRequired("job.sinkMasterAddresses"))
-            .setTableName(params.getRequired("job.tableName"));
+            .setTableName(params.getRequired("job.tableName"))
+            .setCheckpointsDirectory(params.getRequired("job.checkpointsDirectory"));
 
     if (params.has("job.restoreOwner")) {
       builder.setRestoreOwner(params.getBoolean("job.restoreOwner"));
@@ -80,6 +86,10 @@ public class ReplicationConfigParser {
 
     if (params.has("job.createTable")) {
       builder.setCreateTable(params.getBoolean("job.createTable"));
+    }
+
+    if (params.has("job.checkpointingIntervalMillis")) {
+      builder.setCheckpointingIntervalMillis(params.getLong("job.checkpointingIntervalMillis"));
     }
 
     return builder.build();

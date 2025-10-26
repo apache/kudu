@@ -38,6 +38,8 @@ public class ReplicationJobConfig implements Serializable {
   private final String tableSuffix;
   private final long discoveryIntervalSeconds;
   private final boolean createTable;
+  private final long checkpointingIntervalMillis;
+  private final String checkpointsDirectory;
 
   private ReplicationJobConfig(
           String sourceMasterAddresses,
@@ -46,16 +48,21 @@ public class ReplicationJobConfig implements Serializable {
           boolean restoreOwner,
           String tableSuffix,
           long discoveryIntervalSeconds,
-          boolean createTable) {
+          boolean createTable,
+          long checkpointingIntervalMillis,
+          String checkpointsDirectory) {
     this.sourceMasterAddresses = checkNotNull(sourceMasterAddresses,
       "sourceMasterAddresses cannot be null");
     this.sinkMasterAddresses = checkNotNull(sinkMasterAddresses,
       "sinkMasterAddresses cannot be null");
     this.tableName = checkNotNull(tableName, "tableName cannot be null");
+    this.checkpointsDirectory = checkNotNull(checkpointsDirectory,
+      "checkpointsDirectory cannot be null - filesystem checkpoint storage is required");
     this.restoreOwner = restoreOwner;
     this.tableSuffix = tableSuffix != null ? tableSuffix : "";
     this.discoveryIntervalSeconds = discoveryIntervalSeconds;
     this.createTable = createTable;
+    this.checkpointingIntervalMillis = checkpointingIntervalMillis;
   }
 
   public String getSourceMasterAddresses() {
@@ -90,6 +97,14 @@ public class ReplicationJobConfig implements Serializable {
     return tableName + tableSuffix;
   }
 
+  public long getCheckpointingIntervalMillis() {
+    return checkpointingIntervalMillis;
+  }
+
+  public String getCheckpointsDirectory() {
+    return checkpointsDirectory;
+  }
+
   public static Builder builder() {
     return new Builder();
   }
@@ -103,9 +118,14 @@ public class ReplicationJobConfig implements Serializable {
     private boolean restoreOwner = false;
     // By default, there is no tableSuffix for the replicated table.
     private String tableSuffix = "";
-    // The default discover interval is 5 minutes.
-    private long discoveryIntervalSeconds = 5 * 60;
+    // The default discovery interval is 10 minutes.
+    private long discoveryIntervalSeconds = 10 * 60;
     private boolean createTable = false;
+    // The default checkpointing interval is 1 minute.
+    // This ensures checkpoints complete frequently enough to advance lastEndTimestamp and
+    // keep diff scan windows small (typically ~1 minute of data per discovery cycle).
+    private long checkpointingIntervalMillis = 60 * 1000;
+    private String checkpointsDirectory;
 
     public Builder setSourceMasterAddresses(String sourceMasterAddresses) {
       this.sourceMasterAddresses = sourceMasterAddresses;
@@ -142,7 +162,33 @@ public class ReplicationJobConfig implements Serializable {
       return this;
     }
 
+    public Builder setCheckpointingIntervalMillis(long checkpointingIntervalMillis) {
+      this.checkpointingIntervalMillis = checkpointingIntervalMillis;
+      return this;
+    }
+
+    public Builder setCheckpointsDirectory(String checkpointsDirectory) {
+      this.checkpointsDirectory = checkpointsDirectory;
+      return this;
+    }
+
     public ReplicationJobConfig build() {
+      // Validate: checkpointing interval must be < discovery interval
+      // The enumerator advances lastEndTimestamp (which defines the diff scan window)
+      // only after a checkpoint completes. Discovery cycles are triggered periodically
+      // at the discovery interval. If checkpoint interval >= discovery interval, there's
+      // a risk that discovery cycles will attempt to enumerate splits before the timestamp
+      // advances, causing redundant scans of the same time range.
+      long discoveryIntervalMillis = discoveryIntervalSeconds * 1000;
+      if (checkpointingIntervalMillis >= discoveryIntervalMillis) {
+        throw new IllegalArgumentException(String.format(
+            "Checkpointing interval (%d ms) must be < discovery interval (%d ms). " +
+            "Timestamp advancement happens after checkpoint completion, so checkpoint " +
+            "interval must be shorter to ensure the timestamp advances before the next " +
+            "discovery cycle.",
+            checkpointingIntervalMillis, discoveryIntervalMillis));
+      }
+
       return new ReplicationJobConfig(
               sourceMasterAddresses,
               sinkMasterAddresses,
@@ -150,7 +196,9 @@ public class ReplicationJobConfig implements Serializable {
               restoreOwner,
               tableSuffix,
               discoveryIntervalSeconds,
-              createTable);
+              createTable,
+              checkpointingIntervalMillis,
+              checkpointsDirectory);
     }
   }
 

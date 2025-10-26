@@ -19,13 +19,25 @@ import static org.apache.kudu.test.ClientTestUtil.getAllTypesCreateTableOptions;
 import static org.apache.kudu.test.ClientTestUtil.getPartialRowWithAllTypes;
 import static org.apache.kudu.test.ClientTestUtil.getSchemaWithAllTypes;
 
+import java.io.File;
+import java.nio.file.Path;
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
+import org.apache.flink.api.common.JobID;
+import org.apache.flink.api.common.JobStatus;
+import org.apache.flink.client.program.ClusterClient;
 import org.apache.flink.connector.kudu.connector.reader.KuduReaderConfig;
 import org.apache.flink.connector.kudu.connector.writer.KuduWriterConfig;
 import org.junit.Before;
 import org.junit.Rule;
+import org.junit.rules.TemporaryFolder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.apache.kudu.Schema;
 import org.apache.kudu.client.CreateTableOptions;
@@ -40,21 +52,30 @@ import org.apache.kudu.client.RowResultIterator;
 import org.apache.kudu.test.KuduTestHarness;
 
 public class ReplicationTestBase {
+  protected static final Logger LOG = LoggerFactory.getLogger(ReplicationTestBase.class);
   protected static final String TABLE_NAME = "replication_test_table";
+  protected static final int DEFAULT_DISCOVERY_INTERVAL_SECONDS = 2;
+  protected static final int DEFAULT_CHECKPOINTING_INTERVAL_MILLIS = 500;
+  protected static final String CHECKPOINT_DIR_PREFIX = "chk-";
+  protected static final String CHECKPOINT_METADATA_FILE = "_metadata";
 
   @Rule
   public final KuduTestHarness sourceHarness = new KuduTestHarness();
   @Rule
   public final KuduTestHarness sinkHarness = new KuduTestHarness();
+  @Rule
+  public final TemporaryFolder tempFolder = new TemporaryFolder();
 
   protected KuduClient sourceClient;
   protected KuduClient sinkClient;
   protected ReplicationEnvProvider envProvider;
+  protected Path checkpointDir;
 
   @Before
-  public void setupClientsAndEnvProvider() {
+  public void setupClientsAndEnvProvider() throws Exception {
     this.sourceClient = sourceHarness.getClient();
     this.sinkClient = sinkHarness.getClient();
+    this.checkpointDir = tempFolder.newFolder("checkpoints").toPath();
     this.envProvider = new ReplicationEnvProvider(
             createDefaultJobConfig(),
             createDefaultReaderConfig(),
@@ -62,28 +83,30 @@ public class ReplicationTestBase {
   }
 
 
-  protected ReplicationJobConfig createDefaultJobConfig() {
-    ReplicationJobConfig jobConfig = ReplicationJobConfig.builder()
+  protected ReplicationJobConfig.Builder createDefaultJobConfigBuilder() {
+    return ReplicationJobConfig.builder()
             .setSourceMasterAddresses(sourceHarness.getMasterAddressesAsString())
             .setSinkMasterAddresses(sinkHarness.getMasterAddressesAsString())
             .setTableName(TABLE_NAME)
-            .setDiscoveryIntervalSeconds(2)
-            .build();
-    return jobConfig;
+            .setDiscoveryIntervalSeconds(DEFAULT_DISCOVERY_INTERVAL_SECONDS)
+            .setCheckpointingIntervalMillis(DEFAULT_CHECKPOINTING_INTERVAL_MILLIS)
+            .setCheckpointsDirectory(checkpointDir.toUri().toString());
+  }
+
+  protected ReplicationJobConfig createDefaultJobConfig() {
+    return createDefaultJobConfigBuilder().build();
   }
 
   protected KuduReaderConfig createDefaultReaderConfig() {
-    KuduReaderConfig readerConfig = KuduReaderConfig.Builder
+    return KuduReaderConfig.Builder
             .setMasters(sourceHarness.getMasterAddressesAsString())
             .build();
-    return readerConfig;
   }
 
   protected KuduWriterConfig createDefaultWriterConfig() {
-    KuduWriterConfig writerConfig = KuduWriterConfig.Builder
+    return KuduWriterConfig.Builder
             .setMasters(sinkHarness.getMasterAddressesAsString())
             .build();
-    return writerConfig;
   }
 
   protected void createAllTypesTable(KuduClient client) throws Exception {
@@ -157,5 +180,105 @@ public class ReplicationTestBase {
                 "\nSink:   " + valB);
       }
     }
+  }
+
+  protected Path findLatestCheckpoint(Path checkpointDir, JobID jobId) {
+    File jobCheckpointDir = checkpointDir.resolve(jobId.toString()).toFile();
+    if (!jobCheckpointDir.exists() || !jobCheckpointDir.isDirectory()) {
+      throw new AssertionError("Job checkpoint directory not found: " + jobCheckpointDir);
+    }
+
+    File[] checkpoints = jobCheckpointDir.listFiles(
+        f -> f.isDirectory() && f.getName().startsWith(CHECKPOINT_DIR_PREFIX));
+
+    if (checkpoints == null || checkpoints.length == 0) {
+      throw new AssertionError("No checkpoints found in " + jobCheckpointDir);
+    }
+
+    List<File> complete = Arrays.stream(checkpoints)
+        .filter(dir -> new File(dir, CHECKPOINT_METADATA_FILE).isFile())
+        .sorted(Comparator.comparing(File::getName).reversed())
+        .collect(Collectors.toList());
+
+    if (complete.isEmpty()) {
+      throw new AssertionError("No complete checkpoints (with " + CHECKPOINT_METADATA_FILE +
+          ") found in " + jobCheckpointDir);
+    }
+
+    return complete.get(0).toPath();
+  }
+
+  protected void waitForCheckpointCompletion(Path checkpointDir, JobID jobId, long timeoutMillis)
+      throws Exception {
+    if (timeoutMillis < DEFAULT_CHECKPOINTING_INTERVAL_MILLIS) {
+      throw new IllegalArgumentException(
+          "Timeout (" + timeoutMillis + "ms) must be at least " +
+          DEFAULT_CHECKPOINTING_INTERVAL_MILLIS + "ms");
+    }
+    long startTime = System.currentTimeMillis();
+    long endTime = startTime + timeoutMillis;
+
+    Path jobCheckpointDir = checkpointDir.resolve(jobId.toString());
+
+    while (System.currentTimeMillis() < endTime) {
+      if (hasCompleteCheckpoint(jobCheckpointDir.toFile())) {
+        LOG.debug("Checkpoint detected for job {} in {}", jobId, jobCheckpointDir);
+        return;
+      }
+      Thread.sleep(DEFAULT_CHECKPOINTING_INTERVAL_MILLIS);
+    }
+
+    throw new AssertionError(
+        "No complete checkpoint found for job " + jobId + " in directory " + jobCheckpointDir +
+            " after " + timeoutMillis + "ms");
+  }
+
+  protected boolean hasCompleteCheckpoint(File dir) {
+    if (dir == null || !dir.exists() || !dir.isDirectory()) {
+      return false;
+    }
+
+    File[] files = dir.listFiles();
+    if (files == null) {
+      return false;
+    }
+
+    for (File file : files) {
+      if (file.getName().startsWith(CHECKPOINT_DIR_PREFIX) && file.isDirectory()) {
+        File metadata = new File(file, CHECKPOINT_METADATA_FILE);
+        if (metadata.exists() && metadata.isFile()) {
+          return true;
+        }
+      }
+      if (file.isDirectory() && !file.getName().equals("shared") &&
+              !file.getName().equals("taskowned")) {
+        if (hasCompleteCheckpoint(file)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  protected void waitForJobTermination(JobID jobId, ClusterClient<?> client, long timeoutMillis)
+      throws Exception {
+    if (timeoutMillis < 100) {
+      throw new IllegalArgumentException(
+          "Timeout (" + timeoutMillis + "ms) must be at least 100ms");
+    }
+    long startTime = System.currentTimeMillis();
+    long endTime = startTime + timeoutMillis;
+
+    while (System.currentTimeMillis() < endTime) {
+      JobStatus status = client.getJobStatus(jobId).get();
+      if (status.isGloballyTerminalState()) {
+        LOG.debug("Job {} terminated with status: {}", jobId, status);
+        return;
+      }
+      Thread.sleep(100);
+    }
+
+    throw new AssertionError("Job " + jobId + " did not terminate within " +
+        timeoutMillis + "ms");
   }
 }

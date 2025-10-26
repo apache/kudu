@@ -47,11 +47,7 @@ public class TestReplicationTableInitializer extends ReplicationTestBase {
 
   @Override
   protected ReplicationJobConfig createDefaultJobConfig() {
-    return ReplicationJobConfig.builder()
-            .setSourceMasterAddresses(sourceHarness.getMasterAddressesAsString())
-            .setSinkMasterAddresses(sinkHarness.getMasterAddressesAsString())
-            .setTableName(TABLE_NAME)
-            .setDiscoveryIntervalSeconds(2)
+    return createDefaultJobConfigBuilder()
             .setCreateTable(true)
             .build();
   }

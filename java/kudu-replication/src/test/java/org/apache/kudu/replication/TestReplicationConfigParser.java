@@ -70,11 +70,26 @@ public class TestReplicationConfigParser {
   }
 
   @Test
-  public void testJobConfigAllRequiredParamsPresent() {
+  public void testJobConfigMissingCheckpointsDirectoryThrows() {
     String[] args = {
         "--job.sourceMasterAddresses", "source1:7051",
         "--job.sinkMasterAddresses", "sink1:7051",
         "--job.tableName", "my_table"
+    };
+    ParameterTool params = ParameterTool.fromArgs(args);
+
+    assertThatThrownBy(() -> ReplicationConfigParser.parseJobConfig(params))
+            .isInstanceOf(RuntimeException.class)
+            .hasMessageContaining("No data for required key 'job.checkpointsDirectory'");
+  }
+
+  @Test
+  public void testJobConfigAllRequiredParamsPresent() {
+    String[] args = {
+        "--job.sourceMasterAddresses", "source1:7051",
+        "--job.sinkMasterAddresses", "sink1:7051",
+        "--job.tableName", "my_table",
+        "--job.checkpointsDirectory", "file:///tmp/checkpoints"
     };
 
     ParameterTool params = ParameterTool.fromArgs(args);
@@ -86,8 +101,82 @@ public class TestReplicationConfigParser {
     // The default value for restoreOwner is False.
     assertFalse(config.getRestoreOwner());
     assertEquals("", config.getTableSuffix());
-    // The default value for the discovery interval is 300.
-    assertEquals(300, config.getDiscoveryIntervalSeconds());
+    // The default value for the discovery interval is 600 seconds (10 minutes).
+    assertEquals(600, config.getDiscoveryIntervalSeconds());
+    // The default checkpoint interval is 60000 ms (1 minute).
+    assertEquals(60000, config.getCheckpointingIntervalMillis());
+  }
+
+  @Test
+  public void testJobConfigCheckpointingParams() {
+    String[] args = {
+        "--job.sourceMasterAddresses", "source1:7051",
+        "--job.sinkMasterAddresses", "sink1:7051",
+        "--job.tableName", "my_table",
+        "--job.checkpointingIntervalMillis", "120000",
+        "--job.discoveryIntervalSeconds", "150",
+        "--job.checkpointsDirectory", "file:///tmp/checkpoints"
+    };
+
+    ParameterTool params = ParameterTool.fromArgs(args);
+    ReplicationJobConfig config = ReplicationConfigParser.parseJobConfig(params);
+
+    assertEquals(120000, config.getCheckpointingIntervalMillis());
+    assertEquals("file:///tmp/checkpoints", config.getCheckpointsDirectory());
+  }
+
+  @Test
+  public void testJobConfigCheckpointIntervalGreaterThanDiscoveryThrows() {
+    String[] args = {
+        "--job.sourceMasterAddresses", "source1:7051",
+        "--job.sinkMasterAddresses", "sink1:7051",
+        "--job.tableName", "my_table",
+        "--job.checkpointsDirectory", "file:///tmp/checkpoints",
+        "--job.checkpointingIntervalMillis", "120000",
+        "--job.discoveryIntervalSeconds", "60"
+    };
+    ParameterTool params = ParameterTool.fromArgs(args);
+
+    assertThatThrownBy(() -> ReplicationConfigParser.parseJobConfig(params))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageMatching(
+            "Checkpointing interval \\(\\d+ ms\\) must be < discovery interval \\(\\d+ ms\\).*");
+  }
+
+  @Test
+  public void testJobConfigCheckpointIntervalEqualToDiscoveryThrows() {
+    String[] args = {
+        "--job.sourceMasterAddresses", "source1:7051",
+        "--job.sinkMasterAddresses", "sink1:7051",
+        "--job.tableName", "my_table",
+        "--job.checkpointsDirectory", "file:///tmp/checkpoints",
+        "--job.checkpointingIntervalMillis", "60000",
+        "--job.discoveryIntervalSeconds", "60"
+    };
+    ParameterTool params = ParameterTool.fromArgs(args);
+
+    assertThatThrownBy(() -> ReplicationConfigParser.parseJobConfig(params))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageMatching(
+            "Checkpointing interval \\(\\d+ ms\\) must be < discovery interval \\(\\d+ ms\\).*");
+  }
+
+  @Test
+  public void testJobConfigCheckpointIntervalLessThanDiscoveryAllowed() {
+    String[] args = {
+        "--job.sourceMasterAddresses", "source1:7051",
+        "--job.sinkMasterAddresses", "sink1:7051",
+        "--job.tableName", "my_table",
+        "--job.checkpointsDirectory", "file:///tmp/checkpoints",
+        "--job.checkpointingIntervalMillis", "30000",
+        "--job.discoveryIntervalSeconds", "60"
+    };
+    ParameterTool params = ParameterTool.fromArgs(args);
+    ReplicationJobConfig config = ReplicationConfigParser.parseJobConfig(params);
+
+    assertNotNull(config);
+    assertEquals(30000, config.getCheckpointingIntervalMillis());
+    assertEquals(60, config.getDiscoveryIntervalSeconds());
   }
 
   @Test
