@@ -44,7 +44,7 @@ import org.apache.kudu.Type;
 import org.apache.kudu.test.KuduTestHarness;
 
 public class TestFlexiblePartitioning {
-  private static final Logger LOG = LoggerFactory.getLogger(TestKuduClient.class);
+  private static final Logger LOG = LoggerFactory.getLogger(TestFlexiblePartitioning.class);
   private String tableName;
 
   private KuduClient client;

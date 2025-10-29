@@ -62,7 +62,7 @@ public class TestAlterTable {
   @Before
   public void setUp() {
     client = harness.getClient();
-    tableName = TestKuduClient.class.getName() + "-" + System.currentTimeMillis();
+    tableName = TestAlterTable.class.getName() + "-" + System.currentTimeMillis();
   }
 
   /**

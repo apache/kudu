@@ -59,7 +59,7 @@ import org.apache.kudu.test.cluster.KuduBinaryLocator;
 import org.apache.kudu.test.cluster.MiniKuduCluster;
 
 public class TestScanToken {
-  private static final Logger LOG = LoggerFactory.getLogger(TestKuduClient.class);
+  private static final Logger LOG = LoggerFactory.getLogger(TestScanToken.class);
 
   private static final String testTableName = "TestScanToken";
 
