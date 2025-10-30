@@ -16,6 +16,8 @@
 // under the License.
 #pragma once
 
+#include <netdb.h>
+
 #include <algorithm>
 #include <atomic>
 #include <memory>
@@ -85,6 +87,20 @@ using kudu::rpc_test::WhoAmIRequestPB;
 using kudu::rpc_test::WhoAmIResponsePB;
 using kudu::rpc_test_diff_package::ReqDiffPackagePB;
 using kudu::rpc_test_diff_package::RespDiffPackagePB;
+
+// If host has no DNS record for a specific ip_config_mode, skip the test.
+// This helps avoid scenarios where getaddrinfo might return error for a
+// 'hostname' that resolves to only ipv4 address with desired family set
+// to ipv6 or the other way around.
+#define SKIP_IF_HOSTNAME_RESOLUTION_FAILURE_EXPECTED() \
+  do { \
+    string host; \
+    Status s = GetFQDN(&host); \
+    if (s.IsNetworkError() && s.posix_code() == EAI_NONAME) { \
+      GTEST_SKIP() << "GetFQDN() failed for this host. Skipping test."; \
+    } \
+  } while (false)
+
 
 namespace kudu {
 namespace rpc {

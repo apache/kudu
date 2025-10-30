@@ -145,7 +145,7 @@ Status GetAddrInfo(const string& hostname,
   if (rc == EAI_SYSTEM) {
     return Status::NetworkError(err_msg, ErrnoToString(err), err);
   }
-  return Status::NetworkError(err_msg, gai_strerror(rc));
+  return Status::NetworkError(err_msg, gai_strerror(rc), rc);
 }
 
 // Converts the given Sockaddr into a HostPort, substituting the FQDN

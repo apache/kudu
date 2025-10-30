@@ -26,6 +26,7 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/master/master.h"
 #include "kudu/master/mini_master.h"
+#include "kudu/rpc/rpc-test-base.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/status.h"
@@ -37,14 +38,18 @@ DECLARE_string(ip_config_mode);
 namespace kudu {
 namespace master {
 
+using std::string;
 using std::unique_ptr;
 
 class MiniMasterTest : public KuduTest,
-                       public ::testing::WithParamInterface<std::string> {
- protected:
-  static std::string get_host() {
-    IPMode mode;
+                       public ::testing::WithParamInterface<string> {
+ public:
+  MiniMasterTest() {
     FLAGS_ip_config_mode = GetParam();
+  }
+ protected:
+  static string get_host() {
+    IPMode mode;
     CHECK_OK(ParseIPModeFlag(FLAGS_ip_config_mode, &mode));
     switch (mode) {
       case IPMode::IPV6:
@@ -62,6 +67,7 @@ INSTANTIATE_TEST_SUITE_P(Parameters, MiniMasterTest,
                          testing::Values("ipv4", "ipv6", "dual"));
 
 TEST_P(MiniMasterTest, TestMultiDirMaster) {
+  SKIP_IF_HOSTNAME_RESOLUTION_FAILURE_EXPECTED();
   // Specifying the number of data directories will create subdirectories under the test root.
   unique_ptr<MiniMaster> mini_master;
   FsManager* fs_manager;
