@@ -1,0 +1,49 @@
+From 72c38871673f34ef22c66b8fcb9292812272a961 Mon Sep 17 00:00:00 2001
+From: Jay Huh <jewoongh@meta.com>
+Date: Mon, 28 Apr 2025 13:35:48 -0700
+Subject: [PATCH] Fix build (#13579)
+
+Summary:
+- [Failed CI run](https://productionresultssa17.blob.core.windows.net/actions-results/fd083599-6c98-4aec-8732-fcb280c96021/workflow-job-run-2f73efd7-c93d-53ea-a18f-1c7e17604f7e/logs/job/job-logs.txt?rsct=text%2Fplain&se=2025-04-28T17%3A15%3A01Z&sig=YJevYF5xH4RClY3klBe6Z3tnCWuYZFLlBYRHwftW9lc%3D&ske=2025-04-29T01%3A55%3A36Z&skoid=ca7593d4-ee42-46cd-af88-8b886a2f84eb&sks=b&skt=2025-04-28T13%3A55%3A36Z&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skv=2025-01-05&sp=r&spr=https&sr=b&st=2025-04-28T17%3A04%3A56Z&sv=2025-01-05)
+
+```
+2025-04-28T16:56:00.5775476Z In file included from <stdin>:1:
+2025-04-28T16:56:00.5776056Z db/blob/blob_file_meta.h:28:7: error: 'uint64_t' has not been declared
+2025-04-28T16:56:00.5776715Z    28 |       uint64_t blob_file_number, uint64_t total_blob_count,
+2025-04-28T16:56:00.5777153Z       |       ^~~~~~~~
+2025-04-28T16:56:00.5778083Z db/blob/blob_file_meta.h:15:1: note: 'uint64_t' is defined in header '<cstdint>'; this is probably fixable by adding '#include <cstdint>'
+2025-04-28T16:56:00.5779293Z    14 | #include "rocksdb/rocksdb_namespace.h"
+2025-04-28T16:56:00.5782126Z   +++ |+#include <cstdint>
+2025-04-28T16:56:00.5782780Z    15 |
+2025-04-28T16:56:00.5783204Z db/blob/blob_file_meta.h:28:34: error: 'uint64_t' has not been declared
+2025-04-28T16:56:00.5783832Z    28 |       uint64_t blob_file_number, uint64_t total_blob_count,
+2025-04-28T16:56:00.5784301Z       |                                  ^~~~~~~~
+```
+
+Pull Request resolved: https://github.com/facebook/rocksdb/pull/13579
+
+Test Plan: [CI](https://github.com/facebook/rocksdb/actions/runs/14713618495/job/41291839382?pr=13579)
+
+Reviewed By: archang19, cbi42
+
+Differential Revision: D73799590
+
+Pulled By: jaykorean
+
+fbshipit-source-id: 7ead97914c05958bb7146f1934c48615599bc4f8
+---
+ db/blob/blob_file_meta.h | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/db/blob/blob_file_meta.h b/db/blob/blob_file_meta.h
+index d7c8a124336d..2e47726f8d11 100644
+--- a/db/blob/blob_file_meta.h
++++ b/db/blob/blob_file_meta.h
+@@ -6,6 +6,7 @@
+ #pragma once
+ 
+ #include <cassert>
++#include <cstdint>
+ #include <iosfwd>
+ #include <memory>
+ #include <string>

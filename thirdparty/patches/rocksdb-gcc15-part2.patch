@@ -1,0 +1,35 @@
+From 58420b7c60c4541ea5d91bb895cc7f9d535ebff9 Mon Sep 17 00:00:00 2001
+From: Jiffin Tony Thottan <thottanjiffin@gmail.com>
+Date: Fri, 13 Jun 2025 09:47:52 -0700
+Subject: [PATCH] include cstdint to trace_record.h (#13651)
+
+Summary:
+There are compilation errors on gcc 15 in fedora 42 while compiling ceph.
+
+This is similar to PR https://github.com/facebook/rocksdb/issues/13573.
+
+Pull Request resolved: https://github.com/facebook/rocksdb/pull/13651
+
+Reviewed By: jaykorean
+
+Differential Revision: D76062855
+
+Pulled By: cbi42
+
+fbshipit-source-id: d213debbda39fdfac01641daa567687fc104d260
+---
+ include/rocksdb/trace_record.h | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/include/rocksdb/trace_record.h b/include/rocksdb/trace_record.h
+index 8f9c3ee2f0f5..d321f538745d 100644
+--- a/include/rocksdb/trace_record.h
++++ b/include/rocksdb/trace_record.h
+@@ -5,6 +5,7 @@
+ 
+ #pragma once
+ 
++#include <cstdint>
+ #include <memory>
+ #include <string>
+ #include <vector>

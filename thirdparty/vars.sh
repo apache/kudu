@@ -386,7 +386,7 @@ LIBUNWIND_PATCHES=(
 # The include-what-you-use is built along with LLVM in its source tree.
 IWYU_VERSION=0.15
 LLVM_VERSION=11.0.0
-LLVM_PATCHLEVEL=11
+LLVM_PATCHLEVEL=12
 LLVM_NAME=llvm-$LLVM_VERSION.src
 LLVM_SOURCE=$TP_SOURCE_DIR/$LLVM_NAME
 LLVM_ARCHIVE=llvm-$LLVM_VERSION-iwyu-$IWYU_VERSION.src.tar.gz
@@ -408,6 +408,7 @@ LLVM_PATCHES=(
  "patch -p1 < $TP_DIR/patches/llvm-chrono-duration-01.patch"
  "patch -p1 < $TP_DIR/patches/llvm-section-mm-memory-mapper.patch"
  "patch -p1 < $TP_DIR/patches/llvm-section-mm-extra-methods.patch"
+ "patch -p2 < $TP_DIR/patches/llvm-gcc15-fix-missing-cstdint-include.patch"
 )
 
 # All libcxxabi's variables are pointing to LLVM's: libcxxabi is built
@@ -554,10 +555,13 @@ HADOOP_ANY_ARCH=1
 HADOOP_ANY_OS=1
 
 YAML_VERSION=0.8.0
-YAML_PATCHLEVEL=0
+YAML_PATCHLEVEL=1
 YAML_NAME=yaml-cpp-yaml-cpp-$YAML_VERSION
 YAML_SOURCE=$TP_SOURCE_DIR/$YAML_NAME
 YAML_ARCHIVE=$YAML_NAME.tar.gz
+YAML_PATCHES=(
+ "patch -p1 < $TP_DIR/patches/yaml-fix-missing-cstdint-for-GCC15.patch"
+)
 
 CHRONY_VERSION=4.6.1
 CHRONY_PATCHLEVEL=1
@@ -655,12 +659,15 @@ JWT_CPP_ANY_ARCH=1
 JWT_CPP_ANY_OS=1
 
 ROCKSDB_VERSION=7.7.3
-ROCKSDB_PATCHLEVEL=1
+ROCKSDB_PATCHLEVEL=2
 ROCKSDB_NAME=rocksdb-$ROCKSDB_VERSION
 ROCKSDB_SOURCE=$TP_SOURCE_DIR/$ROCKSDB_NAME
 ROCKSDB_ARCHIVE=$ROCKSDB_NAME.tar.gz
 ROCKSDB_PATCHES=(
  "patch -p1 < $TP_DIR/patches/rocksdb-gcc13.patch"
+ "patch -p1 < $TP_DIR/patches/rocksdb-gcc15-part1.patch"
+ "patch -p1 < $TP_DIR/patches/rocksdb-gcc15-part2.patch"
+ "patch -p1 < $TP_DIR/patches/rocksdb-gcc15-part3.patch"
 )
 
 # Prometheus is downloaded as a prebuilt binary from the S3 bucket.

@@ -1,0 +1,25 @@
+From b0b89f2dfc4524858c3837a579fe895e671c32c9 Mon Sep 17 00:00:00 2001
+From: Joe McDonnell <joemcdonnell@cloudera.com>
+Date: Wed, 26 Aug 2026 23:02:49 -0700
+Subject: [PATCH] Fix GCC15 compilation by adding cstdint include to
+ checkpoint.h
+
+This is a manual patch, because there isn't an upstream patch
+containing only this fix. In upstream, the cstdint header came
+in via a patch containing other functionality.
+---
+ include/rocksdb/utilities/checkpoint.h | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/include/rocksdb/utilities/checkpoint.h b/include/rocksdb/utilities/checkpoint.h
+index 7fb9d489a..f7b4e6f03 100644
+--- a/include/rocksdb/utilities/checkpoint.h
++++ b/include/rocksdb/utilities/checkpoint.h
+@@ -8,6 +8,7 @@
+ #pragma once
+ #ifndef ROCKSDB_LITE
+ 
++#include <cstdint>
+ #include <string>
+ #include <vector>
+ #include "rocksdb/status.h"

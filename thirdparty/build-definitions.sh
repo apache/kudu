@@ -1227,7 +1227,7 @@ build_postgres() {
   #
   # [1] https://stackoverflow.com/questions/70931415/
   # [2] https://stackoverflow.com/questions/38058041/
-  CFLAGS="$EXTRA_CFLAGS" \
+  CFLAGS="$EXTRA_CFLAGS -std=c17" \
     LDFLAGS="$EXTRA_LDFLAGS" \
     $POSTGRES_SOURCE/configure \
     --prefix=$PREFIX \
