@@ -102,6 +102,15 @@ Pattern Example:
 $ ./gradlew test --tests *IT*
 ----
 
+If it's desirable to manipulate the log stream produced by a test (e.g.,
+redirecting the log stream into a file while teeing into the stdout as well),
+add the `-DshowTestOutput` flag:
+
+[source,bash]
+----
+$ ./gradlew -DshowTestOutput :kudu-client:test
+----
+
 == Additional Gradle Commands
 
 === Discovering Other Gradle Tasks
