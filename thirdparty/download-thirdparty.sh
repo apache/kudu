@@ -336,7 +336,7 @@ fetch_and_patch \
  $PYTHON_SOURCE \
  $PYTHON_PATCHLEVEL
 
-LLVM_PATCHLEVEL=10
+LLVM_PATCHLEVEL=11
 fetch_and_patch \
  llvm-${LLVM_VERSION}-iwyu-${IWYU_VERSION}.src.tar.gz \
  $LLVM_SOURCE \
@@ -357,7 +357,8 @@ fetch_and_patch \
  "patch -p1 < $TP_DIR/patches/llvm-chrono-duration-00.patch" \
  "patch -p1 < $TP_DIR/patches/llvm-chrono-duration-01.patch" \
  "patch -p1 < $TP_DIR/patches/llvm-section-mm-memory-mapper.patch" \
- "patch -p1 < $TP_DIR/patches/llvm-section-mm-extra-methods.patch"
+ "patch -p1 < $TP_DIR/patches/llvm-section-mm-extra-methods.patch" \
+ "patch -p2 < $TP_DIR/patches/llvm-gcc15-fix-missing-cstdint-include.patch"
 
 LZ4_PATCHLEVEL=0
 fetch_and_patch \
@@ -438,11 +439,12 @@ fetch_and_patch \
  $HADOOP_SOURCE \
  $HADOOP_PATCHLEVEL
 
-YAML_PATCHLEVEL=0
+YAML_PATCHLEVEL=1
 fetch_and_patch \
  $YAML_NAME.tar.gz \
  $YAML_SOURCE \
- $YAML_PATCHLEVEL
+ $YAML_PATCHLEVEL \
+ "patch -p1 < $TP_DIR/patches/yaml-fix-missing-cstdint-for-GCC15.patch"
 
 CHRONY_PATCHLEVEL=1
 fetch_and_patch \
@@ -515,12 +517,15 @@ fetch_and_patch \
  $RANGER_KMS_SOURCE \
  $RANGER_KMS_PATCHLEVEL
 
-ROCKSDB_PATCHLEVEL=1
+ROCKSDB_PATCHLEVEL=2
 fetch_and_patch \
  $ROCKSDB_NAME.tar.gz \
  $ROCKSDB_SOURCE \
  $ROCKSDB_PATCHLEVEL \
- "patch -p1 < $TP_DIR/patches/rocksdb-gcc13.patch"
+ "patch -p1 < $TP_DIR/patches/rocksdb-gcc13.patch" \
+ "patch -p1 < $TP_DIR/patches/rocksdb-gcc15-part1.patch" \
+ "patch -p1 < $TP_DIR/patches/rocksdb-gcc15-part2.patch" \
+ "patch -p1 < $TP_DIR/patches/rocksdb-gcc15-part3.patch"
 
 echo "---------------"
 echo "Thirdparty dependencies downloaded successfully"

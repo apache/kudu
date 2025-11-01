@@ -1,0 +1,31 @@
+From 7abf44069aec61eee147ca67a6333fc34583b524 Mon Sep 17 00:00:00 2001
+From: Stephan Hageboeck <stephan.hageboeck@cern.ch>
+Date: Mon, 20 Jan 2025 17:52:47 +0100
+Subject: [PATCH] Add missing include to X86MCTargetDesc.h (#123320)
+
+In gcc-15, explicit includes of `<cstdint>` are required when fixed-size
+integers are used. In this file, this include only happened as a side
+effect of including SmallVector.h
+
+Although llvm compiles fine, the root-project would benefit from
+explicitly including it here, so we can backport the patch.
+
+Maybe interesting for @hahnjo and @vgvassilev
+
+Backport Note: Adjusted to match LLVM 11 surrounding code
+---
+ llvm/lib/Target/X86/MCTargetDesc/X86MCTargetDesc.h | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/llvm/lib/Target/X86/MCTargetDesc/X86MCTargetDesc.h b/llvm/lib/Target/X86/MCTargetDesc/X86MCTargetDesc.h
+index e166b68668d9b..0e0e13e896aea 100644
+--- a/llvm/lib/Target/X86/MCTargetDesc/X86MCTargetDesc.h
++++ b/llvm/lib/Target/X86/MCTargetDesc/X86MCTargetDesc.h
+@@ -14,6 +14,7 @@
+ #ifndef LLVM_LIB_TARGET_X86_MCTARGETDESC_X86MCTARGETDESC_H
+ #define LLVM_LIB_TARGET_X86_MCTARGETDESC_X86MCTARGETDESC_H
+ 
++#include <cstdint>
+ #include <memory>
+ #include <string>
+ 

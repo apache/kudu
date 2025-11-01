@@ -1188,7 +1188,7 @@ build_postgres() {
   pushd $POSTGRES_BDIR
 
   # We don't need readline, zlib and icu, so let's simplify build.
-  CFLAGS="$EXTRA_CFLAGS" \
+  CFLAGS="$EXTRA_CFLAGS -std=c17" \
     LDFLAGS="$EXTRA_LDFLAGS" \
     $POSTGRES_SOURCE/configure \
     --prefix=$PREFIX \
