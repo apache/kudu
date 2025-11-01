@@ -81,6 +81,9 @@ import io.netty.util.Timeout;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TestRule;
+import org.junit.rules.TestWatcher;
+import org.junit.runner.Description;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -114,6 +117,21 @@ public class TestKuduClient {
 
   @Rule
   public KuduTestHarness harness = new KuduTestHarness();
+
+  @Rule(order = Integer.MIN_VALUE)
+  public TestRule watcher = new TestWatcher() {
+    protected void starting(Description description) {
+      System.out.println("[ TEST: STARTING  ] " + description.getMethodName());
+    }
+
+    protected void succeeded(Description description) {
+      System.out.println("[ TEST: SUCCEEDED ] " + description.getMethodName());
+    }
+
+    protected void failed(Throwable e, Description description) {
+      System.out.println("[ TEST: FAILED    ] " + description.getMethodName());
+    }
+  };
 
   @Before
   public void setUp() {
