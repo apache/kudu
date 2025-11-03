@@ -46,7 +46,7 @@ public class RandomUtils {
       LOG.info("System property {} is defined. Overriding random seed: {}",
           TEST_RANDOM_SEED_PROP, seed);
     }
-    LOG.info("Using random seed: {}", seed);
+    LOG.debug("Using random seed: {}", seed);
     return new Random(seed);
   }
 
