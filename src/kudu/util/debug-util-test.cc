@@ -62,7 +62,18 @@ DECLARE_int32(stress_cpu_threads);
 namespace kudu {
 
 class DebugUtilTest : public KuduTest {
+ protected:
+  static const MonoDelta kStackCaptureTimeout;
 };
+
+#if defined(THREAD_SANITIZER)
+// Thread sanitizer instrumentation comes with longer runtime, so it's necessary
+// to increase stack trace capturing timeout to avoid flakiness;
+// see KUDU-3712 for details.
+const MonoDelta DebugUtilTest::kStackCaptureTimeout = MonoDelta::FromSeconds(5);
+#else
+const MonoDelta DebugUtilTest::kStackCaptureTimeout = MonoDelta::FromSeconds(1);
+#endif
 
 TEST_F(DebugUtilTest, TestStackTrace) {
   StackTrace t;
@@ -262,7 +273,7 @@ TEST_F(DebugUtilTest, Benchmark) {
     volatile int prevent_optimize = 0;
     while (MonoTime::Now() < end_time) {
       StackTrace trace;
-      ASSERT_OK(GetThreadStack(t->tid(), &trace));
+      ASSERT_OK(GetThreadStack(t->tid(), &trace, kStackCaptureTimeout));
       if (symbolize) {
         prevent_optimize += trace.Symbolize().size();
       }
@@ -384,7 +395,7 @@ TEST_P(RaceTest, TestStackTraceRaces) {
   MonoTime end_time = MonoTime::Now() + MonoDelta::FromSeconds(1);
   while (MonoTime::Now() < end_time) {
     StackTrace trace;
-    ASSERT_OK(GetThreadStack(t->tid(), &trace));
+    ASSERT_OK(GetThreadStack(t->tid(), &trace, kStackCaptureTimeout));
   }
 }
 
@@ -429,7 +440,7 @@ TEST_F(DebugUtilTest, TestTimeouts) {
   for (int i = 0; i < 20; i++) {
     StackTrace stack;
     auto st = GetMonoTimeMicros();
-    ASSERT_OK(GetThreadStack(t->tid(), &stack));
+    ASSERT_OK(GetThreadStack(t->tid(), &stack, kStackCaptureTimeout));
     auto dur = GetMonoTimeMicros() - st;
     durations.push_back(dur);
   }
