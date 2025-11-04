@@ -257,28 +257,16 @@ Status MiniKdc::CreateUserPrincipal(const string& username) {
       { kadmin, "-q", Substitute("add_principal -pw $0 $0", username) }));
 }
 
-Status MiniKdc::CreateServiceKeytab(const string& spn,
-                                    string* path) {
-  SCOPED_LOG_SLOW_EXECUTION(WARNING, 100, Substitute("creating service keytab for $0", spn));
-  string kt_path = spn;
-  StripString(&kt_path, "/", '_');
-  kt_path = JoinPathSegments(options_.data_root, kt_path) + ".keytab";
-
-  string kadmin;
-  RETURN_NOT_OK(GetBinaryPath("kadmin.local", &kadmin));
-  RETURN_NOT_OK(Subprocess::Call(MakeArgv(
-      { kadmin, "-q", Substitute("add_principal -randkey $0", spn) })));
-  RETURN_NOT_OK(Subprocess::Call(MakeArgv(
-      { kadmin, "-q", Substitute("ktadd -k $0 $1", kt_path, spn) })));
-  *path = kt_path;
-  return Status::OK();
+Status MiniKdc::CreateServiceKeytab(const string& spn, string* path) {
+  string name = spn;
+  StripString(&name, "/", '_');
+  return CreateServiceKeytabWithName(spn, name, path);
 }
 
-Status MiniKdc::CreateServiceKeytabWithName(const string& spn, const string& name,
-                                    string* path) {
+Status MiniKdc::CreateServiceKeytabWithName(
+    const string& spn, const string& name, string* path) {
   SCOPED_LOG_SLOW_EXECUTION(WARNING, 100, Substitute("creating service keytab for $0", spn));
-  string kt_path = name;
-  kt_path = JoinPathSegments(options_.data_root, kt_path) + ".keytab";
+  const string kt_path = JoinPathSegments(options_.data_root, name) + ".keytab";
 
   string kadmin;
   RETURN_NOT_OK(GetBinaryPath("kadmin.local", &kadmin));
