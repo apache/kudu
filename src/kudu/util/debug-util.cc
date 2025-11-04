@@ -502,11 +502,10 @@ bool StackTraceCollector::RevokeSigData() {
 }
 #endif // #ifdef __linux__ ... #else ...
 
-Status GetThreadStack(int64_t tid, StackTrace* stack) {
+Status GetThreadStack(int64_t tid, StackTrace* stack, MonoDelta timeout) {
   StackTraceCollector c;
   RETURN_NOT_OK(c.TriggerAsync(tid, stack));
-  RETURN_NOT_OK(c.AwaitCollection(MonoTime::Now() + MonoDelta::FromSeconds(1)));
-  return Status::OK();
+  return c.AwaitCollection(MonoTime::Now() + timeout);
 }
 
 string DumpThreadStack(int64_t tid) {

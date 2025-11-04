@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_UTIL_DEBUG_UTIL_H
-#define KUDU_UTIL_DEBUG_UTIL_H
+#pragma once
 
 #include <sys/types.h>
 
@@ -29,6 +28,7 @@
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/strings/fastmem.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 
 #define FUTEX_WAIT 0
@@ -38,7 +38,6 @@
 namespace kudu {
 
 template <typename T> class ArrayView;
-class MonoTime;
 class StackTrace;
 class StackTraceCollector;
 
@@ -86,7 +85,9 @@ std::string DumpThreadStack(int64_t tid);
 // it internally uses signals that will cause the debugger to stop. Consider checking
 // 'IsBeingDebugged()' from os-util.h before using this function for non-critical use
 // cases.
-Status GetThreadStack(int64_t tid, StackTrace* stack);
+Status GetThreadStack(int64_t tid,
+                      StackTrace* stack,
+                      MonoDelta timeout = MonoDelta::FromSeconds(1));
 
 // Return the current stack trace, stringified.
 std::string GetStackTrace();
@@ -120,7 +121,7 @@ void HexStackTraceToString(char* buf, size_t size);
 // Efficient class for collecting and later stringifying a stack trace.
 //
 // Requires external synchronization.
-class StackTrace {
+class StackTrace final {
  public:
 
   // Constructs a new (uncollected) stack trace.
@@ -222,7 +223,7 @@ class StackTrace {
 
 // Utility class for gathering a process-wide snapshot of the stack traces
 // of all threads.
-class StackTraceSnapshot {
+class StackTraceSnapshot final {
  public:
   // The information about each thread will be gathered in a struct.
   struct ThreadInfo {
@@ -288,7 +289,7 @@ class StackTraceSnapshot {
 // Namely, this provides an asynchronous trigger/collect API so that many
 // stack traces can be collected from many different threads in parallel using
 // different instances of this object.
-class StackTraceCollector {
+class StackTraceCollector final {
  public:
   StackTraceCollector() = default;
   StackTraceCollector(StackTraceCollector&& other) noexcept;
@@ -325,5 +326,3 @@ class StackTraceCollector {
 };
 
 } // namespace kudu
-
-#endif
