@@ -217,7 +217,7 @@ SANITIZER_HOOK_ATTRIBUTE const char *__lsan_default_suppressions() {
   // CLI to connect to a remote server. But they are considered acceptable
   // and intentional by the OpenSSL project.
   // https://github.com/openssl/openssl/issues/24729
-  "leak:libcrypto.so.3\n";
+  "leak:libcrypto.so.3\n"
 
   // KUDU-2653: Memory leak in libgssapi_krb5 [1]. Exists in certain patched
   // versions of krb5-1.12 (such as krb5 in Debian 8).
