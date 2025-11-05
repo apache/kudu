@@ -580,6 +580,236 @@ TEST_F(RestCatalogTest, TestPutTableEndpointChangeOwner) {
   ASSERT_EQ("new_owner", table->owner());
 }
 
+TEST_F(RestCatalogTest, TestPostTableWithArrayColumns) {
+  const string kArrayTableName = "array_table";
+  EasyCurl c;
+  faststring buf;
+  c.set_custom_method("POST");
+  ASSERT_OK(c.PostToURL(
+      Substitute("http://$0/api/v1/tables", cluster_->mini_master()->bound_http_addr().ToString()),
+      R"({
+        "name": "array_table",
+        "schema": {
+          "columns": [
+            {"name": "key", "type": "INT32", "is_nullable": false, "is_key": true},
+            {"name": "int_val", "type": "INT32", "is_nullable": false, "is_key": false},
+            {
+              "name": "arr_int32",
+              "type": "NESTED",
+              "nested_type": {"array": {"type": "INT32"}},
+              "is_nullable": true,
+              "is_key": false
+            },
+            {
+              "name": "arr_int64",
+              "type": "NESTED",
+              "nested_type": {"array": {"type": "INT64"}},
+              "is_nullable": true,
+              "is_key": false
+            },
+            {
+              "name": "arr_string",
+              "type": "NESTED",
+              "nested_type": {"array": {"type": "STRING"}},
+              "is_nullable": true,
+              "is_key": false
+            }
+          ]
+        },
+        "partition_schema": {
+          "range_schema": {
+            "columns": [{"name": "key"}]
+          }
+        },
+        "num_replicas": 1
+      })",
+      &buf));
+
+  string table_id;
+  ASSERT_OK(GetTableId(kArrayTableName, &table_id));
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(client_->OpenTable(kArrayTableName, &table));
+  ASSERT_TRUE(table != nullptr);
+  ASSERT_EQ(kArrayTableName, table->name());
+
+  const KuduSchema& schema = table->schema();
+  ASSERT_EQ(5, schema.num_columns());
+  ASSERT_EQ("key", schema.Column(0).name());
+  ASSERT_EQ("int_val", schema.Column(1).name());
+  ASSERT_EQ("arr_int32", schema.Column(2).name());
+  ASSERT_EQ("arr_int64", schema.Column(3).name());
+  ASSERT_EQ("arr_string", schema.Column(4).name());
+
+  ASSERT_STR_CONTAINS(buf.ToString(), "\"type\":\"NESTED\"");
+  ASSERT_STR_CONTAINS(buf.ToString(), "\"nested_type\"");
+  ASSERT_STR_CONTAINS(buf.ToString(), "\"array\"");
+}
+
+TEST_F(RestCatalogTest, TestGetTableWithArrayColumns) {
+  const string kArrayTableName = "array_table_get";
+  client::KuduSchema schema;
+  client::KuduSchemaBuilder b;
+  b.AddColumn("key")->Type(client::KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+  b.AddColumn("int_val")->Type(client::KuduColumnSchema::INT32)->NotNull();
+  b.AddColumn("arr_double")
+      ->Type(client::KuduColumnSchema::NESTED)
+      ->Nullable()
+      ->NestedType(client::KuduColumnSchema::KuduNestedTypeDescriptor(
+          client::KuduColumnSchema::KuduArrayTypeDescriptor(client::KuduColumnSchema::DOUBLE)));
+  b.AddColumn("arr_bool")
+      ->Type(client::KuduColumnSchema::NESTED)
+      ->Nullable()
+      ->NestedType(client::KuduColumnSchema::KuduNestedTypeDescriptor(
+          client::KuduColumnSchema::KuduArrayTypeDescriptor(client::KuduColumnSchema::BOOL)));
+  ASSERT_OK(b.Build(&schema));
+
+  const vector<string> column_names{"key"};
+  unique_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
+  ASSERT_OK(table_creator->table_name(kArrayTableName)
+                .schema(&schema)
+                .set_range_partition_columns(column_names)
+                .num_replicas(1)
+                .Create());
+
+  string table_id;
+  ASSERT_OK(GetTableId(kArrayTableName, &table_id));
+
+  EasyCurl c;
+  faststring buf;
+  ASSERT_OK(c.FetchURL(Substitute("http://$0/api/v1/tables/$1",
+                                  cluster_->mini_master()->bound_http_addr().ToString(),
+                                  table_id),
+                       &buf));
+
+  const string response = buf.ToString();
+  ASSERT_STR_CONTAINS(response, "\"name\":\"array_table_get\"");
+  ASSERT_STR_CONTAINS(response, "\"arr_double\"");
+  ASSERT_STR_CONTAINS(response, "\"arr_bool\"");
+  ASSERT_STR_CONTAINS(response, "\"type\":\"NESTED\"");
+  ASSERT_STR_CONTAINS(response, "\"nested_type\"");
+  ASSERT_STR_CONTAINS(response, "\"array\"");
+  ASSERT_STR_CONTAINS(response, "\"DOUBLE\"");
+  ASSERT_STR_CONTAINS(response, "\"BOOL\"");
+}
+
+TEST_F(RestCatalogTest, TestPutTableAddArrayColumn) {
+  ASSERT_OK(CreateTestTable());
+  string table_id;
+  ASSERT_OK(GetTableId(kTableName, &table_id));
+  EasyCurl c;
+  faststring buf;
+  c.set_custom_method("PUT");
+  ASSERT_OK(c.PostToURL(Substitute("http://$0/api/v1/tables/$1",
+                                   cluster_->mini_master()->bound_http_addr().ToString(),
+                                   table_id),
+                        R"({
+                          "table": {
+                            "table_name": "test_table"
+                          },
+                          "alter_schema_steps": [
+                            {
+                              "type": "ADD_COLUMN",
+                              "add_column": {
+                                "schema": {
+                                  "name": "arr_float",
+                                  "type": "NESTED",
+                                  "nested_type": {"array": {"type": "FLOAT"}},
+                                  "is_nullable": true
+                                }
+                              }
+                            }
+                          ]
+                        }
+                        )",
+                        &buf));
+
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(client_->OpenTable(kTableName, &table));
+  const KuduSchema& schema = table->schema();
+  ASSERT_EQ(3, schema.num_columns());
+  ASSERT_EQ("key", schema.Column(0).name());
+  ASSERT_EQ("int_val", schema.Column(1).name());
+  ASSERT_EQ("arr_float", schema.Column(2).name());
+
+  const string response = buf.ToString();
+  ASSERT_STR_CONTAINS(response, "\"arr_float\"");
+  ASSERT_STR_CONTAINS(response, "\"type\":\"NESTED\"");
+  ASSERT_STR_CONTAINS(response, "\"nested_type\"");
+  ASSERT_STR_CONTAINS(response, "\"array\"");
+  ASSERT_STR_CONTAINS(response, "\"FLOAT\"");
+}
+
+TEST_F(RestCatalogTest, TestPostTableWithMultipleArrayTypes) {
+  const string kArrayTableName = "multi_array_table";
+  EasyCurl c;
+  faststring buf;
+  c.set_custom_method("POST");
+  ASSERT_OK(c.PostToURL(
+      Substitute("http://$0/api/v1/tables", cluster_->mini_master()->bound_http_addr().ToString()),
+      R"({
+        "name": "multi_array_table",
+        "schema": {
+          "columns": [
+            {"name": "key", "type": "INT32", "is_nullable": false, "is_key": true},
+            {
+              "name": "arr_int8",
+              "type": "NESTED",
+              "nested_type": {"array": {"type": "INT8"}},
+              "is_nullable": true,
+              "is_key": false
+            },
+            {
+              "name": "arr_int16",
+              "type": "NESTED",
+              "nested_type": {"array": {"type": "INT16"}},
+              "is_nullable": true,
+              "is_key": false
+            },
+            {
+              "name": "arr_binary",
+              "type": "NESTED",
+              "nested_type": {"array": {"type": "BINARY"}},
+              "is_nullable": true,
+              "is_key": false
+            },
+            {
+              "name": "arr_date",
+              "type": "NESTED",
+              "nested_type": {"array": {"type": "DATE"}},
+              "is_nullable": false,
+              "is_key": false
+            }
+          ]
+        },
+        "partition_schema": {
+          "range_schema": {
+            "columns": [{"name": "key"}]
+          }
+        },
+        "num_replicas": 1
+      })",
+      &buf));
+
+  string table_id;
+  ASSERT_OK(GetTableId(kArrayTableName, &table_id));
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(client_->OpenTable(kArrayTableName, &table));
+  ASSERT_TRUE(table != nullptr);
+
+  const KuduSchema& schema = table->schema();
+  ASSERT_EQ(5, schema.num_columns());
+  ASSERT_EQ("arr_int8", schema.Column(1).name());
+  ASSERT_EQ("arr_int16", schema.Column(2).name());
+  ASSERT_EQ("arr_binary", schema.Column(3).name());
+  ASSERT_EQ("arr_date", schema.Column(4).name());
+
+  const string response = buf.ToString();
+  ASSERT_STR_CONTAINS(response, "\"INT8\"");
+  ASSERT_STR_CONTAINS(response, "\"INT16\"");
+  ASSERT_STR_CONTAINS(response, "\"BINARY\"");
+  ASSERT_STR_CONTAINS(response, "\"DATE\"");
+}
+
 class MultiMasterTest : public RestCatalogTestBase {
  public:
   void SetUp() override {
