@@ -446,8 +446,8 @@ Status AddMaster(const RunnerContext& context) {
     return Status::InvalidArgument("Flag -fs_data_dirs not supplied");
   }
   GFlagsMap flags_map = GetNonDefaultFlagsMap();
-  // Remove the optional parameters for this command.
-  // Remaining optional flags need to be passed to the new master.
+  // Remove all the tool-specific flags.
+  // Remaining flags are passed to the new master.
   flags_map.erase("wait_secs");
   flags_map.erase("kudu_abs_path");
 
@@ -868,31 +868,32 @@ unique_ptr<Mode> BuildMasterMode() {
   {
     unique_ptr<Action> add_master =
         ActionBuilder("add", &AddMaster)
-        .Description("Add a master to the Kudu cluster")
+        .Description("Add a new master to existing Kudu cluster")
         .ExtraDescription(
-            "This is an advanced command that orchestrates the workflow to bring up and add a "
-            "new master to the Kudu cluster. It must be run locally on the new master being added "
-            "and not on the leader master. This tool shuts down the new master after completion "
-            "of the command regardless of whether the new master addition is successful. "
-            "After the command completes successfully, user is expected to explicitly "
-            "start the new master using the same flags as supplied to this tool.\n\n"
-            "Supply all the necessary flags to bring up the new master. "
-            "The most common configuration flags used to bring up a master are described "
-            "below. See \"Kudu Configuration Reference\" for all the configuration options that "
-            "apply to a Kudu master.\n\n"
-            "Please refer to the Kudu administration documentation on "
-            "\"Migrating to Multiple Kudu Masters\" for the complete steps.")
+            "NOTE: with kudu-master binaries of 1.16.0 and newer versions, "
+            "there is no need to run this tool to add a new Kudu master; "
+            "it's enough to start kudu-master process at a new Kudu master "
+            "node as usual, and it will automatically perform the necessary "
+            "steps while running for the very first time at the new node.\n\n"
+            "This is a tool to add a new master to the Kudu cluster. It must "
+            "be run on the node where the new Kudu master is being added, NOT "
+            "on any of the existing master nodes. In addition to the new "
+            "master's hostname and RPC addresses of existing masters, "
+            "--wait_secs and --kudu_abs_path are the only tool-specific flags, "
+            "and the rest of the flags supplied are for the kudu-master "
+            "process. While this tool advertises only a minimalistic set of "
+            "master-specific flags below, it accepts all the flags that a "
+            "kudu-master process can start with. After the command completes "
+            "successfully, the new Kudu master should be started as usual "
+            "using the SAME MASTER-SPECIFIC FLAGS as supplied to this tool.")
         .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
         .AddRequiredParameter({ kMasterAddressArg, kMasterAddressDesc })
         .AddOptionalParameter("wait_secs")
         .AddOptionalParameter("kudu_abs_path")
-        .AddOptionalParameter("fs_wal_dir")
-        .AddOptionalParameter("fs_data_dirs")
-        .AddOptionalParameter("fs_metadata_dir")
-        .AddOptionalParameter("log_dir")
-        // Unlike most tools we don't log to stderr by default to match the
-        // kudu-master binary as closely as possible.
-        .AddOptionalParameter("logtostderr", string("false"))
+        .AddOptionalParameter("fs_wal_dir", "", "New master's WAL directory")
+        .AddOptionalParameter("fs_data_dirs", "", "New master's data directories")
+        .AddOptionalParameter("fs_metadata_dir", "", "New master's metadata directory")
+        .AddOptionalParameter("log_dir", "", "New master's log directory")
         .Build();
     builder.AddAction(std::move(add_master));
   }

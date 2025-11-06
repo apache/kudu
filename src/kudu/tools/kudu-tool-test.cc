@@ -1544,7 +1544,7 @@ TEST_F(ToolTest, TestModeHelp) {
         "status.*Get the status",
         "timestamp.*Get the current timestamp",
         "list.*List masters in a Kudu cluster",
-        "add.*Add a master to the Kudu cluster",
+        "add.*Add a new master to existing Kudu cluster",
         "remove.*Remove a master from the Kudu cluster",
     };
     NO_FATALS(RunTestHelp(kCmd, kMasterModeRegexes));
