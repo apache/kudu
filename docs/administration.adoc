@@ -526,7 +526,8 @@ three, with straightforward modifications. Note that the number of masters must 
 
 NOTE: From Kudu version 1.16.0 onwards, new Kudu Masters automatically attempt to contact other
 masters, determine whether a quorum has already been established, and if so, attempt to join the
-quorum. The below steps do not need to be performed in these versions.
+quorum. The below steps do not need to be performed in these versions, making
+the `kudu master add` CLI utility de facto obsolete.
 
 NOTE: From Kudu version 1.15.0 onwards, the `kudu master add` command has been added that simplifies
 the orchestration to migrate an existing Kudu cluster to multiple masters.
@@ -534,8 +535,8 @@ the orchestration to migrate an existing Kudu cluster to multiple masters.
 WARNING: An even number of masters doesn't provide any benefit over having one fewer masters.  This
 guide should always be used for migrating to three masters.
 
-WARNING: All of the command line steps below should be executed as the Kudu UNIX user. The example
-commands assume the Kudu Unix user is `kudu`, which is typical.
+WARNING: All of the command line steps below should be executed as the Kudu OS user. The example
+commands assume the Kudu OS user is `kudu`, which is typical.
 
 WARNING: The workflow presupposes at least basic familiarity with Kudu configuration management. If
 using vendor-specific tools the workflow also presupposes familiarity with
@@ -546,8 +547,9 @@ it and the vendor's instructions should be used instead as details may differ.
 . Establish a maintenance window (one hour should be sufficient). During this time the Kudu cluster
   will be unavailable.
 
-. Decide how many masters to use. The number of masters should be odd. Three or five node master
-  configurations are recommended; they can tolerate one or two failures respectively.
+. Decide how many masters to add. The total number of masters in a Kudu cluster
+should be odd. Three or five node master configurations are recommended;
+they can tolerate one or two failures respectively.
 
 . Perform the following preparatory steps for the existing masters:
 * If migrating from a single master to multiple masters, ensure `--master_addresses` is specified
@@ -561,7 +563,8 @@ record.
 +
 WARNING: Without DNS aliases it is not possible to recover from permanent
 master failures without restarting the tablet servers in the cluster
-to pick up the replacement master node at different hostname. It is highly
+to pick up the replacement master node at different hostname (unless changing
+the corresponding DNS A record, which isn't a recommended practice). It is highly
 recommended to use DNS aliases for Kudu master nodes to avoid that.
 +
 . Perform the following preparatory steps for each new master:
@@ -570,8 +573,17 @@ recommended to use DNS aliases for Kudu master nodes to avoid that.
   though not with another Kudu master from the same configuration.
 * Ensure Kudu is installed on the machine, either via system packages (in which case the `kudu` and
   `kudu-master` packages should be installed), or via some other means.
-* Choose and record the directory where the master's data will live.
-* Choose and record the port the master should use for RPCs.
+* Choose and record the directory where the master's data will live, making
+  sure the directory is accessible under the OS user the new `kudu-master`
+  process will be running. If re-running the utility again, clean up the
+  directory structure that's left from a prior run, making sure the utility
+  is always run against an empty directory structure under the paths pointed to
+  by `--fs_wal_dir` and `--fs_data_dirs`.
+* Define and record all the rest of the customized flags the new master should
+  run with once added into the cluster. One of the multiple ways of doing that
+  is taking a snapshot of the flags that an existing master is running with
+  and adapting it for the new master node, paying attention to `--fs_wal_dir`,
+  `--fs_data_dirs`, and other flags that are node-specific.
 
 [[perform-the-migration]]
 ==== Perform the migration
@@ -586,20 +598,31 @@ the steps below.
 The procedure supports adding only one master at a time. In order to add multiple masters follow
 the same procedure again for the next new master.
 
-. On the new master host (not on any of the existing masters), run the `kudu master add` command
-to add the master. Look for any success or error messages on the console or the new master log file.
-The command is designed to be idempotent so in case of an error after the issue mentioned in the
-error messages is fixed, run the same command again to make forward progress. After the completion
-of the procedure irrespective of whether the procedure is successful, the new master is shutdown.
-The example below adds `master-2` to existing Kudu cluster with `master-1`.
+. On the new master host (not on any of the existing masters), run the
+`kudu master add` command to add the master. Look for any success or error
+messages on the console or the new master's log file. The command is designed
+to be idempotent: in case of an error, after the issue mentioned in the
+error messages is fixed, run the same command again to make forward progress.
+The procedure involves starting the new master with all the provided flags
+temporarily. After the completion of the procedure, irrespective of whether
+the procedure is successful or not, the new master is shutdown.
+The example below adds `master-2` to existing Kudu cluster with `master-1`,
+where the ellipsis stands for all the rest of the flags a new Kudu master
+will run with after the procedure is complete:
 +
-WARNING: If your Kudu cluster is secure, in addition to running as the Kudu UNIX user, you must
+NOTE: In the examples below, in addition to the `--fs_wal_dir` and the
+`--fs_data_dirs` flags it's necessary to specify all the relevant flags
+needed to run the new Kudu master at this `master-2` node. For the sake of
+simplicity, it's recommended to provide all the flags that the new master
+will run with after the procedure is complete.
++
+NOTE: If your Kudu cluster is secure, in addition to running as the Kudu OS user, you must
 authenticate as the Kudu service user prior to running this command.
 +
 [source, bash]
 ----
 $ sudo -u kudu kudu master add master-1 master-2 --fs_wal_dir=/data/kudu/master/wal \
---fs_data_dirs=/data/kudu/master/data
+--fs_data_dirs=/data/kudu/master/data ...
 ----
 +
 . Modify the value of the `master_addresses` configuration parameter for existing masters only
@@ -617,8 +640,8 @@ the sequence of those steps should be run for `master-2` and then for
 `master-3`).
 . *After adding all the desired masters into the cluster*, modify the
 value of the `tserver_master_addrs` configuration parameter for each tablet
-server. The new value must be a comma-separated list of masters where each
-entry is a string of the form `<hostname>:<port>`
+server. The new value must be a comma-separated list of master RPC addresses
+where each entry is a string of the form `<hostname>:<port>`
 hostname:: master's hostname
 port:: master's RPC port number
 . Restart all the tablet servers to pick up the new masters' configuration.
