@@ -31,7 +31,6 @@
 #include <set>
 #include <string>
 #include <thread>
-#include <tuple>
 #include <type_traits>
 #include <unordered_map>
 #include <utility>
@@ -67,6 +66,7 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/diagnostic_socket.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
 #include "kudu/util/net/socket_info.pb.h"
@@ -100,9 +100,9 @@ DECLARE_int32(rpc_negotiation_inject_delay_ms);
 DECLARE_int32(tcp_keepalive_probe_period_s);
 DECLARE_int32(tcp_keepalive_retry_period_s);
 DECLARE_int32(tcp_keepalive_retry_count);
+DECLARE_string(ip_config_mode);
 
 using std::map;
-using std::tuple;
 using std::shared_ptr;
 using std::string;
 using std::thread;
@@ -159,9 +159,6 @@ string ModeEnumToString(enum RpcSocketMode mode) {
 class TestRpc: public RpcTestBase,
                public ::testing::WithParamInterface<RpcSocketMode> {
 protected:
-  TestRpc() {
-  }
-
   static bool enable_ssl() {
     switch (GetParam()) {
       case TCP_IPv4_SSL:
@@ -2236,6 +2233,99 @@ TEST_P(TestRpcSocketTxRxQueue, CustomAcceptorRxQueueSamplingFrequency) {
     ASSERT_EQ(2, rx_queue_size->TotalCount());
   });
 }
+
+class TestRpcWithIpModes: public RpcTestBase,
+                          public ::testing::WithParamInterface<string> {
+protected:
+  void SetUp() override {
+    RpcTestBase::SetUp();
+    FLAGS_ip_config_mode = GetParam();
+    ASSERT_OK(ParseIPModeFlag(FLAGS_ip_config_mode, &mode_));
+  }
+  Sockaddr bind_ip_addr() const {
+    switch (mode_) {
+      case IPMode::IPV6:
+      case IPMode::DUAL:
+        return Sockaddr::Wildcard(AF_INET6);
+      default:
+        return Sockaddr::Wildcard(AF_INET);
+    }
+  }
+
+  IPMode mode_;
+};
+
+// This is used to run all parameterized tests with every
+// possible ip_config_mode options.
+INSTANTIATE_TEST_SUITE_P(Parameters, TestRpcWithIpModes,
+                         testing::Values("ipv4", "ipv6", "dual"));
+
+TEST_P(TestRpcWithIpModes, TestRpcWithDifferentIpConfigModes) {
+  // Set up server with wildcard address.
+  Sockaddr server_addr = bind_ip_addr();
+  // Request OS to choose port.
+  server_addr.set_port(0);
+
+  MessengerBuilder mb("TestRpc.TestRpcWithDifferentIpConfigModes");
+  mb.set_metric_entity(metric_entity_);
+
+  shared_ptr<Messenger> messenger;
+  ASSERT_OK(mb.Build(&messenger));
+
+  // Start server on IP address based on ip_config_mode flag.
+  ASSERT_OK(StartTestServerWithCustomMessenger(&server_addr, messenger));
+
+  // IPv4 socket client tests.
+  {
+    Socket s4;
+    ASSERT_OK(s4.Init(AF_INET, 0));
+
+    // Target address is required mainly for dual mode. This is required to rule out
+    // any possibility of 'connect' call failing due to invalid target address.
+    Sockaddr target_addr = server_addr;
+
+    // Determine the specific target address based on the server's mode.
+    // For DUAL mode, we explicitly target the IPv4 loopback (127.0.0.1) for clarity.
+    if (mode_ == IPMode::DUAL) {
+      target_addr = Sockaddr::Loopback(AF_INET);
+      target_addr.set_port(server_addr.port());
+    }
+
+    Status s = s4.Connect(target_addr);
+
+    if (mode_ == IPMode::IPV6) {
+      // IPv4 socket's connect call to 'IPv6 only' server should fail.
+      ASSERT_TRUE(s.IsNetworkError()) << s.ToString();
+      ASSERT_STR_CONTAINS(s.ToString(), "Address family not supported by protocol");
+    } else {
+      ASSERT_OK(s);
+    }
+  }
+
+  // IPv6 socket client tests.
+  {
+    Socket s6;
+    ASSERT_OK(s6.Init(AF_INET6, 0));
+
+    // Determine the specific target address based on the server's mode.
+    // For DUAL mode, we explicitly target the IPv6 loopback (::1) for clarity.
+    Sockaddr target_addr = server_addr;
+    if (mode_ == IPMode::DUAL) {
+        target_addr = Sockaddr::Loopback(AF_INET6);
+        target_addr.set_port(server_addr.port());
+    }
+
+    Status s = s6.Connect(target_addr);
+    if (mode_ == IPMode::IPV4) {
+      // IPv6 socket's connect call to 'IPv4 only' server should fail.
+      ASSERT_TRUE(s.IsNetworkError()) << s.ToString();
+      ASSERT_STR_CONTAINS(s.ToString(), "Invalid argument");
+    } else {
+      ASSERT_OK(s);
+    }
+  }
+}
+
 #endif // #if defined(KUDU_HAS_DIAGNOSTIC_SOCKET) ...
 
 } // namespace rpc

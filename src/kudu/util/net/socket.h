@@ -98,6 +98,9 @@ class Socket {
   // Sets SO_REUSEPORT to 'flag'. Should be used prior to Bind().
   Status SetReusePort(bool flag);
 
+  // Sets IPV6_V6ONLY to 'flag'. Should be used prior to Bind().
+  Status SetIPv6Only(bool flag);
+
   // Convenience method to invoke the common sequence:
   // 1) SetReuseAddr(true)
   // 2) Bind()

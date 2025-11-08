@@ -53,8 +53,11 @@ class Sockaddr {
   // Construct from a generic socket address.
   explicit Sockaddr(const struct sockaddr& addr, socklen_t len);
 
-  // Return an IP wildcard address.
+  // Return an IP wildcard address for a given family.
   static Sockaddr Wildcard(sa_family_t family = AF_INET);
+
+  // Return loopback IP address for a given family.
+  static Sockaddr Loopback(sa_family_t family);
 
   // Assignment operators.
   Sockaddr& operator=(const Sockaddr& other) noexcept;

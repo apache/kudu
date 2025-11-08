@@ -53,8 +53,8 @@
 
 DEFINE_string(local_ip_for_outbound_sockets, "",
               "IP to bind to when making outgoing socket connections. "
-              "This must be an IP address of the form A.B.C.D, not a hostname. "
-              "Advanced parameter, subject to change.");
+              "This must be an IP address of the form A.B.C.D or A:B:C:D:E:F:G:H, "
+              "not a hostname. Advanced parameter, subject to change.");
 TAG_FLAG(local_ip_for_outbound_sockets, experimental);
 
 DEFINE_bool(socket_inject_short_recvs, false,
@@ -445,6 +445,13 @@ Status Socket::SetReusePort(bool flag) {
   int int_flag = flag ? 1 : 0;
   RETURN_NOT_OK_PREPEND(SetSockOpt(SOL_SOCKET, SO_REUSEPORT, int_flag),
                         "failed to set SO_REUSEPORT");
+  return Status::OK();
+}
+
+Status Socket::SetIPv6Only(bool flag) {
+  int int_flag = flag ? 1 : 0;
+  RETURN_NOT_OK_PREPEND(SetSockOpt(IPPROTO_IPV6, IPV6_V6ONLY, int_flag),
+                        "failed to set IPV6_V6ONLY");
   return Status::OK();
 }
 

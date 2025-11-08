@@ -17,6 +17,8 @@
 
 #include "kudu/rpc/messenger.h"
 
+#include <sys/socket.h>
+
 #include <cstdlib>
 #include <functional>
 #include <ostream>
@@ -50,6 +52,7 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/net/socket.h"
 #include "kudu/util/openssl_util.h"
 #include "kudu/util/status.h"
@@ -260,6 +263,14 @@ Status Messenger::AddAcceptorPool(const Sockaddr& accept_addr,
   Socket sock;
   RETURN_NOT_OK(sock.Init(accept_addr.family(), 0));
   RETURN_NOT_OK(sock.SetReuseAddr(true));
+  if (GetIPFamily() == AF_INET6) {
+    // IPV6_V6ONLY socket option is not applicable to Unix domain sockets.
+    if (PREDICT_FALSE(accept_addr.is_unix())) {
+      return Status::ConfigurationError(
+          "IPV6_V6ONLY socket option is not applicable to Unix domain sockets.");
+    }
+    RETURN_NOT_OK(sock.SetIPv6Only(true));
+  }
   if (reuseport_) {
     // SO_REUSEPORT socket option is not applicable to Unix domain sockets.
     if (PREDICT_FALSE(accept_addr.is_unix())) {

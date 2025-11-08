@@ -17,6 +17,8 @@
 
 #include "kudu/server/server_base.h"
 
+#include <sys/socket.h>
+
 #if defined(__APPLE__)
 #include <sys/sysctl.h>
 #endif
@@ -514,16 +516,27 @@ bool ValidateEitherJWKSFilePathOrUrlSet() {
 GROUP_FLAG_VALIDATOR(jwks_file_or_url_set_validator, &ValidateEitherJWKSFilePathOrUrlSet);
 
 bool ValidateSocketOptionCompatibility() {
-  if (FLAGS_rpc_listen_on_unix_domain_socket && FLAGS_rpc_reuseport) {
-    LOG(ERROR) << Substitute(
-        "Either --rpc_listen_on_unix_domain_socket or --rpc_reuseport should "
-        "be set, reuse of port is not applicable to Unix domain sockets.");
+  // If we aren't using Unix domain sockets, all other options are compatible.
+  if (!FLAGS_rpc_listen_on_unix_domain_socket) {
+    return true;
+  }
+
+  // At this point, we know we are using Unix domain sockets.
+  // Check for incompatible flags.
+  if (FLAGS_rpc_reuseport) {
+    LOG(ERROR) << "Either --rpc_listen_on_unix_domain_socket or --rpc_reuseport "
+        "should be set, reuse of port is not applicable to Unix domain sockets.";
+    return false;
+  }
+
+  if (GetIPFamily() == AF_INET6) {
+    LOG(ERROR) << "Either --rpc_listen_on_unix_domain_socket or --ip_config_mode should be set "
+        "to ipv6, restriction to only IPv6 traffic is not applicable to Unix domain sockets.";
     return false;
   }
 
   return true;
 }
-
 GROUP_FLAG_VALIDATOR(socket_options_compatibility, ValidateSocketOptionCompatibility);
 
 } // namespace

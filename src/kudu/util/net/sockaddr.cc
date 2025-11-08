@@ -81,6 +81,25 @@ Sockaddr Sockaddr::Wildcard(sa_family_t family) {
   return Sockaddr(addr);
 }
 
+Sockaddr Sockaddr::Loopback(sa_family_t family) {
+  // IPv4.
+  if (family == AF_INET) {
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+    return Sockaddr(addr);
+  }
+
+  // IPv6.
+  DCHECK(family == AF_INET6);
+  struct sockaddr_in6 addr;
+  memset(&addr, 0, sizeof(addr));
+  addr.sin6_family = AF_INET6;
+  inet_pton(AF_INET6, "::1", &addr.sin6_addr);
+  return Sockaddr(addr);
+}
+
 Sockaddr& Sockaddr::operator=(const Sockaddr& other) noexcept {
   if (&other == this) {
     return *this;
