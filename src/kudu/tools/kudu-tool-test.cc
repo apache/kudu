@@ -1593,6 +1593,7 @@ TEST_F(ToolTest, TestModeHelp) {
     NO_FATALS(RunTestHelpRpcFlags(kCmd, {"loadgen", "table_scan"}));
 
     const vector<string> kLoadgenHelpRegexes = {
+      "-array_max_elem_num.*Maximum number of elements to generate",
       "-auto_database.*The database in which to create the automatically generated",
       "-buffer_flush_watermark_pct.*Mutation buffer flush watermark",
       "-buffer_size_bytes.*Size of the mutation buffer, per session",
@@ -3924,6 +3925,29 @@ TEST_F(ToolTest, TestLoadgenServerSideDefaultNumReplicas) {
 
 TEST_F(ToolTest, LoadgenEnableArrayColumn) {
   NO_FATALS(RunLoadgen(1, { "--enable_array_columns", "--run_scan" }));
+}
+
+// Customize the setting for --array_max_elem_num flag with higher than the
+// default setting, but still lower than the default value for the
+// --array_cell_max_elem_num flag at the server side.
+TEST_F(ToolTest, LoadgenMaxNumberElementsInArrayCustom) {
+  NO_FATALS(RunLoadgen(1, { "--enable_array_columns",
+                            "--array_max_elem_num=512",
+                            "--run_scan" }));
+}
+
+// Generate empty arrays (there might be a NULL array cells as well).
+TEST_F(ToolTest, LoadgenEmptyArrays) {
+  NO_FATALS(RunLoadgen(1, { "--enable_array_columns",
+                            "--array_max_elem_num=0",
+                            "--run_scan" }));
+}
+
+TEST_F(ToolTest, LoadgenAtMostOneElementInArray) {
+  // Generate at most one element per array cell.
+  NO_FATALS(RunLoadgen(1, { "--enable_array_columns",
+                            "--array_max_elem_num=1",
+                            "--run_scan" }));
 }
 
 TEST_F(ToolTest, TestLoadgenDatabaseName) {

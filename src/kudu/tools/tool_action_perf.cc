@@ -394,6 +394,10 @@ DEFINE_bool(enable_array_columns, false,
             "If array columns are present in already existing table "
             "specified by the --table_name flag, the tool populates such "
             "columns regardless of this flag's setting.");
+DEFINE_uint32(array_max_elem_num, 256,
+              "Maximum number of elements to generate for a single array cell. "
+              "The tool generates random number of elements per array cell: "
+              "from 0 up to this number minus one.");
 
 DECLARE_bool(show_values);
 DECLARE_int32(num_threads);
@@ -592,9 +596,10 @@ Status PopulateArrayCell(int col_idx,
                          const TypeInfo& elem_tinfo,
                          const string& fixed_string,
                          Generator* gen,
-                         KuduPartialRow* row) {
-  // Up to 256 array elements in one cell.
-  const size_t elem_num = gen->Next<uint8_t>();
+                         KuduPartialRow* row,
+                         uint32_t max_elem_num) {
+  const size_t elem_num =
+      (max_elem_num == 0) ? 0 : gen->Next<uint32_t>() % max_elem_num;
   const auto& column_schema = row->schema()->column(col_idx);
   if (column_schema.is_nullable() && elem_num != 0 && elem_num % 16 == 0) {
     // OK, let it be a null array cell.
@@ -733,7 +738,8 @@ Status GenerateRowData(Generator* key_gen,
       case NESTED:
         if (const auto* elem_tinfo = GetArrayElementTypeInfo(*tinfo);
             PREDICT_TRUE(elem_tinfo)) {
-          RETURN_NOT_OK(PopulateArrayCell(idx, *elem_tinfo, fixed_string, gen, row));
+          RETURN_NOT_OK(PopulateArrayCell(
+              idx, *elem_tinfo, fixed_string, gen, row, FLAGS_array_max_elem_num));
         } else {
           return Status::NotSupported("non-array NESTED columns not supported");
         }
@@ -1173,6 +1179,7 @@ unique_ptr<Mode> BuildPerfMode() {
           "an existing or auto-created table as fast as possible. "
           "If requested, also scan the inserted rows to check whether the "
           "actual count of inserted rows matches the expected one.")
+      .AddOptionalParameter("array_max_elem_num")
       .AddOptionalParameter("auto_database")
       .AddOptionalParameter("buffer_flush_watermark_pct")
       .AddOptionalParameter("buffer_size_bytes")
