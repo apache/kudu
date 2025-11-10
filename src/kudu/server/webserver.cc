@@ -591,16 +591,14 @@ sq_callback_result_t Webserver::BeginRequestCallbackStatic(
 sq_callback_result_t Webserver::BeginRequestCallback(
     struct sq_connection* connection,
     struct sq_request_info* request_info) {
-  if (strncmp("OPTIONS", request_info->request_method, 7) == 0) {
-    // Let Squeasel deal with the request. OPTIONS requests should not require
-    // authentication, so do this before doing SPNEGO.
-    return SQ_CONTINUE_HANDLING;
-  }
+  // OPTIONS requests should not require authentication, but we need to handle
+  // them in RunPathHandler to return the correct Allow header for STYLED pages.
+  bool is_options = strncmp("OPTIONS", request_info->request_method, 7) == 0;
 
   // The last SPNEGO step in a successful authentication may include a response
   // header (e.g. when using mutual authentication).
   PrerenderedWebResponse resp;
-  if (opts_.require_spnego) {
+  if (opts_.require_spnego && !is_options) {
     const char* authz_header = sq_get_header(connection, "Authorization");
     string authn_princ;
     Status s = RunSpnegoStep(authz_header, &resp.response_headers, &authn_princ);
@@ -742,6 +740,29 @@ sq_callback_result_t Webserver::RunPathHandler(
     req.request_headers[key] = h.value;
   }
   req.request_method = request_info->request_method;
+
+  if (req.request_method == "OPTIONS") {
+    resp->status_code = HttpStatusCode::Ok;
+    if (handler.style_mode() == StyleMode::STYLED) {
+      resp->response_headers["Allow"] = "GET, HEAD, OPTIONS";
+    } else {
+      resp->response_headers["Allow"] = "GET, POST, HEAD, PUT, DELETE, OPTIONS";
+    }
+    SendResponse(connection, resp);
+    return SQ_HANDLED_OK;
+  }
+
+  // Restrict display pages (StyleMode::STYLED) to GET/HEAD methods only.
+  // Functional endpoints (pprof, metrics, etc.) legitimately need POST/PUT.
+  if (handler.style_mode() == StyleMode::STYLED &&
+      req.request_method != "GET" && req.request_method != "HEAD") {
+    resp->status_code = HttpStatusCode::MethodNotAllowed;
+    resp->response_headers["Allow"] = "GET, HEAD";
+    resp->output << "Method Not Allowed";
+    SendResponse(connection, resp);
+    return SQ_HANDLED_OK;
+  }
+
   if (req.request_method == "POST" || req.request_method == "PUT") {
     const char* content_len_str = sq_get_header(connection, "Content-Length");
     int32_t content_len = 0;
