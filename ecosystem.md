@@ -98,7 +98,7 @@ details.
 Apache Flink is a framework and distributed processing engine for stateful
 computations over unbounded and bounded data streams.  See the [Flink Kudu
 connector
-documentation](https://github.com/apache/bahir-flink/tree/master/flink-connector-kudu)
+documentation](https://github.com/apache/flink-connector-kudu)
 for more details.
 
 #### [Apache Nifi](https://nifi.apache.org/)
