@@ -17,6 +17,8 @@
 
 #include "kudu/security/ca/cert_management.h"
 
+#include <openssl/crypto.h>
+
 #include <initializer_list>
 #include <optional>
 #include <string>
@@ -198,6 +200,9 @@ TEST_F(CertManagementTest, SignCert) {
   Cert cert;
   ASSERT_OK(CertSigner(&ca_cert_, &ca_private_key_).Sign(csr, &cert));
   ASSERT_OK(cert.CheckKeyMatch(key));
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+  ASSERT_EQ(X509_REQ_VERSION_1, X509_REQ_get_version(csr.GetRawData()));
+#endif
 
   EXPECT_EQ("C = US, ST = CA, O = MyCompany, CN = MyName, emailAddress = my@email.com",
             cert.IssuerName());

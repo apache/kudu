@@ -84,6 +84,15 @@ Status CertRequestGeneratorBase::GenerateRequest(const PrivateKey& key,
   OPENSSL_RET_NOT_OK(X509_REQ_set_pubkey(req.get(), key.GetRawData()),
       "error setting X509 public key");
 
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+  // Set the request version explicitly to make sure newer OpenSSL versions can
+  // handle it.
+  //
+  // https://github.com/openssl/openssl/pull/24677/
+  OPENSSL_RET_NOT_OK(X509_REQ_set_version(req.get(), X509_REQ_VERSION_1),
+      "error setting X509 version");
+#endif
+
   // Populate the subject field of the request.
   RETURN_NOT_OK(SetSubject(req.get()));
 
