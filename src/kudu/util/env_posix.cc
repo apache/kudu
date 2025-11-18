@@ -7,8 +7,12 @@
 #include <fnmatch.h>
 #include <fts.h>
 #include <glob.h>
+#include <openssl/crypto.h>
 #include <openssl/rand.h>
 #include <openssl/ssl.h>
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+#include <openssl/types.h>
+#endif
 #include <pthread.h>
 #include <sys/resource.h>
 #include <sys/socket.h>
@@ -18,8 +22,10 @@
 #include <sys/uio.h>
 #include <sys/utsname.h>
 #include <unistd.h>
+// IWYU pragma: no_include <bits/struct_stat.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cerrno>
 #include <climits>
 #include <cstdint>
@@ -39,7 +45,6 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
-#include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/macros.h"
@@ -87,8 +92,6 @@
 #include <sys/vfs.h>
 #endif  // defined(__APPLE__)
 
-using base::subtle::Atomic64;
-using base::subtle::Barrier_AtomicIncrement;
 using kudu::security::ssl_make_unique;
 using std::accumulate;
 using std::shared_ptr;
@@ -229,9 +232,6 @@ bool ValidateMultiTenancySettings() {
   return true;
 }
 GROUP_FLAG_VALIDATOR(enable_multi_tenancy, ValidateMultiTenancySettings);
-
-static __thread uint64_t thread_local_id;
-static Atomic64 cur_thread_local_id_;
 
 namespace kudu {
 
@@ -2013,11 +2013,14 @@ class PosixEnv : public Env {
   }
 
   uint64_t gettid() override {
+    static std::atomic<uint64_t> cur_thread_local_id{0};
+    static __thread uint64_t thread_local_id{0};
     // Platform-independent thread ID.  We can't use pthread_self here,
     // because that function returns a totally opaque ID, which can't be
     // compared via normal means.
     if (thread_local_id == 0) {
-      thread_local_id = Barrier_AtomicIncrement(&cur_thread_local_id_, 1);
+      // pre-increment is equivalent to 'cur_thread_local_id_.fetch_add(1) + 1'
+      thread_local_id = ++cur_thread_local_id;
     }
     return thread_local_id;
   }

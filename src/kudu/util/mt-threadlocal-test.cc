@@ -15,13 +15,16 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <memory>
 #include <ostream>
+#include <set>
 #include <string>
 #include <thread>
 #include <unordered_set>
-#include <utility>
 #include <vector>
 
 #include <glog/logging.h>
@@ -39,6 +42,7 @@
 #include "kudu/util/threadlocal.h"
 #include "kudu/util/threadlocal_cache.h"
 
+using std::set;
 using std::string;
 using std::thread;
 using std::unique_ptr;
@@ -351,6 +355,83 @@ TEST_F(ThreadLocalTest, TestThreadLocalCache) {
 
   // Looking up evicted items should return nullptr.
   ASSERT_EQ(nullptr, tlc->Lookup(1));
+}
+
+// Verify that PosixEnv::gettid() generates unique thread identifiers.
+TEST_F(ThreadLocalTest, ThreadId) {
+  constexpr const size_t kNumThreadsLevel0 = 4;
+  constexpr const size_t kNumThreadsLevel1 = 16;
+
+  vector<vector<size_t>> thread_ids;
+  thread_ids.resize(kNumThreadsLevel0);
+  for (size_t i = 0; i < kNumThreadsLevel0; ++i) {
+    thread_ids[i].assign(kNumThreadsLevel1, 0);
+  }
+
+  vector<thread> level0_threads;
+  level0_threads.reserve(kNumThreadsLevel0);
+
+  Env* env = Env::Default();
+  const uint64_t main_tid = env->gettid();
+
+  CountDownLatch start(1);
+  for (size_t l0_idx = 0; l0_idx < kNumThreadsLevel0; ++l0_idx) {
+    level0_threads.emplace_back([&, idx = l0_idx]() {
+      vector<thread> level1_threads;
+      level1_threads.reserve(kNumThreadsLevel1);
+      // Wait on a latch to start creating threads concurrently with other
+      // level0 threads.
+      start.Wait();
+      for (size_t l1_idx = 0; l1_idx < kNumThreadsLevel1; ++l1_idx) {
+        level1_threads.emplace_back([&, parent_idx = idx, my_idx = l1_idx]() {
+          thread_ids[parent_idx][my_idx] = env->gettid();
+        });
+      }
+      for (auto& t : level1_threads) {
+        t.join();
+      }
+    });
+  }
+  start.CountDown();
+
+  for (auto& t : level0_threads) {
+    t.join();
+  }
+
+  set<size_t> unique_ids;
+  for (const auto& ids : thread_ids) {
+    std::copy(ids.cbegin(), ids.cend(), std::inserter(unique_ids, unique_ids.end()));
+  }
+  ASSERT_EQ(kNumThreadsLevel0 * kNumThreadsLevel1, unique_ids.size());
+  ASSERT_GT(*unique_ids.cbegin(), main_tid);
+
+  // Once all the threads spawned above are joined, start a few new ones and
+  // make sure the newly dispensed identifiers don't repeat the identifiers
+  // of the threads that have exited already.
+  {
+    constexpr const size_t kNumThreads = 10;
+    vector<thread> threads;
+    threads.reserve(kNumThreads);
+    vector<size_t> thread_ids;
+    thread_ids.assign(kNumThreads, 0);
+
+    for (size_t idx = 0; idx < kNumThreads; ++idx) {
+      threads.emplace_back([&, my_idx = idx]() {
+        thread_ids[my_idx] = env->gettid();
+      });
+    }
+    for (auto& t : threads) {
+      t.join();
+    }
+
+    set<size_t> ids;
+    std::copy(thread_ids.cbegin(), thread_ids.cend(), std::inserter(ids, ids.end()));
+    // All identifiers must be unique.
+    ASSERT_EQ(kNumThreads, ids.size());
+    // All of the new identifiers are greater than any of the the identifiers
+    // generated earlier.
+    ASSERT_GT(*ids.cbegin(), *unique_ids.crbegin());
+  }
 }
 
 } // namespace threadlocal
