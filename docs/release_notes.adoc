@@ -43,8 +43,22 @@ below.
   optional (see https://issues.apache.org/jira/browse/KUDU-3677[KUDU-3677]).
 * Kudu CLI tools no longer crash on exit, as the global state of the OpenSSL library is
   cleaned up explicitly (see https://issues.apache.org/jira/browse/KUDU-3635[KUDU-3635]).
-* Fixed NPE in Kudu Java client introduced by the code first released with
-  Kudu 1.17.0 (see https://issues.apache.org/jira/browse/KUDU-3698[KUDU-3698]).
+* Fixed NPE in Kudu Java client introduced in Kudu 1.17.0
+  (see https://issues.apache.org/jira/browse/KUDU-3698[KUDU-3698]).
+* Fixed kudu-backup and kudu-spark-tools jars to include the dependent kudu-spark classes
+  (see https://issues.apache.org/jira/browse/KUDU-3697[KUDU-3697]).
+* Patched Breakpad to fix minidump stack generation for 64KB page systems
+* Fixed Kudu C++ client crash introduced by KUDU-3461
+  (see https://issues.apache.org/jira/browse/KUDU-3704[KUDU-3704]).
+* Fixed Spark integration issues by restoring DefaultSource and required META-INF/services
+  entries to prevent ClassNotFoundException and ensure proper data source discovery.
+  https://issues.apache.org/jira/browse/KUDU-3718[KUDU-3718] should help catch such issues in
+  future.
+* Fixed CSR signing failures on OpenSSL 3.4+ by setting the version field in certificate signing
+  requests
+  (see https://issues.apache.org/jira/browse/KUDU-3716[KUDU-3716]).
+* Fixed NoClassDefFoundError in kudu-backup when backing up tables with BINARY columns that have
+  default values or are used in range partition bounds.
 
 [[rn_1.18.1_improvements]]
 == Optimizations and improvements
@@ -53,6 +67,8 @@ below.
 * It is now possible to control TLSv1.3-specific cipher suites used by Kudu's embedded webserver
   via the newly introduced --webserver_tls_ciphersuites flag.
 * Upgraded the Apache Spark dependency from 3.2.4 to 3.5.
+* Updated in-line help for the 'kudu master add' CLI tool to reflect on its obsolescence since
+  Kudu 1.16.0 release.
 
 [[rn_1.18.0_upgrade_notes]]
 == Upgrade Notes
