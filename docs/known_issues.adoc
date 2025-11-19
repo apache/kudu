@@ -217,3 +217,14 @@ to communicate only the most important known issues.
   If using SSSD in secure Kudu cluster deployments, make sure SSSD packages are
   of version 1.16 or newer
   (see link:https://issues.apache.org/jira/browse/KUDU-3217[KUDU-3217]).
+
+* The default value of --tablet_history_max_age_sec was increased from 15 minutes
+  to 1 week in Kudu 1.10. While maintaining a longer history window can be useful
+  for features such as incremental Kudu backups and time-travel queries, it also
+  comes with significant resource costs such as higher memory usage, increased CPU load,
+  higher rate of filesystem read/write operations and more open file descriptors due to
+  storing all table data changes in delta files. Scanning rows that are updated frequently
+  imposes additional overhead, since all the accumulated deltas must be processed, negatively
+  affecting performance. Decreasing the value of this flag can improve performance, and if
+  the workload does not rely on long history retention, it is safe to reduce the value
+  (see http://issues.apache.org/jira/browse/KUDU-3583[KUDU-3583]).
