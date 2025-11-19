@@ -41,7 +41,7 @@ using strings::internal::SubstituteArg;
 
 namespace kudu {
 
-__thread Trace* Trace::threadlocal_trace_;
+thread_local Trace* Trace::threadlocal_trace_;
 
 Trace::Trace()
     : arena_(new ThreadSafeArena(1024)),

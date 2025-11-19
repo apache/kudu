@@ -88,7 +88,7 @@ using std::ostringstream;
 
 namespace kudu {
 
-__thread bool tls_redact_user_data = true;
+thread_local bool tls_redact_user_data = true;
 kudu::RedactContext g_should_redact;
 const char* const kRedactionMessage = "<redacted>";
 
@@ -174,7 +174,7 @@ void UnregisterLoggingCallbackUnlocked() {
 void FlushCoverageOnExit() {
   // Coverage flushing is not re-entrant, but this might be called from a
   // crash signal context, so avoid re-entrancy.
-  static __thread bool in_call = false;
+  static thread_local bool in_call = false;
   if (in_call) return;
   in_call = true;
 

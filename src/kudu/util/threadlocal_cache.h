@@ -108,6 +108,6 @@ class ThreadLocalCache {
 // We can't use DEFINE_STATIC_THREAD_LOCAL here because the commas in the
 // template arguments confuse the C preprocessor.
 template<class K, class T>
-__thread ThreadLocalCache<K,T>* ThreadLocalCache<K,T>::tl_instance_;
+thread_local ThreadLocalCache<K,T>* ThreadLocalCache<K,T>::tl_instance_;
 
 } // namespace kudu

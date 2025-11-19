@@ -62,7 +62,7 @@ using std::vector;
 namespace kudu {
 namespace debug {
 
-__thread TraceLog::PerThreadInfo* TraceLog::thread_local_info_ = nullptr;
+thread_local TraceLog::PerThreadInfo* TraceLog::thread_local_info_ = nullptr;
 
 namespace {
 
@@ -106,7 +106,7 @@ AtomicWord g_category_index = kNumBuiltinCategories;
 // The name of the current thread. This is used to decide if the current
 // thread name has changed. We combine all the seen thread names into the
 // output name for the thread.
-__thread const char* g_current_thread_name = "";
+thread_local const char* g_current_thread_name = "";
 
 static void NOTIMPLEMENTED() {
   LOG(FATAL);

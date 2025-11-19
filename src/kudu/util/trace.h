@@ -212,7 +212,7 @@ class Trace : public RefCountedThreadSafe<Trace> {
   // The current trace for this thread. Threads should only set this using
   // using ScopedAdoptTrace, which handles reference counting the underlying
   // object.
-  static __thread Trace* threadlocal_trace_;
+  static thread_local Trace* threadlocal_trace_;
 
   // Allocate a new entry from the arena, with enough space to hold a
   // message of length 'len'.

@@ -82,7 +82,7 @@ namespace kudu {
 // Defaults to enabling redaction, since it's the safer default with respect to
 // leaking user data, and it's easier to identify when data is over-redacted
 // than vice-versa.
-extern __thread bool tls_redact_user_data;
+extern thread_local bool tls_redact_user_data;
 
 // Redacted log messages are replaced with this constant.
 extern const char* const kRedactionMessage;

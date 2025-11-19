@@ -198,7 +198,7 @@ class LifoServiceQueue final {
     return ret;
   }
 
-  thread_local static ConsumerState* tl_consumer_;
+  static thread_local ConsumerState* tl_consumer_;
 
   const size_t max_queue_size_;
   mutable simple_spinlock lock_;

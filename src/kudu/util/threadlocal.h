@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_UTIL_THREADLOCAL_H_
-#define KUDU_UTIL_THREADLOCAL_H_
+#pragma once
 
 // Block-scoped static thread local implementation.
 //
@@ -37,9 +36,9 @@
 // instance->DoSomething();
 //
 #define BLOCK_STATIC_THREAD_LOCAL(T, t, ...)                                    \
-static __thread T* t;                                                           \
+static thread_local T* t;                                                       \
 do {                                                                            \
-  if (PREDICT_FALSE(t == NULL)) {                                               \
+  if (PREDICT_FALSE(t == nullptr)) {                                            \
     t = new T(__VA_ARGS__);                                                     \
     threadlocal::internal::AddDestructor(threadlocal::internal::Destroy<T>, t); \
   }                                                                             \
@@ -89,20 +88,20 @@ do {                                                                            
 // dtor must be destructed _after_ t, so it gets defined first.
 // Uses a mangled variable name for dtor since it must also be a member of the
 // class.
-#define DECLARE_STATIC_THREAD_LOCAL(T, t)                                                     \
-static __thread T* t
+#define DECLARE_STATIC_THREAD_LOCAL(T, t)                                       \
+static thread_local T* t
 
 // You must also define the instance in the .cc file.
-#define DEFINE_STATIC_THREAD_LOCAL(T, Class, t)                                               \
-__thread T* Class::t
+#define DEFINE_STATIC_THREAD_LOCAL(T, Class, t)                                 \
+thread_local T* Class::t
 
 // Must be invoked at least once by each thread that will access t.
-#define INIT_STATIC_THREAD_LOCAL(T, t, ...)                                       \
-do {                                                                              \
-  if (PREDICT_FALSE(t == NULL)) {                                                 \
-    t = new T(__VA_ARGS__);                                                       \
-    threadlocal::internal::AddDestructor(threadlocal::internal::Destroy<T>, t);   \
-  }                                                                               \
+#define INIT_STATIC_THREAD_LOCAL(T, t, ...)                                     \
+do {                                                                            \
+  if (PREDICT_FALSE(t == nullptr)) {                                            \
+    t = new T(__VA_ARGS__);                                                     \
+    threadlocal::internal::AddDestructor(threadlocal::internal::Destroy<T>, t); \
+  }                                                                             \
 } while (false)
 
 // Internal implementation below.
@@ -124,5 +123,3 @@ static void Destroy(void* t) {
 } // namespace internal
 } // namespace threadlocal
 } // namespace kudu
-
-#endif // KUDU_UTIL_THREADLOCAL_H_

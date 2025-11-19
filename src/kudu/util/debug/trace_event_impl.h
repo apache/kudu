@@ -694,7 +694,7 @@ class TraceLog {
     // Returns the old value of the member.
     ThreadLocalEventBuffer* AtomicTakeBuffer();
   };
-  static __thread PerThreadInfo* thread_local_info_;
+  static thread_local PerThreadInfo* thread_local_info_;
 
   Mutex active_threads_lock_;
   // Map of PID -> PerThreadInfo

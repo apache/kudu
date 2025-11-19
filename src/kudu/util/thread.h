@@ -272,7 +272,7 @@ class Thread final : public RefCountedThreadSafe<Thread> {
 
   // Thread local pointer to the current thread of execution. Will be NULL if the current
   // thread is not a Thread.
-  static __thread Thread* tls_;
+  static thread_local Thread* tls_;
 
   // Wait for the running thread to publish its tid.
   int64_t WaitForTid() const;

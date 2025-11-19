@@ -221,7 +221,7 @@ void SubmitSpinLockProfileData(const void *contendedlock, int64_t wait_cycles) {
     return;
   }
 
-  static __thread bool in_func = false;
+  static thread_local bool in_func = false;
   if (in_func) return; // non-re-entrant
   in_func = true;
 

@@ -15,8 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#ifndef KUDU_UTIL_STRIPED64_H_
-#define KUDU_UTIL_STRIPED64_H_
+#pragma once
 
 #include <atomic>
 #include <cstdint>
@@ -136,7 +135,7 @@ class Striped64 {
   // Static hash code per-thread. Shared across all instances to limit thread-local pollution.
   // Also, if a thread hits a collision on one Striped64, it's also likely to collide on
   // other Striped64s too.
-  static __thread uint64_t tls_hashcode_;
+  static thread_local uint64_t tls_hashcode_;
 };
 
 // A 64-bit number optimized for high-volume concurrent updates.
@@ -164,5 +163,3 @@ class LongAdder : Striped64 {
 };
 
 } // namespace kudu
-
-#endif

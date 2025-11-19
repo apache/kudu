@@ -57,7 +57,7 @@ void* g_orig_dl_iterate_phdr;
 #endif
 
 // The depth of calls into libdl.
-__thread int g_unsafeness_depth;
+thread_local int g_unsafeness_depth;
 
 // Scoped helper to track the recursion depth of calls into libdl
 struct ScopedBumpDepth {

@@ -57,7 +57,7 @@ const char* const kSaslMechGSSAPI = "GSSAPI";
 extern const size_t kSaslMaxBufSize = 1024;
 
 // See WrapSaslCall().
-static __thread string* g_auth_failure_capture = nullptr;
+static thread_local string* g_auth_failure_capture = nullptr;
 
 // Determine whether initialization was ever called
 static Status sasl_init_status = Status::OK();
@@ -138,7 +138,7 @@ static int SaslGetOption(void* context, const char* plugin_name, const char* opt
       // The library's contract for this method is that the caller gets to keep
       // the returned buffer until the next call by the same thread, so we use a
       // threadlocal for the buffer.
-      static __thread char buf[4];
+      static thread_local char buf[4];
       snprintf(buf, arraysize(buf), "%d", level);
       *result = buf;
       if (len != nullptr) *len = strlen(buf);

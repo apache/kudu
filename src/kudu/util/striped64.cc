@@ -54,7 +54,7 @@ Cell::Cell()
 //
 // Striped64
 //
-__thread uint64_t Striped64::tls_hashcode_ = 0;
+thread_local uint64_t Striped64::tls_hashcode_ = 0;
 
 namespace {
 const uint32_t kNumCpus = sysconf(_SC_NPROCESSORS_ONLN);

@@ -59,7 +59,7 @@ using strings::Substitute;
 
 namespace kudu {
 
-__thread KernelStackWatchdog::TLS* KernelStackWatchdog::tls_;
+thread_local KernelStackWatchdog::TLS* KernelStackWatchdog::tls_;
 
 KernelStackWatchdog::KernelStackWatchdog()
   : log_collector_(nullptr),

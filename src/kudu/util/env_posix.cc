@@ -2014,7 +2014,7 @@ class PosixEnv : public Env {
 
   uint64_t gettid() override {
     static std::atomic<uint64_t> cur_thread_local_id{0};
-    static __thread uint64_t thread_local_id{0};
+    static thread_local uint64_t thread_local_id{0};
     // Platform-independent thread ID.  We can't use pthread_self here,
     // because that function returns a totally opaque ID, which can't be
     // compared via normal means.

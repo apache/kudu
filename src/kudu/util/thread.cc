@@ -165,7 +165,7 @@ static int32_t GetSchedulingPriority() {
   return prio;
 }
 
-__thread Thread* Thread::tls_ = nullptr;
+thread_local Thread* Thread::tls_ = nullptr;
 
 // A singleton class that tracks all live threads, and groups them together for easy
 // auditing. Used only by Thread.
