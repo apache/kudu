@@ -281,10 +281,10 @@ TEST_F(NetUtilTest, TestParseAddressesWithScheme) {
 }
 
 class ResolveAddressTest : public NetUtilTest,
-                           public ::testing::WithParamInterface<std::string> {
+                           public ::testing::WithParamInterface<IPMode> {
 public:
   ResolveAddressTest() : hostname("localhost") {
-    FLAGS_ip_config_mode = GetParam();
+    FLAGS_ip_config_mode = IPModeToString(GetParam());
   }
 protected:
   string hostname;
@@ -293,7 +293,7 @@ protected:
 
 // This is used to run all parameterized tests with different IP modes.
 INSTANTIATE_TEST_SUITE_P(Parameters, ResolveAddressTest,
-                         testing::Values("ipv4", "ipv6", "dual"));
+                         testing::Values(IPMode::IPV4, IPMode::IPV6, IPMode::DUAL));
 
 // Paramterize these tests for ipv4, ipv6 and dual as localhost can resolve to any of these.
 TEST_P(ResolveAddressTest, TestInjectFailureToResolveAddresses) {

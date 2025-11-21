@@ -282,6 +282,11 @@ enum class IPMode {
 // "ipv4", "ipv6", "dual"
 Status ParseIPModeFlag(const std::string& flag_value, IPMode* mode);
 
+// This is a helper function to return corresponding ip_config_mode string
+// for a given IPMode value:
+// IPMode::IPV4, IPMode::IPV6, IPMode::DUAL
+const char* IPModeToString(IPMode mode);
+
 // Return appropriate sa_family_t based on ip_config_mode flag value.
 sa_family_t GetIPFamily();
 

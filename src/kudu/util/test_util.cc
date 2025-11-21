@@ -758,4 +758,10 @@ void CheckPrometheusOutput(const string& prometheus_output) {
     }
   }
 }
+
+std::ostream& operator<<(std::ostream& os, const IPMode& mode) {
+  os << IPModeToString(mode);
+  return os;
+}
+
 } // namespace kudu

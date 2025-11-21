@@ -183,6 +183,17 @@ Status ParseIPModeFlag(const string& flag_value, IPMode* mode) {
   return Status::OK();
 }
 
+const char* IPModeToString(IPMode mode) {
+  switch (mode) {
+    case IPMode::DUAL:
+      return "dual";
+    case IPMode::IPV6:
+      return "ipv6";
+    default:
+      return "ipv4";
+  }
+}
+
 sa_family_t GetIPFamily() {
   IPMode mode;
   CHECK_OK(ParseIPModeFlag(FLAGS_ip_config_mode, &mode));

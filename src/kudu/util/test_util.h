@@ -23,15 +23,17 @@
 
 #include <cstdint>
 #include <functional>
+#include <iosfwd>
 #include <memory>
 #include <string>
-#include <vector>
 #include <unordered_map>
+#include <vector>
 
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/port.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
 
 #define SKIP_IF_SLOW_NOT_ALLOWED() do { \
   if (!AllowSlowTests()) { \
@@ -219,5 +221,9 @@ const std::unordered_map<std::string, std::string>& GetMasterWebserverEndpoints(
 // Prometheus metrics output sanity check. This check is used in both the tablet_server-test
 // and the master-test, so it is placed here.
 void CheckPrometheusOutput(const std::string& prometheus_output);
+
+// Beautifies test output if a test scenario fails.
+std::ostream& operator<<(std::ostream& os, const IPMode& mode);
+
 } // namespace kudu
 #endif

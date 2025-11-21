@@ -80,6 +80,9 @@ TAG_FLAG(test_sensitive_flag, sensitive);
 
 namespace kudu {
 
+constexpr char kIpv6Localhost[] = "[::1]";
+constexpr char kIpDual[] = "[::]";
+
 const bool kIsFips = security::IsFIPSEnabled();
 
 namespace {
@@ -97,29 +100,50 @@ void SetHTPasswdOptions(WebserverOptions* opts) {
                                         &opts->password_file));
 }
 
+string GetWebserverInterface(IPMode mode) {
+  switch (mode) {
+    case IPMode::IPV6:
+      return kIpv6Localhost;
+    case IPMode::DUAL:
+      return kIpDual;
+    case IPMode::IPV4:
+    default:
+      // Return default webserver interface.
+      return FLAGS_webserver_interface;
+  }
+}
+
 } // anonymous namespace
 
 class WebserverTest : public KuduTest,
-                      public ::testing::WithParamInterface<std::string> {
+                      public ::testing::WithParamInterface<IPMode> {
  public:
-  WebserverTest() {
+  WebserverTest()
+    : mode_(GetParam()) {
     static_dir_ = GetTestPath("webserver-docroot");
     CHECK_OK(env_->CreateDir(static_dir_));
-    FLAGS_ip_config_mode = GetParam();
-    CHECK_OK(ParseIPModeFlag(FLAGS_ip_config_mode, &mode_));
+    FLAGS_ip_config_mode = IPModeToString(mode_);
     if (mode_ == IPMode::DUAL || mode_ == IPMode::IPV6) {
       // The wildcard address is applicable to both 'IPV6' as well as 'DUAL' modes.
       // For 'IPV6' mode, IPV6_V6ONLY is enabled on server socket option that ensures
       // IPv4 connections are rejected by the server.
       FLAGS_webserver_interface = "[::]";
     }
-  }
+}
 
   void SetUp() override {
     KuduTest::SetUp();
 
-    FLAGS_ip_config_mode = GetParam();
     WebserverOptions opts;
+    switch (mode_) {
+      case IPMode::IPV6:
+      case IPMode::DUAL:
+        opts.bind_interface = "[::]";
+        break;
+      default:
+        // Default value taken from FLAGS_webserver_interface.
+        break;
+    }
     opts.port = 0;
     opts.doc_root = static_dir_;
     opts.enable_doc_root = enable_doc_root();
@@ -189,7 +213,7 @@ class WebserverTest : public KuduTest,
   string url_;
   string static_dir_;
   string cert_path_;
-  IPMode mode_;
+  const IPMode mode_;
 };
 
 class SslWebserverTest : public WebserverTest {
@@ -209,7 +233,7 @@ class PasswdWebserverTest : public WebserverTest {
 
 // This is used to run all parameterized tests with different IP modes.
 INSTANTIATE_TEST_SUITE_P(Parameters, PasswdWebserverTest,
-                         testing::Values("ipv4", "ipv6", "dual"));
+                         testing::Values(IPMode::IPV4, IPMode::IPV6, IPMode::DUAL));
 
 // Send a HTTP request with no username and password. It should reject
 // the request as the .htpasswd is presented to webserver.
@@ -309,7 +333,7 @@ class SpnegoDedicatedKeytabWebserverTest : public SpnegoWebserverTest {
 
 // This is used to run all parameterized tests with different IP modes.
 INSTANTIATE_TEST_SUITE_P(Parameters, SpnegoDedicatedKeytabWebserverTest,
-                         testing::Values("ipv4", "ipv6", "dual"));
+                         testing::Values(IPMode::IPV4, IPMode::IPV6, IPMode::DUAL));
 
 TEST_P(SpnegoDedicatedKeytabWebserverTest, TestAuthenticated) {
   ASSERT_OK(kdc_->Kinit("alice"));
@@ -320,7 +344,7 @@ TEST_P(SpnegoDedicatedKeytabWebserverTest, TestAuthenticated) {
 
 // This is used to run all parameterized tests with different IP modes.
 INSTANTIATE_TEST_SUITE_P(Parameters, SpnegoWebserverTest,
-                         testing::Values("ipv4", "ipv6", "dual"));
+                         testing::Values(IPMode::IPV4, IPMode::IPV6, IPMode::DUAL));
 
 // Tests that execute DoSpnegoCurl() are ignored in MacOS (except the first test case)
 // MacOS heimdal kerberos caches kdc port number somewhere so that all the test cases
@@ -446,7 +470,7 @@ TEST_P(SpnegoWebserverTest, TestAuthNotRequiredForOptions) {
 
 // This is used to run all parameterized tests with different IP modes.
 INSTANTIATE_TEST_SUITE_P(Parameters, WebserverTest,
-                         testing::Values("ipv4", "ipv6", "dual"));
+                         testing::Values(IPMode::IPV4, IPMode::IPV6, IPMode::DUAL));
 
 TEST_P(WebserverTest, TestIndexPage) {
   curl_.set_return_headers(true);
@@ -547,7 +571,7 @@ TEST_P(WebserverTest, TestHttpCompression) {
 
 // This is used to run all parameterized tests with different IP modes.
 INSTANTIATE_TEST_SUITE_P(Parameters, SslWebserverTest,
-                         testing::Values("ipv4", "ipv6", "dual"));
+                         testing::Values(IPMode::IPV4, IPMode::IPV6, IPMode::DUAL));
 
 TEST_P(SslWebserverTest, TestSSL) {
   // We use a self-signed cert, so we have to trust it manually.
@@ -560,7 +584,7 @@ TEST_P(SslWebserverTest, TestSSL) {
 
 // This is used to run all parameterized tests with different IP modes.
 INSTANTIATE_TEST_SUITE_P(Parameters, Tls13WebserverTest,
-                         testing::Values("ipv4", "ipv6", "dual"));
+                         testing::Values(IPMode::IPV4, IPMode::IPV6, IPMode::DUAL));
 
 TEST_P(Tls13WebserverTest, TestTlsMinVersion) {
   FLAGS_trusted_certificate_file = cert_path_;
@@ -765,7 +789,7 @@ class NoAuthnWebserverTest : public WebserverTest {
 
 // This is used to run all parameterized tests with different IP modes.
 INSTANTIATE_TEST_SUITE_P(Parameters, NoAuthnWebserverTest,
-                         testing::Values("ipv4", "ipv6", "dual"));
+                         testing::Values(IPMode::IPV4, IPMode::IPV6, IPMode::DUAL));
 
 TEST_P(NoAuthnWebserverTest, TestUnauthenticatedUser) {
   ASSERT_OK(curl_.FetchURL(Substitute("$0/authn", url_), &buf_));
@@ -774,7 +798,7 @@ TEST_P(NoAuthnWebserverTest, TestUnauthenticatedUser) {
 
 // This is used to run all parameterized tests with different IP modes.
 INSTANTIATE_TEST_SUITE_P(Parameters, AuthnWebserverTest,
-                         testing::Values("ipv4", "ipv6", "dual"));
+                         testing::Values(IPMode::IPV4, IPMode::IPV6, IPMode::DUAL));
 
 // The following tests are skipped on macOS due to inconsistent behavior of SPNEGO.
 // macOS heimdal kerberos caches the KDC port number, which can cause subsequent tests to fail.
@@ -851,7 +875,7 @@ class PathParamWebserverTest : public WebserverTest {
 
 // This is used to run all parameterized tests with different IP modes.
 INSTANTIATE_TEST_SUITE_P(Parameters, PathParamWebserverTest,
-                         testing::Values("ipv4", "ipv6", "dual"));
+                         testing::Values(IPMode::IPV4, IPMode::IPV6, IPMode::DUAL));
 
 TEST_P(PathParamWebserverTest, TestPathParameterAtEnd) {
   ASSERT_OK(
@@ -914,7 +938,7 @@ class DisabledDocRootWebserverTest : public WebserverTest {
 
 // This is used to run all parameterized tests with different IP modes.
 INSTANTIATE_TEST_SUITE_P(Parameters, DisabledDocRootWebserverTest,
-                         testing::Values("ipv4", "ipv6", "dual"));
+                         testing::Values(IPMode::IPV4, IPMode::IPV6, IPMode::DUAL));
 
 TEST_P(DisabledDocRootWebserverTest, TestHandlerNotFound) {
   Status s = curl_.FetchURL(Substitute("$0/foo", url_), &buf_);
@@ -935,8 +959,14 @@ TEST_P(WebserverTest, TestConnectionReuse) {
   ASSERT_EQ(0, curl_.num_connects());
 }
 
-class WebserverAdvertisedAddressesTest : public KuduTest {
+class WebserverAdvertisedAddressesTest : public KuduTest,
+                                         public ::testing::WithParamInterface<IPMode> {
  public:
+  WebserverAdvertisedAddressesTest()
+    : mode_(GetParam()) {
+      FLAGS_ip_config_mode = IPModeToString(mode_);
+  }
+
   void SetUp() override {
     KuduTest::SetUp();
 
@@ -962,12 +992,7 @@ class WebserverAdvertisedAddressesTest : public KuduTest {
  protected:
   // Overridden by subclasses.
   virtual string use_webserver_interface() {
-    IPMode mode;
-    CHECK_OK(ParseIPModeFlag(FLAGS_ip_config_mode, &mode));
-    if (mode == IPMode::IPV6) {
-      FLAGS_webserver_interface = "[::]";
-    }
-    return FLAGS_webserver_interface;
+    return GetWebserverInterface(mode_);
   }
   virtual int32 use_webserver_port() const { return 0; }
   virtual string use_advertised_addresses() { return ""; }
@@ -981,19 +1006,13 @@ class WebserverAdvertisedAddressesTest : public KuduTest {
   unique_ptr<Webserver> server_;
   std::string expected_webserver_host_;
   std::string expected_advertised_host_;
+  const IPMode mode_;
 };
 
-class AdvertisedOnlyWebserverTest : public WebserverAdvertisedAddressesTest,
-                                    public ::testing::WithParamInterface<std::string> {
- public:
-  AdvertisedOnlyWebserverTest() {
-    FLAGS_ip_config_mode = GetParam();
-  }
+class AdvertisedOnlyWebserverTest : public WebserverAdvertisedAddressesTest {
  protected:
   string use_advertised_addresses() override {
-    IPMode mode;
-    CHECK_OK(ParseIPModeFlag(FLAGS_ip_config_mode, &mode));
-    switch (mode) {
+    switch (mode_) {
       case IPMode::IPV4:
         expected_advertised_host_ = "1.2.3.4";
         return "1.2.3.4:1234";
@@ -1006,17 +1025,10 @@ class AdvertisedOnlyWebserverTest : public WebserverAdvertisedAddressesTest,
   }
 };
 
-class BoundOnlyWebserverTest : public WebserverAdvertisedAddressesTest,
-                               public ::testing::WithParamInterface<std::string> {
- public:
-  BoundOnlyWebserverTest() {
-    FLAGS_ip_config_mode = GetParam();
-  }
+class BoundOnlyWebserverTest : public WebserverAdvertisedAddressesTest {
  protected:
   string use_webserver_interface() override {
-    IPMode mode;
-    CHECK_OK(ParseIPModeFlag(FLAGS_ip_config_mode, &mode));
-    switch (mode) {
+    switch (mode_) {
       case IPMode::IPV4:
         expected_webserver_host_ = expected_advertised_host_ = "127.0.0.1";
         return expected_webserver_host_;
@@ -1030,17 +1042,10 @@ class BoundOnlyWebserverTest : public WebserverAdvertisedAddressesTest,
   int32 use_webserver_port() const override { return 9999; }
 };
 
-class BothBoundAndAdvertisedWebserverTest : public WebserverAdvertisedAddressesTest,
-                                            public ::testing::WithParamInterface<std::string> {
- public:
-  BothBoundAndAdvertisedWebserverTest() {
-    FLAGS_ip_config_mode = GetParam();
-  }
+class BothBoundAndAdvertisedWebserverTest : public WebserverAdvertisedAddressesTest {
  protected:
   string use_advertised_addresses() override {
-    IPMode mode;
-    CHECK_OK(ParseIPModeFlag(FLAGS_ip_config_mode, &mode));
-    switch (mode) {
+    switch (mode_) {
       case IPMode::IPV4:
         expected_advertised_host_ = "1.2.3.4";
         return "1.2.3.4:1234";
@@ -1052,9 +1057,7 @@ class BothBoundAndAdvertisedWebserverTest : public WebserverAdvertisedAddressesT
     }
   }
   string use_webserver_interface() override {
-    IPMode mode;
-    CHECK_OK(ParseIPModeFlag(FLAGS_ip_config_mode, &mode));
-    switch (mode) {
+    switch (mode_) {
       case IPMode::IPV4:
         expected_webserver_host_ = "127.0.0.1";
         return expected_webserver_host_;
@@ -1071,7 +1074,7 @@ class BothBoundAndAdvertisedWebserverTest : public WebserverAdvertisedAddressesT
 
 // This is used to run all parameterized tests with different IP modes.
 INSTANTIATE_TEST_SUITE_P(Parameters, AdvertisedOnlyWebserverTest,
-                         testing::Values("ipv4", "ipv6"));
+                         testing::Values(IPMode::IPV4, IPMode::IPV6));
 
 TEST_P(AdvertisedOnlyWebserverTest, OnlyAdvertisedAddresses) {
   vector<Sockaddr> bound_addrs;
@@ -1087,7 +1090,7 @@ TEST_P(AdvertisedOnlyWebserverTest, OnlyAdvertisedAddresses) {
 
 // This is used to run all parameterized tests with different IP modes.
 INSTANTIATE_TEST_SUITE_P(Parameters, BoundOnlyWebserverTest,
-                         testing::Values("ipv4", "ipv6"));
+                         testing::Values(IPMode::IPV4, IPMode::IPV6));
 
 TEST_P(BoundOnlyWebserverTest, OnlyBoundAddresses) {
   vector<Sockaddr> bound_addrs;
@@ -1104,7 +1107,7 @@ TEST_P(BoundOnlyWebserverTest, OnlyBoundAddresses) {
 
 // This is used to run all parameterized tests with different IP modes.
 INSTANTIATE_TEST_SUITE_P(Parameters, BothBoundAndAdvertisedWebserverTest,
-                         testing::Values("ipv4", "ipv6"));
+                         testing::Values(IPMode::IPV4, IPMode::IPV6));
 
 TEST_P(BothBoundAndAdvertisedWebserverTest, BothBoundAndAdvertisedAddresses) {
   vector<Sockaddr> bound_addrs;
@@ -1123,17 +1126,18 @@ TEST_P(BothBoundAndAdvertisedWebserverTest, BothBoundAndAdvertisedAddresses) {
 
 // Various tests for failed webserver startup cases.
 class WebserverNegativeTests : public KuduTest,
-                               public ::testing::WithParamInterface<std::string> {
+                               public ::testing::WithParamInterface<IPMode> {
  protected:
 
   // Tries to start the webserver, expecting it to fail.
   // 'func' is used to set webserver options before starting it.
   template<class OptsFunc>
   void ExpectFailedStartup(const OptsFunc& func) {
-    FLAGS_ip_config_mode = GetParam();
+    FLAGS_ip_config_mode = IPModeToString(GetParam());
     WebserverOptions opts;
     opts.port = 0;
     func(&opts);
+    opts.bind_interface = GetWebserverInterface(GetParam());
     Webserver server(opts);
     Status s = server.Start();
     ASSERT_FALSE(s.ok()) << s.ToString();
@@ -1142,7 +1146,7 @@ class WebserverNegativeTests : public KuduTest,
 
 // This is used to run all parameterized tests with different IP modes.
 INSTANTIATE_TEST_SUITE_P(Parameters, WebserverNegativeTests,
-                         testing::Values("ipv4", "ipv6", "dual"));
+                         testing::Values(IPMode::IPV4, IPMode::IPV6, IPMode::DUAL));
 
 TEST_P(WebserverNegativeTests, BadCertFile) {
   ExpectFailedStartup([](WebserverOptions* opts) {

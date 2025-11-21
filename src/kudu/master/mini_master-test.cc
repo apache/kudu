@@ -20,7 +20,6 @@
 #include <vector>
 
 #include <gflags/gflags_declare.h>
-#include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/fs/fs_manager.h"
@@ -29,29 +28,28 @@
 #include "kudu/rpc/rpc-test-base.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/path_util.h"
-#include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 DECLARE_string(ip_config_mode);
 
 namespace kudu {
-namespace master {
 
 using std::string;
 using std::unique_ptr;
 
+namespace master {
+
 class MiniMasterTest : public KuduTest,
-                       public ::testing::WithParamInterface<string> {
+                       public ::testing::WithParamInterface<IPMode> {
  public:
   MiniMasterTest() {
-    FLAGS_ip_config_mode = GetParam();
+    mode_ = GetParam();
+    FLAGS_ip_config_mode = IPModeToString(mode_);
   }
  protected:
-  static string get_host() {
-    IPMode mode;
-    CHECK_OK(ParseIPModeFlag(FLAGS_ip_config_mode, &mode));
-    switch (mode) {
+  string get_host() {
+    switch (mode_) {
       case IPMode::IPV6:
         return "::1";
       case IPMode::DUAL:
@@ -60,11 +58,13 @@ class MiniMasterTest : public KuduTest,
         return "127.0.0.1";
     }
   }
+
+  IPMode mode_;
 };
 
 // This is used to run all parameterized tests with different IP modes.
 INSTANTIATE_TEST_SUITE_P(Parameters, MiniMasterTest,
-                         testing::Values("ipv4", "ipv6", "dual"));
+                         testing::Values(IPMode::IPV4, IPMode::IPV6, IPMode::DUAL));
 
 TEST_P(MiniMasterTest, TestMultiDirMaster) {
   SKIP_IF_HOSTNAME_RESOLUTION_FAILURE_EXPECTED();
