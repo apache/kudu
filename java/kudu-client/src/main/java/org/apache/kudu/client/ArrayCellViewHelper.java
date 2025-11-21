@@ -235,7 +235,6 @@ class ArrayCellViewHelper {
   // ----------------------------------------------------------------------
 
   static BigDecimal[] toDecimalArray(ArrayCellView view, int precision, int scale) {
-    boolean[] v;
     BigDecimal[] out;
     if (precision <= 9) {
       Int32Array arr = view.asInt32FB();

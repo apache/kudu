@@ -26,50 +26,6 @@ import java.util.Arrays;
 import org.junit.Test;
 
 public class TestArraySerdes {
-  // Helper to box primitive arrays for comparison
-  private static Object[] toObjectArray(Object arr) {
-    if (arr instanceof int[]) {
-      return Arrays.stream((int[]) arr).boxed().toArray();
-    }
-    if (arr instanceof long[]) {
-      return Arrays.stream((long[]) arr).boxed().toArray();
-    }
-    if (arr instanceof double[]) {
-      return Arrays.stream((double[]) arr).boxed().toArray();
-    }
-    if (arr instanceof float[]) {
-      float[] f = (float[]) arr;
-      Float[] boxed = new Float[f.length];
-      for (int i = 0; i < f.length; i++) {
-        boxed[i] = f[i];
-      }
-      return boxed;
-    }
-    if (arr instanceof short[]) {
-      short[] s = (short[]) arr;
-      Short[] boxed = new Short[s.length];
-      for (int i = 0; i < s.length; i++) {
-        boxed[i] = s[i];
-      }
-      return boxed;
-    }
-    if (arr instanceof byte[]) {
-      byte[] b = (byte[]) arr;
-      Byte[] boxed = new Byte[b.length];
-      for (int i = 0; i < b.length; i++) {
-        boxed[i] = b[i];
-      }
-      return boxed;
-    }
-    if (arr instanceof String[]) {
-      return (String[]) arr;
-    }
-    if (arr instanceof byte[][]) {
-      return (byte[][]) arr;
-    }
-    throw new IllegalArgumentException("Unsupported array type: " + arr.getClass());
-  }
-
   // ----------------------------
   // INT8
   // ----------------------------

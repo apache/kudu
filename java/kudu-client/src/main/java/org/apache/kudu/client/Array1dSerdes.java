@@ -107,7 +107,7 @@ public class Array1dSerdes {
     Arrays.fill(validityBytes, (byte)0);
     for (int idx = 0; idx < validityBitNum; ++idx) {
       if (validity[idx]) {
-        validityBytes[idx >> 3] |= 1 << (idx & 7);
+        validityBytes[idx >> 3] |= (byte)(1 << (idx & 7));
       }
     }
     return Content.createValidityVector(b, validityBytes);
@@ -146,7 +146,7 @@ public class Array1dSerdes {
     }
     final ByteVector vv = c.validityVector();
     Preconditions.checkState(vv.length() == n,
-        "unexpected length of validityVector: %d (expected %d)", vv.length(), n);
+        "unexpected length of validityVector: %s (expected %s)", vv.length(), n);
     for (int idx = 0; idx < m; ++idx) {
       validity[idx] = ((vv.get(idx >> 3) & (1 << (idx & 7))) != 0);
     }
