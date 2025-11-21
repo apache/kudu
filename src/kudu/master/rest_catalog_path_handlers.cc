@@ -92,7 +92,7 @@ static bool CheckIsInitializedAndIsLeader(JsonWriter& jw,  // NOLINT JsonWriter 
   }
   if (!l.leader_status().ok()) {
     RETURN_JSON_ERROR_VAL(
-        jw, "Master is not the leader", status_code, HttpStatusCode::InternalServerError, false);
+        jw, "Master is not the leader", status_code, HttpStatusCode::ServiceUnavailable, false);
   }
   return true;
 }

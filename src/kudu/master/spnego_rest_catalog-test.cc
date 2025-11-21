@@ -437,7 +437,7 @@ TEST_F(MultiMasterSpnegoTest, TestRequestsToFormerLeaderAfterElection) {
     c.set_auth(CurlAuthType::SPNEGO);
 
     Status s = c.FetchURL(Substitute("http://$0$1", original_leader_addr, path), &buf);
-    ASSERT_STR_CONTAINS(s.ToString(), "HTTP 500");
+    ASSERT_STR_CONTAINS(s.ToString(), "HTTP 503");
     ASSERT_STR_CONTAINS(buf.ToString(), "\"error\"");
     ASSERT_STR_CONTAINS(buf.ToString(), "Master is not the leader");
   }
