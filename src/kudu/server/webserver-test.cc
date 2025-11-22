@@ -103,12 +103,14 @@ class WebserverTest : public KuduTest,
                       public ::testing::WithParamInterface<std::string> {
  public:
   WebserverTest() {
-    IPMode mode;
     static_dir_ = GetTestPath("webserver-docroot");
     CHECK_OK(env_->CreateDir(static_dir_));
     FLAGS_ip_config_mode = GetParam();
-    CHECK_OK(ParseIPModeFlag(FLAGS_ip_config_mode, &mode));
-    if (mode == IPMode::DUAL) {
+    CHECK_OK(ParseIPModeFlag(FLAGS_ip_config_mode, &mode_));
+    if (mode_ == IPMode::DUAL || mode_ == IPMode::IPV6) {
+      // The wildcard address is applicable to both 'IPV6' as well as 'DUAL' modes.
+      // For 'IPV6' mode, IPV6_V6ONLY is enabled on server socket option that ensures
+      // IPv4 connections are rejected by the server.
       FLAGS_webserver_interface = "[::]";
     }
   }
@@ -141,7 +143,14 @@ class WebserverTest : public KuduTest,
       ASSERT_OK(server_->GetBoundAddresses(&addrs));
       ASSERT_EQ(addrs.size(), 1);
       ASSERT_TRUE(addrs[0].IsWildcard());
-      ASSERT_OK(addr_.ParseString("127.0.0.1", addrs[0].port()));
+      if (mode_ == IPMode::IPV4) {
+        // For 'IPV4' mode, set IPv4 loopback address as URL host.
+        ASSERT_OK(addr_.ParseString("127.0.0.1", addrs[0].port()));
+      } else {
+        // For both IPV6 and DUAL mode, choose IPv6 loopback address as URL host.
+        // Both are expected to work with IPv6 loopback address.
+        ASSERT_OK(addr_.ParseString("[::1]", addrs[0].port()));
+      }
       url_ = Substitute(use_ssl() ? "https://$0/" : "http://$0", addr_.ToString());
       // For testing purposes, we assume the server has been initialized. Typically this
       // is set to true after the rpc server is started in the server startup process.
@@ -155,6 +164,13 @@ class WebserverTest : public KuduTest,
     ASSERT_OK(curl_.FetchURL(url_, &buf_));
     ASSERT_STR_CONTAINS(buf_.ToString(),
                         "Allow: GET, POST, HEAD, CONNECT, PUT, DELETE, OPTIONS");
+  }
+
+  string ServicePrincipalName() const {
+    if (mode_ == IPMode::IPV4) {
+      return "HTTP/127.0.0.1";
+    }
+    return "HTTP/::1";
   }
 
  protected:
@@ -173,6 +189,7 @@ class WebserverTest : public KuduTest,
   string url_;
   string static_dir_;
   string cert_path_;
+  IPMode mode_;
 };
 
 class SslWebserverTest : public WebserverTest {
@@ -192,7 +209,7 @@ class PasswdWebserverTest : public WebserverTest {
 
 // This is used to run all parameterized tests with different IP modes.
 INSTANTIATE_TEST_SUITE_P(Parameters, PasswdWebserverTest,
-                         testing::Values("ipv4", "dual"));
+                         testing::Values("ipv4", "ipv6", "dual"));
 
 // Send a HTTP request with no username and password. It should reject
 // the request as the .htpasswd is presented to webserver.
@@ -231,7 +248,7 @@ class SpnegoWebserverTest : public WebserverTest {
     ASSERT_OK(kdc_->Start());
     ASSERT_OK(kdc_->SetKrb5Environment());
     string kt_path;
-    ASSERT_OK(kdc_->CreateServiceKeytab("HTTP/127.0.0.1", &kt_path));
+    ASSERT_OK(kdc_->CreateServiceKeytab(ServicePrincipalName(), &kt_path));
     PCHECK(setenv("KRB5_KTNAME", kt_path.c_str(), 1) == 0);
     ASSERT_OK(kdc_->CreateUserPrincipal("alice"));
 
@@ -277,7 +294,7 @@ class SpnegoDedicatedKeytabWebserverTest : public SpnegoWebserverTest {
     ASSERT_OK(kdc_->Start());
     ASSERT_OK(kdc_->SetKrb5Environment());
     string kt_path;
-    ASSERT_OK(kdc_->CreateServiceKeytabWithName("HTTP/127.0.0.1",
+    ASSERT_OK(kdc_->CreateServiceKeytabWithName(ServicePrincipalName(),
                                                 "spnego.dedicated",
                                                 &kt_path));
     ASSERT_OK(kdc_->CreateUserPrincipal("alice"));
@@ -292,7 +309,7 @@ class SpnegoDedicatedKeytabWebserverTest : public SpnegoWebserverTest {
 
 // This is used to run all parameterized tests with different IP modes.
 INSTANTIATE_TEST_SUITE_P(Parameters, SpnegoDedicatedKeytabWebserverTest,
-                         testing::Values("ipv4", "dual"));
+                         testing::Values("ipv4", "ipv6", "dual"));
 
 TEST_P(SpnegoDedicatedKeytabWebserverTest, TestAuthenticated) {
   ASSERT_OK(kdc_->Kinit("alice"));
@@ -303,7 +320,7 @@ TEST_P(SpnegoDedicatedKeytabWebserverTest, TestAuthenticated) {
 
 // This is used to run all parameterized tests with different IP modes.
 INSTANTIATE_TEST_SUITE_P(Parameters, SpnegoWebserverTest,
-                         testing::Values("ipv4", "dual"));
+                         testing::Values("ipv4", "ipv6", "dual"));
 
 // Tests that execute DoSpnegoCurl() are ignored in MacOS (except the first test case)
 // MacOS heimdal kerberos caches kdc port number somewhere so that all the test cases
@@ -323,7 +340,7 @@ TEST_P(SpnegoWebserverTest, TestUnauthenticatedBadKeytab) {
   // Randomize the server's key in the KDC so that the key in the keytab doesn't match the
   // one for which the client will get a ticket. This is just an easy way to provoke an
   // error and make sure that our error handling works.
-  ASSERT_OK(kdc_->RandomizePrincipalKey("HTTP/127.0.0.1"));
+  ASSERT_OK(kdc_->RandomizePrincipalKey(ServicePrincipalName()));
 
   Status s = DoSpnegoCurl();
   EXPECT_EQ(s.ToString(), "Remote error: HTTP 401");
@@ -429,7 +446,7 @@ TEST_P(SpnegoWebserverTest, TestAuthNotRequiredForOptions) {
 
 // This is used to run all parameterized tests with different IP modes.
 INSTANTIATE_TEST_SUITE_P(Parameters, WebserverTest,
-                         testing::Values("ipv4", "dual"));
+                         testing::Values("ipv4", "ipv6", "dual"));
 
 TEST_P(WebserverTest, TestIndexPage) {
   curl_.set_return_headers(true);
@@ -530,7 +547,7 @@ TEST_P(WebserverTest, TestHttpCompression) {
 
 // This is used to run all parameterized tests with different IP modes.
 INSTANTIATE_TEST_SUITE_P(Parameters, SslWebserverTest,
-                         testing::Values("ipv4", "dual"));
+                         testing::Values("ipv4", "ipv6", "dual"));
 
 TEST_P(SslWebserverTest, TestSSL) {
   // We use a self-signed cert, so we have to trust it manually.
@@ -543,7 +560,7 @@ TEST_P(SslWebserverTest, TestSSL) {
 
 // This is used to run all parameterized tests with different IP modes.
 INSTANTIATE_TEST_SUITE_P(Parameters, Tls13WebserverTest,
-                         testing::Values("ipv4", "dual"));
+                         testing::Values("ipv4", "ipv6", "dual"));
 
 TEST_P(Tls13WebserverTest, TestTlsMinVersion) {
   FLAGS_trusted_certificate_file = cert_path_;
@@ -748,7 +765,7 @@ class NoAuthnWebserverTest : public WebserverTest {
 
 // This is used to run all parameterized tests with different IP modes.
 INSTANTIATE_TEST_SUITE_P(Parameters, NoAuthnWebserverTest,
-                         testing::Values("ipv4", "dual"));
+                         testing::Values("ipv4", "ipv6", "dual"));
 
 TEST_P(NoAuthnWebserverTest, TestUnauthenticatedUser) {
   ASSERT_OK(curl_.FetchURL(Substitute("$0/authn", url_), &buf_));
@@ -757,7 +774,7 @@ TEST_P(NoAuthnWebserverTest, TestUnauthenticatedUser) {
 
 // This is used to run all parameterized tests with different IP modes.
 INSTANTIATE_TEST_SUITE_P(Parameters, AuthnWebserverTest,
-                         testing::Values("ipv4", "dual"));
+                         testing::Values("ipv4", "ipv6", "dual"));
 
 // The following tests are skipped on macOS due to inconsistent behavior of SPNEGO.
 // macOS heimdal kerberos caches the KDC port number, which can cause subsequent tests to fail.
@@ -774,7 +791,7 @@ TEST_P(AuthnWebserverTest, TestAuthenticatedUserPassedToHandler) {
 TEST_P(AuthnWebserverTest, TestUnauthenticatedBadKeytab) {
   // Test based on the SpnegoWebserverTest::TestUnauthenticatedBadKeytab test.
   ASSERT_OK(kdc_->Kinit("alice"));
-  ASSERT_OK(kdc_->RandomizePrincipalKey("HTTP/127.0.0.1"));
+  ASSERT_OK(kdc_->RandomizePrincipalKey(ServicePrincipalName()));
   curl_.set_auth(CurlAuthType::SPNEGO);
   Status s = curl_.FetchURL(Substitute("$0/authn", url_), &buf_);
   EXPECT_EQ(s.ToString(), "Remote error: HTTP 401");
@@ -834,7 +851,7 @@ class PathParamWebserverTest : public WebserverTest {
 
 // This is used to run all parameterized tests with different IP modes.
 INSTANTIATE_TEST_SUITE_P(Parameters, PathParamWebserverTest,
-                         testing::Values("ipv4", "dual"));
+                         testing::Values("ipv4", "ipv6", "dual"));
 
 TEST_P(PathParamWebserverTest, TestPathParameterAtEnd) {
   ASSERT_OK(
@@ -897,7 +914,7 @@ class DisabledDocRootWebserverTest : public WebserverTest {
 
 // This is used to run all parameterized tests with different IP modes.
 INSTANTIATE_TEST_SUITE_P(Parameters, DisabledDocRootWebserverTest,
-                         testing::Values("ipv4", "dual"));
+                         testing::Values("ipv4", "ipv6", "dual"));
 
 TEST_P(DisabledDocRootWebserverTest, TestHandlerNotFound) {
   Status s = curl_.FetchURL(Substitute("$0/foo", url_), &buf_);
@@ -1125,7 +1142,7 @@ class WebserverNegativeTests : public KuduTest,
 
 // This is used to run all parameterized tests with different IP modes.
 INSTANTIATE_TEST_SUITE_P(Parameters, WebserverNegativeTests,
-                         testing::Values("ipv4", "dual"));
+                         testing::Values("ipv4", "ipv6", "dual"));
 
 TEST_P(WebserverNegativeTests, BadCertFile) {
   ExpectFailedStartup([](WebserverOptions* opts) {
