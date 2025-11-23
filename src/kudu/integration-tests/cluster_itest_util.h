@@ -52,6 +52,7 @@ class MetricEntityPrototype;
 class MetricPrototype;
 class MonoDelta;
 class Status;
+class faststring;
 
 namespace client {
 class KuduSchema;
@@ -451,7 +452,8 @@ Status GetInt64Metric(const HostPort& http_hp,
                       const MetricPrototype* metric_proto,
                       const char* value_field,
                       int64_t* value,
-                      bool is_secure = false);
+                      bool is_secure = false,
+                      faststring* raw_json_metrics = nullptr);
 
 // Retrieve the value of a given metric from tserver. The metric must be of
 // int64_t type.

@@ -130,6 +130,7 @@
 #include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/util/async_util.h"
 #include "kudu/util/env.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/jsonreader.h"
 #include "kudu/util/logging_test_util.h"
 #include "kudu/util/metrics.h"
@@ -4312,7 +4313,7 @@ TEST_F(ToolTest, TestNonRandomWorkloadLoadgen) {
     };
     NO_FATALS(StartExternalMiniCluster(std::move(opts)));
   }
-  const vector<string> base_args = {
+  const vector<string> args = {
     "perf", "loadgen",
     cluster_->master()->bound_rpc_addr().ToString(),
     "--keep_auto_table",
@@ -4329,20 +4330,28 @@ TEST_F(ToolTest, TestNonRandomWorkloadLoadgen) {
     // Since we're using such large payloads, flush more frequently so the
     // client doesn't run out of memory.
     "--flush_per_n_rows=1",
+
+    // Partition the auto-created table so each thread inserts to a single range.
+    "--table_num_range_partitions=4",
+    "--table_num_hash_partitions=1",
   };
 
-  // Partition the table so each thread inserts to a single range.
-  vector<string> args = base_args;
-  args.emplace_back("--table_num_range_partitions=4");
-  args.emplace_back("--table_num_hash_partitions=1");
   ASSERT_OK(RunKuduTool(args));
 
   // Check that the insert workload didn't require any bloom lookups.
   ExternalTabletServer* ts = cluster_->tablet_server(0);
   int64_t bloom_lookups = 0;
-  ASSERT_OK(itest::GetInt64Metric(ts->bound_http_hostport(),
-      &METRIC_ENTITY_tablet, nullptr, &METRIC_bloom_lookups, "value", &bloom_lookups));
-  ASSERT_EQ(0, bloom_lookups);
+  faststring raw_metrics_output;
+  ASSERT_OK(itest::GetInt64Metric(
+      ts->bound_http_hostport(),
+      &METRIC_ENTITY_tablet,
+      "*",  // sum up accross all the tablets of the auto-created table
+      &METRIC_bloom_lookups,
+      "value",
+      &bloom_lookups,
+      /*is_secure=*/false,
+      &raw_metrics_output));
+  ASSERT_EQ(0, bloom_lookups) << raw_metrics_output.ToString();
 }
 
 TEST_F(ToolTest, TestPerfTableScan) {

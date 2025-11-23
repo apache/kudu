@@ -65,6 +65,7 @@
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -1249,7 +1250,8 @@ Status GetInt64Metric(const HostPort& http_hp,
                       const MetricPrototype* metric_proto,
                       const char* value_field,
                       int64_t* value,
-                      bool is_secure) {
+                      bool is_secure,
+                      faststring* raw_json_metrics) {
   *value = 0;
   bool found = false;
   // Fetch metrics whose name matches the given prototype.
@@ -1262,6 +1264,12 @@ Status GetInt64Metric(const HostPort& http_hp,
   }
   faststring dst;
   RETURN_NOT_OK(curl.FetchURL(url, &dst));
+  SCOPED_CLEANUP({
+    // Upon return, fill in the `raw_json_metrics` parameter, if necessary.
+    if (raw_json_metrics) {
+      *raw_json_metrics = std::move(dst);
+    }
+  });
 
   // Parse the results, beginning with the top-level entity array.
   JsonReader r(dst.ToString());
