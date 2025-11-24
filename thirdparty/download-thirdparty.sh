@@ -286,7 +286,7 @@ fetch_and_patch \
  "patch -p1 < $TP_DIR/patches/rapidjson-document-assignment-operator-00.patch" \
  "patch -p1 < $TP_DIR/patches/rapidjson-document-assignment-operator-01.patch"
 
-SQUEASEL_PATCHLEVEL=4
+SQUEASEL_PATCHLEVEL=5
 fetch_and_patch \
  squeasel-${SQUEASEL_VERSION}.tar.gz \
  $SQUEASEL_SOURCE \
@@ -294,7 +294,8 @@ fetch_and_patch \
  "patch -p1 < $TP_DIR/patches/squeasel-handle-openssl-errors.patch" \
  "patch -p1 < $TP_DIR/patches/squeasel-tls-min-version.patch" \
  "patch -p1 < $TP_DIR/patches/squeasel-support-get-bound-addresses-for-ipv6.patch" \
- "patch -p1 < $TP_DIR/patches/squeasel-tls-openssl10x.patch"
+ "patch -p1 < $TP_DIR/patches/squeasel-tls-openssl10x.patch" \
+ "patch -p1 < $TP_DIR/patches/squeasel-ipv6-only-socket-option.patch"
 
 MUSTACHE_PATCHLEVEL=0
 fetch_and_patch \

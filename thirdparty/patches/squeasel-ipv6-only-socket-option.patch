@@ -1,0 +1,368 @@
+diff --git a/squeasel.c b/squeasel.c
+index e683978..def4af1 100644
+--- a/squeasel.c
++++ b/squeasel.c
+@@ -226,12 +226,12 @@ char* UNSAFE_HTTP_METHODS[] = { "DELETE" , "CONNECT", "PUT" };
+ // NOTE(lsm): this enum shoulds be in sync with the config_options below.
+ enum {
+   CGI_EXTENSIONS, CGI_ENVIRONMENT, PUT_DELETE_PASSWORDS_FILE, CGI_INTERPRETER,
+-  PROTECT_URI, AUTHENTICATION_DOMAIN, SSI_EXTENSIONS, THROTTLE,
+-  ACCESS_LOG_FILE, ENABLE_DIRECTORY_LISTING, ERROR_LOG_FILE,
+-  GLOBAL_PASSWORDS_FILE, INDEX_FILES, ENABLE_KEEP_ALIVE, ACCESS_CONTROL_LIST,
+-  EXTRA_MIME_TYPES, LISTENING_PORTS, DOCUMENT_ROOT, SSL_CERTIFICATE, SSL_PRIVATE_KEY,
+-  SSL_PRIVATE_KEY_PASSWORD, SSL_GLOBAL_INIT, NUM_THREADS, RUN_AS_USER, REWRITE,
+-  HIDE_FILES, REQUEST_TIMEOUT, SSL_VERSION, SSL_CIPHERS, SSL_CIPHERSUITES, NUM_OPTIONS
++  PROTECT_URI, AUTHENTICATION_DOMAIN, SSI_EXTENSIONS, THROTTLE, ACCESS_LOG_FILE,
++  ENABLE_DIRECTORY_LISTING, ERROR_LOG_FILE, GLOBAL_PASSWORDS_FILE, INDEX_FILES,
++  ENABLE_KEEP_ALIVE, ACCESS_CONTROL_LIST, EXTRA_MIME_TYPES, LISTENING_PORTS,
++  DOCUMENT_ROOT, SSL_CERTIFICATE, SSL_PRIVATE_KEY, SSL_PRIVATE_KEY_PASSWORD,
++  SSL_GLOBAL_INIT, NUM_THREADS, RUN_AS_USER, REWRITE, HIDE_FILES, REQUEST_TIMEOUT,
++  SSL_VERSION, SSL_CIPHERS, SSL_CIPHERSUITES, USE_IPV6_ONLY, NUM_OPTIONS
+ };
+ 
+ static const char *config_options[] = {
+@@ -266,6 +266,7 @@ static const char *config_options[] = {
+   "ssl_min_version", "tlsv1",
+   "ssl_ciphers", NULL,
+   "ssl_ciphersuites", NULL,
++  "use_ipv6_only", "0",
+   NULL
+ };
+ 
+@@ -1908,6 +1909,37 @@ static SOCKET conn2(const char *host, int port, int use_ssl,
+   return sock;
+ }
+ 
++static SOCKET conn2_ipv6(const char *host, int port, int use_ssl,
++                         char *ebuf, size_t ebuf_len) {
++  SOCKET sock = INVALID_SOCKET;
++  struct addrinfo hints, *res;
++  int status;
++
++  // Set up the criteria for the address lookup
++  memset(&hints, 0, sizeof(hints));
++  hints.ai_family = AF_INET6;
++  hints.ai_socktype = SOCK_STREAM;
++  if (host == NULL) {
++    snprintf(ebuf, ebuf_len, "%s", "NULL host");
++  } else if (status = getaddrinfo(host, NULL, &hints, &res)) {
++    snprintf(ebuf, ebuf_len, "getaddrinfo(%s): %s", host, gai_strerror(status));
++  } else if ((sock = socket(AF_INET6, SOCK_STREAM, 0)) == INVALID_SOCKET) {
++    snprintf(ebuf, ebuf_len, "socket(): %s", strerror(ERRNO));
++    freeaddrinfo(res);
++  } else {
++    set_close_on_exec(sock);
++    struct sockaddr_in6* addr = (struct sockaddr_in6*)res->ai_addr;
++    addr->sin6_port = htons(port);
++    if (connect(sock, res->ai_addr, res->ai_addrlen) != 0) {
++      snprintf(ebuf, ebuf_len, "connect(%s:%d): %s",
++               host, port, strerror(ERRNO));
++      closesocket(sock);
++      sock = INVALID_SOCKET;
++    }
++    freeaddrinfo(res);
++  }
++  return sock;
++}
+ 
+ 
+ void sq_url_encode(const char *src, char *dst, size_t dst_len) {
+@@ -3669,7 +3701,7 @@ static int set_ports_option(struct sq_context *ctx) {
+   const char *list = ctx->config[LISTENING_PORTS];
+   int on = 1, success = 1;
+ #if defined(USE_IPV6)
+-  int off = 0;
++  int ipv6_only = atoi(ctx->config[USE_IPV6_ONLY]);
+ #endif
+   struct vec vec;
+   struct socket so, *ptr;
+@@ -3690,8 +3722,8 @@ static int set_ports_option(struct sq_context *ctx) {
+                           (void *) &on, sizeof(on)) != 0 ||
+ #if defined(USE_IPV6)
+                (so.lsa.sa.sa_family == AF_INET6 &&
+-                setsockopt(so.sock, IPPROTO_IPV6, IPV6_V6ONLY, (void *) &off,
+-                           sizeof(off)) != 0) ||
++                setsockopt(so.sock, IPPROTO_IPV6, IPV6_V6ONLY, (void *) &ipv6_only,
++                           sizeof(ipv6_only)) != 0) ||
+ #endif
+                bind(so.sock, &so.lsa.sa, so.lsa.sa.sa_family == AF_INET ?
+                     sizeof(so.lsa.sin) : sizeof(so.lsa)) != 0 ||
+@@ -4112,12 +4144,17 @@ void sq_close_connection(struct sq_connection *conn) {
+ }
+ 
+ struct sq_connection *sq_connect(const char *host, int port, int use_ssl,
+-                                 char *ebuf, size_t ebuf_len) {
++                                 bool ipv6_conn, char *ebuf, size_t ebuf_len) {
+   static struct sq_context fake_ctx;
+   struct sq_connection *conn = NULL;
+   SOCKET sock;
+ 
+-  if ((sock = conn2(host, port, use_ssl, ebuf, ebuf_len)) == INVALID_SOCKET) {
++  if (ipv6_conn) {
++    sock = conn2_ipv6(host, port, use_ssl, ebuf, ebuf_len);
++  } else {
++    sock = conn2(host, port, use_ssl, ebuf, ebuf_len);
++  }
++  if (sock == INVALID_SOCKET) {
+   } else if ((conn = (struct sq_connection *)
+               calloc(1, sizeof(*conn) + MAX_REQUEST_SIZE)) == NULL) {
+     snprintf(ebuf, ebuf_len, "calloc(): %s", strerror(ERRNO));
+@@ -4198,14 +4235,14 @@ static GetReqResult getreq(struct sq_connection *conn, char *ebuf, size_t ebuf_l
+ }
+ 
+ struct sq_connection *sq_download(const char *host, int port, int use_ssl,
+-                                  char *ebuf, size_t ebuf_len,
++                                  bool ipv6_conn, char *ebuf, size_t ebuf_len,
+                                   const char *fmt, ...) {
+   struct sq_connection *conn;
+   va_list ap;
+ 
+   va_start(ap, fmt);
+   ebuf[0] = '\0';
+-  if ((conn = sq_connect(host, port, use_ssl, ebuf, ebuf_len)) == NULL) {
++  if ((conn = sq_connect(host, port, use_ssl, ipv6_conn, ebuf, ebuf_len)) == NULL) {
+   } else if (sq_vprintf(conn, fmt, ap) <= 0) {
+     snprintf(ebuf, ebuf_len, "%s", "Error sending request");
+   } else {
+diff --git a/squeasel.h b/squeasel.h
+index c852ea3..075a2b9 100644
+--- a/squeasel.h
++++ b/squeasel.h
+@@ -22,6 +22,7 @@
+ #ifndef MONGOOSE_HEADER_INCLUDED
+ #define  MONGOOSE_HEADER_INCLUDED
+ 
++#include <stdbool.h>
+ #include <stdio.h>
+ #include <stddef.h>
+ 
+@@ -376,7 +377,8 @@ int sq_get_cookie(const char *cookie, const char *var_name,
+ // Download data from the remote web server.
+ //   host: host name to connect to, e.g. "foo.com", or "10.12.40.1".
+ //   port: port number, e.g. 80.
+-//   use_ssl: wether to use SSL connection.
++//   use_ssl: whether to use SSL connection.
++//   ipv6_conn: whether to use ipv6 connection.
+ //   error_buffer, error_buffer_size: error message placeholder.
+ //   request_fmt,...: HTTP request.
+ // Return:
+@@ -385,12 +387,12 @@ int sq_get_cookie(const char *cookie, const char *var_name,
+ // Example:
+ //   char ebuf[100];
+ //   struct sq_connection *conn;
+-//   conn = sq_download("google.com", 80, 0, ebuf, sizeof(ebuf),
++//   conn = sq_download("google.com", 80, 0, false, ebuf, sizeof(ebuf),
+ //                      "%s", "GET / HTTP/1.0\r\nHost: google.com\r\n\r\n");
+-struct sq_connection *sq_download(const char *host, int port, int use_ssl,
++struct sq_connection *sq_download(const char *host, int port, int use_ssl, bool ipv6_conn,
+                                   char *error_buffer, size_t error_buffer_size,
+                                   PRINTF_FORMAT_STRING(const char *request_fmt),
+-                                  ...) PRINTF_ARGS(6, 7);
++                                  ...) PRINTF_ARGS(7, 8);
+ 
+ 
+ // Close the connection opened by sq_download().
+diff --git a/test/unit_test.c b/test/unit_test.c
+index bf7c474..44f8c4b 100644
+--- a/test/unit_test.c
++++ b/test/unit_test.c
+@@ -328,6 +328,14 @@ static const char *OPTIONS_IPv6_UNSPEC[] = {
+   NULL,
+ };
+ 
++static const char *OPTIONS_IPv6Only_UNSPEC[] = {
++  "document_root", ".",
++  "listening_ports", LISTENING_ADDR_IPv6_UNSPEC,
++  "ssl_certificate", "build/ssl_cert.pem",
++  "use_ipv6_only", "1",
++  NULL,
++};
++
+ static char *read_conn(struct sq_connection *conn, int *size) {
+   char buf[100], *data = NULL;
+   int len;
+@@ -348,23 +356,23 @@ static void test_sq_download(void) {
+ 
+   ASSERT((ctx = sq_start(&CALLBACKS, NULL, OPTIONS_IPv4_LOOPBACK)) != NULL);
+ 
+-  ASSERT(sq_download(NULL, port, 0, ebuf, sizeof(ebuf), "%s", "") == NULL);
+-  ASSERT(sq_download("localhost", 0, 0, ebuf, sizeof(ebuf), "%s", "") == NULL);
+-  ASSERT(sq_download("localhost", port, 1, ebuf, sizeof(ebuf),
++  ASSERT(sq_download(NULL, port, 0, false, ebuf, sizeof(ebuf), "%s", "") == NULL);
++  ASSERT(sq_download("localhost", 0, 0, false, ebuf, sizeof(ebuf), "%s", "") == NULL);
++  ASSERT(sq_download("localhost", port, 1, false, ebuf, sizeof(ebuf),
+                      "%s", "") == NULL);
+ 
+   // Fetch nonexistent file, should see 404
+-  ASSERT((conn = sq_download("localhost", port, 1, ebuf, sizeof(ebuf), "%s",
++  ASSERT((conn = sq_download("localhost", port, 1, false, ebuf, sizeof(ebuf), "%s",
+                              "GET /gimbec HTTP/1.0\r\n\r\n")) != NULL);
+   ASSERT(strcmp(conn->request_info.uri, "404") == 0);
+   sq_close_connection(conn);
+ 
+-  ASSERT((conn = sq_download("google.com", 443, 1, ebuf, sizeof(ebuf), "%s",
++  ASSERT((conn = sq_download("google.com", 443, 1, false, ebuf, sizeof(ebuf), "%s",
+                              "GET / HTTP/1.0\r\n\r\n")) != NULL);
+   sq_close_connection(conn);
+ 
+   // Fetch squeasel.c, should succeed
+-  ASSERT((conn = sq_download("localhost", port, 1, ebuf, sizeof(ebuf), "%s",
++  ASSERT((conn = sq_download("localhost", port, 1, false, ebuf, sizeof(ebuf), "%s",
+                              "GET /squeasel.c HTTP/1.0\r\n\r\n")) != NULL);
+   ASSERT(!strcmp(conn->request_info.uri, "200"));
+   ASSERT((p1 = read_conn(conn, &len1)) != NULL);
+@@ -376,7 +384,7 @@ static void test_sq_download(void) {
+ 
+ 
+   // Fetch in-memory file, should succeed.
+-  ASSERT((conn = sq_download("localhost", port, 1, ebuf, sizeof(ebuf), "%s",
++  ASSERT((conn = sq_download("localhost", port, 1, false, ebuf, sizeof(ebuf), "%s",
+                              "GET /blah HTTP/1.1\r\n\r\n")) != NULL);
+   ASSERT((p1 = read_conn(conn, &len1)) != NULL);
+   ASSERT(len1 == (int) strlen(inmemory_file_data));
+@@ -385,7 +393,7 @@ static void test_sq_download(void) {
+   sq_close_connection(conn);
+ 
+   // Fetch in-memory data with no Content-Length, should succeed.
+-  ASSERT((conn = sq_download("localhost", port, 1, ebuf, sizeof(ebuf), "%s",
++  ASSERT((conn = sq_download("localhost", port, 1, false, ebuf, sizeof(ebuf), "%s",
+                              "GET /data HTTP/1.1\r\n\r\n")) != NULL);
+   ASSERT((p1 = read_conn(conn, &len1)) != NULL);
+   ASSERT(len1 == (int) strlen(fetch_data));
+@@ -394,7 +402,7 @@ static void test_sq_download(void) {
+   sq_close_connection(conn);
+ 
+   // Test SSL redirect, IP address
+-  ASSERT((conn = sq_download("localhost", atoi(HTTP_PORT), 0,
++  ASSERT((conn = sq_download("localhost", atoi(HTTP_PORT), 0, false,
+                              ebuf, sizeof(ebuf), "%s",
+                              "GET /foo HTTP/1.1\r\n\r\n")) != NULL);
+   ASSERT(strcmp(conn->request_info.uri, "302") == 0);
+@@ -403,7 +411,7 @@ static void test_sq_download(void) {
+   sq_close_connection(conn);
+ 
+   // Test SSL redirect, Host:
+-  ASSERT((conn = sq_download("localhost", atoi(HTTP_PORT), 0,
++  ASSERT((conn = sq_download("localhost", atoi(HTTP_PORT), 0, false,
+                              ebuf, sizeof(ebuf), "%s",
+                              "GET /foo HTTP/1.1\r\nHost: a.b:77\n\n")) != NULL);
+   ASSERT(strcmp(conn->request_info.uri, "302") == 0);
+@@ -442,7 +450,7 @@ static void test_sq_upload(void) {
+                                        boundary, upload_filename,
+                                        file_len, file_data, boundary);
+   ASSERT(post_data_len > 0);
+-  ASSERT((conn = sq_download("localhost", atoi(HTTPS_PORT), 1,
++  ASSERT((conn = sq_download("localhost", atoi(HTTPS_PORT), 1, false,
+                              ebuf, sizeof(ebuf),
+                              "POST /upload?1 HTTP/1.1\r\n"
+                              "Content-Length: %d\r\n"
+@@ -482,7 +490,7 @@ static void test_sq_upload(void) {
+                                file2_len, file2_data,
+                                boundary);
+   ASSERT(post_data_len > 0);
+-  ASSERT((conn = sq_download("localhost", atoi(HTTPS_PORT), 1,
++  ASSERT((conn = sq_download("localhost", atoi(HTTPS_PORT), 1, false,
+                              ebuf, sizeof(ebuf),
+                              "POST /upload?2 HTTP/1.1\r\n"
+                              "Content-Length: %d\r\n"
+@@ -663,7 +671,7 @@ static void test_request_replies(void) {
+ 
+   ASSERT((ctx = sq_start(&CALLBACKS, NULL, OPTIONS_IPv4_LOOPBACK)) != NULL);
+   for (i = 0; tests[i].request != NULL; i++) {
+-    ASSERT((conn = sq_download("localhost", port, 1, ebuf, sizeof(ebuf), "%s",
++    ASSERT((conn = sq_download("localhost", port, 1, false, ebuf, sizeof(ebuf), "%s",
+                                tests[i].request)) != NULL);
+     sq_close_connection(conn);
+   }
+@@ -701,7 +709,7 @@ static void test_api_calls(void) {
+   memset(&callbacks, 0, sizeof(callbacks));
+   callbacks.begin_request = api_callback;
+   ASSERT((ctx = sq_start(&callbacks, (void *) 123, OPTIONS_IPv4_LOOPBACK)) != NULL);
+-  ASSERT((conn = sq_download("localhost", atoi(HTTPS_PORT), 1,
++  ASSERT((conn = sq_download("localhost", atoi(HTTPS_PORT), 1, false,
+                              ebuf, sizeof(ebuf), "%s", request)) != NULL);
+   sq_close_connection(conn);
+   sq_stop(ctx);
+@@ -886,6 +894,67 @@ static void test_parse_port_string(void) {
+   }
+ }
+ 
++static void test_connect_dual_stack(void) {
++  char ebuf[100];
++  int i, port = atoi(HTTPS_PORT);
++  struct sq_connection *conn;
++  struct sq_context *ctx;
++  static struct { const char *request, *reply_regex; } tests[] = {
++    {
++      "GET test/hello.txt HTTP/1.0\r\nRange: bytes=3-5\r\n\r\n",
++      "^HTTP/1.1 206 Partial Content"
++    },
++    {NULL, NULL},
++  };
++
++  ASSERT((ctx = sq_start(&CALLBACKS, NULL, OPTIONS_IPv6_UNSPEC)) != NULL);
++  // Connect with IPv4 host should succeed.
++  for (i = 0; tests[i].request != NULL; i++) {
++    ASSERT((conn = sq_download("127.0.0.1", port, 1, false /* for ipv4 address */,
++                               ebuf, sizeof(ebuf), "%s", tests[i].request)) != NULL);
++    sq_close_connection(conn);
++  }
++  // Connect with IPv6 host should succeed.
++  for (i = 0; tests[i].request != NULL; i++) {
++    ASSERT((conn = sq_download("::1", port, 1, true /* for ipv6 address */,
++                               ebuf, sizeof(ebuf), "%s", tests[i].request)) != NULL);
++    sq_close_connection(conn);
++  }
++  sq_stop(ctx);
++}
++
++static void test_connect_ipv6_only(void) {
++  char ebuf[100];
++  int i, port = atoi(HTTPS_PORT);
++  struct sq_connection *conn;
++  struct sq_context *ctx;
++  static struct { const char *request, *reply_regex; } tests[] = {
++    {
++      "GET test/hello.txt HTTP/1.0\r\nRange: bytes=3-5\r\n\r\n",
++      "^HTTP/1.1 206 Partial Content"
++    },
++    {NULL, NULL},
++  };
++
++  ASSERT((ctx = sq_start(&CALLBACKS, NULL, OPTIONS_IPv6Only_UNSPEC)) != NULL);
++  // Connect with IPv4 host should fail with an apt error.
++  for (i = 0; tests[i].request != NULL; i++) {
++    ASSERT((conn = sq_download("127.0.0.1", port, 1, false /* for ipv4 address */,
++                               ebuf, sizeof(ebuf), "%s", tests[i].request)) == NULL);
++    char err[100];
++    snprintf(err, 100, "connect(127.0.0.1:%d): Connection refused", port);
++    ASSERT(strncmp(ebuf, err, 100) == 0);
++  }
++
++  // Connect with IPv6 host should succeed.
++  for (i = 0; tests[i].request != NULL; i++) {
++    ASSERT((conn = sq_download("::1", port, 1, true /* for ipv6 address */,
++                             ebuf, sizeof(ebuf), "%s", tests[i].request)) != NULL);
++    sq_close_connection(conn);
++  }
++  sq_stop(ctx);
++}
++
+ int __cdecl main(void) {
+   test_parse_port_string();
+   test_sq_strcasestr();
+@@ -909,8 +978,14 @@ int __cdecl main(void) {
+   test_strtoll();
+   test_sq_get_bound_addresses_ipv4_loopback();
+   test_sq_get_bound_addresses_ipv4_unspec();
++
++#if defined(USE_IPV6)
+   test_sq_get_bound_addresses_ipv6_loopback();
+   test_sq_get_bound_addresses_ipv6_unspec();
++  test_connect_dual_stack();
++  test_connect_ipv6_only();
++#endif
++
+ #ifdef USE_LUA
+   test_lua();
+ #endif
