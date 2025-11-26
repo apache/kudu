@@ -58,6 +58,9 @@ www/tracing.*
 python/kudu/*.so
 python/kudu/*.cpp
 *.py[ocd]
+.env
+.venv
+venv
 
 # CLion default build directories
 cmake-build-*
