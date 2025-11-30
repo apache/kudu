@@ -349,16 +349,16 @@ class MaintenanceManagerTest : public KuduTest {
     // simulated.
     manager_->set_memory_pressure_func_for_tests(
         [&](double* /* consumption */) {
-          double pressure_ratio = static_cast<double>(FLAGS_memory_pressure_percentage) / 100;
-          if (memory_pressure_pct_.load() >= pressure_ratio) {
-            double pressure_threshold = pressure_ratio;
-            double soft_limit = static_cast<double>(FLAGS_memory_limit_soft_percentage) / 100;
-            return pressure_threshold >= soft_limit || memory_pressure_pct_.load() >=
-                soft_limit ||Random(GetRandomSeed32()).NextDoubleFraction() >=
-                FLAGS_run_non_memory_ops_prob * (soft_limit - memory_pressure_pct_.load())
-                / (soft_limit - pressure_threshold);
+          static const double pressure_threshold = FLAGS_memory_pressure_percentage;
+          static const double soft_limit = FLAGS_memory_limit_soft_percentage;
+          static const double pressure_diff = soft_limit - pressure_threshold;
+          if (memory_pressure_pct_.load() < pressure_threshold) {
+            return false;
           }
-          return false;
+          const double used_diff = soft_limit - memory_pressure_pct_.load();
+          return pressure_diff <= 0 || used_diff <= 0 ||
+              Random(GetRandomSeed32()).NextDoubleFraction() * pressure_diff >=
+                  FLAGS_run_non_memory_ops_prob * used_diff;
         });
     ASSERT_OK(manager_->Start());
   }
@@ -492,7 +492,7 @@ TEST_F(MaintenanceManagerTest, TestMemoryPressurePrioritizesMemory) {
   ASSERT_EQ(0, op.DurationHistogram()->TotalCount());
 
   // Fake that the server is under memory pressure.
-  memory_pressure_pct_ = 0.7;
+  memory_pressure_pct_ = 70;
 
   ASSERT_EVENTUALLY([&]() {
       ASSERT_EQ(op.DurationHistogram()->TotalCount(), 1);
@@ -513,7 +513,7 @@ TEST_F(MaintenanceManagerTest, TestMemoryPressurePerformsNoMemoryOp) {
 
   // Now fake that the server is under memory pressure and make our op runnable
   // by giving it a perf score.
-  memory_pressure_pct_ = 0.7;
+  memory_pressure_pct_ = 70;
   op.set_perf_improvement(1);
 
   // Even though we're under memory pressure, and even though our op doesn't
@@ -593,7 +593,7 @@ TEST_F(MaintenanceManagerTest, TestPrioritizeLogRetentionUnderMemoryPressure) {
   op3.set_logs_retained_bytes(99);
   op3.set_ram_anchored(101);
 
-  memory_pressure_pct_ = 0.7;
+  memory_pressure_pct_ = 70;
   manager_->RegisterOp(&op1);
   manager_->RegisterOp(&op2);
   manager_->RegisterOp(&op3);
@@ -1032,7 +1032,7 @@ TEST_F(MaintenanceManagerTest, ComprehensiveTest) {
   SKIP_IF_SLOW_NOT_ALLOWED();
 
   // Select policies here.
-  memory_pressure_pct_ = 0.6;
+  memory_pressure_pct_ = 60;
   FLAGS_run_non_memory_ops_prob = 0.2;
   FLAGS_data_gc_prioritization_prob = 0.5;
 

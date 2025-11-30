@@ -721,13 +721,16 @@ void MaintenanceManager::DecreaseOpCountAndNotifyWaiters(MaintenanceOp* op) {
 }
 
 bool MaintenanceManager::ProceedWithFlush(double* used_memory_percentage) {
-  if (process_memory::UnderMemoryPressure(used_memory_percentage)) {
-    double pressure_threshold = static_cast<double>(FLAGS_memory_pressure_percentage) / 100;
-    double soft_limit = static_cast<double>(FLAGS_memory_limit_soft_percentage) / 100;
-    return pressure_threshold >= soft_limit || *used_memory_percentage >= soft_limit ||
-        rand_.NextDoubleFraction() >= FLAGS_run_non_memory_ops_prob *
-        (soft_limit - *used_memory_percentage) / (soft_limit - pressure_threshold);
+  if (!process_memory::UnderMemoryPressure(used_memory_percentage)) {
+    return false;
   }
-  return false;
+
+  static const double pressure_threshold = FLAGS_memory_pressure_percentage;
+  static const double soft_limit = FLAGS_memory_limit_soft_percentage;
+  static const double pressure_diff = soft_limit - pressure_threshold;
+  const double used_diff = soft_limit - *used_memory_percentage;
+  return pressure_diff <= 0 || used_diff <= 0 ||
+      rand_.NextDoubleFraction() * pressure_diff >=
+          FLAGS_run_non_memory_ops_prob * used_diff;
 }
 } // namespace kudu
