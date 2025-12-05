@@ -59,7 +59,9 @@ below.
   (see https://issues.apache.org/jira/browse/KUDU-3716[KUDU-3716]).
 * Fixed NoClassDefFoundError in kudu-backup when backing up tables with BINARY columns that have
   default values or are used in range partition bounds.
-
+* Fixes a unit mismatch in memory-pressure checks that caused ProceedWithFlush() to always trigger
+  flushes when under memory pressure
+  (see https://issues.apache.org/jira/browse/KUDU-3722[KUDU-3722]).
 [[rn_1.18.1_improvements]]
 == Optimizations and improvements
 
