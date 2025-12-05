@@ -175,7 +175,7 @@ signing {
     useGpgCmd() // Use gpg-agent to sign
   }
 
-  sign configurations.archives
+  sign publishing.publications.maven
 }
 
 // Add the install task to the "Upload" group so it's visible in the tasks output.
