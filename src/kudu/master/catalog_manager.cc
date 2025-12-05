@@ -5091,15 +5091,20 @@ class AsyncAlterTable : public RetryingTSRpcTask {
 
     l.Unlock();
 
+    // A sanity check: the ARRAY_1D_COLUMN_TYPE service feature shouldn't be
+    // there yet, even if the schema has nested columns; the feature is added
+    // below in the latter case.
+    DCHECK(!ContainsKey(rpc_.required_server_features(),
+                        TabletServerFeatures::ARRAY_1D_COLUMN_TYPE));
     Schema schema;
     const auto s = SchemaFromPB(req.schema(), &schema);
-    if (PREDICT_TRUE(s.ok()) && schema.has_nested_columns()) {
-      DCHECK(!ContainsKey(rpc_.required_server_features(),
-                          TabletServerFeatures::ARRAY_1D_COLUMN_TYPE));
-      rpc_.RequireServerFeature(TabletServerFeatures::ARRAY_1D_COLUMN_TYPE);
-    } else {
+    if (PREDICT_FALSE(!s.ok())) {
       KLOG_EVERY_N_SECS(WARNING, 60) << Substitute(
-          "could not convert tablet's $0 schema from PB: $1", req.tablet_id(), s.ToString());
+          "could not convert tablet's $0 schema from PB: $1",
+          req.tablet_id(), s.ToString());
+    } else if (schema.has_nested_columns()) {
+      // Require corresponding service features at the tablet server.
+      rpc_.RequireServerFeature(TabletServerFeatures::ARRAY_1D_COLUMN_TYPE);
     }
     VLOG(1) << Substitute("Sending $0 request to $1 (attempt $2): $3",
                           type_name(), target_ts_desc_->ToString(), attempt,
