@@ -523,7 +523,8 @@ TEST_F(AutoRebalancerTest, TestMaxMovesPerServer) {
   const int kNumTablets = 12;
 
   cluster_opts_.num_tablet_servers = kNumOrigTservers;
-  ASSERT_OK(CreateAndStartCluster());
+  // Disable leader rebalancing to avoid interfering with replica rebalancing test.
+  ASSERT_OK(CreateAndStartCluster(/*enable_leader_rebalance=*/false));
   NO_FATALS(CheckAutoRebalancerStarted());
 
   CreateWorkloadTable(kNumTablets, /*num_replicas*/3);
@@ -561,16 +562,28 @@ TEST_F(AutoRebalancerTest, TestMaxMovesPerServer) {
 
   // Check metric 'tablet_copy_open_client_sessions', which must be
   // less than the auto_rebalancing_max_moves_per_server, for each tserver.
-  MetricByUuid open_copy_clients_by_uuid;
-  for (int i = 0; i < cluster_->num_tablet_servers(); ++i) {
-    const auto& ts = cluster_->mini_tablet_server(i);
-    int open_client_sessions = METRIC_tablet_copy_open_client_sessions.
-        Instantiate(ts->server()->metric_entity(), 0)->value();
-    EmplaceOrDie(&open_copy_clients_by_uuid, ts->uuid(), open_client_sessions);
-  }
-  // The average number of moves per tablet server should not exceed that specified.
-  ASSERT_GE(FLAGS_auto_rebalancing_max_moves_per_server * cluster_->num_tablet_servers(),
-      AggregateMetricCounts(open_copy_clients_by_uuid, 0, cluster_->num_tablet_servers()));
+  // Use ASSERT_EVENTUALLY to handle timing issues: the auto-rebalancer
+  // schedules moves asynchronously, so we need to retry the check to allow
+  // for momentary violations during scheduling.
+  ASSERT_EVENTUALLY([&] {
+    MetricByUuid open_copy_clients_by_uuid;
+    for (int i = 0; i < cluster_->num_tablet_servers(); ++i) {
+      const auto& ts = cluster_->mini_tablet_server(i);
+      int open_client_sessions =
+          METRIC_tablet_copy_open_client_sessions.Instantiate(ts->server()->metric_entity(), 0)
+              ->value();
+      EmplaceOrDie(&open_copy_clients_by_uuid, ts->uuid(), open_client_sessions);
+
+      ASSERT_LE(open_client_sessions, FLAGS_auto_rebalancing_max_moves_per_server)
+          << "Tserver " << ts->uuid() << " exceeded max moves per server";
+    }
+
+    int total_moves =
+        AggregateMetricCounts(open_copy_clients_by_uuid, 0, cluster_->num_tablet_servers());
+    int max_total = FLAGS_auto_rebalancing_max_moves_per_server * cluster_->num_tablet_servers();
+    ASSERT_LE(total_moves, max_total)
+        << "Total moves " << total_moves << " exceeds max " << max_total;
+  });
 
   NO_FATALS(CheckNoLeaderMovesScheduled());
 }
