@@ -2881,4 +2881,132 @@ TEST_F(ReplicatedAlterTableTest, CheckTableStateAfterReplicatedAlter) {
   ASSERT_FALSE(is_altering);
 }
 
+// Test scenario for KUDU-3723.
+TEST_F(AlterTableTest, DropAndAddBackSameRangePartition) {
+  constexpr const int32_t kBucketNum = 5;
+  constexpr const int64_t kRangeLowerBound = 1765000000000000;
+  constexpr const int64_t kRangeUpperBound = 1766000000000000;
+
+  KuduSchemaBuilder b;
+  b.AddColumn("c0")->Type(KuduColumnSchema::STRING)->NotNull();
+  b.AddColumn("c1")->Type(KuduColumnSchema::STRING)->NotNull();
+  b.AddColumn("c2")->Type(KuduColumnSchema::UNIXTIME_MICROS)->NotNull();
+  b.AddColumn("c3")->Type(KuduColumnSchema::STRING)->NotNull();
+  b.AddColumn("c4")->Type(KuduColumnSchema::STRING)->NotNull();
+  b.AddColumn("c5")->Type(KuduColumnSchema::STRING);
+  b.SetPrimaryKey({"c0", "c1", "c2", "c3", "c4"});
+
+  KuduSchema schema;
+  ASSERT_OK(b.Build(&schema));
+
+  constexpr const char* const table_name = "test-dup-ranges";
+
+  // Create a table with one range partition, using the table-wide hash schema.
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  unique_ptr<KuduPartialRow> lower(schema.NewRow());
+  unique_ptr<KuduPartialRow> upper(schema.NewRow());
+  ASSERT_OK(lower->SetUnixTimeMicros("c2", 1764000000000000));
+  ASSERT_OK(upper->SetUnixTimeMicros("c2", 1765000000000000));
+  ASSERT_OK(table_creator->table_name(table_name)
+                          .schema(&schema)
+                          .set_range_partition_columns({ "c2" })
+                          .add_hash_partitions({ "c0", "c4" }, kBucketNum)
+                          .add_range_partition(lower.release(), upper.release())
+                          .num_replicas(1)
+                          .Create());
+  // Make sure it's possible to open the newly created table.
+  {
+    shared_ptr<KuduTable> table;
+    ASSERT_OK(client_->OpenTable(table_name, &table));
+  }
+
+  // Add a new range partition.
+  {
+    unique_ptr<KuduPartialRow> lower(schema.NewRow());
+    ASSERT_OK(lower->SetUnixTimeMicros("c2", kRangeLowerBound));
+    unique_ptr<KuduPartialRow> upper(schema.NewRow());
+    ASSERT_OK(upper->SetUnixTimeMicros("c2", kRangeUpperBound));
+
+    // Use the custom hash schema notation for the new range even if the hash
+    // schema is the same as the table-wide hash schema.
+    auto p = std::make_unique<KuduRangePartition>(lower.release(),
+                                                  upper.release());
+    vector<string> columns{ "c0", "c4" };
+    ASSERT_OK(p->add_hash_partitions(columns, kBucketNum, 0));
+    unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(table_name));
+    alterer->AddRangePartition(p.release());
+    ASSERT_OK(alterer->Alter());
+  }
+
+  // Drop the range partition.
+  {
+    unique_ptr<KuduPartialRow> lower(schema.NewRow());
+    ASSERT_OK(lower->SetUnixTimeMicros("c2", kRangeLowerBound));
+    unique_ptr<KuduPartialRow> upper(schema.NewRow());
+    ASSERT_OK(upper->SetUnixTimeMicros("c2", kRangeUpperBound));
+
+    unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(table_name));
+    alterer->DropRangePartition(lower.release(), upper.release());
+    ASSERT_OK(alterer->Alter());
+  }
+
+  // Add the same range partition again.
+  {
+    unique_ptr<KuduPartialRow> lower(schema.NewRow());
+    ASSERT_OK(lower->SetUnixTimeMicros("c2", kRangeLowerBound));
+    unique_ptr<KuduPartialRow> upper(schema.NewRow());
+    ASSERT_OK(upper->SetUnixTimeMicros("c2", kRangeUpperBound));
+
+    // Use the custom hash schema notation for the new range even if the hash
+    // schema is the same as the table-wide hash schema.
+    auto p = std::make_unique<KuduRangePartition>(lower.release(),
+                                                  upper.release());
+    vector<string> columns{ "c0", "c4" };
+    ASSERT_OK(p->add_hash_partitions(columns, kBucketNum, 0));
+    unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(table_name));
+    alterer->AddRangePartition(p.release());
+    ASSERT_OK(alterer->Alter());
+  }
+
+  {
+    // Make sure it's possible to open the table.
+    shared_ptr<KuduTable> table;
+    ASSERT_OK(client_->OpenTable(table_name, &table));
+  }
+
+  // Repeat the drill of adding the same range partition, but now use
+  // the notation of table-wide hash schema for the newly added range.
+  {
+    unique_ptr<KuduPartialRow> lower(schema.NewRow());
+    ASSERT_OK(lower->SetUnixTimeMicros("c2", kRangeLowerBound));
+    unique_ptr<KuduPartialRow> upper(schema.NewRow());
+    ASSERT_OK(upper->SetUnixTimeMicros("c2", kRangeUpperBound));
+
+    unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(table_name));
+    alterer->DropRangePartition(lower.release(), upper.release());
+    ASSERT_OK(alterer->Alter());
+  }
+
+  {
+    unique_ptr<KuduPartialRow> lower(schema.NewRow());
+    ASSERT_OK(lower->SetUnixTimeMicros("c2", kRangeLowerBound));
+    unique_ptr<KuduPartialRow> upper(schema.NewRow());
+    ASSERT_OK(upper->SetUnixTimeMicros("c2", kRangeUpperBound));
+
+    unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(table_name));
+    alterer->AddRangePartition(lower.release(), upper.release(),
+                               KuduTableCreator::EXCLUSIVE_BOUND,
+                               KuduTableCreator::INCLUSIVE_BOUND);
+  }
+
+  {
+    // Make sure it's possible to open the table after all the manipulations.
+    shared_ptr<KuduTable> table;
+    ASSERT_OK(client_->OpenTable(table_name, &table));
+  }
+
+  // Drop the table.
+  ASSERT_OK(client_->DeleteTable(table_name));
+}
+
 } // namespace kudu
