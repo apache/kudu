@@ -3103,25 +3103,42 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
     vector<Partition> partitions;
     const pair<KuduPartialRow, KuduPartialRow> range_bound =
         { *ops[0].split_row, *ops[1].split_row };
+    const auto& table_wide_hash_schema = partition_schema.hash_schema();
     if (step.type() == AlterTableRequestPB::ADD_RANGE_PARTITION) {
-      if (!FLAGS_enable_per_range_hash_schemas ||
-          !step.add_range_partition().has_custom_hash_schema()) {
+      // Clients are free to send in information on a new partition to add
+      // in a format that's used to add partitions with custom hash schemas
+      // even if the hash schema for the new range is the same as the table-wide
+      // hash schema. At this point it's necessary to have a clear separation
+      // between ranges with custom hash schemas and ranges with the table-wide
+      // hash schemas since the code below adds different records into
+      // the system catalog table depending on the actual hash schema for the
+      // newly added range.
+      //
+      // So, let's figure out whether the partition being added has a hash
+      // schema that differs from the table-wide hash schema.
+      bool has_custom_hash_schema = false;
+      PartitionSchema::HashSchema range_hash_schema;
+      if (FLAGS_enable_per_range_hash_schemas &&
+          step.add_range_partition().has_custom_hash_schema()) {
+        const auto& custom_hash_schema_pb =
+            step.add_range_partition().custom_hash_schema().hash_schema();
+        RETURN_NOT_OK(PartitionSchema::ExtractHashSchemaFromPB(
+          schema, custom_hash_schema_pb, &range_hash_schema));
+        has_custom_hash_schema = table_wide_hash_schema != range_hash_schema;
+      }
+
+      if (!has_custom_hash_schema) {
         RETURN_NOT_OK(partition_schema.CreatePartitions(
             {}, { range_bound }, schema, &partitions));
       } else {
-        const auto& custom_hash_schema_pb =
-            step.add_range_partition().custom_hash_schema().hash_schema();
-        const Schema schema = client_schema.CopyWithColumnIds();
-        PartitionSchema::HashSchema hash_schema;
-        RETURN_NOT_OK(PartitionSchema::ExtractHashSchemaFromPB(
-            schema, custom_hash_schema_pb, &hash_schema));
-        if (partition_schema.hash_schema().size() != hash_schema.size()) {
+        if (table_wide_hash_schema.size() != range_hash_schema.size()) {
           return Status::NotSupported(
               "varying number of hash dimensions per range is not yet supported");
         }
-        RETURN_NOT_OK(PartitionSchema::ValidateHashSchema(schema, hash_schema));
+        const Schema schema = client_schema.CopyWithColumnIds();
+        RETURN_NOT_OK(PartitionSchema::ValidateHashSchema(schema, range_hash_schema));
         RETURN_NOT_OK(partition_schema.CreatePartitionsForRange(
-            range_bound, hash_schema, schema, &partitions));
+            range_bound, range_hash_schema, schema, &partitions));
 
         // Add information on the new range with custom hash schema into the
         // PartitionSchema for the table stored in the system catalog.
@@ -3130,7 +3147,7 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
         RowOperationsPBEncoder encoder(range->mutable_range_bounds());
         encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, range_bound.first);
         encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, range_bound.second);
-        for (const auto& hash_dimension : hash_schema) {
+        for (const auto& hash_dimension : range_hash_schema) {
           auto* hash_dimension_pb = range->add_hash_schema();
           hash_dimension_pb->set_num_buckets(hash_dimension.num_buckets);
           hash_dimension_pb->set_seed(hash_dimension.seed);
@@ -3154,12 +3171,12 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
         RETURN_NOT_OK(partition_schema.CreatePartitionsForRange(
             range_bound, range_hash_schema, schema, &partitions));
 
-        // Update the partition schema information to be stored in the system
-        // catalog table. The information on a range with the table-wide hash
-        // schema must not be present in the PartitionSchemaPB that the system
-        // catalog stores, so this is necessary only if the range has custom
-        // (i.e. other than the table-wide) hash schema.
-        if (range_hash_schema != partition_schema.hash_schema()) {
+        // The information on a range with the table-wide hash schema is not
+        // present in the PartitionSchemaPB that the system catalog stores.
+        // Only information on ranges with custom hash schemas is stored there.
+        if (range_hash_schema != table_wide_hash_schema) {
+          // If the range being dropped has a custom hash schema, update the
+          // partition schema information stored in the system catalog table.
           RETURN_NOT_OK(partition_schema.DropRange(
               range_bound.first, range_bound.second, schema));
           PartitionSchemaPB ps_pb;
