@@ -35,6 +35,7 @@
 #include <llvm/ADT/iterator.h>
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/ExecutionEngine/MCJIT.h> // IWYU pragma: keep
+#include <llvm/ExecutionEngine/RTDyldMemoryManager.h>
 #include <llvm/IR/Attributes.h>
 #include <llvm/IR/Constant.h>
 #include <llvm/IR/Constants.h>
@@ -58,6 +59,7 @@
 #include <llvm/Transforms/IPO/AlwaysInliner.h>
 #include <llvm/Transforms/IPO/PassManagerBuilder.h>
 
+#include "kudu/codegen/jit_frame_manager.h"
 #include "kudu/codegen/precompiled.ll.h"
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/map-util.h"
@@ -331,6 +333,7 @@ Status ModuleBuilder::Compile(unique_ptr<ExecutionEngine>* out) {
 #endif
   Module* module = module_.get();
   EngineBuilder ebuilder(std::move(module_));
+  ebuilder.setMCJITMemoryManager(std::make_unique<JITFrameManager>());
   ebuilder.setErrorStr(&str);
   ebuilder.setOptLevel(opt_level);
   ebuilder.setMCPU(llvm::sys::getHostCPUName());
