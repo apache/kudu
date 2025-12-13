@@ -62,6 +62,10 @@ DEFINE_int32(codegen_queue_capacity, 100, "Number of tasks which may be put in t
              "generation task queue.");
 TAG_FLAG(codegen_queue_capacity, experimental);
 
+DEFINE_int32(codegen_compiler_manager_pool_max_threads_num, 1,
+             "Maximum number of threads in the compiler manager pool");
+TAG_FLAG(codegen_compiler_manager_pool_max_threads_num, hidden);
+
 METRIC_DEFINE_gauge_uint64(server, code_cache_hits, "Codegen Cache Hits",
                            kudu::MetricUnit::kCacheHits,
                            "Number of codegen cache hits since start",
@@ -118,8 +122,7 @@ class CompilationTask {
       RETURN_NOT_OK(generator_->CompileRowProjector(base_, proj_, &functions));
     }
 
-    RETURN_NOT_OK(cache_->AddEntry(functions));
-    return Status::OK();
+    return cache_->AddEntry(functions);
   }
 
   Schema base_;
@@ -138,7 +141,7 @@ CompilationManager::CompilationManager()
     query_counter_(0) {
   CHECK_OK(ThreadPoolBuilder("compiler_manager_pool")
            .set_min_threads(0)
-           .set_max_threads(1)
+           .set_max_threads(FLAGS_codegen_compiler_manager_pool_max_threads_num)
            .set_max_queue_size(FLAGS_codegen_queue_capacity)
            .set_idle_timeout(MonoDelta::FromMilliseconds(100))
            .Build(&pool_));

@@ -21,6 +21,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <thread>
 #include <vector>
 
 // IWYU pragma: no_include "testing/base/public/gunit.h"
@@ -40,6 +41,7 @@
 #include "kudu/common/schema.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/singleton.h"
+#include "kudu/util/countdown_latch.h"
 #include "kudu/util/logging_test_util.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/random.h"
@@ -51,10 +53,12 @@
 
 using std::string;
 using std::unique_ptr;
+using std::thread;
 using std::vector;
 
 DECLARE_bool(codegen_dump_mc);
 DECLARE_int32(codegen_cache_capacity);
+DECLARE_int32(codegen_compiler_manager_pool_max_threads_num);
 
 namespace kudu {
 
@@ -446,6 +450,63 @@ TEST_F(CodegenTest, TestCodeCache) {
       ASSERT_GT(num_hits, 0);
       ASSERT_LT(num_hits, 24);
     }
+  }
+}
+
+// Test scenario to reproduce the race condition that leads to the behavior
+// described by KUDU-3545 before it was addressed. This works accross different
+// compilers/toolchains, while KUDU-3545 originally stipulated that the issue
+// is specific to GCC13 and the related toolchain.
+TEST_F(CodegenTest, CodegenEHFrameRace) {
+  constexpr const size_t kNumThreads = 2;
+
+  // For easier reproduction of the race, allow for multiple threads in the
+  // codegen compile thread pool. It results in a race condition in libgcc
+  // when concurrently registering EH frames.
+  FLAGS_codegen_compiler_manager_pool_max_threads_num = 3;
+
+  // A smaller codegen cache might help to create situations when a race
+  // condition happens when just a single codegen compiler thread is active.
+  // Upon adding a new entry into the cache, an entry would be evicted
+  // if it's not enough space, and its EH frames would unregistered,
+  // while another compiler request might be running at the only active thread
+  // in the compiler thread pool, registering correspoding EH frames.
+  // It creates a race condition in libgcc, and that's the original issue
+  // behind KUDU-3545.
+  FLAGS_codegen_cache_capacity = 10;
+  Singleton<CompilationManager>::UnsafeReset();
+  CompilationManager* cm = CompilationManager::GetSingleton();
+
+  CountDownLatch start(kNumThreads);
+  vector<thread> threads;
+  threads.reserve(kNumThreads);
+  for (size_t idx = 0; idx < kNumThreads; ++idx) {
+    threads.emplace_back([&]() {
+      start.Wait();
+      for (auto pass = 0; pass < 10; ++pass) {
+        // Generate all permutations of the first 4 columns (24 permutations).
+        // For each such permutation, reate a projection and request code
+        // generation.
+        vector<size_t> perm = { 0, 1, 2, 4 };
+        do {
+          SCOPED_TRACE(perm);
+          Schema projection;
+          const auto s = CreatePartialSchema(perm, &projection);
+          if (!s.ok()) {
+            LOG(WARNING) << s.ToString();
+            return;
+          }
+
+          unique_ptr<CodegenRP> projector;
+          cm->RequestRowProjector(&base_, &projection, &projector);
+        } while (std::next_permutation(perm.begin(), perm.end()));
+      }
+    });
+  }
+  start.CountDown(kNumThreads);
+
+  for (auto& t : threads) {
+    t.join();
   }
 }
 
