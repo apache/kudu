@@ -96,6 +96,5 @@ ADD_KUDU_TEST(serdes/serdes-test)
 ADD_KUDU_TEST_DEPENDENCIES(serdes/serdes-test ${ARRAYS_FBS_TGTS})
 if(NOT NO_TESTS)
   target_link_libraries(serdes-test
-    flatbuffers
     serdes_arrays)
 endif()
