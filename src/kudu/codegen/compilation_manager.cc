@@ -23,6 +23,7 @@
 #include <ostream>
 #include <string>
 #include <type_traits>
+#include <utility>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -40,7 +41,6 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
-#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/threadpool.h"
@@ -85,16 +85,21 @@ namespace {
 // A CompilationTask is a task which, given a pair of schemas and a cache to
 // refer to, will generate code pertaining to the two schemas and store it in
 // the cache when run.
-class CompilationTask {
+class CompilationTask final {
  public:
   // Requires that the cache and generator are valid for the lifetime
   // of this object.
-  CompilationTask(const Schema& base, const Schema& proj, CodeCache* cache,
+  CompilationTask(Schema base,
+                  Schema proj,
+                  faststring key,
+                  CodeCache* cache,
                   CodeGenerator* generator)
-    : base_(base),
-      proj_(proj),
-      cache_(cache),
-      generator_(generator) {}
+      : base_(std::move(base)),
+        proj_(std::move(proj)),
+        key_(std::move(key)),
+        cache_(cache),
+        generator_(generator) {
+  }
 
   // Can only be run once.
   void Run() {
@@ -109,24 +114,24 @@ class CompilationTask {
 
  private:
   Status RunWithStatus() {
-    faststring key;
-    RETURN_NOT_OK(RowProjectorFunctions::EncodeKey(base_, proj_, &key));
-
     // Check again to make sure we didn't compile it already.
     // This can occur if we request the same schema pair while the
     // first one's compiling.
-    if (cache_->Lookup(key)) return Status::OK();
+    if (cache_->Lookup(key_)) {
+      return Status::OK();
+    }
 
     scoped_refptr<RowProjectorFunctions> functions;
     LOG_TIMING_IF(INFO, FLAGS_codegen_time_compilation, "code-generating row projector") {
       RETURN_NOT_OK(generator_->CompileRowProjector(base_, proj_, &functions));
     }
 
-    return cache_->AddEntry(functions);
+    return cache_->AddEntry(key_, functions);
   }
 
-  Schema base_;
-  Schema proj_;
+  const Schema base_;
+  const Schema proj_;
+  const faststring key_;
   CodeCache* const cache_;
   CodeGenerator* const generator_;
 
@@ -189,19 +194,20 @@ bool CompilationManager::RequestRowProjector(const Schema* base_schema,
                                              unique_ptr<RowProjector>* out) {
   faststring key;
   const auto s = RowProjectorFunctions::EncodeKey(*base_schema, *projection, &key);
-  WARN_NOT_OK(s, "RowProjector compilation request encode key failed");
   if (PREDICT_FALSE(!s.ok())) {
+    LOG(WARNING) << "RowProjector compilation request encode key failed: "
+                 << s.ToString();
     return false;
   }
   ++query_counter_;
 
   scoped_refptr<RowProjectorFunctions> cached(
-    down_cast<RowProjectorFunctions*>(cache_.Lookup(key).get()));
+      down_cast<RowProjectorFunctions*>(cache_.Lookup(key).get()));
 
   // If not cached, add a request to compilation pool
   if (!cached) {
     shared_ptr<CompilationTask> task(make_shared<CompilationTask>(
-        *base_schema, *projection, &cache_, &generator_));
+        *base_schema, *projection, std::move(key), &cache_, &generator_));
     WARN_NOT_OK_EVERY_N_SECS(pool_->Submit([task]() { task->Run(); }),
                     "RowProjector compilation request submit failed", 10);
     return false;

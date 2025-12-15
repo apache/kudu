@@ -25,8 +25,8 @@
 namespace kudu {
 
 class Cache;
-class Slice;
 class Status;
+class faststring;
 
 namespace codegen {
 
@@ -44,7 +44,7 @@ class JITWrapper;
 // LRU eviction does not guarantee that a JITWrapper is deleted, only that
 // the cache releases its shared ownership (by decrementing the reference
 // count) of the jit code.
-class CodeCache {
+class CodeCache final {
  public:
   // TODO: currently CodeCache is implemented using the Cache in
   // kudu/util/cache.h, which requires some transformation to nongeneric
@@ -65,18 +65,17 @@ class CodeCache {
   explicit CodeCache(size_t capacity);
   ~CodeCache();
 
-  // This function is NOT thread safe (only one writer may call this at
-  // a time). Attempts to add a new entry 'wrapper' to the cache, using
-  // wrapper->EncodeOwnKey() as the key. Overwrites the previous value
-  // if one exists. If insertion results in excess capacity, LRU eviction
-  // occurs. Returns Status::OK() upon success.
-  Status AddEntry(const scoped_refptr<JITWrapper>& wrapper);
+  // This function is NOT thread safe (only one writer may call this at a time).
+  // Attempts to add a new entry 'value' to the cache, using the specified key.
+  // Overwrites the previous value if one exists. If insertion results in
+  // excess capacity, LRU eviction occurs. Returns Status::OK() upon success.
+  Status AddEntry(const faststring& key, const scoped_refptr<JITWrapper>& value);
 
   // This function may be called from any thread concurrently with other
   // writes and reads to the cache. Looks in the cache for the specified key.
   // Returns a reference to the associated payload, or NULL if no such entry
   // exists in the cache.
-  scoped_refptr<JITWrapper> Lookup(const Slice& key);
+  scoped_refptr<JITWrapper> Lookup(const faststring& key);
 
  private:
   class EvictionCallback;

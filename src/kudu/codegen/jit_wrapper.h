@@ -52,15 +52,6 @@ class JITWrapper : public RefCountedThreadSafe<JITWrapper> {
     ROW_PROJECTOR
   };
 
-  // Returns the key encoding (for the code cache) for this upon success.
-  // If two JITWrapper instances of the same type have the same key, then
-  // their codegenned code should be functionally equivalent.
-  // Appends key to 'out' upon success.
-  // The key must be unique amongst all derived types of JITWrapper.
-  // To do this, the type's enum value from JITWrapper::JITWrapperType
-  // should be prefixed to out.
-  virtual Status EncodeOwnKey(faststring* out) = 0;
-
  protected:
   explicit JITWrapper(std::unique_ptr<JITCodeOwner> owner);
   virtual ~JITWrapper();

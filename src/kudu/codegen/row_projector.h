@@ -66,12 +66,7 @@ class RowProjectorFunctions : public JITWrapper {
   ProjectionFunction read() const { return read_f_; }
   ProjectionFunction write() const { return write_f_; }
 
-  Status EncodeOwnKey(faststring* out) override {
-    return EncodeKey(base_schema_, projection_, out);
-  }
-
-  static Status EncodeKey(const Schema& base, const Schema& proj,
-                          faststring* out);
+  static Status EncodeKey(const Schema& base, const Schema& proj, faststring* out);
 
  private:
   RowProjectorFunctions(const Schema& base_schema, const Schema& projection,

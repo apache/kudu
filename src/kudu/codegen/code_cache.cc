@@ -26,11 +26,12 @@
 #include "kudu/codegen/jit_wrapper.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/cache.h"
-#include "kudu/util/faststring.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
+class faststring;
+
 namespace codegen {
 
 namespace {
@@ -66,19 +67,15 @@ CodeCache::CodeCache(size_t capacity)
 
 CodeCache::~CodeCache() {}
 
-Status CodeCache::AddEntry(const scoped_refptr<JITWrapper>& value) {
-  // Get the key
-  faststring key;
-  RETURN_NOT_OK(value->EncodeOwnKey(&key));
-
-  JITWrapper* val = value.get();
-  size_t val_len = sizeof(val);
-
-  // We CHECK_NOTNULL because this is always a DRAM-based cache, and if allocation
+Status CodeCache::AddEntry(const faststring& key,
+                           const scoped_refptr<JITWrapper>& value) {
+  const JITWrapper* val = value.get();
+  constexpr size_t kValLen = sizeof(val); // NOLINT(bugprone-sizeof-expression)
+  // Using CHECK because this is always a DRAM-based cache, and if allocation
   // failed, we'd just crash the process.
-  auto pending(cache_->Allocate(Slice(key), val_len, /*charge = */1));
+  auto pending(cache_->Allocate(key, kValLen, /*charge = */1));
   CHECK(pending);
-  memcpy(cache_->MutableValue(&pending), &val, val_len);
+  memcpy(cache_->MutableValue(&pending), &val, kValLen);
 
   // Because Cache only accepts void* values, we store just the JITWrapper*
   // and increase its ref count.
@@ -90,7 +87,7 @@ Status CodeCache::AddEntry(const scoped_refptr<JITWrapper>& value) {
   return Status::OK();
 }
 
-scoped_refptr<JITWrapper> CodeCache::Lookup(const Slice& key) {
+scoped_refptr<JITWrapper> CodeCache::Lookup(const faststring& key) {
   // Look up in Cache after generating key, returning NULL if not found.
   auto found(cache_->Lookup(key, Cache::EXPECT_IN_CACHE));
   if (!found) {
