@@ -46,6 +46,7 @@
 #include "kudu/util/threadpool.h"
 
 using std::make_shared;
+using std::memory_order;
 using std::shared_ptr;
 using std::unique_ptr;
 
@@ -141,9 +142,9 @@ class CompilationTask final {
 } // anonymous namespace
 
 CompilationManager::CompilationManager()
-  : cache_(FLAGS_codegen_cache_capacity),
-    hit_counter_(0),
-    query_counter_(0) {
+    : cache_(FLAGS_codegen_cache_capacity),
+      hit_counter_(0),
+      query_counter_(0) {
   CHECK_OK(ThreadPoolBuilder("compiler_manager_pool")
            .set_min_threads(0)
            .set_max_threads(FLAGS_codegen_compiler_manager_pool_max_threads_num)
@@ -179,12 +180,12 @@ Status CompilationManager::StartInstrumentation(const scoped_refptr<MetricEntity
   metric_entity->NeverRetire(METRIC_code_cache_hits.InstantiateFunctionGauge(
       metric_entity,
       [this]() {
-        return this->hit_counter_.load(std::memory_order::memory_order_relaxed);
+        return this->hit_counter_.load(memory_order::memory_order_relaxed);
       }));
   metric_entity->NeverRetire(METRIC_code_cache_queries.InstantiateFunctionGauge(
       metric_entity,
       [this]() {
-        return this->query_counter_.load(std::memory_order::memory_order_relaxed);
+        return this->query_counter_.load(memory_order::memory_order_relaxed);
       }));
   return Status::OK();
 }
@@ -199,7 +200,7 @@ bool CompilationManager::RequestRowProjector(const Schema* base_schema,
                  << s.ToString();
     return false;
   }
-  ++query_counter_;
+  query_counter_.fetch_add(1, memory_order::memory_order_relaxed);
 
   scoped_refptr<RowProjectorFunctions> cached(
       down_cast<RowProjectorFunctions*>(cache_.Lookup(key).get()));
@@ -212,10 +213,10 @@ bool CompilationManager::RequestRowProjector(const Schema* base_schema,
                     "RowProjector compilation request submit failed", 10);
     return false;
   }
+  hit_counter_.fetch_add(1, memory_order::memory_order_relaxed);
 
-  ++hit_counter_;
+  out->reset(new RowProjector(base_schema, projection, std::move(cached)));
 
-  out->reset(new RowProjector(base_schema, projection, cached));
   return true;
 }
 
