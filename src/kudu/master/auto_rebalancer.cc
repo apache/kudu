@@ -17,10 +17,11 @@
 
 #include "kudu/master/auto_rebalancer.h"
 
-#include <cstdint>
-
 #include <atomic>
+#include <cstddef>
+#include <cstdint>
 #include <functional>
+#include <iomanip>
 #include <memory>
 #include <optional>
 #include <ostream>
@@ -36,6 +37,7 @@
 #include <glog/logging.h>
 
 #include "kudu/common/common.pb.h"
+#include "kudu/common/partition.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.pb.h"
@@ -146,6 +148,13 @@ DEFINE_bool(auto_rebalancing_fail_moves_for_test, false,
             "All CheckMoveCompleted will fail with IllegalState if this flag is true. "
             "This is only used for test.");
 TAG_FLAG(auto_rebalancing_fail_moves_for_test, unsafe);
+DEFINE_bool(auto_rebalancing_enable_range_rebalancing, false,
+            "Whether to rebalance each range partition independently. "
+            "When enabled, the auto-rebalancer treats each range partition "
+            "as a separate entity for balancing purposes, allowing finer-grained "
+            "control over replica distribution across tablet servers.");
+TAG_FLAG(auto_rebalancing_enable_range_rebalancing, advanced);
+TAG_FLAG(auto_rebalancing_enable_range_rebalancing, runtime);
 
 DECLARE_bool(auto_rebalancing_enabled);
 
@@ -172,7 +181,9 @@ AutoRebalancerTask::AutoRebalancerTask(CatalogManager* catalog_manager,
       /*run_cross_location_rebalancing*/true,
       /*run_intra_location_rebalancing*/true,
       FLAGS_auto_rebalancing_load_imbalance_threshold,
-      /*force_rebalance_replicas_on_maintenance_tservers*/false))),
+      /*force_rebalance_replicas_on_maintenance_tservers*/false,
+      /*intra_location_rebalancing_concurrency*/0,
+      FLAGS_auto_rebalancing_enable_range_rebalancing))),
       random_generator_(random_device_()),
       number_of_loop_iterations_for_test_(0),
       moves_scheduled_this_round_for_test_(0) {
@@ -590,6 +601,28 @@ Status AutoRebalancerTask::BuildClusterRawInfo(
       tablet_summary.id = tablet->id();
       tablet_summary.table_id = table_summary.id;
       tablet_summary.table_name = table_summary.name;
+
+      // Extract range partition key for range-aware rebalancing
+      if (FLAGS_auto_rebalancing_enable_range_rebalancing) {
+        const auto& tablet_pb = tablet_l.data().pb;
+        if (tablet_pb.has_partition()) {
+          Partition partition;
+          Partition::FromPB(tablet_pb.partition(), &partition);
+          const auto& range_key_begin = partition.begin().range_key();
+
+          // Format as hex string for consistency with ksck.
+          // TODO(KUDU-3749): Align ksck + auto-rebalancer hex encoding to avoid
+          // signed-char sign extension.
+          std::ostringstream ss_range_key_begin;
+          for (size_t i = 0; i < range_key_begin.size(); ++i) {
+            ss_range_key_begin << std::hex << std::setw(2) << std::setfill('0')
+                               << static_cast<uint16_t>(range_key_begin[i]);
+          }
+          tablet_summary.range_key_begin = ss_range_key_begin.str();
+          VLOG(2) << "Tablet " << tablet_summary.id
+                  << " range_key_begin: " << tablet_summary.range_key_begin;
+        }
+      }
 
       // Retrieve all replicas of the tablet.
       vector<ReplicaSummary> replicas;

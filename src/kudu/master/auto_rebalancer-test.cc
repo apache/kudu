@@ -16,22 +16,29 @@
 // under the License.
 #include "kudu/master/auto_rebalancer.h"
 
+#include <algorithm>
 #include <atomic>
 #include <functional>
+#include <limits>
+#include <map>
 #include <memory>
 #include <optional>
 #include <set>
 #include <string>
+#include <tuple>
 #include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
-#include <gflags/gflags_declare.h>
-#include "kudu/util/scoped_cleanup.h"
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/client/client.h"
+#include "kudu/client/schema.h"
+#include "kudu/common/partial_row.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/map-util.h"
@@ -48,12 +55,16 @@
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/master/ts_manager.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
-#include "kudu/tserver/mini_tablet_server.h"
+#include "kudu/rebalance/cluster_status.h"
+#include "kudu/rebalance/rebalance_algo.h"
+#include "kudu/rebalance/rebalancer.h"
 #include "kudu/rpc/rpc_controller.h"
+#include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/util/logging_test_util.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -66,7 +77,24 @@ using kudu::consensus::GetConsensusStateResponsePB;
 using kudu::itest::GetTableLocations;
 using kudu::itest::ListTabletServers;
 using kudu::master::GetTableLocationsResponsePB;
+using kudu::client::KuduClient;
+using kudu::client::KuduColumnSchema;
+using kudu::client::KuduSchema;
+using kudu::client::KuduSchemaBuilder;
+using kudu::client::KuduTable;
+using kudu::client::KuduTableAlterer;
+using kudu::client::KuduTableCreator;
+using kudu::client::sp::shared_ptr;
+using kudu::KuduPartialRow;
 using kudu::rpc::RpcController;
+using google::FlagSaver;
+using std::map;
+using std::max;
+using std::make_unique;
+using std::min;
+using std::numeric_limits;
+using std::nullopt;
+using std::optional;
 using std::set;
 using std::string;
 using std::unique_ptr;
@@ -77,7 +105,10 @@ using strings::Substitute;
 
 DECLARE_bool(auto_leader_rebalancing_enabled);
 DECLARE_bool(auto_rebalancing_enabled);
+DECLARE_bool(auto_rebalancing_enable_range_rebalancing);
 DECLARE_bool(auto_rebalancing_fail_moves_for_test);
+DECLARE_bool(enable_range_replica_placement);
+DECLARE_bool(enable_minidumps);
 DECLARE_int32(consensus_inject_latency_ms_in_notifications);
 DECLARE_int32(follower_unavailable_considered_failed_sec);
 DECLARE_int32(raft_heartbeat_interval_ms);
@@ -227,6 +258,55 @@ class AutoRebalancerTest : public KuduTest {
     });
   }
 
+  static Status BuildClusterRawInfoForTest(
+      AutoRebalancerTask* auto_rebalancer,
+      const optional<string>& location,
+      rebalance::ClusterRawInfo* raw_info) {
+    return auto_rebalancer->BuildClusterRawInfo(location, raw_info);
+  }
+
+  static Status BuildClusterInfoForTest(
+      AutoRebalancerTask* auto_rebalancer,
+      const rebalance::ClusterRawInfo& raw_info,
+      rebalance::ClusterInfo* cluster_info) {
+    return auto_rebalancer->rebalancer_.BuildClusterInfo(
+        raw_info, rebalance::Rebalancer::MovesInProgress(), cluster_info);
+  }
+
+  static map<string, int> ComputeRangeReplicaSkew(
+      const rebalance::ClusterRawInfo& raw_info,
+      const string& table_id) {
+    vector<string> tserver_uuids;
+    tserver_uuids.reserve(raw_info.tserver_summaries.size());
+    for (const auto& ts : raw_info.tserver_summaries) {
+      tserver_uuids.emplace_back(ts.uuid);
+    }
+
+    unordered_map<string, unordered_map<string, int>> counts_by_tag;
+    for (const auto& tablet : raw_info.tablet_summaries) {
+      if (tablet.table_id != table_id) {
+        continue;
+      }
+      auto& counts_by_ts = counts_by_tag[tablet.range_key_begin];
+      for (const auto& replica : tablet.replicas) {
+        counts_by_ts[replica.ts_uuid]++;
+      }
+    }
+
+    map<string, int> skew_by_tag;
+    for (const auto& [tag, counts_by_ts] : counts_by_tag) {
+      int min_count = numeric_limits<int>::max();
+      int max_count = numeric_limits<int>::min();
+      for (const auto& ts_uuid : tserver_uuids) {
+        const int count = FindWithDefault(counts_by_ts, ts_uuid, 0);
+        min_count = min(min_count, count);
+        max_count = max(max_count, count);
+      }
+      skew_by_tag.emplace(tag, max_count - min_count);
+    }
+    return skew_by_tag;
+  }
+
   // Maps from tserver UUID to the bytes sent and fetched by each tserver as a
   // part of tablet copying.
   typedef unordered_map<string, int> MetricByUuid;
@@ -292,6 +372,8 @@ class AutoRebalancerTest : public KuduTest {
     if (cluster_) {
       cluster_->Shutdown();
     }
+    // Restore any flags after the cluster is fully shut down.
+    flag_saver_.reset();
     KuduTest::TearDown();
   }
 
@@ -299,6 +381,7 @@ class AutoRebalancerTest : public KuduTest {
     unique_ptr<InternalMiniCluster> cluster_;
     InternalMiniClusterOptions cluster_opts_;
     unique_ptr<TestWorkload> workload_;
+    unique_ptr<FlagSaver> flag_saver_;
   };
 
 // Make sure that only the leader master is doing auto-rebalancing
@@ -453,6 +536,206 @@ TEST_F(AutoRebalancerTest, NoReplicaMovesIfNoTablets) {
   ASSERT_OK(CreateAndStartCluster());
   NO_FATALS(CheckAutoRebalancerStarted());
   NO_FATALS(CheckNoMovesScheduled());
+}
+
+// Verify that range-aware mode groups balance info by range start key, while
+// non-range-aware mode collapses all ranges into a single tag.
+TEST_F(AutoRebalancerTest, RangeAwareBuildClusterInfoGroupsByRange) {
+  flag_saver_ = make_unique<FlagSaver>();
+  FLAGS_auto_rebalancing_enable_range_rebalancing = true;
+  // Avoid minidump handler thread teardown races in mini-cluster shutdown.
+  FLAGS_enable_minidumps = false;
+
+  cluster_opts_.num_tablet_servers = 3;
+  ASSERT_OK(CreateAndStartCluster());
+  NO_FATALS(CheckAutoRebalancerStarted());
+
+  shared_ptr<KuduClient> client;
+  ASSERT_OK(cluster_->CreateClient(nullptr, &client));
+
+  const string kTableName = "range_aware_auto_rebalancer_test";
+  KuduSchema schema;
+  KuduSchemaBuilder builder;
+  builder.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull();
+  builder.SetPrimaryKey({ "key" });
+  ASSERT_OK(builder.Build(&schema));
+
+  unique_ptr<KuduPartialRow> lower0(schema.NewRow());
+  unique_ptr<KuduPartialRow> upper0(schema.NewRow());
+  ASSERT_OK(lower0->SetInt32("key", 0));
+  ASSERT_OK(upper0->SetInt32("key", 10));
+  unique_ptr<KuduPartialRow> lower1(schema.NewRow());
+  unique_ptr<KuduPartialRow> upper1(schema.NewRow());
+  ASSERT_OK(lower1->SetInt32("key", 10));
+  ASSERT_OK(upper1->SetInt32("key", 20));
+
+  // Create a table with two explicit ranges and hash-partition each range
+  // into two buckets, so we get tablets in two distinct range groups.
+  unique_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
+  ASSERT_OK(table_creator->table_name(kTableName)
+                .schema(&schema)
+                .add_hash_partitions({ "key" }, 2)
+                .set_range_partition_columns({ "key" })
+                .add_range_partition(lower0.release(), upper0.release())
+                .add_range_partition(lower1.release(), upper1.release())
+                .num_replicas(3)
+                .Create());
+
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(client->OpenTable(kTableName, &table));
+  const auto& table_id = table->id();
+
+  int leader_idx;
+  ASSERT_OK(cluster_->GetLeaderMasterIndex(&leader_idx));
+  auto* auto_rebalancer =
+      cluster_->mini_master(leader_idx)->master()->catalog_manager()->auto_rebalancer();
+
+  rebalance::ClusterRawInfo raw_info;
+  ASSERT_OK(BuildClusterRawInfoForTest(auto_rebalancer, nullopt, &raw_info));
+
+  // Raw tablet summaries should carry non-empty range tags in range-aware mode.
+  unordered_set<string> range_tags;
+  for (const auto& tablet : raw_info.tablet_summaries) {
+    if (tablet.table_id != table_id) {
+      continue;
+    }
+    ASSERT_FALSE(tablet.range_key_begin.empty());
+    range_tags.insert(tablet.range_key_begin);
+  }
+  ASSERT_EQ(2, range_tags.size());
+
+  // Balance info should now be grouped by table_id + range tag.
+  rebalance::ClusterInfo cluster_info;
+  ASSERT_OK(BuildClusterInfoForTest(auto_rebalancer, raw_info, &cluster_info));
+  unordered_set<string> tags_in_balance;
+  for (const auto& elem : cluster_info.balance.table_info_by_skew) {
+    const auto& tbi = elem.second;
+    if (tbi.table_id == table_id) {
+      tags_in_balance.insert(tbi.tag);
+    }
+  }
+  ASSERT_EQ(range_tags, tags_in_balance);
+
+  // With range-aware mode disabled, range tags should be empty.
+  FLAGS_auto_rebalancing_enable_range_rebalancing = false;
+  rebalance::ClusterRawInfo raw_info_no_range;
+  ASSERT_OK(BuildClusterRawInfoForTest(auto_rebalancer, nullopt, &raw_info_no_range));
+  int tablet_count = 0;
+  for (const auto& tablet : raw_info_no_range.tablet_summaries) {
+    if (tablet.table_id != table_id) {
+      continue;
+    }
+    ++tablet_count;
+    ASSERT_TRUE(tablet.range_key_begin.empty());
+  }
+  ASSERT_GT(tablet_count, 0);
+
+  // Balance info should collapse to a single empty tag.
+  rebalance::ClusterInfo cluster_info_no_range;
+  rebalance::Rebalancer local_rebalancer(rebalance::Rebalancer::Config{});
+  ASSERT_OK(local_rebalancer.BuildClusterInfo(
+      raw_info_no_range, rebalance::Rebalancer::MovesInProgress(), &cluster_info_no_range));
+  unordered_set<string> tags_no_range;
+  for (const auto& elem : cluster_info_no_range.balance.table_info_by_skew) {
+    const auto& tbi = elem.second;
+    if (tbi.table_id == table_id) {
+      tags_no_range.insert(tbi.tag);
+    }
+  }
+  ASSERT_EQ(1, tags_no_range.size());
+  ASSERT_TRUE(ContainsKey(tags_no_range, ""));
+}
+
+TEST_F(AutoRebalancerTest, RangeAwareRebalancesNewRangeReplicas) {
+  flag_saver_ = make_unique<FlagSaver>();
+  FLAGS_auto_rebalancing_enable_range_rebalancing = true;
+  FLAGS_auto_rebalancing_enabled = false;
+  FLAGS_enable_range_replica_placement = false;
+  // Avoid minidump handler thread teardown races in mini-cluster shutdown.
+  FLAGS_enable_minidumps = false;
+
+  cluster_opts_.num_tablet_servers = 3;
+  ASSERT_OK(CreateAndStartCluster());
+  NO_FATALS(CheckAutoRebalancerStarted());
+
+  shared_ptr<KuduClient> client;
+  ASSERT_OK(cluster_->CreateClient(nullptr, &client));
+
+  const string kTableName = "range_aware_rebalance_new_range";
+  KuduSchema schema;
+  KuduSchemaBuilder builder;
+  builder.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull();
+  builder.SetPrimaryKey({ "key" });
+  ASSERT_OK(builder.Build(&schema));
+
+  unique_ptr<KuduPartialRow> lower0(schema.NewRow());
+  unique_ptr<KuduPartialRow> upper0(schema.NewRow());
+  ASSERT_OK(lower0->SetInt32("key", 0));
+  ASSERT_OK(upper0->SetInt32("key", 10));
+
+  unique_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
+  ASSERT_OK(table_creator->table_name(kTableName)
+                .schema(&schema)
+                .add_hash_partitions({ "key" }, 8)
+                .set_range_partition_columns({ "key" })
+                .add_range_partition(lower0.release(), upper0.release())
+                .num_replicas(3)
+                .Create());
+
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(client->OpenTable(kTableName, &table));
+  const auto& table_id = table->id();
+
+  // Add a new tserver with no replicas yet.
+  ASSERT_OK(cluster_->AddTabletServer());
+
+  // Add a second range after the empty tserver joins.
+  unique_ptr<KuduPartialRow> lower1(schema.NewRow());
+  unique_ptr<KuduPartialRow> upper1(schema.NewRow());
+  ASSERT_OK(lower1->SetInt32("key", 10));
+  ASSERT_OK(upper1->SetInt32("key", 20));
+  unique_ptr<KuduTableAlterer> alterer(
+      client->NewTableAlterer(kTableName));
+  ASSERT_OK(alterer->AddRangePartition(lower1.release(), upper1.release())
+                ->Alter());
+
+  int leader_idx;
+  ASSERT_OK(cluster_->GetLeaderMasterIndex(&leader_idx));
+  auto* auto_rebalancer =
+      cluster_->mini_master(leader_idx)->master()->catalog_manager()->auto_rebalancer();
+
+  // Wait until both ranges are present and replicas are placed.
+  rebalance::ClusterRawInfo raw_info;
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(BuildClusterRawInfoForTest(auto_rebalancer, nullopt, &raw_info));
+    int tablet_count = 0;
+    unordered_set<string> tags;
+    for (const auto& tablet : raw_info.tablet_summaries) {
+      if (tablet.table_id != table_id) {
+        continue;
+      }
+      ++tablet_count;
+      ASSERT_FALSE(tablet.range_key_begin.empty());
+      tags.insert(tablet.range_key_begin);
+    }
+    ASSERT_EQ(16, tablet_count);
+    ASSERT_EQ(2, tags.size());
+  });
+
+  // Capture skew before rebalancing; it may or may not be imbalanced depending
+  // on placement randomness, so we don't assert on it.
+  const auto skew_by_tag = ComputeRangeReplicaSkew(raw_info, table_id);
+
+  // Enable the auto-rebalancer and wait for skew <= 1 for each range.
+  FLAGS_auto_rebalancing_enabled = true;
+  ASSERT_EVENTUALLY([&] {
+    rebalance::ClusterRawInfo raw_info_after;
+    ASSERT_OK(BuildClusterRawInfoForTest(auto_rebalancer, nullopt, &raw_info_after));
+    const auto skew_after = ComputeRangeReplicaSkew(raw_info_after, table_id);
+    for (const auto& elem : skew_after) {
+      ASSERT_LE(elem.second, 1) << "range tag: " << elem.first;
+    }
+  });
 }
 
 // Assign each tserver to its own location.
@@ -790,7 +1073,7 @@ TEST_F(AutoRebalancerTest, TestDeletedTables) {
   GetTableLocationsResponsePB table_locs;
   ASSERT_OK(GetTableLocations(cluster_->master_proxy(), kNewTableName,
                               MonoDelta::FromSeconds(10), ReplicaTypeFilter::ANY_REPLICA,
-                              /*table_id*/std::nullopt, &table_locs));
+                              /*table_id*/nullopt, &table_locs));
   unordered_set<string> deleted_tablet_ids;
   for (const auto& t : table_locs.tablet_locations()) {
     EmplaceIfNotPresent(&deleted_tablet_ids, t.tablet_id());
@@ -865,26 +1148,29 @@ TEST_F(AutoRebalancerTest, TestRemoveReplaceFlagIfMoveFails) {
   FLAGS_auto_rebalancing_enabled = false;
 
   // Check all the replace markers are false.
-  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-    const auto& tserver = cluster_->mini_tablet_server(i);
-    const auto& tablet_ids = tserver->ListTablets();
-    for (const auto& tablet_id: tablet_ids) {
-      GetConsensusStateRequestPB req;
-      GetConsensusStateResponsePB resp;
-      RpcController controller;
-      controller.set_timeout(MonoDelta::FromSeconds(60));
-      req.set_dest_uuid(tserver->uuid());
-      req.add_tablet_ids(tablet_id);
-      req.set_report_health(EXCLUDE_HEALTH_REPORT);
-      ASSERT_OK(cluster_->tserver_consensus_proxy(i)->GetConsensusState(req, &resp, &controller));
+  ASSERT_EVENTUALLY([&] {
+    for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+      const auto& tserver = cluster_->mini_tablet_server(i);
+      const auto& tablet_ids = tserver->ListTablets();
+      for (const auto& tablet_id: tablet_ids) {
+        GetConsensusStateRequestPB req;
+        GetConsensusStateResponsePB resp;
+        RpcController controller;
+        controller.set_timeout(MonoDelta::FromSeconds(60));
+        req.set_dest_uuid(tserver->uuid());
+        req.add_tablet_ids(tablet_id);
+        req.set_report_health(EXCLUDE_HEALTH_REPORT);
+        ASSERT_OK(cluster_->tserver_consensus_proxy(i)->GetConsensusState(
+            req, &resp, &controller));
 
-      const auto& committed_config = resp.tablets(0).cstate().committed_config();
-      for (int p = 0; p < committed_config.peers_size(); p++) {
-        const auto& peer = committed_config.peers(p);
-        ASSERT_FALSE(peer.attrs().replace());
+        const auto& committed_config = resp.tablets(0).cstate().committed_config();
+        for (int p = 0; p < committed_config.peers_size(); p++) {
+          const auto& peer = committed_config.peers(p);
+          ASSERT_FALSE(peer.attrs().replace());
+        }
       }
     }
-  }
+  });
 }
 
 } // namespace master
