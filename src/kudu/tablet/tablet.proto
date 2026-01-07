@@ -108,4 +108,7 @@ message TabletStatusPB {
   optional PartitionPB partition = 9;
   optional int64 estimated_on_disk_size = 7;
   repeated bytes data_dirs = 10;
+  // The table ID that this tablet belongs to. Used by master rebuilder
+  // to preserve original table IDs when rebuilding the syscatalog.
+  optional string table_id = 11;
 }

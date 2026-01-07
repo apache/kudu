@@ -639,6 +639,7 @@ void TabletReplica::GetTabletStatusPB(TabletStatusPB* status_pb_out) const {
   const string& tablet_id = meta_->tablet_id();
   status_pb_out->set_tablet_id(tablet_id);
   status_pb_out->set_table_name(meta_->table_name());
+  status_pb_out->set_table_id(meta_->table_id());
   meta_->partition().ToPB(status_pb_out->mutable_partition());
   status_pb_out->set_tablet_data_state(meta_->tablet_data_state());
   status_pb_out->set_estimated_on_disk_size(OnDiskSize());

@@ -65,7 +65,10 @@
 #include "kudu/util/string_case.h"
 #include "kudu/util/subprocess.h"
 
+// IWYU pragma: no_include "kudu/tablet/tablet-test-util.h"
+
 DECLARE_bool(force);
+DECLARE_bool(preserve_table_ids);
 DECLARE_int64(negotiation_timeout_ms);
 DECLARE_int64(timeout_ms);
 DECLARE_string(columns);
@@ -938,6 +941,9 @@ unique_ptr<Mode> BuildMasterMode() {
         " - Without '--tables', the tool will build a brand new syscatalog table based on "
         "tablet data on tablet server metadata.\n\n"
         " - With '--tables', the tool will update specific tables in current syscatalog.\n\n"
+        " - With '--preserve_table_ids', the tool will preserve original table IDs from \n"
+        "tablet server metadata instead of generating new ones. This maintains compatibility \n"
+        "with external systems (e.g., Impala, HMS) that reference tables by their IDs. \n\n"
         "WARNING: This tool is potentially unsafe. Only use it when there is no "
         "possibility of recovering the original masters, and you know what you "
         "are doing.\n";
@@ -951,6 +957,7 @@ unique_ptr<Mode> BuildMasterMode() {
         .AddOptionalParameter("fs_data_dirs")
         .AddOptionalParameter("fs_metadata_dir")
         .AddOptionalParameter("fs_wal_dir")
+        .AddOptionalParameter("preserve_table_ids")
         .AddOptionalParameter("tables")
         .Build();
     builder.AddAction(std::move(unsafe_rebuild));

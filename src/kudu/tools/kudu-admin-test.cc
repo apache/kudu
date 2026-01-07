@@ -101,6 +101,7 @@ using kudu::client::KuduTable;
 using kudu::client::KuduTableAlterer;
 using kudu::client::KuduTableCreator;
 using kudu::client::KuduValue;
+using kudu::client::ScanTableToStrings;
 using kudu::client::sp::shared_ptr;
 using kudu::cluster::ExternalMiniCluster;
 using kudu::cluster::ExternalTabletServer;
@@ -3729,7 +3730,8 @@ vector<string> RebuildMasterCmd(const ExternalMiniCluster& cluster,
                                 bool is_secure,
                                 bool log_to_stderr = false,
                                 const string& tables = "",
-                                const int& default_replica_num = 1) {
+                                const int& default_replica_num = 1,
+                                bool preserve_table_ids = true) {
   CHECK_GT(tserver_num, 0);
   CHECK_LE(tserver_num, cluster.num_tablet_servers());
   vector<string> command = {
@@ -3751,6 +3753,9 @@ vector<string> RebuildMasterCmd(const ExternalMiniCluster& cluster,
   }
   if (is_secure) {
     command.emplace_back(Substitute("--sasl_protocol_name=$0", kPrincipal));
+  }
+  if (!preserve_table_ids) {
+    command.emplace_back("--preserve_table_ids=false");
   }
   for (int i = 0; i < tserver_num; i++) {
     auto* ts = cluster.tablet_server(i);
@@ -3855,6 +3860,287 @@ void delete_table_in_syscatalog(const string& wal_dir,
 
   NO_FATALS(sys_catalog.Shutdown());
   NO_FATALS(master.Shutdown());
+}
+
+// Test that the --preserve_table_ids flag preserves original table IDs during rebuild.
+TEST_F(AdminCliTest, TestRebuildMasterPreserveTableIds) {
+  FLAGS_num_tablet_servers = 3;
+  NO_FATALS(BuildAndStart({}, {}, {}, /*create_table*/false));
+
+  constexpr const char* kTable = "default.preserve_id_test";
+  NO_FATALS(MakeTestTable(kTable, /*num_rows*/10, /*num_replicas*/3, cluster_.get()));
+
+  // Get the original table ID before rebuild.
+  string original_table_id;
+  {
+    client::sp::shared_ptr<KuduTable> table;
+    ASSERT_OK(client_->OpenTable(kTable, &table));
+    original_table_id = table->id();
+    ASSERT_FALSE(original_table_id.empty());
+  }
+
+  // Shut down the master and wipe out its data.
+  NO_FATALS(cluster_->master()->Shutdown());
+  ASSERT_OK(cluster_->master()->DeleteFromDisk());
+
+  // Rebuild the master with --preserve_table_ids=true.
+  string stdout;
+  string stderr;
+  ASSERT_OK(RunKuduTool(RebuildMasterCmd(*cluster_, FLAGS_num_tablet_servers,
+                                         /*is_secure*/false, /*log_to_stderr*/true,
+                                         /*tables*/"", /*default_replica_num*/3,
+                                         /*preserve_table_ids*/true),
+                        &stdout, &stderr));
+  ASSERT_STR_CONTAINS(stdout, "Rebuilt from 3 tablet servers, of which 0 had errors");
+  ASSERT_STR_CONTAINS(stdout, "Rebuilt from 3 replicas, of which 0 had errors");
+  // Verify that we preserved the original table_id.
+  ASSERT_STR_CONTAINS(stderr, Substitute("Preserving original table_id '$0'", original_table_id));
+
+  // Restart the cluster.
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    cluster_->tablet_server(i)->Shutdown();
+  }
+  ASSERT_OK(cluster_->Restart());
+  ASSERT_OK(WaitForTSAndReplicas(kTable));
+
+  // Rebuild the client since there's a new master.
+  KuduClientBuilder builder;
+  ASSERT_OK(cluster_->CreateClient(&builder, &client_));
+
+  // Verify the table ID is preserved after rebuild.
+  {
+    client::sp::shared_ptr<KuduTable> table;
+    ASSERT_OK(client_->OpenTable(kTable, &table));
+    string rebuilt_table_id = table->id();
+    LOG(INFO) << "Table_id after rebuild with preserve_table_ids=true: " << rebuilt_table_id;
+    ASSERT_EQ(original_table_id, rebuilt_table_id)
+        << "Table ID should be preserved after rebuild with --preserve_table_ids";
+  }
+
+  // Verify the cluster is healthy.
+  ClusterVerifier cv(cluster_.get());
+  NO_FATALS(cv.CheckCluster());
+}
+
+// Test that --preserve_table_ids=false, a new table ID is generated.
+// This test verifies that the rebuild behavior works correctly and the cluster
+// remains healthy, even though the table ID will change.
+TEST_F(AdminCliTest, TestRebuildMasterDefaultBehavior) {
+  FLAGS_num_tablet_servers = 3;
+  NO_FATALS(BuildAndStart({}, {}, {}, /*create_table*/false));
+
+  constexpr const char* kTable = "default.default_behavior_test";
+  NO_FATALS(MakeTestTable(kTable, /*num_rows*/10, /*num_replicas*/3, cluster_.get()));
+
+  // Get the original table ID before rebuild.
+  string original_table_id;
+  {
+    client::sp::shared_ptr<KuduTable> table;
+    ASSERT_OK(client_->OpenTable(kTable, &table));
+    original_table_id = table->id();
+    ASSERT_FALSE(original_table_id.empty());
+  }
+
+  // Shut down the master and wipe out its data.
+  NO_FATALS(cluster_->master()->Shutdown());
+  ASSERT_OK(cluster_->master()->DeleteFromDisk());
+
+  // Rebuild the master with --preserve_table_ids=false.
+  string stdout;
+  string stderr;
+  ASSERT_OK(RunKuduTool(RebuildMasterCmd(*cluster_, FLAGS_num_tablet_servers,
+                                         /*is_secure*/false, /*log_to_stderr*/true,
+                                         /*tables*/"", /*default_replica_num*/3,
+                                         /*preserve_table_ids*/false),
+                        &stdout, &stderr));
+  ASSERT_STR_CONTAINS(stdout, "Rebuilt from 3 tablet servers, of which 0 had errors");
+  ASSERT_STR_CONTAINS(stdout, "Rebuilt from 3 replicas, of which 0 had errors");
+  // Verify that "Preserving original table_id" message is NOT present (default behavior).
+  ASSERT_STR_NOT_CONTAINS(stderr, "Preserving original table_id");
+
+  // Restart the cluster.
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    cluster_->tablet_server(i)->Shutdown();
+  }
+  ASSERT_OK(cluster_->Restart());
+  ASSERT_OK(WaitForTSAndReplicas(kTable));
+
+  // Rebuild the client since there's a new master.
+  KuduClientBuilder builder;
+  ASSERT_OK(cluster_->CreateClient(&builder, &client_));
+
+  // Verify the table still exists and is accessible.
+  {
+    client::sp::shared_ptr<KuduTable> table;
+    ASSERT_OK(client_->OpenTable(kTable, &table));
+    string rebuilt_table_id = table->id();
+    ASSERT_FALSE(rebuilt_table_id.empty());
+    LOG(INFO) << "Table_id after rebuild with --preserve_table_ids=false: " << rebuilt_table_id;
+    ASSERT_NE(original_table_id, rebuilt_table_id)
+        << "Table ID should change after rebuild with --preserve_table_ids=false";
+  }
+
+  // Verify the cluster is healthy.
+  ClusterVerifier cv(cluster_.get());
+  NO_FATALS(cv.CheckCluster());
+}
+
+// Test that scans succeed with --preserve_table_ids when tserver_enforce_access_control is enabled.
+// This is the primary use case for the --preserve_table_ids flag: maintaining compatibility with
+// fine-grained access control after master metadata rebuild.
+TEST_F(AdminCliTest, TestRebuildMasterPreserveTableIdsWithAccessControl) {
+  FLAGS_num_tablet_servers = 3;
+  // Start the cluster with tserver_enforce_access_control enabled.
+  NO_FATALS(BuildAndStart(
+      {"--tserver_enforce_access_control=true"},  // tserver flags
+      {},                                          // master flags
+      {},                                          // extra tserver flags
+      /*create_table*/false));
+
+  constexpr const char* kTable = "default.access_control_preserve_test";
+  NO_FATALS(MakeTestTable(kTable, /*num_rows*/10, /*num_replicas*/3, cluster_.get()));
+
+  // Get the original table ID and verify we can scan the table.
+  string original_table_id;
+  {
+    client::sp::shared_ptr<KuduTable> table;
+    ASSERT_OK(client_->OpenTable(kTable, &table));
+    original_table_id = table->id();
+    ASSERT_FALSE(original_table_id.empty());
+    // Verify scan works before rebuild.
+    int64_t row_count = CountTableRows(table.get());
+    ASSERT_GE(row_count, 10) << "Should be able to scan table before rebuild";
+    LOG(INFO) << "Pre-rebuild scan succeeded, row_count=" << row_count;
+  }
+
+  // Shut down the master and wipe out its data.
+  NO_FATALS(cluster_->master()->Shutdown());
+  ASSERT_OK(cluster_->master()->DeleteFromDisk());
+
+  // Rebuild the master with --preserve_table_ids=true.
+  string stdout;
+  string stderr;
+  ASSERT_OK(RunKuduTool(RebuildMasterCmd(*cluster_, FLAGS_num_tablet_servers,
+                                         /*is_secure*/false, /*log_to_stderr*/true,
+                                         /*tables*/"", /*default_replica_num*/3,
+                                         /*preserve_table_ids*/true),
+                        &stdout, &stderr));
+  ASSERT_STR_CONTAINS(stdout, "Rebuilt from 3 tablet servers, of which 0 had errors");
+  ASSERT_STR_CONTAINS(stderr, Substitute("Preserving original table_id '$0'", original_table_id));
+
+  // Restart the cluster (tservers need new master certs).
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    cluster_->tablet_server(i)->Shutdown();
+  }
+  ASSERT_OK(cluster_->Restart());
+  ASSERT_OK(WaitForTSAndReplicas(kTable));
+
+  // Rebuild the client since there's a new master.
+  KuduClientBuilder builder;
+  ASSERT_OK(cluster_->CreateClient(&builder, &client_));
+
+  // Verify table ID is preserved and scan succeeds.
+  {
+    client::sp::shared_ptr<KuduTable> table;
+    ASSERT_OK(client_->OpenTable(kTable, &table));
+    ASSERT_EQ(original_table_id, table->id())
+        << "Table ID should be preserved after rebuild with --preserve_table_ids";
+
+    // This is the key test: scan should succeed because the table_id in the authz token
+    // matches the table_id stored in tablet metadata.
+    int64_t row_count = CountTableRows(table.get());
+    ASSERT_GE(row_count, 10)
+        << "Scan should succeed after rebuild with --preserve_table_ids when "
+        << "tserver_enforce_access_control is enabled";
+    LOG(INFO) << "Post-rebuild scan succeeded with preserve_table_ids=true, row_count="
+              << row_count;
+  }
+
+  // Verify the cluster is healthy.
+  ClusterVerifier cv(cluster_.get());
+  NO_FATALS(cv.CheckCluster());
+}
+
+// Test that scans fail with table_id mismatch when --preserve_table_ids=false
+// and tserver_enforce_access_control is enabled. This demonstrates the problem
+// that --preserve_table_id solves.
+//
+// After rebuild with --preserve_table_ids=false, a new table_id is generated.
+// The authz token from the master will contain the new table_id, but the tablet
+// metadata on tservers still has the old table_id. This causes authorization
+// failures when tserver_enforce_access_control is enabled.
+TEST_F(AdminCliTest, TestRebuildMasterWithoutPreserveTableIdsAccessControlFails) {
+  FLAGS_num_tablet_servers = 3;
+  // Start the cluster with tserver_enforce_access_control enabled.
+  NO_FATALS(BuildAndStart(
+      {"--tserver_enforce_access_control=true"},  // tserver flags
+      {},                                          // master flags
+      {},                                          // extra tserver flags
+      /*create_table*/false));
+
+  constexpr const char* kTable = "default.access_control_no_preserve_test";
+  NO_FATALS(MakeTestTable(kTable, /*num_rows*/10, /*num_replicas*/3, cluster_.get()));
+
+  // Get the original table ID and verify we can scan the table.
+  string original_table_id;
+  {
+    client::sp::shared_ptr<KuduTable> table;
+    ASSERT_OK(client_->OpenTable(kTable, &table));
+    original_table_id = table->id();
+    ASSERT_FALSE(original_table_id.empty());
+    // Verify scan works before rebuild.
+    int64_t row_count = CountTableRows(table.get());
+    ASSERT_GE(row_count, 10) << "Should be able to scan table before rebuild";
+  }
+
+  // Shut down the master and wipe out its data.
+  NO_FATALS(cluster_->master()->Shutdown());
+  ASSERT_OK(cluster_->master()->DeleteFromDisk());
+
+  // Rebuild the master with --preserve_table_ids=false
+  string stdout;
+  string stderr;
+  ASSERT_OK(RunKuduTool(RebuildMasterCmd(*cluster_, FLAGS_num_tablet_servers,
+                                         /*is_secure*/false, /*log_to_stderr*/true,
+                                         /*tables*/"", /*default_replica_num*/3,
+                                        /*preserve_table_ids*/false),
+                        &stdout, &stderr));
+  ASSERT_STR_CONTAINS(stdout, "Rebuilt from 3 tablet servers, of which 0 had errors");
+  ASSERT_STR_NOT_CONTAINS(stderr, "Preserving original table_id");
+
+  // Restart the cluster (tservers need new master certs).
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    cluster_->tablet_server(i)->Shutdown();
+  }
+  ASSERT_OK(cluster_->Restart());
+  ASSERT_OK(WaitForTSAndReplicas(kTable));
+
+  // Rebuild the client since there's a new master.
+  KuduClientBuilder builder;
+  ASSERT_OK(cluster_->CreateClient(&builder, &client_));
+
+  // Verify a new table_id was generated.
+  client::sp::shared_ptr<KuduTable> table;
+  ASSERT_OK(client_->OpenTable(kTable, &table));
+  string new_table_id = table->id();
+  ASSERT_NE(original_table_id, new_table_id)
+      << "A new table_id should be generated with --preserve_table_ids=true";
+  LOG(INFO) << "Table_id changed from " << original_table_id << " to " << new_table_id;
+
+  // Now the key test: scan should fail because of table_id mismatch.
+  // The authz token from master contains the new table_id, but the tablet
+  // metadata on tservers still has the original table_id.
+  // The scanner retries on the authorization error and eventually times out.
+  vector<string> rows;
+  Status scan_status = ScanTableToStrings(table.get(), &rows);
+  LOG(INFO) << "Scan status: " << scan_status.ToString();
+  ASSERT_FALSE(scan_status.ok())
+      << "Scan should fail due to table_id mismatch, but it succeeded";
+  ASSERT_STR_CONTAINS(scan_status.ToString(), "Not authorized")
+      << "Expected 'Not authorized' error due to table_id mismatch, but got: "
+      << scan_status.ToString();
+  LOG(INFO) << "As expected, scan failed after rebuild with --preserve_table_ids=false: "
+            << scan_status.ToString();
 }
 
 #if !defined(THREAD_SANITIZER)

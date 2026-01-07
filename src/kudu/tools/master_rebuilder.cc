@@ -58,6 +58,12 @@
 #include "kudu/util/status.h"
 
 DECLARE_int32(default_num_replicas);
+DEFINE_bool(preserve_table_ids, true, "When running 'kudu master unsafe_rebuild', preserve the "
+            "original table IDs from tablet servers' metadata instead of generating new ones. "
+            "This is required when --tserver_enforce_access_control is enabled, as the access "
+            "control system validates table IDs. It is also useful for maintaining compatibility "
+            "with external systems (e.g., Impala, HMS) that reference tables by their "
+            "original IDs.");
 DEFINE_uint32(default_schema_version, 0, "The table schema version assigned to tables if one "
               "cannot be determined automatically. When the tablet server version is < 1.16, a "
               "viable value can be determined manually using "
@@ -247,10 +253,32 @@ Status MasterRebuilder::CheckTableAndTabletConsistency(
 }
 
 void MasterRebuilder::CreateTable(const ListTabletsResponsePB::StatusAndSchemaPB& replica) {
-  scoped_refptr<TableInfo> table(new TableInfo(oid_generator_.Next()));
+  const string& table_name = replica.tablet_status().table_name();
+
+  // Determine table_id: either preserve original or generate new one.
+  string table_id;
+  if (FLAGS_preserve_table_ids) {
+    // has_table_id() returns true only when the field is explicitly set.
+    // Older Kudu versions do not populate table_id in tablet status,
+    // so we fall back to generating a new one in that case.
+    if (replica.tablet_status().has_table_id()) {
+      table_id = replica.tablet_status().table_id();
+      LOG(INFO) << Substitute("Preserving original table_id '$0' for table '$1'",
+                              table_id, table_name);
+    } else {
+      table_id = oid_generator_.Next();
+      LOG(WARNING) << Substitute(
+          "Tablet server cannot provide a valid table_id for table '$0'. "
+          "Generating new table_id '$1'.",
+          table_name, table_id);
+    }
+  } else {
+    table_id = oid_generator_.Next();
+  }
+
+  scoped_refptr<TableInfo> table(new TableInfo(table_id));
   table->mutable_metadata()->StartMutation();
   SysTablesEntryPB* metadata = &table->mutable_metadata()->mutable_dirty()->pb;
-  const string& table_name = replica.tablet_status().table_name();
   metadata->set_name(table_name);
   if (!replica.has_schema_version()) {
     metadata->set_version(FLAGS_default_schema_version);
@@ -288,6 +316,20 @@ Status MasterRebuilder::CheckTableConsistency(
   RETURN_NOT_OK(SchemaFromPB(replica.schema(), &schema_from_replica));
 
   scoped_refptr<TableInfo> table = FindOrDie(tables_by_name_, table_name);
+
+  // When preserving table IDs, verify consistency across all replicas.
+  // has_table_id() returns true only when the field is explicitly set.
+  if (FLAGS_preserve_table_ids && replica.tablet_status().has_table_id()) {
+    const string& replica_table_id = replica.tablet_status().table_id();
+    if (table->id() != replica_table_id) {
+      return Status::Corruption(
+          Substitute("Table '$0' has inconsistent table_id across replicas: "
+                     "expected '$1', but tablet '$2' reports '$3'. "
+                     "This may indicate data corruption or mixed tablet versions.",
+                     table_name, table->id(), tablet_id, replica_table_id));
+    }
+  }
+
   table->mutable_metadata()->StartMutation();
   SysTablesEntryPB* metadata = &table->mutable_metadata()->mutable_dirty()->pb;
 
