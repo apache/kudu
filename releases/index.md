@@ -8,13 +8,18 @@ single_col_extra_classes: releases
 ## Apache Kudu releases
 
 ### Latest release
-* **[Kudu 1.18.0](1.18.0/)** was released on July 14, 2025. <!-- LATREL: DO NOT REMOVE -->
+* **[Kudu 1.18.1](1.18.1/)** was released on January 9, 2026. <!-- LATREL: DO NOT REMOVE -->
+    * [Kudu 1.18.1 Documentation](1.18.1/docs/)
+    * [Kudu 1.18.1 Java API docs](1.18.1/apidocs/)
+    * [Kudu 1.18.1 C++ API docs](1.18.1/cpp-client-api/)
+
+### Previous releases (ongoing support)
+* **[Kudu 1.18.0](1.18.0/)** was released on July 14, 2025. <!-- PREVREL: DO NOT REMOVE -->
     * [Kudu 1.18.0 Documentation](1.18.0/docs/)
     * [Kudu 1.18.0 Java API docs](1.18.0/apidocs/)
     * [Kudu 1.18.0 C++ API docs](1.18.0/cpp-client-api/)
 
-### Previous releases (ongoing support)
-* **[Kudu 1.17.1](1.17.1/)** was released on Nov 15, 2024. <!-- PREVREL: DO NOT REMOVE -->
+* **[Kudu 1.17.1](1.17.1/)** was released on Nov 15, 2024.
     * [Kudu 1.17.1 Documentation](1.17.1/docs/)
     * [Kudu 1.17.1 Java API docs](1.17.1/apidocs/)
     * [Kudu 1.17.1 C++ API docs](1.17.1/cpp-client-api/)
