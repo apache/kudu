@@ -417,7 +417,7 @@ class SecurityContext {
     // ones to an existing KeyStore doesn't have any effect.
     try {
       KeyStore certKeyStore = KeyStore.getInstance(KeyStore.getDefaultType());
-      certKeyStore.load(null);
+      certKeyStore.load(null, new char[0]);
       int i = 0;
       for (X509Certificate cert : certs) {
         certKeyStore.setCertificateEntry(String.format("cert-%d",  i++), cert);
