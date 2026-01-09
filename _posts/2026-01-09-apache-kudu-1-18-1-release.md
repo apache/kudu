@@ -8,6 +8,8 @@ The Apache Kudu team is happy to announce the release of Kudu 1.18.1!
 
 This maintenance release fixes critical bugs and packaging issues discovered in Apache Kudu
  1.18.0. Users of Kudu 1.18.0 are encouraged to upgrade to 1.18.1 as soon as possible.
+
+This release includes the following incremental updates since Apache Kudu 1.18.0:
 <!--more-->
 
 * Improved Java and Spark ecosystem reliability through fixes to dependency publishing, Spark
@@ -18,8 +20,9 @@ This maintenance release fixes critical bugs and packaging issues discovered in 
 
 * Upgraded Apache Spark support to Spark 3.5.
 
-* Increased stability of Kudu CLI tools and clients, addressing crash regressions in both CLI and
-  C++ client components.
+* Increased stability of the CLI tools and the C++ client library, fixing crash in the `kudu` CLI
+  binary upon exiting and crash in the C++ client library with verbose logging enabled. The
+  latter was a regression introduced in the 1.18.0 release.
 
 * Improved compatibility with newer system libraries, including OpenSSL 3.4+ and platforms with
   64KB memory pages.
