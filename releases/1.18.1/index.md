@@ -33,8 +33,8 @@ See the [Kudu 1.18.1 Release Notes](docs/release_notes.html).
 Downloads of Kudu 1.18.1 are available in the following formats:
 
 * [Kudu 1.18.1 source tarball](http://www.apache.org/dyn/closer.lua?path=kudu/1.18.1/apache-kudu-1.18.1.tar.gz)
-  ([SHA512](https://www.apache.org/dist/kudu/1.18.1/apache-kudu-1.18.1.tar.gz.sha512),
-  [Signature](https://www.apache.org/dist/kudu/1.18.1/apache-kudu-1.18.1.tar.gz.asc))
+  ([SHA512](https://downloads.apache.org/kudu/1.18.1/apache-kudu-1.18.1.tar.gz.sha512),
+  [Signature](https://downloads.apache.org/kudu/1.18.1/apache-kudu-1.18.1.tar.gz.asc))
 
 You can use the [KEYS file](https://www.apache.org/dist/kudu/KEYS) to verify the included GPG signature.
 
