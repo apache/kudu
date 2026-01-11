@@ -36,7 +36,7 @@ Downloads of Kudu 1.18.1 are available in the following formats:
   ([SHA512](https://downloads.apache.org/kudu/1.18.1/apache-kudu-1.18.1.tar.gz.sha512),
   [Signature](https://downloads.apache.org/kudu/1.18.1/apache-kudu-1.18.1.tar.gz.asc))
 
-You can use the [KEYS file](https://www.apache.org/dist/kudu/KEYS) to verify the included GPG signature.
+You can use the [KEYS file](https://downloads.apache.org/kudu/KEYS) to verify the included GPG signature.
 
 To verify the integrity of the release, check the following:
 
