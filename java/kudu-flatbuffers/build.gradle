@@ -37,7 +37,7 @@ if (flatcOverride) {
   }
   flatcExe = f.absolutePath
 } else{
-    def flatcPath = file("${projectDir}/../../thirdparty/installed/uninstrumented/bin/flatc")
+    def flatcPath = file("${projectDir}/../../thirdparty/installed/common/bin/flatc")
     if (!flatcPath.exists()) {
       throw new GradleException("No flatc binary found at ${flatcPath}")
     }
