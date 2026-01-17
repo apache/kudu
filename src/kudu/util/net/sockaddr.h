@@ -14,13 +14,14 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_UTIL_NET_SOCKADDR_H
-#define KUDU_UTIL_NET_SOCKADDR_H
+
+#pragma once
 
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <utility>
@@ -68,7 +69,7 @@ class Sockaddr {
   // family and have the same bytewise representation. Two uninitialized addresses
   // are equal to each other but not to any other address.
   bool operator==(const Sockaddr& other) const;
-  uint32_t HashCode() const;
+  size_t HashCode() const;
 
   // Compare two addresses bytewise.
   //
@@ -219,9 +220,8 @@ class Sockaddr {
 namespace std {
 template<>
 struct hash<kudu::Sockaddr> {
-  int operator()(const kudu::Sockaddr& addr) const {
+  size_t operator()(const kudu::Sockaddr& addr) const {
     return addr.HashCode();
   }
 };
 } // namespace std
-#endif

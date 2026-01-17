@@ -290,7 +290,7 @@ void Sockaddr::set_length(socklen_t len) {
                             sizeof(storage_) - len_);
 }
 
-uint32_t Sockaddr::HashCode() const {
+size_t Sockaddr::HashCode() const {
   return HashStringThoroughly(reinterpret_cast<const char*>(&storage_), len_);
 }
 
