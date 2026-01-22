@@ -24,12 +24,17 @@ function(APPEND_LINKER_FLAGS)
   # On macOS, LLD from third-party ${THIRDPARTY_TOOLCHAIN_DIR}/bin/ld64.lld
   # isn't fully functional yet: it doesn't support -U option, etc.
   if (NOT APPLE)
-    set(linkers "lld" "${THIRDPARTY_TOOLCHAIN_DIR}/bin/ld.lld" "gold")
+    set(linkers "lld" "thirdparty lld" "gold")
   endif()
   list(APPEND linkers "default")
   foreach(candidate_linker ${linkers})
     if(candidate_linker STREQUAL "default")
       set(candidate_flags "")
+    elseif (candidate_linker STREQUAL "thirdparty lld")
+      set(candidate_flags
+        -fuse-ld=lld
+        -B${THIRDPARTY_TOOLCHAIN_DIR}/bin
+      )
     else()
       set(candidate_flags "-fuse-ld=${candidate_linker}")
     endif()
@@ -87,8 +92,9 @@ function(APPEND_LINKER_FLAGS)
     message(FATAL_ERROR "Could not find a suitable linker")
   endif()
   message(STATUS "Using linker flags: ${linker_flags}")
+  string(JOIN " " linker_flags_str ${linker_flags})
   foreach(var CMAKE_SHARED_LINKER_FLAGS CMAKE_EXE_LINKER_FLAGS CMAKE_MODULE_LINKER_FLAGS)
-    set(${var} "${${var}} ${linker_flags}" PARENT_SCOPE)
+    set(${var} "${${var}} ${linker_flags_str}" PARENT_SCOPE)
   endforeach()
 endfunction()
 
