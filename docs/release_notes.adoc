@@ -62,6 +62,7 @@ below.
 * Fixes a unit mismatch in memory-pressure checks that caused ProceedWithFlush() to always trigger
   flushes when under memory pressure
   (see https://issues.apache.org/jira/browse/KUDU-3722[KUDU-3722]).
+
 [[rn_1.18.1_improvements]]
 == Optimizations and improvements
 
@@ -276,6 +277,7 @@ Support for Python versions 3.0 to 3.5 (inclusive) has been discontinued.
   (see https://issues.apache.org/jira/browse/KUDU-3633[KUDU-3633]).
 * Fixed crash of Kudu CLI tool namely kudu table copy in cases of invalid inputs
   (see https://issues.apache.org/jira/browse/KUDU-3623[KUDU-3623]).
+
 [[rn_1.18.0_wire_compatibility]]
 == Wire Protocol compatibility
 
