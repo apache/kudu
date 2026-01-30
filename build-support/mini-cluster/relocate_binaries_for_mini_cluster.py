@@ -30,6 +30,7 @@ import logging
 import optparse
 import os
 import os.path
+import platform
 import re
 import shutil
 import subprocess
@@ -239,16 +240,42 @@ def get_resolved_dep_library_paths_macos(binary_path):
   rpaths = parse_load_commands_macos(LC_RPATH, load_commands)
   return resolve_library_paths_macos(lib_search_paths, rpaths)
 
+def get_os_identifier():
+  """
+  Returns a uniform OS identifier (e.g., 'rhel8', 'osx14') to prevent artifact name
+  collisions between different OS versions.
+  """
+  if IS_MACOS:
+    # Extracts major version from macOS (e.g., '14' from '14.2.1')
+    try:
+      mac_ver = platform.mac_ver()[0]
+      major_version = mac_ver.split('.')[0]
+      return "osx%s" % major_version
+    except Exception:
+      return "osx"
+
+  if IS_LINUX:
+    info = {}
+    try:
+      with open("/etc/os-release") as f:
+        for line in f:
+          if "=" in line:
+            k, v = line.rstrip().split("=", 1)
+            info[k] = v.strip('"')
+      # Map 'ID' and 'VERSION_ID' to a clean string like 'rhel8'
+      os_id = info.get("ID", "linux").lower()
+      version_full = info.get("VERSION_ID", "")
+      major_version = version_full.split('.')[0]
+      return "%s%s" % (os_id, major_version)
+    except Exception:
+      return "linux"
+  raise NotImplementedError("Unsupported platform")
+
 def get_artifact_name():
   """
   Create an archive with an appropriate name. Including version, OS, and architecture.
   """
-  if IS_LINUX:
-    os_str = "linux"
-  elif IS_MACOS:
-    os_str = "osx"
-  else:
-    raise NotImplementedError("Unsupported platform")
+  os_str = get_os_identifier()
   arch = os.uname()[4]
   with open(os.path.join(SOURCE_ROOT, "version.txt"), 'r') as version:
     line = version.readline()

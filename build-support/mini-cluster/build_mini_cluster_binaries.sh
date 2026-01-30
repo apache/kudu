@@ -47,10 +47,8 @@
 #   specific release version.
 # * artifact.prefix: The directory name at the root of the JAR under which the
 #   binary files can be found (similar to ./configure --prefix in autoconf).
-# * artifact.os: The operating system name using the same convention as
-#   https://github.com/trustin/os-maven-plugin for ${os.detected.name}.
-#   Practically speaking for Kudu at the time of writing, that is either
-#   'linux' or 'osx'.
+# * artifact.os: The operating system name and major version.
+#   Examples: 'rhel9', 'ubuntu22', 'osx15'.
 # * artifact.arch: The target system architecture using the same convention as
 #   os-maven-plugin for ${os.detected.arch}. Practically speaking for Kudu, at
 #   the time of writing this will always be set to x86_64.
@@ -59,9 +57,9 @@
 #
 # $ cat META-INF/apache-kudu-test-binary.properties
 # format.version=1
-# artifact.version=1.8.0
-# artifact.prefix=kudu-binary-1.8.0-linux-x86_64
-# artifact.os=linux
+# artifact.version=1.19.0
+# artifact.prefix=kudu-binary-1.19.0-rhel9-x86_64
+# artifact.os=rhel9
 # artifact.arch=x86_64
 #
 ################################################################################
@@ -161,9 +159,15 @@ PROP_DIR="META-INF"
 PROP_FILE="$PROP_DIR/apache-kudu-test-binary.properties"
 FORMAT_VERSION=1
 ARTIFACT_VERSION=$(cat $SOURCE_ROOT/version.txt)
-ARTIFACT_OS="linux"
-if [ $MACOS ]; then
-  ARTIFACT_OS="osx"
+if [ "$MACOS" ]; then
+  MAJOR_VERSION=$(sw_vers -productVersion | cut -d. -f1)
+  ARTIFACT_OS="osx${MAJOR_VERSION}"
+elif [ -f /etc/os-release ]; then
+  . /etc/os-release
+  MAJOR_VERSION=$(echo $VERSION_ID | cut -d. -f1)
+  ARTIFACT_OS="${ID}${MAJOR_VERSION}"
+else
+  ARTIFACT_OS="linux"
 fi
 ARTIFACT_ARCH=$(uname -m)
 rm -rf $PROP_DIR
