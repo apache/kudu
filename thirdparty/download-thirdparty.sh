@@ -346,7 +346,7 @@ fetch_and_patch \
  $PYTHON_SOURCE \
  $PYTHON_PATCHLEVEL
 
-LLVM_PATCHLEVEL=8
+LLVM_PATCHLEVEL=10
 fetch_and_patch \
  llvm-${LLVM_VERSION}-iwyu-${IWYU_VERSION}.src.tar.gz \
  $LLVM_SOURCE \
@@ -365,7 +365,9 @@ fetch_and_patch \
  "patch -p1 < $TP_DIR/patches/llvm-is-convertible-00.patch" \
  "patch -p1 < $TP_DIR/patches/llvm-is-convertible-01.patch" \
  "patch -p1 < $TP_DIR/patches/llvm-chrono-duration-00.patch" \
- "patch -p1 < $TP_DIR/patches/llvm-chrono-duration-01.patch"
+ "patch -p1 < $TP_DIR/patches/llvm-chrono-duration-01.patch" \
+ "patch -p1 < $TP_DIR/patches/llvm-section-mm-memory-mapper.patch" \
+ "patch -p1 < $TP_DIR/patches/llvm-section-mm-extra-methods.patch"
 
 LZ4_PATCHLEVEL=0
 fetch_and_patch \

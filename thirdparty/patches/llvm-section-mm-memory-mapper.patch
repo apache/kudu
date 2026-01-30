@@ -1,0 +1,84 @@
+commit 9ce06411994e9bcaa98c219c7dc34c2824353a81
+Author: Stefan Gränitz <stefan.graenitz@gmail.com>
+Date:   Wed Jul 5 14:28:47 2023 +0200
+
+    [Kaleidoscope] Fix race condition in order-of-destruction between SectionMemoryManager and its MemoryMapper
+    
+    SectionMemoryManager's default memory mapper used to be a global static
+    object. If the SectionMemoryManager itself is a global static
+    object, it might be destroyed after its memory mapper and thus couldn't
+    use it from the destructor.
+    
+    The Kaleidoscope tutorial reproduced this situation with MSVC for a long time.
+    Since 47f5c54f997a59bb2c65 it's triggered with GCC as well. The solution from
+    this patch was proposed in the existing review https://reviews.llvm.org/D107087
+    before, but it didn't move forward.
+    
+    Reviewed By: nikic
+    
+    Differential Revision: https://reviews.llvm.org/D154338
+
+diff --git a/include/llvm/ExecutionEngine/SectionMemoryManager.h b/include/llvm/ExecutionEngine/SectionMemoryManager.h
+index 455efc9f9001..fa1b2355528d 100644
+--- a/include/llvm/ExecutionEngine/SectionMemoryManager.h
++++ b/include/llvm/ExecutionEngine/SectionMemoryManager.h
+@@ -185,7 +185,8 @@ private:
+   MemoryGroup CodeMem;
+   MemoryGroup RWDataMem;
+   MemoryGroup RODataMem;
+-  MemoryMapper &MMapper;
++  MemoryMapper *MMapper;
++  std::unique_ptr<MemoryMapper> OwnedMMapper;
+ };
+ 
+ } // end namespace llvm
+diff --git a/lib/ExecutionEngine/SectionMemoryManager.cpp b/lib/ExecutionEngine/SectionMemoryManager.cpp
+index b23e33039c35..436888730bfb 100644
+--- a/lib/ExecutionEngine/SectionMemoryManager.cpp
++++ b/lib/ExecutionEngine/SectionMemoryManager.cpp
+@@ -101,7 +101,7 @@ uint8_t *SectionMemoryManager::allocateSection(
+   // FIXME: Initialize the Near member for each memory group to avoid
+   // interleaving.
+   std::error_code ec;
+-  sys::MemoryBlock MB = MMapper.allocateMappedMemory(
++  sys::MemoryBlock MB = MMapper->allocateMappedMemory(
+       Purpose, RequiredSize, &MemGroup.Near,
+       sys::Memory::MF_READ | sys::Memory::MF_WRITE, ec);
+   if (ec) {
+@@ -204,7 +204,7 @@ std::error_code
+ SectionMemoryManager::applyMemoryGroupPermissions(MemoryGroup &MemGroup,
+                                                   unsigned Permissions) {
+   for (sys::MemoryBlock &MB : MemGroup.PendingMem)
+-    if (std::error_code EC = MMapper.protectMappedMemory(MB, Permissions))
++    if (std::error_code EC = MMapper->protectMappedMemory(MB, Permissions))
+       return EC;
+ 
+   MemGroup.PendingMem.clear();
+@@ -234,7 +234,7 @@ void SectionMemoryManager::invalidateInstructionCache() {
+ SectionMemoryManager::~SectionMemoryManager() {
+   for (MemoryGroup *Group : {&CodeMem, &RWDataMem, &RODataMem}) {
+     for (sys::MemoryBlock &Block : Group->AllocatedMem)
+-      MMapper.releaseMappedMemory(Block);
++      MMapper->releaseMappedMemory(Block);
+   }
+ }
+ 
+@@ -263,11 +263,14 @@ public:
+     return sys::Memory::releaseMappedMemory(M);
+   }
+ };
+-
+-DefaultMMapper DefaultMMapperInstance;
+ } // namespace
+ 
+-SectionMemoryManager::SectionMemoryManager(MemoryMapper *MM)
+-    : MMapper(MM ? *MM : DefaultMMapperInstance) {}
++SectionMemoryManager::SectionMemoryManager(MemoryMapper *UnownedMM)
++    : MMapper(UnownedMM), OwnedMMapper(nullptr) {
++  if (!MMapper) {
++    OwnedMMapper = std::make_unique<DefaultMMapper>();
++    MMapper = OwnedMMapper.get();
++  }
++}
+ 
+ } // namespace llvm

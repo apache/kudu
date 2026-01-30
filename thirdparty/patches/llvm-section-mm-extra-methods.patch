@@ -1,0 +1,66 @@
+--- a/lib/ExecutionEngine/SectionMemoryManager.cpp	2026-01-31 09:06:29.326138922 -0800
++++ b/lib/ExecutionEngine/SectionMemoryManager.cpp	2026-01-31 09:13:40.829420553 -0800
+@@ -102,7 +102,7 @@
+   // interleaving.
+   std::error_code ec;
+   sys::MemoryBlock MB = MMapper->allocateMappedMemory(
+-      Purpose, RequiredSize, &MemGroup.Near,
++      Purpose, RequiredSize, &NearHintMB,
+       sys::Memory::MF_READ | sys::Memory::MF_WRITE, ec);
+   if (ec) {
+     // FIXME: Add error propagation to the interface.
+@@ -110,7 +110,7 @@
+   }
+ 
+   // Save this address as the basis for our next request
+-  MemGroup.Near = MB;
++  NearHintMB = MB;
+ 
+   // Remember that we allocated this memory
+   MemGroup.AllocatedMem.push_back(MB);
+@@ -267,4 +267,12 @@
+   }
+ }
+ 
++SectionMemoryManager::SectionMemoryManager(std::unique_ptr<MemoryMapper> OwnedMM)
++    : MMapper(OwnedMM.get()), OwnedMMapper(std::move(OwnedMM)) {
++}
++
++void SectionMemoryManager::setNearHintMB(sys::MemoryBlock MB) {
++  NearHintMB = std::move(MB);
++}
++
+ } // namespace llvm
+--- a/include/llvm/ExecutionEngine/SectionMemoryManager.h	2026-01-31 09:06:17.088074261 -0800
++++ b/include/llvm/ExecutionEngine/SectionMemoryManager.h	2026-01-31 09:12:50.779155873 -0800
+@@ -105,6 +105,11 @@
+   /// memory mapper.  If \p MM is nullptr then a default memory mapper is used
+   /// that directly calls into the operating system.
+   SectionMemoryManager(MemoryMapper *MM = nullptr);
++
++  /// Creates a SectionMemoryManager instance with \p OwnedMM as the associated
++  /// memory mapper, taking ownership of the memory mapper object.
++  SectionMemoryManager(std::unique_ptr<MemoryMapper> OwnedMM);
++
+   SectionMemoryManager(const SectionMemoryManager &) = delete;
+   void operator=(const SectionMemoryManager &) = delete;
+   ~SectionMemoryManager() override;
+@@ -149,6 +154,10 @@
+   /// This method is called from finalizeMemory.
+   virtual void invalidateInstructionCache();
+ 
++  MemoryMapper *getMemoryMapper() { return MMapper; }
++
++  void setNearHintMB(sys::MemoryBlock MB);
++
+ private:
+   struct FreeMemBlock {
+     // The actual block of free memory
+@@ -187,6 +196,7 @@
+   MemoryGroup RODataMem;
+   MemoryMapper *MMapper;
+   std::unique_ptr<MemoryMapper> OwnedMMapper;
++  sys::MemoryBlock NearHintMB;
+ };
+ 
+ } // end namespace llvm

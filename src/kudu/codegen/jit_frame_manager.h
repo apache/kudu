@@ -18,39 +18,88 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <deque>
-#include <mutex>
+#include <memory>
+#include <system_error>
 
-#include "llvm/ExecutionEngine/SectionMemoryManager.h"
-#include <llvm/ADT/StringRef.h>
+#include <llvm/ExecutionEngine/SectionMemoryManager.h>
+#include <llvm/Support/Memory.h>
 
 namespace kudu {
 namespace codegen {
 
-class JITFrameManager : public llvm::SectionMemoryManager {
+class JITFrameManager final : public llvm::SectionMemoryManager {
  public:
-  JITFrameManager() = default;
+
+  // This implementation of the SectionMemoryManager::MemoryMapper interface
+  // is used by SectionMemoryManager to request memory pages from the OS.
+  // For the documentation of the interface, see in-line docs
+  // for LLVM's SectionMemoryManager::MemoryMapper in SectionMemoryManager.h.
+  class CustomMapper final : public SectionMemoryManager::MemoryMapper {
+   public:
+    CustomMapper();
+    ~CustomMapper() override = default;
+
+    llvm::sys::MemoryBlock allocateMappedMemory(
+        SectionMemoryManager::AllocationPurpose /*purpose*/,
+        size_t num_bytes,
+        const llvm::sys::MemoryBlock* const near_block, // NOLINT(readability-avoid-const-params-in-decls)
+        unsigned protection_flags,
+        std::error_code& ec) override;
+
+    std::error_code releaseMappedMemory(llvm::sys::MemoryBlock& m) override;
+
+    std::error_code protectMappedMemory(const llvm::sys::MemoryBlock& block,
+                                        unsigned flags) override;
+
+    // Store the information on the pre-allocated memory range. This
+    // information is used to check for the range of subsequent memory
+    // allocations when allocateMappedMemory() is called with non-null
+    // 'near_block' argument.
+    void setPreAllocatedRange(const llvm::sys::MemoryBlock& range);
+
+   private:
+    // Whether a valid pre-allocated memory range has been set.
+    bool isPreAllocatedRangeSet() const;
+
+    // The pre-allocated range that all the allocations with non-null
+    // 'near_block' must fit into.
+    llvm::sys::MemoryBlock memory_range_;
+
+    // Previously allocated memory block within the pre-allocated area.
+    // It's used to make sure follow-up allocation requests with provided
+    // 'near_hint' memory block don't overlap with already allocated ranges.
+    llvm::sys::MemoryBlock prev_range_;
+
+    // The number of remaining bytes in the pre-allocated memory range.
+    // Each call to the allocateMappedMemory() method with non-null 'near_block'
+    // decrements this by the size of the newly allocated memory block.
+    int64_t memory_range_bytes_left_;
+  };
+
+  explicit JITFrameManager(std::unique_ptr<CustomMapper> mm);
   ~JITFrameManager() override;
 
-  // Override to add space for the 4-byte null terminator.
-  uint8_t* allocateCodeSection(uintptr_t size,
-                               unsigned alignment,
-                               unsigned section_id,
-                               llvm::StringRef section_name) override;
+  // This custom memory manager reserves/allocates memory for object sections
+  // to be loaded in advance.
+  bool needsToReserveAllocationSpace() override {
+    return true;
+  }
 
-  void registerEHFrames(uint8_t* addr, uint64_t load_addr, size_t size) override;
-  void deregisterEHFrames() override;
-
+  // Reserve the memory to provide at least the specified amount of memory for
+  // object sections.
+  void reserveAllocationSpace(uintptr_t code_size,
+                              uint32_t code_align,
+                              uintptr_t ro_data_size,
+                              uint32_t ro_data_align,
+                              uintptr_t rw_data_size,
+                              uint32_t rw_data_align) override;
  private:
-  void deregisterEHFramesImpl();
+  // This is a non-owning pointer to the memory mapper object that's passed to
+  // the constructor and then to the base SectionMemoryManager object.
+  CustomMapper* const mm_;
 
-  // Mutex to prevent races in libgcc/libunwind. Since it should work across
-  // multiple instances, it's a static one.
-  static std::mutex kRegistrationMutex;
-
-  // Container to keep track of registered frames: this information is necessary
-  // for unregistring all of them.
-  std::deque<uint8_t*> registered_frames_;
+  // The result of memory pre-allocation performed by reserveAllocationSpace().
+  llvm::sys::MemoryBlock preallocated_block_;
 };
 
 } // namespace codegen
