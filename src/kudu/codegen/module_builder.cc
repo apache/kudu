@@ -334,7 +334,8 @@ Status ModuleBuilder::Compile(unique_ptr<ExecutionEngine>* out) {
 #endif
   Module* module = module_.get();
   EngineBuilder ebuilder(move(module_));
-  ebuilder.setMCJITMemoryManager(std::make_unique<JITFrameManager>());
+  ebuilder.setMCJITMemoryManager(std::make_unique<JITFrameManager>(
+      std::make_unique<JITFrameManager::CustomMapper>()));
   ebuilder.setErrorStr(&str);
   ebuilder.setOptLevel(opt_level);
   ebuilder.setMCPU(llvm::sys::getHostCPUName());
