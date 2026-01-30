@@ -109,11 +109,26 @@ public class TestKuduBinaryJarExtractor {
   private static void writeProperties(String os, OutputStream out) throws IOException {
     Properties properties = new Properties();
     properties.setProperty("format.version", "1");
-    properties.setProperty("artifact.version", "1.9.0-SNAPSHOT");
-    properties.setProperty("artifact.prefix", "apache-kudu-1.9.0-SNAPSHOT");
+    properties.setProperty("artifact.version", "1.19.0-SNAPSHOT");
+    properties.setProperty("artifact.prefix", "apache-kudu-1.19.0-SNAPSHOT");
     properties.setProperty("artifact.os", os);
     properties.setProperty("artifact.arch", DETECTOR.getArch());
     properties.store(out, "test");
+  }
+
+  private String getCurrentOsString() {
+    String majorVersion;
+    String id;
+    if ("linux".equals(DETECTOR.getOs())) {
+      id = DETECTOR.getRelease().getId();
+      majorVersion = DETECTOR.getRelease().getVersion().split("\\.")[0];
+    } else if ("osx".equals(DETECTOR.getOs())) {
+      id = "osx";
+      majorVersion = System.getProperty("os.version").split("\\.")[0];
+    } else {
+      return DETECTOR.getOs();
+    }
+    return id + majorVersion;
   }
 
   /**
@@ -132,12 +147,12 @@ public class TestKuduBinaryJarExtractor {
 
   @Test
   public void testExtractJar() throws IOException, URISyntaxException {
-    URI binaryJar = createKuduBinaryJar("osx").toUri();
+    URI binaryJar = createKuduBinaryJar(getCurrentOsString()).toUri();
 
     binaryJar = URI.create("jar:" + binaryJar.toString());
     Path extractedDir = KuduBinaryJarExtractor.extractJar(binaryJar,
-                                                          "apache-kudu-1.9.0-SNAPSHOT",
-                                                          Files.createTempDirectory("kudu-test"));
+        "apache-kudu-1.19.0-SNAPSHOT",
+        Files.createTempDirectory("kudu-test"));
     Path extractedBinDir = Paths.get(extractedDir.toString(), "bin");
     assertTrue(extractedBinDir.toFile().exists());
 
@@ -150,14 +165,17 @@ public class TestKuduBinaryJarExtractor {
     KuduBinaryJarExtractor extractor = new KuduBinaryJarExtractor();
     assertFalse(extractor.isKuduBinaryJarOnClasspath());
 
-    boolean isOsX = System.getProperty("os.name").replaceAll("\\s", "").equalsIgnoreCase("macosx");
+    String currentOs = getCurrentOsString();
+    String wrongOs = currentOs.startsWith("osx") ? "rhel9" : "osx15";
 
-    Path binaryJar = createKuduBinaryJar(isOsX ? "linux" : "osx");
+    Path binaryJar = createKuduBinaryJar(wrongOs);
+    // Negative test: Use a JAR with the wrong OS version/distro
     ClassLoader childLoader = createChildClassLoader(new URL[] { binaryJar.toUri().toURL() });
     Thread.currentThread().setContextClassLoader(childLoader);
     assertFalse(extractor.isKuduBinaryJarOnClasspath());
 
-    binaryJar = createKuduBinaryJar(!isOsX ? "linux" : "osx");
+    binaryJar = createKuduBinaryJar(currentOs);
+    // Positive test: Use a JAR with the matching OS version/distro
     childLoader = createChildClassLoader(new URL[] { binaryJar.toUri().toURL() });
     Thread.currentThread().setContextClassLoader(childLoader);
     assertTrue(extractor.isKuduBinaryJarOnClasspath());

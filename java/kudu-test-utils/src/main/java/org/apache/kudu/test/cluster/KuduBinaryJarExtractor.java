@@ -67,13 +67,31 @@ public class KuduBinaryJarExtractor {
   }
 
   private static Properties getBinaryProps() throws IOException {
+    String expectedOs;
+    String os = DETECTOR.getOs();
+
+    if ("linux".equals(os)) {
+      String fullVersion = (DETECTOR.getRelease() != null) ?
+          DETECTOR.getRelease().getVersion() : "0";
+      String majorVersion = fullVersion.split("\\.")[0];
+      expectedOs = DETECTOR.getRelease().getId() + majorVersion;
+
+    } else if ("osx".equals(os)) {
+      String fullVersion = System.getProperty("os.version");
+      String majorVersion = (fullVersion != null) ? fullVersion.split("\\.")[0] : "";
+      expectedOs = "osx" + majorVersion;
+
+    } else {
+      expectedOs = os;
+    }
+
     Enumeration<URL> resources = getCurrentClassLoader().getResources(KUDU_TEST_BIN_PROPS_PATH);
     while (resources.hasMoreElements()) {
       URL url = resources.nextElement();
       try {
         Properties props = loadBinaryProps(url);
-        if (DETECTOR.getOs().equals(props.getProperty("artifact.os")) &&
-              DETECTOR.getArch().equals(props.getProperty("artifact.arch"))) {
+        if (expectedOs.equals(props.getProperty("artifact.os")) &&
+            DETECTOR.getArch().equals(props.getProperty("artifact.arch"))) {
           return props;
         }
       } catch (IOException ex) {

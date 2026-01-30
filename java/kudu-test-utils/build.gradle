@@ -51,7 +51,11 @@ dependencies {
   if (propertyExists("useBinJar")) {
     apply plugin: "com.google.osdetector"
     def jarVersion = propertyWithDefault("useBinJar", project.version)
-    runtimeOnly "org.apache.kudu:kudu-binary:$jarVersion:${osdetector.classifier}"
+    def osPrefix = osdetector.os == 'linux' ? osdetector.release : osdetector.os
+    def fullVersion = osdetector.os == 'linux' ? osdetector.release.version : osdetector.version
+    def majorVersion = fullVersion.split('\\.')[0]
+    def customClassifier = "${osPrefix}${majorVersion}-${osdetector.arch}"
+    runtimeOnly "org.apache.kudu:kudu-binary:$jarVersion:$customClassifier"
   }
 
   // Needed for CapturingLogAppender. Optional otherwise.
