@@ -96,7 +96,6 @@ MemoryBlock JITFrameManager::CustomMapper::allocateMappedMemory(
                                : 0;
   int mm_flags = MAP_PRIVATE | MAP_ANON;
   if (!is_pre_allocation) {
-    DCHECK_NE(0, start);
     mm_flags |= MAP_FIXED;
   }
 
@@ -202,7 +201,7 @@ std::error_code JITFrameManager::CustomMapper::protectMappedMemory(
 void JITFrameManager::CustomMapper::setPreAllocatedRange(
     const llvm::sys::MemoryBlock& range) {
   // This should be called at most once per CustomMapper instance.
-  DCHECK_EQ(nullptr, memory_range_.base());
+  DCHECK(!memory_range_.base());
   DCHECK_EQ(0, memory_range_.allocatedSize());
   memory_range_ = range;
 
@@ -239,7 +238,7 @@ void JITFrameManager::reserveAllocationSpace(uintptr_t code_size,
                                              uintptr_t rw_data_size,
                                              uint32_t rw_data_align) {
   // This can be called only once per JITFrameManager instance.
-  DCHECK_EQ(nullptr, preallocated_block_.base());
+  DCHECK(!preallocated_block_.base());
   DCHECK_EQ(0, preallocated_block_.allocatedSize());
 
   DCHECK_NE(0, code_align);
@@ -289,7 +288,7 @@ void JITFrameManager::reserveAllocationSpace(uintptr_t code_size,
     // JITFrameManager instance to allocate memory for the sections of the
     // jitted object being loaded, the memory for each section is allocated
     // strictly within the reserved memory area.
-    DCHECK_NE(nullptr, preallocated_block_.base());
+    DCHECK(preallocated_block_.base());
     DCHECK_NE(0, preallocated_block_.allocatedSize());
     setNearHintMB(MemoryBlock(preallocated_block_.base(), 0));
     mm_->setPreAllocatedRange(preallocated_block_);
