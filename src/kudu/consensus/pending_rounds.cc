@@ -186,7 +186,12 @@ Status PendingRounds::AdvanceCommittedIndex(int64_t committed_index) {
     const OpId& current_id = round->id();
 
     if (PREDICT_TRUE(last_committed_op_id_ != MinimumOpId())) {
-      CHECK_OK(CheckOpInSequence(last_committed_op_id_, current_id));
+      const auto s = CheckOpInSequence(last_committed_op_id_, current_id);
+      if (PREDICT_FALSE(!s.ok())) {
+        LOG_WITH_PREFIX(FATAL)
+            << Substitute("could not advance committed index to $0: $1",
+                          committed_index, s.ToString());
+      }
     }
 
     iter = pending_ops_.erase(iter);
@@ -224,11 +229,11 @@ Status PendingRounds::SetInitialCommittedOpId(const OpId& committed_op) {
 }
 
 Status PendingRounds::CheckOpInSequence(const OpId& previous, const OpId& current) {
-  if (current.term() < previous.term()) {
+  if (PREDICT_FALSE(current.term() < previous.term())) {
     return Status::Corruption(Substitute("New operation's term is not >= than the previous "
         "op's term. Current: $0. Previous: $1", OpIdToString(current), OpIdToString(previous)));
   }
-  if (current.index() != previous.index() + 1) {
+  if (PREDICT_FALSE(current.index() != previous.index() + 1)) {
     return Status::Corruption(Substitute("New operation's index does not follow the previous"
         " op's index. Current: $0. Previous: $1", OpIdToString(current), OpIdToString(previous)));
   }
