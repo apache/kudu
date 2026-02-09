@@ -58,12 +58,14 @@ DECLARE_int32(raft_heartbeat_interval_ms);
 DEFINE_int32(multi_raft_heartbeat_window_ms, 100,
   "The batch time window for heartbeat batching. "
   "For minimal delay and still maximum effectiveness set "
-  "multi_raft_heartbeat_window_ms = heartbeat_interval_ms * ("
-  "batch_size / {estimated follower peers from the same host}) + {a little tolerance}; "
-  "however, a 0.1 * heartbeat_interval_ms is good, and there is no reason to "
+  "multi_raft_heartbeat_window_ms = raft_heartbeat_interval_ms * ("
+  "multi_raft_batch_size / {estimated follower peers from the same host})"
+  " + {a little tolerance}; "
+  "however, a 0.1 * raft_heartbeat_interval_ms is good, and there is no reason to "
   "set it any lower. "
-  "This value is also forced to be less than or equal to half of the heartbeat interval, "
-  "because it makes no sense to introduce a possible delay comparable to the heartbeat interval."
+  "This value is also forced to be less than or equal to half of "
+  "raft_heartbeat_interval_ms, because it makes no sense to introduce a possible "
+  "delay comparable to the heartbeat interval."
 );
 TAG_FLAG(multi_raft_heartbeat_window_ms, experimental);
 
@@ -224,14 +226,14 @@ void MultiRaftHeartbeatBatcher::SendOutScheduled(
 
 namespace {
 MonoDelta GetTimeWindow() {
-  // We don't want to delay more than half of the heartbeat interval.
+  // We don't want to delay more than half of the raft heartbeat interval.
   // Even a quarter of the interval starts to be questionable delay,
   // but half is for sure too much.
   auto flush_interval =
-      std::min(FLAGS_multi_raft_heartbeat_window_ms, FLAGS_consensus_rpc_timeout_ms / 2);
+      std::min(FLAGS_multi_raft_heartbeat_window_ms, FLAGS_raft_heartbeat_interval_ms / 2);
   if (flush_interval != FLAGS_multi_raft_heartbeat_window_ms) {
     LOG(ERROR) << "multi_raft_heartbeat_window_ms should not be more than "
-               << " consensus_rpc_timeout_ms / 2. , forcing multi_raft_heartbeat_window_ms = "
+               << " raft_heartbeat_interval_ms / 2. , forcing multi_raft_heartbeat_window_ms = "
                << flush_interval;
   }
   return MonoDelta::FromMilliseconds(flush_interval);
