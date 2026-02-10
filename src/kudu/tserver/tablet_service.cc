@@ -1204,7 +1204,7 @@ void TabletServiceAdminImpl::AlterSchema(const AlterSchemaRequestPB* req,
     // specified in the request.
     Schema req_schema;
     Status s = SchemaFromPB(req->schema(), &req_schema);
-    if (!s.ok()) {
+    if (PREDICT_FALSE(!s.ok())) {
       SetupErrorAndRespond(resp->mutable_error(), s,
                            TabletServerErrorPB::INVALID_SCHEMA, context);
       return;
@@ -1483,19 +1483,25 @@ void TabletServiceAdminImpl::CreateTablet(const CreateTabletRequestPB* req,
   Schema schema;
   Status s = SchemaFromPB(req->schema(), &schema);
   DCHECK(schema.has_column_ids());
-  if (!s.ok()) {
+  if (PREDICT_FALSE(!s.ok())) {
+    static constexpr const char* const kErrMsg = "invalid Schema";
     SetupErrorAndRespond(resp->mutable_error(),
-                         Status::InvalidArgument("Invalid Schema."),
+                         Status::InvalidArgument(kErrMsg),
                          TabletServerErrorPB::INVALID_SCHEMA, context);
+    KLOG_EVERY_N_SECS(ERROR, 60)
+        << Substitute("$0: $1", kErrMsg, s.ToString()) << THROTTLE_MSG;
     return;
   }
 
   PartitionSchema partition_schema;
   s = PartitionSchema::FromPB(req->partition_schema(), schema, &partition_schema);
-  if (!s.ok()) {
+  if (PREDICT_FALSE(!s.ok())) {
+    static constexpr const char* const kErrMsg = "invalid PartitionSchema";
     SetupErrorAndRespond(resp->mutable_error(),
-                         Status::InvalidArgument("Invalid PartitionSchema."),
+                         Status::InvalidArgument(kErrMsg),
                          TabletServerErrorPB::INVALID_SCHEMA, context);
+    KLOG_EVERY_N_SECS(ERROR, 60)
+        << Substitute("$0: $1", kErrMsg, s.ToString()) << THROTTLE_MSG;
     return;
   }
 
