@@ -138,7 +138,7 @@ DEFINE_bool(disable_intra_location_rebalancing, false,
             "replica distribution within each location. "
             "This setting is applicable to multi-location clusters only.");
 
-DEFINE_bool(enable_range_rebalancing, false,
+DEFINE_bool(enable_range_rebalancing, true,
             "Whether to enable table range rebalancing");
 
 DEFINE_bool(move_replicas_from_ignored_tservers, false,
