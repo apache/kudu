@@ -1,0 +1,162 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+// This file contains common tasks and configuration for checking the quality of the code.
+
+apply plugin: "com.github.spotbugs"   // Performs static code analysis to look for bugs in Java code.
+apply plugin: "com.github.ben-manes.versions" // Provides a task to determine which dependencies have updates.
+apply plugin: "ru.vyarus.animalsniffer" // Ensures Java code uses APIs from a particular version of Java.
+
+def ignoreCheckFailures = false
+if (propertyExists("ignoreCheckFailures")) {
+  ignoreCheckFailures = true
+}
+
+// For other than development environments (e.g., building Kudu release JARs
+// in an automated release engineering environment), it makes sense to skip
+// code style verification tasks since the code is assumed to be already
+// passed those in various pre-commit builds.  For that, define the
+// 'skipCodeStyleChecks' property.
+if (!propertyExists("skipCodeStyleChecks")) {
+  // Ensures Java code follows the defined coding style.
+  apply plugin: "checkstyle"
+
+  // Automatically formats Scala code on each build.
+  apply plugin: "scalafmt"
+
+  checkstyle {
+    toolVersion = versions.checkstyle
+    configDir = file("$rootProject.projectDir/config/checkstyle")
+    ignoreFailures = ignoreCheckFailures
+    maxWarnings = 0
+    showViolations = true
+  }
+
+  // Create an aggregate checkstyle task.
+  // This simplifies running checkstyle on all the code by only needing one task instead of multiple in your command.
+  task checkstyle(dependsOn: [checkstyleMain, checkstyleTest], group: "Verification") {
+    description = "Run Checkstyle analysis."
+  }
+
+  scalafmt {
+    configFilePath = "$rootDir/.scalafmt.conf"
+  }
+
+  // Run scalafmt on compile.
+  tasks.withType(ScalaCompile) {
+    if (!propertyExists("skipFormat")) {
+       dependsOn("scalafmtAll")
+    }
+  }
+}
+
+spotbugs {
+  toolVersion = versions.spotBugs
+  ignoreFailures = ignoreCheckFailures
+  effort = "max"
+  reportLevel = "low"
+  excludeFilter = file("$rootProject.projectDir/config/spotbugs/excludeFilter.xml")
+}
+
+tasks.withType(com.github.spotbugs.snom.SpotBugsTask) {
+  reports {
+    xml.enabled false
+    html.enabled true
+  }
+}
+
+// Create an aggregate spotbugs task.
+// This simplifies running spotbugs on all the code by only needing one task instead of multiple in your command.
+task spotbugs(dependsOn: [spotbugsMain, spotbugsTest], group: "Verification") {
+  description = "Run SpotBugs analysis."
+}
+
+// Errorprone doesn't support Java 11+
+// https://github.com/google/error-prone/issues/1106
+if(!JavaVersion.current().isJava11Compatible()) {
+  apply plugin: "net.ltgt.errorprone" // Performs static code analysis to look for bugs in Java code.
+
+  // Configure error-prone.
+  // Running with '-Derrorprone-fix=...' can instruct error-prone to automatically fix issues.
+  tasks.withType(JavaCompile) {
+    options.errorprone {
+      disableWarningsInGeneratedCode = true
+      excludedPaths = '.*/build/generated.*/.*'
+      allErrorsAsWarnings = false
+      def fix = propertyWithDefault("errorprone-fix", "")
+      if (!fix.isEmpty()) {
+        errorproneArgs += ['-XepPatchChecks:' + fix, '-XepPatchLocation:IN_PLACE']
+      }
+    }
+  }
+  dependencies {
+    // Set a specific version of Error Prone
+    errorprone libs.errorProne
+    // Configure Error Prone to use it's own static javac as described here:
+    // https://github.com/tbroyer/gradle-errorprone-plugin#jdk-8-support
+    errorproneJavac libs.errorProneJavac
+  }
+}
+
+// Don't enable code coverage for kudu-proto given it is exclusively generated code.
+// Don't enable code coverage for kudu-jepsen given it is exclusively test code.
+if (project.name != "kudu-proto" && project.name != "kudu-jepsen") {
+  apply plugin: "jacoco" // Provides code coverage metrics for Java code.
+  jacoco {
+    toolVersion = versions.jacoco
+  }
+  tasks.withType(JacocoReport) {
+    reports {
+      csv.enabled false
+      xml.enabled true
+      html.enabled true
+    }
+  }
+  jacocoTestReport {
+    dependsOn test // tests are required to run before generating the report
+  }
+}
+
+// Define a Java API signature for use by animal-sniffer. It'll enforce that all
+// Java API usage adheres to this signature.
+dependencies {
+  signature "org.codehaus.mojo.signature:java1$javaCompatibility:1.0@signature"
+}
+
+// Create an aggregate animal-sniffer task.
+// This simplifies running animal-sniffer on all the code by only needing one task instead of multiple in your command.
+task animalsniffer(dependsOn: [animalsnifferMain, animalsnifferTest], group: "Verification") {
+  description = "Run animal-sniffer analysis."
+}
+
+// Configure the versions plugin to only show dependency updates for released versions.
+dependencyUpdates {
+  gradleReleaseChannel = "current"
+  revision = "release"
+  resolutionStrategy {
+    componentSelection { rules ->
+      rules.all { ComponentSelection selection ->
+        boolean rejected = ["snap", "alpha", "beta", "rc", "cr", "m"].any { qualifier ->
+          selection.candidate.version ==~ /(?i).*[.-]${qualifier}[.\d-].*/
+        }
+        if (rejected) {
+          selection.reject("Release candidate")
+        }
+      }
+    }
+  }
+}
