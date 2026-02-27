@@ -389,6 +389,34 @@ cdef class Client:
         """
         return from_hybridtime(self.cp.GetLatestObservedTimestamp())
 
+    def get_table_statistics(self, table_name):
+        """
+        Get statistics for a table by name.
+
+        Parameters
+        ----------
+        table_name : str
+          Name of the table.
+
+        Returns
+        -------
+        statistics : TableStatistics
+          Object exposing on_disk_size, live_row_count, on_disk_size_limit,
+          and live_row_count_limit properties. For on_disk_size and
+          live_row_count, -1 means the table doesn't support that statistic.
+          For on_disk_size_limit and live_row_count_limit, -1 means no limit
+          has been set.
+
+        Raises
+        ------
+        KuduNotFound
+          If the table does not exist.
+        """
+        cdef KuduTableStatistics* stats = NULL
+        check_status(self.cp.GetTableStatistics(tobytes(table_name), &stats))
+        result = TableStatistics()
+        return result._init(stats)
+
     def create_table(self, table_name, Schema schema, partitioning,
             n_replicas=None, owner=None, comment=None):
         """
@@ -896,6 +924,64 @@ cdef class DateVal(RawValue):
     def __cinit__(self, obj):
         self.val = date_to_unix_epoch_days(obj)
         self.data = &self.val
+
+
+cdef class TableStatistics:
+    """
+    Represents statistics for a Kudu table.
+    Obtain via Client.get_table_statistics().
+
+    Note: on_disk_size and live_row_count are pre-replication values.
+    """
+
+    cdef:
+        KuduTableStatistics* _stats
+
+    cdef _init(self, KuduTableStatistics* stats):
+        self._stats = stats
+        return self
+
+    def __dealloc__(self):
+        if self._stats != NULL:
+            del self._stats
+
+    property on_disk_size:
+        """
+        The table's on-disk size in bytes (pre-replication).
+        -1 is returned if the table doesn't support on_disk_size.
+        """
+        def __get__(self):
+            return self._stats.on_disk_size()
+
+    property live_row_count:
+        """
+        The table's live row count (pre-replication).
+        -1 is returned if the table doesn't support live_row_count.
+        """
+        def __get__(self):
+            return self._stats.live_row_count()
+
+    property on_disk_size_limit:
+        """
+        The table's on-disk size limit in bytes.
+        -1 is returned if there is no disk size limit on this table.
+        Note: experimental, may change or disappear in a future release.
+        """
+        def __get__(self):
+            return self._stats.on_disk_size_limit()
+
+    property live_row_count_limit:
+        """
+        The table's live row count limit.
+        -1 is returned if there is no row count limit on this table.
+        Note: experimental, may change or disappear in a future release.
+        """
+        def __get__(self):
+            return self._stats.live_row_count_limit()
+
+    def __repr__(self):
+        return frombytes(self._stats.ToString())
+
 
 #----------------------------------------------------------------------
 cdef class TabletServer:
