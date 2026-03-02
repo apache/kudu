@@ -19,6 +19,20 @@
 # The priority order is newer to older versions and specific to generic versions.
 # Note: Trailing comments are not allowed.
 
+# Temurin/Adoptium JDK 17 Candidates (installed by dist-test-docker/Dockerfile.slave)
+/usr/lib/jvm/temurin-17-jdk-amd64
+/usr/lib/jvm/temurin-17-jdk-arm64
+
+# OpenJDK 17 Candidates
+/usr/lib/jvm/java-17-openjdk-amd64
+/usr/lib/jvm/java-17-openjdk-arm64
+/usr/lib/jvm/java-17-openjdk-ppc64el
+/usr/lib/jvm/java-17-openjdk
+/usr/lib/jvm/java-17
+/usr/java/jdk-17
+/usr/lib/jvm/jdk-17
+/usr/lib64/jvm/jdk-17
+
 # Oracle JDK 11 Candidates
 /usr/java/jdk-11
 /usr/lib/jvm/jdk-11
@@ -42,6 +56,7 @@
 /usr/lib/jdk8-latest
 
 # OpenJDK 8 Candidates
+/usr/lib/jvm/java-8-openjdk-amd64
 /usr/lib/jvm/java-8-openjdk-arm64
 /usr/lib/jvm/java-1.8.0-openjdk-amd64
 /usr/lib/jvm/java-1.8.0-openjdk-ppc64el

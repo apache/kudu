@@ -72,6 +72,21 @@ if ! command -v mvn &> /dev/null; then
   exit_error "Maven (mvn) not found. Please install Maven to run Java examples tests."
 fi
 
+JAVA_VERSION_STR=$(java -version 2>&1 | awk -F '"' '/version/ {print $2; exit}')
+JAVA_MAJOR_VERSION=$(echo "$JAVA_VERSION_STR" | awk -F. '{ if ($1 == "1") print $2; else print $1 }')
+SUREFIRE_ARG_LINE=""
+
+# Maven's Guice/cglib path can require this module opening on modern JDKs.
+# Add it automatically for Java 9+ to keep example builds JDK17-compatible.
+if [[ -n "$JAVA_MAJOR_VERSION" && "$JAVA_MAJOR_VERSION" -ge 9 ]]; then
+  if [[ "$MAVEN_OPTS" != *"--add-opens=java.base/java.lang=ALL-UNNAMED"* ]]; then
+    export MAVEN_OPTS="${MAVEN_OPTS:+$MAVEN_OPTS }--add-opens=java.base/java.lang=ALL-UNNAMED"
+  fi
+  # Surefire runs tests in a forked JVM and may ignore MAVEN_OPTS.
+  # Pass module opens via argLine so test JVMs get the same flags.
+  SUREFIRE_ARG_LINE="--add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.net=ALL-UNNAMED"
+fi
+
 KUDU_VERSION=$(cat "$KUDU_HOME/version.txt")
 echo "Using Kudu version: $KUDU_VERSION"
 
@@ -95,10 +110,17 @@ test_java_example() {
 
   echo "Building $example_name with Maven..."
   # Build the example using locally built Kudu
-  if ! mvn clean package \
-      -Dkudu-version=$KUDU_VERSION \
-      -DkuduBinDir=$KUDU_HOME/build/latest/bin \
-      -DuseLocalKuduBin=true ; then
+  local -a mvn_args=(
+    clean package
+    "-Dkudu-version=$KUDU_VERSION"
+    "-DkuduBinDir=$KUDU_HOME/build/latest/bin"
+    "-DuseLocalKuduBin=true"
+  )
+  if [[ -n "$SUREFIRE_ARG_LINE" ]]; then
+    mvn_args+=("-DargLine=$SUREFIRE_ARG_LINE")
+  fi
+
+  if ! mvn "${mvn_args[@]}" ; then
     exit_error "Failed to build $example_name"
   fi
 
@@ -147,7 +169,7 @@ EXAMPLE_NAME="$1"
 
 # Validate example name (optional)
 if [[ -n "$EXAMPLE_NAME" ]]; then
-  local valid=false
+  valid=false
   for example in "${VALID_EXAMPLES[@]}"; do
     if [[ "$EXAMPLE_NAME" == "$example" ]]; then
       valid=true

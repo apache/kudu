@@ -40,10 +40,30 @@ ME = os.path.abspath(__file__)
 ROOT = os.path.abspath(os.path.join(os.path.dirname(ME), ".."))
 
 with open(os.path.join(ROOT, "build-support", "java-home-candidates.txt"), 'r') as candidates:
-  JAVA_CANDIDATES = [x.strip() for x in candidates.readlines() if not x.startswith("#")]
+  JAVA_CANDIDATES = [x.strip() for x in candidates.readlines()
+                     if x.strip() and not x.startswith("#")]
   # Ensure there aren't trailing comments in the path list.
   for c in JAVA_CANDIDATES:
     assert '#' not in c
+
+def _java_candidates_for_version(version):
+  """Return the subset of JAVA_CANDIDATES that match the requested version.
+
+  Falls back to the full list when no version-specific entries are found so
+  that the code keeps working on machines with unconventionally named JDK
+  directories.
+  """
+  if version == '8':
+    keywords = ['-1.8', '-8-openjdk', '-8-oracle', 'jdk1.8', 'jdk8', 'jdk-8',
+                'java-8', 'openjdk-8', 'j2sdk1.8', 'jdk8-latest']
+  elif version == '17':
+    keywords = ['temurin-17', 'java-17', 'openjdk-17', 'jdk-17', 'jdk17',
+                'temurin-17-jdk']
+  else:
+    return JAVA_CANDIDATES
+  filtered = [c for c in JAVA_CANDIDATES
+              if any(kw in c for kw in keywords)]
+  return filtered if filtered else JAVA_CANDIDATES
 
 def is_elf_binary(path):
   """ Determine if the given path is an ELF binary (executable or shared library) """
@@ -97,11 +117,17 @@ def fixup_rpaths(root):
       if is_elf_binary(p):
         fix_rpath(p)
 
-def find_java():
-  for x in JAVA_CANDIDATES:
-    if os.path.exists(x):
-      logging.info("found JAVA_HOME: ", x)
-      return os.path.join(x, "bin", "java")
+def find_java_home(version=None):
+  """Return the first JAVA_HOME directory that exists for the given version."""
+  for x in _java_candidates_for_version(version):
+    if os.path.exists(os.path.join(x, "bin", "java")):
+      logging.info("found JAVA_HOME for version %s: %s", version, x)
+      return x
+  raise RuntimeError("Could not find a JDK installation for version %r. "
+                     "Checked: %s" % (version, _java_candidates_for_version(version)))
+
+def find_java(version=None):
+  return os.path.join(find_java_home(version), "bin", "java")
 
 def main():
   p = optparse.OptionParser(usage="usage: %prog [options] <test-name>")
@@ -114,6 +140,10 @@ def main():
   p.add_option("--test-language", dest="test_language", action="store",
                help="java or cpp",
                default="cpp")
+  p.add_option("--java-version", dest="java_version", action="store",
+               help="JDK major version to use on the dist-test worker (e.g. '17' or '8'). "
+                    "Defaults to '17'. The version must be installed in the worker image.",
+               default="17")
   options, args = p.parse_args()
   if len(args) < 1:
     p.print_help(sys.stderr)
@@ -152,7 +182,7 @@ def main():
   env['HADOOP_HOME'] = glob.glob(os.path.join(ROOT, "thirdparty/src/hadoop-*"))[0]
   env['RANGER_HOME'] = glob.glob(os.path.join(ROOT, "thirdparty/src/ranger-*-admin"))[0]
   env['RANGER_KMS_HOME'] = glob.glob(os.path.join(ROOT, "thirdparty/src/ranger-*-kms"))[0]
-  env['JAVA_HOME'] = glob.glob("/usr/lib/jvm/java-1.8.0-*")[0]
+  env['JAVA_HOME'] = find_java_home(options.java_version)
 
   # Restore the symlinks to the chrony binaries and Postgres and Ranger
   # directories; tests expect to find them in same directory as the test
@@ -215,7 +245,7 @@ def main():
       os.makedirs(test_logdir)
     if not os.path.exists(test_tmpdir):
       os.makedirs(test_tmpdir)
-    cmd = [find_java()] + args
+    cmd = [find_java(options.java_version)] + args
     stdout = stderr = open(os.path.join(test_logdir, "test-output.txt"), "w")
   else:
     raise ValueError("invalid test language: " + options.test_language)

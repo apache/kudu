@@ -355,11 +355,33 @@ else
   CLANG=$THIRDPARTY_DIR/clang-toolchain/bin/clang
 fi
 
-# Make sure we use JDK8
+# Select JDK for the local build and dist-test workers.
+#
+# Priority (highest to lowest):
+#   1. JAVA8_HOME set in the environment  (explicit env override)
+#   2. Commit message contains 'JAVA8_OVERRIDE'  (per-commit override)
+#   3. JAVA17_HOME set in the environment  (default when image sets it)
+#   4. System default java
+#
+# In all cases KUDU_DIST_TEST_JAVA_VERSION is set to match so that
+# dist_test.py tells workers to use the same JDK version.
+if git log -1 --format=%B 2>/dev/null | grep -Eq '^JAVA8_OVERRIDE$'; then
+  echo "JAVA8_OVERRIDE found in commit message - using JDK 8"
+  # Commit message wins over JAVA17_HOME but loses to an explicit JAVA8_HOME.
+  : "${JAVA8_HOME:=/usr/lib/jvm/java-8-openjdk-amd64}"
+fi
+
 if [ -n "$JAVA8_HOME" ]; then
   export JAVA_HOME="$JAVA8_HOME"
   export PATH="$JAVA_HOME/bin:$PATH"
+  export KUDU_DIST_TEST_JAVA_VERSION="${KUDU_DIST_TEST_JAVA_VERSION:-8}"
+elif [ -n "$JAVA17_HOME" ]; then
+  export JAVA_HOME="$JAVA17_HOME"
+  export PATH="$JAVA_HOME/bin:$PATH"
+  export KUDU_DIST_TEST_JAVA_VERSION="${KUDU_DIST_TEST_JAVA_VERSION:-17}"
 fi
+# Default dist-test workers to JDK 17 when no explicit override is given.
+export KUDU_DIST_TEST_JAVA_VERSION="${KUDU_DIST_TEST_JAVA_VERSION:-17}"
 
 # Some portions of the C++ build may depend on Java code, so we may run Gradle
 # while building. Pass in some flags suitable for automated builds; these will

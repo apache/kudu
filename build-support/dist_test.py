@@ -49,6 +49,11 @@ ISOLATE_SERVER = os.environ.get('ISOLATE_SERVER',
 DIST_TEST_HOME = os.environ.get('DIST_TEST_HOME',
                                 os.path.expanduser("~/dist_test"))
 
+# JDK version to use on dist-test workers. Can be overridden via
+# --java-version on the command line or KUDU_DIST_TEST_JAVA_VERSION env var.
+# Default is '17'; use '8' for backward-compatible runs.
+DEFAULT_JAVA_VERSION = os.environ.get('KUDU_DIST_TEST_JAVA_VERSION', '17')
+
 # Put some limit so someone doesn't accidentally try to loop all of the
 # tests 10,000 times and cost a bunch of money. If someone really has a good
 # reason to do this, they are can always edit this constant locally.
@@ -356,7 +361,7 @@ def forward_env_var(command_list, var_name, is_required=True):
   command_list.extend(["-e", "%s=%s" % (var_name, os.environ.get(var_name))])
 
 def create_archive_input(staging, execution, dep_extractor,
-                         collect_tmpdir=False):
+                         collect_tmpdir=False, java_version=None):
   """
   Generates .gen.json and .isolate files corresponding to the
   test 'execution', which must be a TestExecution instance.
@@ -397,6 +402,7 @@ def create_archive_input(staging, execution, dep_extractor,
   out_isolate = os.path.join(staging.dir, '%s.isolate' % (execution.test_name))
 
   command = ['../../build-support/run_dist_test.py',
+             '--java-version', java_version or DEFAULT_JAVA_VERSION,
              '-e', 'KUDU_TEST_TIMEOUT=%d' % (TEST_TIMEOUT_SECS - 30),
              '-e', 'KUDU_ALLOW_SLOW_TESTS=%s' % os.environ.get('KUDU_ALLOW_SLOW_TESTS', 1),
              '-e', 'KUDU_ENCRYPT_DATA_IN_TESTS=%s' % os.environ.get('KUDU_ENCRYPT_DATA_IN_TESTS', 0),
@@ -568,7 +574,8 @@ def run_tests(parser, options):
   dep_extractor = create_dependency_extractor()
   for execution in executions:
     create_archive_input(staging, execution, dep_extractor,
-                         collect_tmpdir=options.collect_tmpdir)
+                         collect_tmpdir=options.collect_tmpdir,
+                         java_version=options.java_version)
   run_isolate(staging)
   retry_all = RETRY_ALL_TESTS > 0
   create_task_json(staging,
@@ -576,6 +583,15 @@ def run_tests(parser, options):
                    replicate_tasks=options.num_instances,
                    retry_all_tests=retry_all)
   submit_tasks(staging, options)
+
+def add_java_version_argument(p):
+  """Add the --java-version argument to a subparser."""
+  p.add_argument("--java-version", dest="java_version", type=str,
+                 default=DEFAULT_JAVA_VERSION, metavar="VERSION",
+                 help="JDK major version to use on the dist-test workers "
+                      "('17' or '8'). Defaults to '%s'. Can also be set via "
+                      "the KUDU_DIST_TEST_JAVA_VERSION environment variable."
+                      % DEFAULT_JAVA_VERSION)
 
 def add_run_subparser(subparsers):
   p = subparsers.add_parser('run', help='Run the dist-test-enabled tests')
@@ -591,6 +607,7 @@ def add_run_subparser(subparsers):
                  "loop a suite of tests to test for flakiness. Typically this should be used " +
                  "in conjunction with the --tests-regex option above to select a small number " +
                  "of tests.")
+  add_java_version_argument(p)
   p.add_argument("extra_args", nargs=argparse.REMAINDER,
                  help=("Optional arguments to append to the command line for all " +
                        "submitted tasks. Passing a '--' argument before the list of " +
@@ -636,7 +653,8 @@ def loop_test(parser, options):
   dep_extractor = create_dependency_extractor()
   for execution in executions:
     create_archive_input(staging, execution, dep_extractor,
-                         collect_tmpdir=options.collect_tmpdir)
+                         collect_tmpdir=options.collect_tmpdir,
+                         java_version=options.java_version)
   run_isolate(staging)
   create_task_json(staging, options.num_instances)
   submit_tasks(staging, options)
@@ -656,6 +674,7 @@ def add_loop_test_subparser(subparsers):
       help="number of test instances to start. If passing arguments to the "
       "test, you may want to use a '--' argument before <test-path>. "
       "e.g: loop -- build/latest/bin/foo-test --gtest_opt=123")
+  add_java_version_argument(p)
   p.add_argument("cmd", help="the path to the test binary (e.g. build/latest/bin/foo-test)")
   p.add_argument("args", nargs=argparse.REMAINDER, help="test arguments")
   p.set_defaults(func=loop_test)
@@ -666,6 +685,9 @@ def get_gradle_cmd_line(options):
   cmd.append("distTest")
   if options.collect_tmpdir:
     cmd.append("--collect-tmpdir")
+  # Forward the JDK version so DistTestTask can embed it into the isolate
+  # command passed to run_dist_test.py on the workers.
+  cmd.append("-PdistTestJavaVersion=%s" % options.java_version)
   return cmd
 
 def run_java_tests(parser, options):
@@ -709,12 +731,14 @@ def add_java_subparser(subparsers):
   sp = p.add_subparsers()
   run_all = sp.add_parser("run-all",
       help="Run all of the Java tests via dist-test")
+  add_java_version_argument(run_all)
   run_all.set_defaults(func=run_java_tests)
 
   loop = sp.add_parser("loop", help="Loop a single Java test")
   loop.add_argument("--num-instances", "-n", dest="num_instances", type=int,
                  help="number of test instances to start", metavar="NUM",
                  default=100)
+  add_java_version_argument(loop)
   loop.add_argument("pattern", help="Pattern matching a Java test class to run")
   loop.set_defaults(func=loop_java_test)
 

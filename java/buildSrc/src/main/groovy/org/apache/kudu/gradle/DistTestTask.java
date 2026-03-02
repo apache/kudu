@@ -74,6 +74,14 @@ public class DistTestTask extends DefaultTask {
   private boolean collectTmpDir = false;
 
   /**
+   * JDK major version to use on dist-test workers.
+   * Settable via -PdistTestJavaVersion=N (passed by dist_test.py) or
+   * via the --java-version Gradle task option.
+   * Default is "17".
+   */
+  private String javaVersion = "17";
+
+  /**
    * Called by build.gradle to add test tasks to be considered for dist-tests.
    */
   public void addTestTask(Test t) {
@@ -107,6 +115,19 @@ public class DistTestTask extends DefaultTask {
     return this;
   }
 
+  @Input
+  public String getJavaVersion() {
+    return javaVersion;
+  }
+
+  @Option(option = "java-version",
+          description = "JDK major version to use on dist-test workers ('17' or '8'). " +
+                        "Can also be set via -PdistTestJavaVersion=N. Default: '17'.")
+  public DistTestTask setJavaVersion(String javaVersion) {
+    this.javaVersion = javaVersion;
+    return this;
+  }
+
   @InputFiles
   public FileCollection getInputClasses() {
     FileCollection fc = getProject().files(); // Create an empty FileCollection.
@@ -122,6 +143,23 @@ public class DistTestTask extends DefaultTask {
 
   @TaskAction
   public void doStuff() throws IOException {
+    // -PdistTestJavaVersion=N (set by dist_test.py) takes precedence over the
+    // field default, but the --java-version task option takes precedence over both
+    // (it was already set via setJavaVersion() before doStuff() is called).
+    if (javaVersion.equals("17")) {
+      Object prop = getProject().findProperty("distTestJavaVersion");
+      if (prop != null) {
+        String propValue = prop.toString().trim();
+        if (propValue.isEmpty()) {
+          LOGGER.warn("dist-test: distTestJavaVersion is set but empty; continuing with JDK {}",
+              javaVersion);
+        } else {
+          javaVersion = propValue;
+        }
+      }
+    }
+    LOGGER.info("dist-test: using JDK version {}", javaVersion);
+
     getProject().delete(outputDir);
     getProject().mkdir(outputDir);
     List<String> baseDeps = getBaseDeps();
@@ -231,12 +269,16 @@ public class DistTestTask extends DefaultTask {
     if (collectTmpDir) {
       cmd.add("--collect-tmpdir");
     }
+    cmd.add("--java-version=" + javaVersion);
     cmd.add("--test-language=java");
     cmd.addAll(getTestResultReportingEnvironmentVariables());
-    cmd.add("--",
-            "-ea",
-            "-cp",
-            Joiner.on(":").join(classpath));
+    cmd.add("--", "-ea");
+    // Carry over JVM args configured on Gradle Test tasks, such as
+    // --add-opens required by reflection-heavy test utilities.
+    // Dist-test runs JUnitCore directly, so these are not applied
+    // automatically unless we pass them through here.
+    cmd.addAll(test.getJvmArgs());
+    cmd.add("-cp", Joiner.on(":").join(classpath));
     for (Map.Entry<String, Object> e : test.getSystemProperties().entrySet()) {
       cmd.add("-D" + e.getKey() + "=" + e.getValue());
     }
