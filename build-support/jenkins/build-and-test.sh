@@ -123,7 +123,7 @@ if [ "$KUDU_ALLOW_SKIPPED_TESTS" == "1" ]; then
   fi
 
   # If a commit messages contains a line that says 'DONT_BUILD', exit immediately.
-  DONT_BUILD=$(git show|egrep '^\s{4}DONT_BUILD$')
+  DONT_BUILD=$(git show -s --format=%B | egrep '^DONT_BUILD\s*$')
   if [ "x$DONT_BUILD" != "x" ]; then
     echo
     echo ------------------------------------------------------------
@@ -206,16 +206,29 @@ list_flaky_tests() {
 TEST_LOGDIR="$BUILD_ROOT/test-logs"
 TEST_DEBUGDIR="$BUILD_ROOT/test-debug"
 
-cleanup() {
-  echo Cleaning up all build artifacts and temporary data...
-  $SOURCE_ROOT/build-support/jenkins/post-build-clean.sh
+CLEAN_THIRDPARTY=$(git show -s --format=%B | egrep '^CLEAN_THIRDPARTY\s*$')
+
+clean_thirdparty_if_needed() {
+  if [ -n "$CLEAN_THIRDPARTY" ]; then
+    echo "CLEAN_THIRDPARTY is set, cleaning thirdparty folder."
+    git clean -xfd $THIRDPARTY_DIR
+  fi
 }
-# If we're running inside Jenkins (the BUILD_TAG is set), then install
-# an exit handler which will clean up all of our build results and temporary
-# data.
-if [ -n "$BUILD_TAG" ]; then
-  trap cleanup EXIT
-fi
+
+cleanup() {
+  # If we're running inside Jenkins (the BUILD_TAG is set), then install
+  # an exit handler which will clean up all of our build results and temporary
+  # data.
+  if [ -n "$BUILD_TAG" ]; then
+    echo Cleaning up all build artifacts and temporary data...
+    $SOURCE_ROOT/build-support/jenkins/post-build-clean.sh
+  fi
+  clean_thirdparty_if_needed
+}
+
+trap cleanup EXIT
+
+clean_thirdparty_if_needed
 
 ARTIFACT_ARCH=$(uname -m)
 # Configure the build
