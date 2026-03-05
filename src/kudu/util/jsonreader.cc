@@ -36,7 +36,7 @@ using strings::Substitute;
 namespace kudu {
 
 namespace {
-const char* const TypeToString(rapidjson::Type t) {
+const char* TypeToString(rapidjson::Type t) {
   switch (t) {
     case rapidjson::kNullType:
       return "null";

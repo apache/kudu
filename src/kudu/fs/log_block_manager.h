@@ -550,7 +550,7 @@ class LogBlockManager : public BlockManager {
 // metadata is simple and performant at open time.
 class LogBlockManagerNativeMeta : public LogBlockManager {
  public:
-  static constexpr const char* const name() { return "log"; }
+  static constexpr const char* name() { return "log"; }
 
   LogBlockManagerNativeMeta(Env* env,
                             scoped_refptr<DataDirManager> dd_manager,
@@ -618,7 +618,7 @@ private:
 // the read/write and space amplification.
 class LogBlockManagerRdbMeta : public LogBlockManager {
  public:
-  static constexpr const char* const name() { return "logr"; }
+  static constexpr const char* name() { return "logr"; }
 
   LogBlockManagerRdbMeta(Env* env,
                          scoped_refptr<DataDirManager> dd_manager,

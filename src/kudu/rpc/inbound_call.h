@@ -100,7 +100,7 @@ class InboundCall {
     return remote_method_;
   }
 
-  const int32_t call_id() const {
+  int32_t call_id() const {
     return header_.call_id();
   }
 

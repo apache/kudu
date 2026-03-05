@@ -1237,7 +1237,7 @@ class Schema {
   }
 
   // Utility function to return the actual name of the auto incrementing column.
-  static constexpr const char* const GetAutoIncrementingColumnName() {
+  static constexpr const char* GetAutoIncrementingColumnName() {
     return auto_incrementing_col_name_;
   }
 

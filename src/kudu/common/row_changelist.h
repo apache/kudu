@@ -315,7 +315,7 @@ class RowChangeListDecoder {
     return type_ == RowChangeList::kReinsert;
   }
 
-  const RowChangeList::ChangeType get_type() const {
+  RowChangeList::ChangeType get_type() const {
     DCHECK_NE(type_, RowChangeList::kUninitialized) << "Must call Init()";
     return type_;
   }

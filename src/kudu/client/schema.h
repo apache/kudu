@@ -175,12 +175,12 @@ class KUDU_EXPORT KuduColumnStorageAttributes {
   }
 
   /// @return Encoding type for the column storage.
-  const EncodingType encoding() const {
+  EncodingType encoding() const {
     return encoding_;
   }
 
   /// @return Compression type for the column storage.
-  const CompressionType compression() const {
+  CompressionType compression() const {
     return compression_;
   }
 
@@ -872,7 +872,7 @@ class KUDU_EXPORT KuduSchema {
   /// Utility function to return the actual name of the auto incrementing column.
   ///
   /// @return The name of the auto incrementing column.
-  static const char* const GetAutoIncrementingColumnName();
+  static const char* GetAutoIncrementingColumnName();
 
   /// Create a new row corresponding to this schema.
   ///

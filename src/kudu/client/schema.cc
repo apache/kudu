@@ -1245,7 +1245,7 @@ int KuduSchema::GetAutoIncrementingColumnIndex() const {
   return schema_->auto_incrementing_col_idx();
 }
 
-const char* const KuduSchema::GetAutoIncrementingColumnName() {
+const char* KuduSchema::GetAutoIncrementingColumnName() {
   return Schema::GetAutoIncrementingColumnName();
 }
 
