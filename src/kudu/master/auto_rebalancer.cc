@@ -147,6 +147,17 @@ DEFINE_bool(auto_rebalancing_fail_moves_for_test, false,
             "All CheckMoveCompleted will fail with IllegalState if this flag is true. "
             "This is only used for test.");
 TAG_FLAG(auto_rebalancing_fail_moves_for_test, unsafe);
+
+DEFINE_bool(auto_rebalancing_prefer_follower_replica_moves, true,
+            "When true, among equally imbalanced table/move candidates the "
+            "auto-rebalancer prefers replica moves whose source tablet server "
+            "hosts a non-leader replica for that table, when that information is "
+            "available from the cluster health report. When false, no such "
+            "preference is applied. Moving a leader replica may still be chosen "
+            "when necessary or when follower availability is unknown.");
+TAG_FLAG(auto_rebalancing_prefer_follower_replica_moves, advanced);
+TAG_FLAG(auto_rebalancing_prefer_follower_replica_moves, runtime);
+
 DEFINE_bool(auto_rebalancing_enable_range_rebalancing, false,
             "Whether to rebalance each range partition independently. "
             "When enabled, the auto-rebalancer treats each range partition "
@@ -310,7 +321,9 @@ Status AutoRebalancerTask::GetMoves(
 
   // One location: use greedy rebalancing algorithm to find moves.
   if (ts_id_by_location.size() == 1) {
-    rebalance::TwoDimensionalGreedyAlgo algo;
+    rebalance::TwoDimensionalGreedyAlgo algo(
+        rebalance::TwoDimensionalGreedyAlgo::EqualSkewOption::PICK_RANDOM,
+        FLAGS_auto_rebalancing_prefer_follower_replica_moves);
     RETURN_NOT_OK(GetMovesUsingRebalancingAlgo(raw_info, &algo, CrossLocations::NO, &rep_moves));
     *replica_moves = std::move(rep_moves);
     return Status::OK();
@@ -341,7 +354,9 @@ Status AutoRebalancerTask::GetMoves(
 
   // Perform intra-location rebalancing.
   if (config_.run_intra_location_rebalancing) {
-    rebalance::TwoDimensionalGreedyAlgo algo;
+    rebalance::TwoDimensionalGreedyAlgo algo(
+        rebalance::TwoDimensionalGreedyAlgo::EqualSkewOption::PICK_RANDOM,
+        FLAGS_auto_rebalancing_prefer_follower_replica_moves);
     for (const auto& elem : ts_id_by_location) {
       const auto& location = elem.first;
       ClusterRawInfo location_raw_info;

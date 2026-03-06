@@ -27,6 +27,7 @@
 #include <set>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -341,6 +342,68 @@ TEST(RebalanceAlgoUnitTest, EmptyBalanceInfoGetNextMove) {
 // Workaround for older libstdc++ (like on RH/CentOS 6). In case of newer
 // libstdc++/libc++ '{}' works as needed for an empty unordered map.
 static const decltype(TestClusterConfig::servers_by_location) kNoLocations;
+
+TEST(RebalanceAlgoUnitTest, PreferFollowerMovesByTableAndTag) {
+  const TestClusterConfig kConfig = {
+    kNoLocations,
+    { "0", "1", "2", },
+    {
+      { "A", "R0", { 2, 0, 0, } },
+      { "A", "R1", { 2, 0, 0, } },
+    },
+    {},
+  };
+
+  ClusterInfo ci;
+  ClusterConfigToClusterInfo(kConfig, &ci);
+  ci.ts_with_followers_by_table_and_tag[TableIdAndTag{ "A", "R1" }].insert("0");
+
+  {
+    vector<TableReplicaMove> moves;
+    TwoDimensionalGreedyAlgo algo(
+        TwoDimensionalGreedyAlgo::EqualSkewOption::PICK_FIRST,
+        true);
+    ASSERT_OK(algo.GetNextMoves(ci, 1, &moves));
+    ASSERT_EQ(1, moves.size());
+    ASSERT_EQ((TableReplicaMove{ "A", "R1", "0", "1" }), moves[0]);
+  }
+
+  {
+    vector<TableReplicaMove> moves;
+    TwoDimensionalGreedyAlgo algo(
+        TwoDimensionalGreedyAlgo::EqualSkewOption::PICK_FIRST,
+        false);
+    ASSERT_OK(algo.GetNextMoves(ci, 1, &moves));
+    ASSERT_EQ(1, moves.size());
+    ASSERT_EQ((TableReplicaMove{ "A", "R0", "0", "1" }), moves[0]);
+  }
+}
+
+// When ts_with_followers_by_table_and_tag is empty (as from ClusterConfigToClusterInfo
+// without BuildClusterInfo), no source qualifies as having followers; with
+// prefer_follower_moves=true the algorithm must still emit a move via leader_fallback.
+TEST(RebalanceAlgoUnitTest, PreferFollowerMovesLeaderFallbackWhenFollowerMapEmpty) {
+  const TestClusterConfig kConfig = {
+    kNoLocations,
+    { "0", "1", "2", },
+    {
+      { "A", "", { 2, 0, 0, } },
+    },
+    {},
+  };
+
+  ClusterInfo ci;
+  ClusterConfigToClusterInfo(kConfig, &ci);
+  ASSERT_TRUE(ci.ts_with_followers_by_table_and_tag.empty());
+
+  vector<TableReplicaMove> moves;
+  TwoDimensionalGreedyAlgo algo(
+      TwoDimensionalGreedyAlgo::EqualSkewOption::PICK_FIRST,
+      true);
+  ASSERT_OK(algo.GetNextMoves(ci, 1, &moves));
+  ASSERT_EQ(1, moves.size());
+  ASSERT_EQ((TableReplicaMove{ "A", "", "0", "1" }), moves[0]);
+}
 
 // Various scenarios of balanced configurations where no moves are expected
 // to happen.

@@ -428,6 +428,11 @@ Status Rebalancer::BuildClusterInfo(const ClusterRawInfo& raw_info,
       auto replicas_ins = replicas_at_server.emplace(ri.ts_uuid, 0);
       if (do_count_replica) {
         replicas_ins.first->second++;
+        if (!ri.is_leader) {
+          result_info.ts_with_followers_by_table_and_tag[TableIdAndTag{
+              tablet.table_id,
+              config_.enable_range_rebalancing ? tablet.range_key_begin : "" }].insert(ri.ts_uuid);
+        }
       }
     }
   }

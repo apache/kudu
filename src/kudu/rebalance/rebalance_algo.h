@@ -25,6 +25,7 @@
 #include <set>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include <gtest/gtest_prod.h>
@@ -113,6 +114,19 @@ struct ClusterInfo {
 
   // Locality information for a cluster.
   ClusterLocalityInfo locality;
+
+  // For each {table, tag}, tablet servers that host at least one non-leader
+  // replica, as populated by Rebalancer::BuildClusterInfo() from the cluster
+  // health report. Used to prefer moves whose source is a follower (moving a
+  // leader can disrupt clients). A missing key for a group means no counted
+  // non-leader replica was seen for that group (commonly all replicas there are
+  // leaders). If this map is empty or unset (e.g. hand-built ClusterInfo or
+  // tests that do not use BuildClusterInfo), the algorithm has no follower
+  // preference data and falls back among equal-skew candidates (leader moves
+  // allowed when no follower-qualified move is found among them).
+  std::unordered_map<TableIdAndTag, std::unordered_set<std::string>,
+                     TableIdAndTagHash, TableIdAndTagEqual>
+      ts_with_followers_by_table_and_tag;
 };
 
 // A directive to move some replica of a table between two tablet servers.
@@ -182,7 +196,8 @@ class TwoDimensionalGreedyAlgo : public RebalancingAlgo {
     PICK_RANDOM,
   };
   explicit TwoDimensionalGreedyAlgo(
-      EqualSkewOption opt = EqualSkewOption::PICK_RANDOM);
+      EqualSkewOption opt = EqualSkewOption::PICK_RANDOM,
+      bool prefer_follower_moves = true);
 
  protected:
   Status GetNextMove(const ClusterInfo& cluster_info,
@@ -231,6 +246,7 @@ class TwoDimensionalGreedyAlgo : public RebalancingAlgo {
       std::vector<std::string>* server_uuids);
 
   const EqualSkewOption equal_skew_opt_;
+  const bool prefer_follower_moves_;
   std::random_device random_device_;
   std::mt19937 generator_;
 };

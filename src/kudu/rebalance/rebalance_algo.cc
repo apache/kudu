@@ -30,7 +30,7 @@
 #include <utility>
 #include <vector>
 
-#include <boost/container_hash/extensions.hpp>
+#include <boost/container_hash/hash.hpp>
 #include <glog/logging.h>
 
 #include "kudu/gutil/map-util.h"
@@ -213,8 +213,10 @@ Status RebalancingAlgo::ApplyMove(const TableReplicaMove& move,
   return Status::OK();
 }
 
-TwoDimensionalGreedyAlgo::TwoDimensionalGreedyAlgo(EqualSkewOption opt)
+TwoDimensionalGreedyAlgo::TwoDimensionalGreedyAlgo(EqualSkewOption opt,
+                                                   bool prefer_follower_moves)
     : equal_skew_opt_(opt),
+      prefer_follower_moves_(prefer_follower_moves),
       generator_(random_device_()) {
 }
 
@@ -259,7 +261,15 @@ Status TwoDimensionalGreedyAlgo::GetNextMove(
   // not, attempt to pick a move that improves the table skew. If all tables
   // are balanced, attempt to pick a move that preserves table balance and
   // improves cluster skew.
+  //
+  // Among equally valid candidates, prefer moves where the source server has
+  // follower replicas for the chosen table: moving a leader triggers a
+  // leadership transfer and can disrupt active clients. We track the best
+  // non-leader candidate and a leader fallback, using the latter only when no
+  // non-leader move is available.
   const auto range = table_info_by_skew.equal_range(max_table_skew);
+  optional<TableReplicaMove> non_leader_move;
+  optional<TableReplicaMove> leader_fallback;
   for (auto it = range.first; it != range.second; ++it) {
     const TableBalanceInfo& tbi = it->second;
     const auto& servers_by_table_replica_count = tbi.servers_by_replica_count;
@@ -347,13 +357,46 @@ Status TwoDimensionalGreedyAlgo::GetNextMove(
       continue;
     }
 
-    // Move a replica of the selected table from a most loaded server to a
-    // least loaded server.
-    *move = TableReplicaMove{ tbi.table_id, tbi.tag,
-                              max_loaded_uuid, min_loaded_uuid };
-    break;
+    if (prefer_follower_moves_) {
+      // Prefer a move where the source server has follower replicas for this
+      // table. If the source only has leaders, save as fallback and keep
+      // looking for a non-leader candidate among the remaining equal-skew
+      // tables.
+      const auto& followers_by_table_and_tag =
+          cluster_info.ts_with_followers_by_table_and_tag;
+      const auto it_followers = followers_by_table_and_tag.find(
+          TableIdAndTag{ tbi.table_id, tbi.tag });
+      const bool source_has_followers =
+          it_followers != followers_by_table_and_tag.end() &&
+          ContainsKey(it_followers->second, max_loaded_uuid);
+      if (source_has_followers) {
+        non_leader_move = TableReplicaMove{ tbi.table_id, tbi.tag,
+                                           max_loaded_uuid, min_loaded_uuid };
+        // Safe to stop scanning equal_range(max_table_skew): every table here
+        // has the same skew, so none dominates on table skew. Any valid move
+        // from this block is an acceptable greedy step; for follower preference
+        // we only need one whose source hosts a non-leader replica, not the
+        // best among several such moves.
+        break;
+      }
+      if (!leader_fallback) {
+        leader_fallback = TableReplicaMove{ tbi.table_id, tbi.tag,
+                                           max_loaded_uuid, min_loaded_uuid };
+      }
+    } else {
+      *move = TableReplicaMove{ tbi.table_id, tbi.tag,
+                                max_loaded_uuid, min_loaded_uuid };
+      break;
+    }
   }
 
+  if (prefer_follower_moves_) {
+    if (non_leader_move) {
+      *move = std::move(non_leader_move);
+    } else if (leader_fallback) {
+      *move = std::move(leader_fallback);
+    }
+  }
   return Status::OK();
 }
 

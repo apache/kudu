@@ -18,6 +18,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstdint>
 #include <functional>
 #include <limits>
 #include <map>
@@ -104,6 +105,7 @@ using std::vector;
 using strings::Substitute;
 
 DECLARE_bool(auto_leader_rebalancing_enabled);
+DECLARE_bool(auto_rebalancing_prefer_follower_replica_moves);
 DECLARE_bool(auto_rebalancing_enabled);
 DECLARE_bool(auto_rebalancing_enable_range_rebalancing);
 DECLARE_bool(auto_rebalancing_fail_moves_for_test);
@@ -268,9 +270,10 @@ class AutoRebalancerTest : public KuduTest {
   static Status BuildClusterInfoForTest(
       AutoRebalancerTask* auto_rebalancer,
       const rebalance::ClusterRawInfo& raw_info,
-      rebalance::ClusterInfo* cluster_info) {
+      rebalance::ClusterInfo* cluster_info,
+      const rebalance::Rebalancer::MovesInProgress& moves_in_progress = {}) {
     return auto_rebalancer->rebalancer_.BuildClusterInfo(
-        raw_info, rebalance::Rebalancer::MovesInProgress(), cluster_info);
+        raw_info, moves_in_progress, cluster_info);
   }
 
   static map<string, int> ComputeRangeReplicaSkew(
@@ -1171,6 +1174,183 @@ TEST_F(AutoRebalancerTest, TestRemoveReplaceFlagIfMoveFails) {
       }
     }
   });
+}
+
+// Rebalancer::BuildClusterInfo() fills ClusterInfo::ts_with_followers_by_table_and_tag
+// from non-leader replicas in the ksck-derived view. Exercise the same path as
+// production via BuildClusterRawInfoForTest + BuildClusterInfoForTest on a live
+// cluster with RF>1 data.
+TEST_F(AutoRebalancerTest, BuildClusterInfoPopulatesFollowersByTableAndTag) {
+  cluster_opts_.num_tablet_servers = 3;
+  ASSERT_OK(CreateAndStartCluster(/*enable_leader_rebalance=*/false));
+  NO_FATALS(CheckAutoRebalancerStarted());
+
+  CreateWorkloadTable(/*num_tablets*/6, /*num_replicas*/3);
+  workload_->Start();
+  while (workload_->rows_inserted() < 500) {
+    SleepFor(MonoDelta::FromMilliseconds(100));
+  }
+  workload_->StopAndJoin();
+
+  int leader_idx;
+  ASSERT_OK(cluster_->GetLeaderMasterIndex(&leader_idx));
+  auto* auto_rebalancer =
+      cluster_->mini_master(leader_idx)->master()->catalog_manager()->auto_rebalancer();
+
+  rebalance::ClusterRawInfo raw_info;
+  rebalance::ClusterInfo cluster_info;
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(BuildClusterRawInfoForTest(auto_rebalancer, nullopt, &raw_info));
+    ASSERT_OK(BuildClusterInfoForTest(auto_rebalancer, raw_info, &cluster_info));
+    ASSERT_FALSE(cluster_info.ts_with_followers_by_table_and_tag.empty())
+        << "expected at least one {table,tag} with non-leader replicas";
+  });
+  for (const auto& elem : cluster_info.ts_with_followers_by_table_and_tag) {
+    ASSERT_FALSE(elem.second.empty());
+  }
+}
+
+// A replica listed as the source of an in-progress move is not counted in
+// BuildClusterInfo(), so it must not appear in ts_with_followers_by_table_and_tag
+// for that {table_id, tag}. Use a single tablet (RF=3) so the moving follower
+// is the table's only replica on that server, making the effect visible.
+TEST_F(AutoRebalancerTest, BuildClusterInfoExcludesMovingFollowerSourceFromFollowerMap) {
+  cluster_opts_.num_tablet_servers = 3;
+  ASSERT_OK(CreateAndStartCluster(/*enable_leader_rebalance=*/false));
+  NO_FATALS(CheckAutoRebalancerStarted());
+
+  CreateWorkloadTable(/*num_tablets*/1, /*num_replicas*/3);
+  workload_->Start();
+  while (workload_->rows_inserted() < 500) {
+    SleepFor(MonoDelta::FromMilliseconds(100));
+  }
+  workload_->StopAndJoin();
+
+  int leader_idx;
+  ASSERT_OK(cluster_->GetLeaderMasterIndex(&leader_idx));
+  auto* auto_rebalancer =
+      cluster_->mini_master(leader_idx)->master()->catalog_manager()->auto_rebalancer();
+
+  rebalance::ClusterRawInfo raw_info;
+  string tablet_id;
+  string follower_ts_uuid;
+  rebalance::TableIdAndTag table_and_tag;
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(BuildClusterRawInfoForTest(auto_rebalancer, nullopt, &raw_info));
+    bool found = false;
+    for (const auto& tablet : raw_info.tablet_summaries) {
+      if (tablet.result != kudu::cluster_summary::HealthCheckResult::HEALTHY) {
+        continue;
+      }
+      for (const auto& replica : tablet.replicas) {
+        if (replica.is_leader || !replica.ts_healthy) {
+          continue;
+        }
+        tablet_id = tablet.id;
+        follower_ts_uuid = replica.ts_uuid;
+        table_and_tag.table_id = tablet.table_id;
+        table_and_tag.tag = FLAGS_auto_rebalancing_enable_range_rebalancing
+            ? tablet.range_key_begin : "";
+        found = true;
+        break;
+      }
+      if (found) {
+        break;
+      }
+    }
+    ASSERT_TRUE(found);
+  });
+
+  rebalance::ClusterInfo baseline;
+  ASSERT_OK(BuildClusterInfoForTest(auto_rebalancer, raw_info, &baseline));
+  const auto* baseline_followers = FindOrNull(
+      baseline.ts_with_followers_by_table_and_tag, table_and_tag);
+  ASSERT_TRUE(baseline_followers != nullptr);
+  ASSERT_TRUE(ContainsKey(*baseline_followers, follower_ts_uuid));
+
+  rebalance::Rebalancer::MovesInProgress moves_in_progress;
+  moves_in_progress.emplace(
+      tablet_id,
+      rebalance::Rebalancer::ReplicaMove{ tablet_id, follower_ts_uuid, "" });
+
+  rebalance::ClusterInfo with_move;
+  ASSERT_OK(BuildClusterInfoForTest(
+      auto_rebalancer, raw_info, &with_move, moves_in_progress));
+  const auto* followers_after = FindOrNull(
+      with_move.ts_with_followers_by_table_and_tag, table_and_tag);
+  ASSERT_TRUE(followers_after != nullptr);
+  ASSERT_FALSE(ContainsKey(*followers_after, follower_ts_uuid));
+}
+
+// Parameterized fixture for testing --auto_rebalancing_prefer_follower_replica_moves
+// with both true and false. Replica moves must be scheduled in both cases;
+// the flag only affects follower-vs-leader preference among equal candidates.
+class PreferFollowerRebalancingTest :
+    public AutoRebalancerTest,
+    public ::testing::WithParamInterface<bool> {
+};
+INSTANTIATE_TEST_SUITE_P(, PreferFollowerRebalancingTest, ::testing::Bool());
+
+TEST_P(PreferFollowerRebalancingTest, SchedulesReplicaMoves) {
+  flag_saver_ = make_unique<FlagSaver>();
+  FLAGS_auto_rebalancing_prefer_follower_replica_moves = GetParam();
+
+  constexpr int kNumOrigTservers = 3;
+  constexpr int kNumTablets = 6;
+
+  cluster_opts_.num_tablet_servers = kNumOrigTservers;
+  ASSERT_OK(CreateAndStartCluster(/*enable_leader_rebalance=*/false));
+  NO_FATALS(CheckAutoRebalancerStarted());
+
+  CreateWorkloadTable(kNumTablets, /*num_replicas*/3);
+  workload_->Start();
+  while (workload_->rows_inserted() < 500) {
+    SleepFor(MonoDelta::FromMilliseconds(100));
+  }
+  workload_->StopAndJoin();
+
+  ASSERT_OK(cluster_->AddTabletServer());
+  NO_FATALS(CheckSomeMovesScheduled());
+}
+
+// Mixed RF scenario: one RF=1 table (no followers) and one RF=3 table (has
+// followers). The rebalancer must handle both simultaneously without crashing
+// and still schedule moves.
+TEST_F(AutoRebalancerTest, TestReplicaRebalancingMixedRFNoCrash) {
+  flag_saver_ = make_unique<FlagSaver>();
+  FLAGS_auto_rebalancing_prefer_follower_replica_moves = true;
+
+  constexpr int kNumOrigTservers = 3;
+  constexpr int kNumTablets = 6;
+
+  cluster_opts_.num_tablet_servers = kNumOrigTservers;
+  ASSERT_OK(CreateAndStartCluster(/*enable_leader_rebalance=*/false));
+  NO_FATALS(CheckAutoRebalancerStarted());
+
+  // RF=1 table: all replicas are leaders, follower map will be empty for it.
+  CreateWorkloadTable(kNumTablets, /*num_replicas*/1);
+  workload_->Start();
+  while (workload_->rows_inserted() < 500) {
+    SleepFor(MonoDelta::FromMilliseconds(100));
+  }
+  workload_->StopAndJoin();
+
+  // RF=3 table: use a distinct name so Setup() creates a second table rather
+  // than reopening the already-existing RF=1 table (TestWorkload default name
+  // is "test-workload" for both, so an explicit name is required here).
+  workload_.reset(new TestWorkload(cluster_.get()));
+  workload_->set_num_tablets(kNumTablets);
+  workload_->set_num_replicas(3);
+  workload_->set_table_name("test-workload-rf3");
+  workload_->Setup();
+  workload_->Start();
+  while (workload_->rows_inserted() < 500) {
+    SleepFor(MonoDelta::FromMilliseconds(100));
+  }
+  workload_->StopAndJoin();
+
+  ASSERT_OK(cluster_->AddTabletServer());
+  NO_FATALS(CheckSomeMovesScheduled());
 }
 
 } // namespace master
