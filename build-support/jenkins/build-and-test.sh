@@ -109,6 +109,22 @@
 #     This value can be important to set on resource constrained machines
 #     running some of the more intense long running integration tests.
 
+
+#
+# Special tags/labels for commit messages are described below. They modify
+# the behavior of this script. A tag/label must start a dedicated line in
+# the commit message, i.e. there shouldn't be any text after the tag/label
+# that starts such a special line in the commit message.
+#
+#   DONT_BUILD
+#     If 'KUDU_ALLOW_SKIPPED_TESTS' variable set to 1 AND this tag is present
+#     in the commit message, don't even start building -- exit early.
+#
+#   CLEAN_THIRDPARTY
+#     clean the thirdparty directory before the build and upon exiting,
+#     regardless of the exit status of this script
+#
+
 if [ "$KUDU_ALLOW_SKIPPED_TESTS" == "1" ]; then
   # If the commit only contains changes that do not impact the build or tests, exit immediately.
   # This check is conservative and attempts to have no false positives, but may have false negatives.
@@ -123,8 +139,7 @@ if [ "$KUDU_ALLOW_SKIPPED_TESTS" == "1" ]; then
   fi
 
   # If a commit messages contains a line that says 'DONT_BUILD', exit immediately.
-  DONT_BUILD=$(git show -s --format=%B | egrep '^DONT_BUILD\s*$')
-  if [ "x$DONT_BUILD" != "x" ]; then
+  if git show -s --format=%B | egrep -q '^DONT_BUILD\s*$'; then
     echo
     echo ------------------------------------------------------------
     echo "*** Build not requested. Exiting."
@@ -206,11 +221,9 @@ list_flaky_tests() {
 TEST_LOGDIR="$BUILD_ROOT/test-logs"
 TEST_DEBUGDIR="$BUILD_ROOT/test-debug"
 
-CLEAN_THIRDPARTY=$(git show -s --format=%B | egrep '^CLEAN_THIRDPARTY\s*$')
-
 clean_thirdparty_if_needed() {
-  if [ -n "$CLEAN_THIRDPARTY" ]; then
-    echo "CLEAN_THIRDPARTY is set, cleaning thirdparty folder."
+  if git show -s --format=%B | egrep -q '^CLEAN_THIRDPARTY\s*$'; then
+    echo "Found CLEAN_THIRDPARTY tag in the commit message: cleaning thirdparty"
     git clean -xfd $THIRDPARTY_DIR
   fi
 }
