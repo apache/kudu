@@ -2304,7 +2304,7 @@ class TableRangeRebalancingTest : public RebalancingTest {
   static constexpr char kFirstRangeReferencePattern[] =
       "Range start key: '00000000'\n.+\n.+\n .+ 8\n .+ 8\n .+ 8\n";
   static constexpr char kSecondRangeReferencePattern[] =
-      "Range start key: 'ff80000000'\n.+\n.+\n .+ 8\n .+ 8\n .+ 8\n";
+      "Range start key: '80000000'\n.+\n.+\n .+ 8\n .+ 8\n .+ 8\n";
 };
 
 TEST_F(TableRangeRebalancingTest, Basic) {
@@ -2445,7 +2445,7 @@ TEST_F(TableRangeRebalancingTest, ClusterWideRangeRebalancing) {
         " Max Skew | Total Count | Range Start Key\n" +
         "----------+-------------+-----------------\n" +
         " 0        | 24          | 00000000\n" +
-        " 0        | 24          | ff80000000";
+        " 0        | 24          | 80000000";
 
     const auto nonRangePartitionedTableStats =
         string("Per-table replica distribution details for non range partitioned tables:\n") +

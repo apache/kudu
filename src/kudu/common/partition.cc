@@ -19,7 +19,6 @@
 
 #include <algorithm>
 #include <cstring>
-#include <iomanip>
 #include <iostream>
 #include <iterator>
 #include <memory>
@@ -45,6 +44,7 @@
 #include "kudu/util/bitmap.h"
 #include "kudu/util/decimal_util.h"
 #include "kudu/util/hash_util.h"
+#include "kudu/util/hexdump.h"
 #include "kudu/util/int128.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/memory/arena.h"
@@ -158,18 +158,8 @@ PartitionKey PartitionKey::UpperBoundFromLegacy(const PartitionKey& pk,
 }
 
 string PartitionKey::DebugString() const {
-  std::ostringstream ss;
-  ss << "h:";
-  for (size_t i = 0; i < hash_key_.size(); ++i) {
-    ss << std::hex << std::setw(2) << std::setfill('0')
-       << static_cast<uint16_t>(hash_key_[i]);
-  }
-  ss << " r:";
-  for (size_t i = 0; i < range_key_.size(); ++i) {
-    ss << std::hex << std::setw(2) << std::setfill('0')
-       << static_cast<uint16_t>(range_key_[i]);
-  }
-  return ss.str();
+  return "h:" + HexEncodeToString(Slice(hash_key_)) +
+         " r:" + HexEncodeToString(Slice(range_key_));
 }
 
 std::ostream& operator<<(std::ostream& out, const PartitionKey& key) {
