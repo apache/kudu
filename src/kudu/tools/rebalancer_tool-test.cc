@@ -2332,7 +2332,7 @@ TEST_F(TableRangeRebalancingTest, Basic) {
   constexpr const char kFirstRangeReferencePattern[] =
     "Range start key: '00000000'\n.+\n.+\n .+ 8\n .+ 8\n .+ 8\n";
   constexpr const char kSecondRangeReferencePattern[] =
-    "Range start key: 'ff80000000'\n.+\n.+\n .+ 8\n .+ 8\n .+ 8\n";
+    "Range start key: '80000000'\n.+\n.+\n .+ 8\n .+ 8\n .+ 8\n";
 
   vector<string> table_names;
   NO_FATALS(Prepare({}, {}, {}, kEmptySet, &table_names));

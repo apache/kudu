@@ -30,5 +30,10 @@ class Slice;
 // The returned string will be redacted if redaction is enabled.
 std::string HexDump(const Slice &slice);
 
+// Encode the given slice as a lowercase hex string (2 hex digits per byte,
+// no separators). Used for partition keys, range keys, and similar binary data
+// in human-readable output.
+std::string HexEncodeToString(const Slice& slice);
+
 } // namespace kudu
 #endif
