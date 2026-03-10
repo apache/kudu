@@ -21,7 +21,6 @@
 #include <atomic>
 #include <cstddef>
 #include <functional>
-#include <iomanip>
 #include <iostream>
 #include <iterator>
 #include <map>
@@ -43,8 +42,10 @@
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tools/color.h"
 #include "kudu/tools/ksck_checksum.h"
+#include "kudu/util/hexdump.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/string_case.h"
 
 #define PUSH_PREPEND_NOT_OK(s, statuses, msg) do { \
@@ -1015,13 +1016,8 @@ HealthCheckResult Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet,
   tablet_summary.replicas.swap(replicas);
 
   // Add printable representation of the key for the start of the range.
-  const auto& range_key_begin = tablet->partition().begin().range_key();
-  ostringstream ss_range_key_begin;
-  for (size_t i = 0; i < range_key_begin.size(); ++i) {
-    ss_range_key_begin << std::hex << std::setw(2) << std::setfill('0')
-                       << static_cast<uint16_t>(range_key_begin[i]);
-  }
-  tablet_summary.range_key_begin = ss_range_key_begin.str();
+  tablet_summary.range_key_begin =
+      HexEncodeToString(Slice(tablet->partition().begin().range_key()));
   VLOG(1) << Substitute("range start key for tablet $0: '$1'",
       tablet_summary.id, tablet_summary.range_key_begin);
   results_.cluster_status.tablet_summaries.push_back(std::move(tablet_summary));

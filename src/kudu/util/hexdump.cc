@@ -17,6 +17,8 @@
 
 #include "kudu/util/hexdump.h"
 
+#include <cstddef>
+
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
@@ -79,6 +81,22 @@ std::string HexDump(const Slice &slice) {
 
     output.push_back('\n');
     rem -= line_len;
+  }
+  return output;
+}
+
+std::string HexEncodeToString(const Slice& slice) {
+  std::string output;
+  output.reserve(slice.size() * 2);
+  const uint8_t* p = slice.data();
+  size_t rem = slice.size();
+  while (rem >= 2) {
+    StringAppendF(&output, "%02x%02x", p[0], p[1]);
+    p += 2;
+    rem -= 2;
+  }
+  if (rem == 1) {
+    StringAppendF(&output, "%02x", p[0]);
   }
   return output;
 }

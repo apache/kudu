@@ -18,10 +18,8 @@
 #include "kudu/master/auto_rebalancer.h"
 
 #include <atomic>
-#include <cstddef>
 #include <cstdint>
 #include <functional>
-#include <iomanip>
 #include <memory>
 #include <optional>
 #include <ostream>
@@ -61,6 +59,7 @@
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/cow_object.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/hexdump.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
@@ -611,14 +610,8 @@ Status AutoRebalancerTask::BuildClusterRawInfo(
           const auto& range_key_begin = partition.begin().range_key();
 
           // Format as hex string for consistency with ksck.
-          // TODO(KUDU-3749): Align ksck + auto-rebalancer hex encoding to avoid
-          // signed-char sign extension.
-          std::ostringstream ss_range_key_begin;
-          for (size_t i = 0; i < range_key_begin.size(); ++i) {
-            ss_range_key_begin << std::hex << std::setw(2) << std::setfill('0')
-                               << static_cast<uint16_t>(range_key_begin[i]);
-          }
-          tablet_summary.range_key_begin = ss_range_key_begin.str();
+          tablet_summary.range_key_begin =
+              HexEncodeToString(Slice(range_key_begin));
           VLOG(2) << "Tablet " << tablet_summary.id
                   << " range_key_begin: " << tablet_summary.range_key_begin;
         }
