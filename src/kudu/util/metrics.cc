@@ -39,6 +39,12 @@ DEFINE_int32(metrics_retirement_age_ms, 120 * 1000,
 TAG_FLAG(metrics_retirement_age_ms, runtime);
 TAG_FLAG(metrics_retirement_age_ms, advanced);
 
+DEFINE_bool(metrics_prometheus_use_entity_labels, false,
+            "If true, entity attributes (type, id, table_id, table_name) "
+            "are exported as Prometheus labels and metric names have no entity prefix. "
+            "If false, entity IDs are embedded in metric names (legacy format).");
+TAG_FLAG(metrics_prometheus_use_entity_labels, runtime);
+
 // Process/server-wide metrics should go into the 'server' entity.
 // More complex applications will define other entities.
 METRIC_DEFINE_entity(server);
@@ -72,9 +78,10 @@ void WriteMetricsToJson(JsonWriter* writer,
 
 void WriteMetricsPrometheus(PrometheusWriter* writer,
                             const MetricEntity::MetricMap& metrics,
-                            const string& prefix) {
-  for (const auto& [_, val] : metrics) {
-    WARN_NOT_OK(val->WriteAsPrometheus(writer, prefix),
+                            const string& prefix,
+                            const string& labels) {
+  for (const auto& [name, val] : metrics) {
+    WARN_NOT_OK(val->WriteAsPrometheus(writer, prefix, labels),
                 Substitute("unable to write '$0' ($1) in Prometheus format",
                            val->prototype()->name(), val->prototype()->description()));
   }
@@ -406,9 +413,6 @@ Status MetricEntity::WriteAsJson(JsonWriter* writer, const MetricJsonOptions& op
 
 Status MetricEntity::WriteAsPrometheus(
     PrometheusWriter* writer, const MetricPrometheusOptions& opts) const {
-  static const string kIdMaster = "kudu.master";
-  static const string kIdTabletServer = "kudu.tabletserver";
-
   MetricMap metrics;
   AttributeMap attrs;
   const auto s = GetMetricsAndAttrs(opts.filters, &metrics, &attrs);
@@ -418,23 +422,28 @@ Status MetricEntity::WriteAsPrometheus(
     return Status::OK();
   }
   RETURN_NOT_OK(s);
+  if (FLAGS_metrics_prometheus_use_entity_labels) {
+    const string labels = BuildPrometheusLabels(prototype_->name(), id_, attrs);
+    WriteMetricsPrometheus(writer, metrics, "kudu_", labels);
+    return Status::OK();
+  }
+
+  // Legacy format: embed entity type/id in the metric name prefix.
   if (strcmp(prototype_->name(), "server") == 0) {
-    if (id_ == kIdMaster) {
-      // Prefix all master metrics with 'kudu_master_'.
-      static const string kMasterPrefix = "kudu_master_";
-      WriteMetricsPrometheus(writer, metrics, kMasterPrefix);
-      return Status::OK();
+    string prefix;
+    if (id_ == kMetricEntityIdMaster) {
+      prefix = "kudu_master_";
+    } else if (id_ == kMetricEntityIdTabletServer) {
+      prefix = "kudu_tserver_";
+    } else {
+      return Status::NotSupported(
+          Substitute("$0: unexpected server-level metric entity", id_));
     }
-    if (id_ == kIdTabletServer) {
-      // Prefix all tablet server metrics with 'kudu_tserver_'.
-      static const string kTabletServerPrefix = "kudu_tserver_";
-      WriteMetricsPrometheus(writer, metrics, kTabletServerPrefix);
-      return Status::OK();
-    }
-    return Status::NotSupported(Substitute("$0: unexpected server-level metric entity", id_));
+    WriteMetricsPrometheus(writer, metrics, prefix, "");
+    return Status::OK();
   }
   const string prefix = Substitute("kudu_$0_$1_", prototype_->name(), id_);
-  WriteMetricsPrometheus(writer, metrics, prefix);
+  WriteMetricsPrometheus(writer, metrics, prefix, "");
   return Status::OK();
 }
 
@@ -739,6 +748,15 @@ void MetricPrototype::WriteFields(JsonWriter* writer,
 
 void MetricPrototype::WriteHelpAndType(PrometheusWriter* writer,
                                        const string& prefix) const {
+  // Deduplicate HELP/TYPE output: once metric names are shared across entities,
+  // we must only emit HELP/TYPE once per metric name. When using the legacy
+  // format (metrics_prometheus_use_entity_labels=false), each entity has a unique
+  // prefix so dedup never triggers, which is the correct behavior.
+  const string full_name = Substitute("$0$1", prefix, name());
+  if (!writer->ShouldWriteHelpAndType(full_name)) {
+    return;
+  }
+
   static constexpr const char* const kSummary = "summary";
 
   // The way how HdrHistogram-backed stats are presented in Kudu metrics
@@ -830,9 +848,11 @@ Status Gauge::WriteAsJson(JsonWriter* writer,
   return Status::OK();
 }
 
-Status Gauge::WriteAsPrometheus(PrometheusWriter* writer, const string& prefix) const {
+Status Gauge::WriteAsPrometheus(PrometheusWriter* writer,
+                                const string& prefix,
+                                const string& labels) const {
   prototype_->WriteHelpAndType(writer, prefix);
-  WriteValue(writer, prefix);
+  WriteValue(writer, prefix, labels);
 
   return Status::OK();
 }
@@ -916,12 +936,14 @@ void StringGauge::WriteValue(JsonWriter* writer) const {
 // An alternative could be defining an empty implementation for Gauge::WriteValue()
 // virtual method and not adding this empty override here.
 void StringGauge::WriteValue(PrometheusWriter* /*writer*/,
-                             const string& /*prefix*/) const {
+                             const string& /*prefix*/,
+                             const string& /*labels*/) const {
   DCHECK(false);
 }
 
 Status StringGauge::WriteAsPrometheus(PrometheusWriter* /*writer*/,
-                                      const string& /*prefix*/) const {
+                                      const string& /*prefix*/,
+                                      const string& /*labels*/) const {
   // Prometheus doesn't support string gauges.
   // This function ensures that output written to Prometheus is empty.
   return Status::OK();
@@ -988,18 +1010,43 @@ void MeanGauge::WriteValue(JsonWriter* writer) const {
   writer->Double(total_count());
 }
 
-void MeanGauge::WriteValue(PrometheusWriter* writer, const string& prefix) const {
-  static constexpr const char* const kFmt = "$0$1$2{unit_type=\"$3\"} $4\n";
+void MeanGauge::WriteValue(PrometheusWriter* writer,
+                           const string& prefix,
+                           const string& labels) const {
+  static constexpr const char* const kFmt = "$0$1$2{$3unit_type=\"$4\"} $5\n";
+  static constexpr const char* const kHelpTypeFmt =
+      "# HELP $0$1$2 $3\n# TYPE $4$5$6 $7\n";
+
+  const string label_prefix = PrometheusLabelPrefixForInjection(labels);
 
   const char* const name = prototype_->name();
   DCHECK(name);
   const char* const unit = MetricUnit::Name(prototype_->unit());
   DCHECK(unit);
+  const char* const description = prototype_->description();
+  DCHECK(description);
 
   string out;
-  SubstituteAndAppend(&out, kFmt, prefix, name, "", unit, value());
-  SubstituteAndAppend(&out, kFmt, prefix, name, "_count", unit, total_count());
-  SubstituteAndAppend(&out, kFmt, prefix, name, "_sum", unit, total_sum());
+  SubstituteAndAppend(&out, kFmt, prefix, name, "", label_prefix, unit, value());
+
+  const string full_count_name = Substitute("$0$1_count", prefix, name);
+  if (writer->ShouldWriteHelpAndType(full_count_name)) {
+    const string count_help = Substitute("$0 (count)", prototype_->label());
+    SubstituteAndAppend(&out, kHelpTypeFmt,
+                        prefix, name, "_count", count_help,
+                        prefix, name, "_count", MetricType::Name(MetricType::kGauge));
+  }
+  SubstituteAndAppend(&out, kFmt, prefix, name, "_count", label_prefix,
+                      MetricUnit::Name(MetricUnit::kUnits), total_count());
+
+  const string full_sum_name = Substitute("$0$1_sum", prefix, name);
+  if (writer->ShouldWriteHelpAndType(full_sum_name)) {
+    const string sum_help = Substitute("$0 (sum)", description);
+    SubstituteAndAppend(&out, kHelpTypeFmt,
+                        prefix, name, "_sum", sum_help,
+                        prefix, name, "_sum", MetricType::Name(MetricType::kGauge));
+  }
+  SubstituteAndAppend(&out, kFmt, prefix, name, "_sum", label_prefix, unit, total_sum());
 
   writer->WriteEntry(out);
 }
@@ -1042,10 +1089,18 @@ Status Counter::WriteAsJson(JsonWriter* writer,
   return Status::OK();
 }
 
-Status Counter::WriteAsPrometheus(PrometheusWriter* writer, const string& prefix) const {
+Status Counter::WriteAsPrometheus(PrometheusWriter* writer,
+                                  const string& prefix,
+                                  const string& labels) const {
   prototype_->WriteHelpAndType(writer, prefix);
-  writer->WriteEntry(Substitute("$0$1{unit_type=\"$2\"} $3\n", prefix, prototype_->name(),
-                                MetricUnit::Name(prototype_->unit()), value()));
+  const string label_prefix = PrometheusLabelPrefixForInjection(labels);
+  writer->WriteEntry(Substitute(
+      "$0$1{$2unit_type=\"$3\"} $4\n",
+      prefix,
+      prototype_->name(),
+      label_prefix,
+      MetricUnit::Name(prototype_->unit()),
+      value()));
   return Status::OK();
 }
 
@@ -1106,7 +1161,8 @@ Status Histogram::WriteAsJson(JsonWriter* writer,
 }
 
 Status Histogram::WriteAsPrometheus(PrometheusWriter* writer,
-                                    const string& prefix) const {
+                                    const string& prefix,
+                                    const string& labels) const {
   static constexpr struct QuantileInfo {
     const char* const tag;
     const double quantile;
@@ -1117,8 +1173,8 @@ Status Histogram::WriteAsPrometheus(PrometheusWriter* writer,
     { "0.999",  99.9  },
     { "0.9999", 99.99 },
   };
-  static constexpr const char* const kFmt =
-      "$0$1{unit_type=\"$2\", quantile=\"$3\"} $4\n";
+  static constexpr const char* const kHelpTypeFmt =
+      "# HELP $0$1 $2\n# TYPE $3$4 $5\n";
 
   const char* const name = prototype_->name();
   DCHECK(name);
@@ -1129,14 +1185,79 @@ Status Histogram::WriteAsPrometheus(PrometheusWriter* writer,
   // the output.
   const HdrHistogram h(*histogram_);
   string out;
-  SubstituteAndAppend(&out, kFmt, prefix, name, unit, "0", h.MinValue());
-  for (const auto& [tag, q] : kQuantiles) {
-    SubstituteAndAppend(&out, kFmt, prefix, name, unit, tag, h.ValueAtPercentile(q));
-  }
-  SubstituteAndAppend(&out, kFmt, prefix, name, unit, "1", h.MaxValue());
+  if (FLAGS_metrics_prometheus_use_entity_labels) {
+    // New format: labels injected, no space after comma, _sum/_count carry unit_type.
+    static constexpr const char* const kFmt =
+        "$0$1{$2unit_type=\"$3\",quantile=\"$4\"} $5\n";
+    static constexpr const char* const kSumCountFmt =
+        "$0$1{$2unit_type=\"$3\"} $4\n";
 
-  SubstituteAndAppend(&out, "$0$1_sum $2\n", prefix, name, h.TotalSum());
-  SubstituteAndAppend(&out, "$0$1_count $2\n", prefix, name, h.TotalCount());
+    const string label_prefix = PrometheusLabelPrefixForInjection(labels);
+
+    SubstituteAndAppend(&out, kFmt, prefix, name, label_prefix, unit, "0", h.MinValue());
+    for (const auto& [tag, q] : kQuantiles) {
+      SubstituteAndAppend(&out, kFmt, prefix, name, label_prefix, unit,
+                         tag, h.ValueAtPercentile(q));
+    }
+    SubstituteAndAppend(&out, kFmt, prefix, name, label_prefix, unit, "1", h.MaxValue());
+
+    const string sum_name = Substitute("$0_sum", name);
+    const string count_name = Substitute("$0_count", name);
+    const string full_sum_name = Substitute("$0$1", prefix, sum_name);
+    if (writer->ShouldWriteHelpAndType(full_sum_name)) {
+      const string sum_help = Substitute("$0 (sum)", prototype_->description());
+      SubstituteAndAppend(&out, kHelpTypeFmt,
+                          prefix, sum_name, sum_help,
+                          prefix, sum_name, MetricType::Name(MetricType::kCounter));
+    }
+    SubstituteAndAppend(&out, kSumCountFmt,
+                        prefix, sum_name, label_prefix, unit, h.TotalSum());
+
+    const string full_count_name = Substitute("$0$1", prefix, count_name);
+    if (writer->ShouldWriteHelpAndType(full_count_name)) {
+      const string count_help = Substitute("$0 (count)", prototype_->label());
+      SubstituteAndAppend(&out, kHelpTypeFmt,
+                          prefix, count_name, count_help,
+                          prefix, count_name, MetricType::Name(MetricType::kCounter));
+    }
+    SubstituteAndAppend(&out, kSumCountFmt,
+                        prefix, count_name, label_prefix,
+                        MetricUnit::Name(MetricUnit::kUnits), h.TotalCount());
+  } else {
+    // Legacy format: no labels, space after comma, _sum/_count have no labels.
+    static constexpr const char* const kLegacyFmt =
+        "$0$1{unit_type=\"$2\", quantile=\"$3\"} $4\n";
+    static constexpr const char* const kLegacySumCountFmt =
+        "$0$1 $2\n";
+
+    SubstituteAndAppend(&out, kLegacyFmt, prefix, name, unit, "0", h.MinValue());
+    for (const auto& [tag, q] : kQuantiles) {
+      SubstituteAndAppend(&out, kLegacyFmt, prefix, name, unit, tag, h.ValueAtPercentile(q));
+    }
+    SubstituteAndAppend(&out, kLegacyFmt, prefix, name, unit, "1", h.MaxValue());
+
+    const string sum_name = Substitute("$0_sum", name);
+    const string count_name = Substitute("$0_count", name);
+    const string full_sum_name = Substitute("$0$1", prefix, sum_name);
+    if (writer->ShouldWriteHelpAndType(full_sum_name)) {
+      const string sum_help = Substitute("$0 (sum)", prototype_->description());
+      SubstituteAndAppend(&out, kHelpTypeFmt,
+                          prefix, sum_name, sum_help,
+                          prefix, sum_name, MetricType::Name(MetricType::kCounter));
+    }
+    SubstituteAndAppend(&out, kLegacySumCountFmt,
+                        prefix, sum_name, h.TotalSum());
+
+    const string full_count_name = Substitute("$0$1", prefix, count_name);
+    if (writer->ShouldWriteHelpAndType(full_count_name)) {
+      const string count_help = Substitute("$0 (count)", prototype_->label());
+      SubstituteAndAppend(&out, kHelpTypeFmt,
+                          prefix, count_name, count_help,
+                          prefix, count_name, MetricType::Name(MetricType::kCounter));
+    }
+    SubstituteAndAppend(&out, kLegacySumCountFmt,
+                        prefix, count_name, h.TotalCount());
+  }
 
   prototype_->WriteHelpAndType(writer, prefix);
   writer->WriteEntry(out);

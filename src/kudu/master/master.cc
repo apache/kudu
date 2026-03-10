@@ -69,6 +69,7 @@
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/openssl_util.h"
+#include "kudu/util/prometheus_writer.h"
 #include "kudu/util/status.h"
 #include "kudu/util/thread.h"
 #include "kudu/util/threadpool.h"
@@ -263,7 +264,7 @@ Status GetMasterEntryForHost(const shared_ptr<rpc::Messenger>& messenger,
 }  // anonymous namespace
 
 Master::Master(const MasterOptions& opts)
-    : KuduServer("Master", opts, "kudu.master"),
+    : KuduServer("Master", opts, kMetricEntityIdMaster),
       state_(kStopped),
       catalog_manager_(new CatalogManager(this)),
       txn_manager_(FLAGS_txn_manager_enabled ? new TxnManager(this) : nullptr),

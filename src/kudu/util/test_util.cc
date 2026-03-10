@@ -28,7 +28,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
-#include <unordered_set>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -61,7 +61,6 @@
 #include "kudu/util/status.h"
 #include "kudu/util/string_case.h"
 #include "kudu/util/subprocess.h"
-#include "kudu/util/test_macros.h"
 
 DEFINE_string(test_leave_files, "on_failure",
               "Whether to leave test files around after the test run. "
@@ -725,37 +724,49 @@ const unordered_map<string, string>& GetMasterWebserverEndpoints(const string& t
 
 void CheckPrometheusOutput(const string& prometheus_output) {
   vector<string> lines = strings::Split(prometheus_output, "\n", strings::SkipEmpty());
-  vector<vector<string>> metric_groups;
-  // Split the lines into groups. Every group contains a help line, a type line and
-  // then lines with the actual metric values in this order.
+
+  // Single-pass validation: collect HELP/TYPE declarations and verify that
+  // they appear before any corresponding value lines (Prometheus exposition
+  // format requires HELP/TYPE to precede metric values).
+  std::unordered_map<string, string> help_lines;
+  std::unordered_map<string, string> type_lines;
   for (const auto& line : lines) {
-    if (HasPrefixString(line, "# HELP")) {
-      metric_groups.push_back({line});
-    } else if (HasPrefixString(line, "# TYPE")) {
-      metric_groups.back().push_back(line);
-    } else {
-      metric_groups.back().push_back(line);
+    if (HasPrefixString(line, "# HELP ")) {
+      vector<string> parts(strings::Split(line, " "));
+      ASSERT_GE(parts.size(), 3);
+      const string& name = parts[2];
+      ASSERT_TRUE(help_lines.emplace(name, line).second)
+          << "Duplicate HELP for metric: " << name;
+    } else if (HasPrefixString(line, "# TYPE ")) {
+      vector<string> parts(strings::Split(line, " "));
+      ASSERT_GE(parts.size(), 4);
+      const string& name = parts[2];
+      ASSERT_TRUE(type_lines.emplace(name, line).second)
+          << "Duplicate TYPE for metric: " << name;
+    } else if (!HasPrefixString(line, "#")) {
+      // This is a value line. Verify that HELP and TYPE have already been seen.
+      auto brace_pos = line.find('{');
+      auto space_pos = line.find(' ');
+      auto end_pos = std::min(brace_pos, space_pos);
+      ASSERT_NE(end_pos, string::npos) << "Malformed value line: " << line;
+      string metric_name = line.substr(0, end_pos);
+      ASSERT_TRUE(help_lines.count(metric_name) > 0)
+          << "Value line before or without HELP for metric: " << metric_name
+          << "\n  line: " << line;
+      ASSERT_TRUE(type_lines.count(metric_name) > 0)
+          << "Value line before or without TYPE for metric: " << metric_name
+          << "\n  line: " << line;
     }
   }
 
-  std::unordered_set<string> metric_names;
-  for (const auto& group : metric_groups) {
-    ASSERT_GE(group.size(), 3);
-    ASSERT_STR_MATCHES(group[0], "^# HELP ");
-    ASSERT_STR_MATCHES(group[1], "^# TYPE ");
-    vector<string> help_line_split(strings::Split(group[0], " "));
-    vector<string> type_line_split(strings::Split(group[1], " "));
-    ASSERT_GE(help_line_split.size(), 3);
-    ASSERT_GE(type_line_split.size(), 3);
-    string name_from_help_line = help_line_split[2];
-    string name_from_type_line = type_line_split[2];
-    ASSERT_EQ(name_from_type_line, name_from_help_line);
-    ASSERT_TRUE(metric_names.emplace(name_from_help_line).second)
-        << "Duplicate metric: " << name_from_help_line;
-    for (int i = 2; i < group.size(); i++) {
-      ASSERT_TRUE(HasPrefixString(group[i], name_from_help_line))
-          << "Every line should start with the expected metric name: " << name_from_help_line;
-    }
+  // Every HELP should have a corresponding TYPE and vice versa.
+  for (const auto& [name, _] : help_lines) {
+    ASSERT_TRUE(type_lines.count(name) > 0)
+        << "HELP without TYPE for: " << name;
+  }
+  for (const auto& [name, _] : type_lines) {
+    ASSERT_TRUE(help_lines.count(name) > 0)
+        << "TYPE without HELP for: " << name;
   }
 }
 

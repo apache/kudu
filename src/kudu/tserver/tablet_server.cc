@@ -44,6 +44,7 @@
 #include "kudu/util/maintenance_manager.h"
 #include "kudu/util/net/dns_resolver.h"
 #include "kudu/util/net/net_util.h"
+#include "kudu/util/prometheus_writer.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -61,7 +62,7 @@ namespace kudu {
 namespace tserver {
 
 TabletServer::TabletServer(const TabletServerOptions& opts)
-    : KuduServer("TabletServer", opts, "kudu.tabletserver"),
+    : KuduServer("TabletServer", opts, kMetricEntityIdTabletServer),
       state_(kStopped),
       quiescing_(false),
       fail_heartbeats_for_tests_(false),

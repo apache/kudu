@@ -28,7 +28,7 @@
 #include <utility>
 #include <vector>
 
-#include <gflags/gflags_declare.h>
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 #include <rapidjson/document.h>
@@ -37,6 +37,7 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/split.h"
+#include "kudu/gutil/strings/util.h"
 #include "kudu/util/hdr_histogram.h"
 #include "kudu/util/jsonreader.h"
 #include "kudu/util/jsonwriter.h"
@@ -55,6 +56,7 @@ using std::unordered_set;
 using std::vector;
 
 DECLARE_int32(metrics_retirement_age_ms);
+DECLARE_bool(metrics_prometheus_use_entity_labels);
 
 namespace kudu {
 
@@ -148,67 +150,114 @@ TEST_F(MetricsTest, ResetCounter) {
 }
 
 TEST_F(MetricsTest, TableAndTabletPrometheusTest) {
+  google::FlagSaver saver;
+  FLAGS_metrics_prometheus_use_entity_labels = true;
+
+  // Use a dedicated registry so only tablet/table entities are present.
+  MetricRegistry registry;
+
   // Simulate two tablets in the metric registry. Write out their metric data.
-  auto tablet_metric_entity = METRIC_ENTITY_tablet.Instantiate(&registry_, "000000");
+  auto tablet_metric_entity = METRIC_ENTITY_tablet.Instantiate(&registry, "000000");
   auto tablet_counter = METRIC_tablet_test_counter.Instantiate(tablet_metric_entity);
   tablet_counter->IncrementBy(11);
 
-  auto tablet_metric_entity2 = METRIC_ENTITY_tablet.Instantiate(&registry_, "1111111111");
+  auto tablet_metric_entity2 = METRIC_ENTITY_tablet.Instantiate(&registry, "1111111111");
   auto tablet_counter2 = METRIC_tablet_test_counter.Instantiate(tablet_metric_entity2);
   tablet_counter2->IncrementBy(2);
 
-  auto table_metric_entity = METRIC_ENTITY_table.Instantiate(&registry_, "table1");
+  auto table_metric_entity = METRIC_ENTITY_table.Instantiate(&registry, "table1");
   auto table1_counter = METRIC_table_test_counter.Instantiate(table_metric_entity);
   table1_counter->IncrementBy(888);
 
-  auto table_metric_entity2 = METRIC_ENTITY_table.Instantiate(&registry_, "table2");
+  auto table_metric_entity2 = METRIC_ENTITY_table.Instantiate(&registry, "table2");
   auto table2_counter = METRIC_table_test_counter.Instantiate(table_metric_entity2);
   table2_counter->Increment();
 
   auto table_metric_entity3 = METRIC_ENTITY_table.Instantiate(
-      &registry_, "55555555555555555555555555555555");
+      &registry, "55555555555555555555555555555555");
   auto table3_counter = METRIC_table_test_counter.Instantiate(table_metric_entity3);
   table3_counter->IncrementBy(5);
 
   ostringstream output;
   PrometheusWriter writer(&output);
-  ASSERT_OK(registry_.WriteAsPrometheus(&writer, {}));
+  ASSERT_OK(registry.WriteAsPrometheus(&writer, {}));
 
   // The order of elements in the output depends on the ordering in hash-map
   // of metric entities and might be different in different STL implementations.
   const auto& out = output.str();
+  // With labels, the metric name no longer includes the entity ID.
+  // HELP/TYPE is emitted once per metric name (deduped).
   ASSERT_STR_CONTAINS(out,
-      "# HELP kudu_tablet_000000_tablet_test_counter Tablet-wise test counter description.\n"
+      "# HELP kudu_tablet_test_counter Tablet-wise test counter description.\n"
+      "# TYPE kudu_tablet_test_counter counter\n"
+  );
+  ASSERT_STR_CONTAINS(out,
+      "kudu_tablet_test_counter{type=\"tablet\",id=\"000000\",unit_type=\"bytes\"} 11\n"
+  );
+  ASSERT_STR_CONTAINS(out,
+      "kudu_tablet_test_counter{type=\"tablet\",id=\"1111111111\",unit_type=\"bytes\"} 2\n"
+  );
+  ASSERT_STR_CONTAINS(out,
+      "# HELP kudu_table_test_counter Table-wise test counter description.\n"
+      "# TYPE kudu_table_test_counter counter\n"
+  );
+  ASSERT_STR_CONTAINS(out,
+      "kudu_table_test_counter{type=\"table\",id=\"table1\",unit_type=\"bytes\"} 888\n"
+  );
+  ASSERT_STR_CONTAINS(out,
+      "kudu_table_test_counter{type=\"table\",id=\"table2\",unit_type=\"bytes\"} 1\n"
+  );
+  ASSERT_STR_CONTAINS(out,
+      "kudu_table_test_counter{type=\"table\","
+          "id=\"55555555555555555555555555555555\",unit_type=\"bytes\"} 5\n"
+  );
+
+  // Verify that HELP/TYPE lines are emitted exactly once per metric name.
+  ASSERT_EQ(1, CountSubstring(out, "# HELP kudu_tablet_test_counter "));
+  ASSERT_EQ(1, CountSubstring(out, "# TYPE kudu_tablet_test_counter "));
+  ASSERT_EQ(1, CountSubstring(out, "# HELP kudu_table_test_counter "));
+  ASSERT_EQ(1, CountSubstring(out, "# TYPE kudu_table_test_counter "));
+
+  // 2 HELP/TYPE blocks (tablet + table) + 2 tablet values + 3 table values + trailing empty line.
+  const vector<string> lines = strings::Split(out, "\n");
+  ASSERT_EQ(2 + 2 + 2 + 3 + 1, lines.size());
+  ASSERT_TRUE(lines.back().empty());
+}
+
+TEST_F(MetricsTest, TableAndTabletLegacyPrometheusTest) {
+  google::FlagSaver saver;
+  // Verify the legacy format (flag off): entity IDs embedded in metric names.
+  FLAGS_metrics_prometheus_use_entity_labels = false;
+
+  // Use a dedicated registry so only tablet/table entities are present.
+  MetricRegistry registry;
+
+  auto tablet_entity = METRIC_ENTITY_tablet.Instantiate(&registry, "000000");
+  auto tablet_counter = METRIC_tablet_test_counter.Instantiate(tablet_entity);
+  tablet_counter->IncrementBy(11);
+
+  auto table_entity = METRIC_ENTITY_table.Instantiate(&registry, "table1");
+  auto table_counter = METRIC_table_test_counter.Instantiate(table_entity);
+  table_counter->IncrementBy(888);
+
+  ostringstream output;
+  PrometheusWriter writer(&output);
+  ASSERT_OK(registry.WriteAsPrometheus(&writer, {}));
+
+  const auto& out = output.str();
+  // Legacy format: entity ID is embedded in the metric name prefix.
+  ASSERT_STR_CONTAINS(out,
+      "# HELP kudu_tablet_000000_tablet_test_counter "
+      "Tablet-wise test counter description.\n"
       "# TYPE kudu_tablet_000000_tablet_test_counter counter\n"
-       "kudu_tablet_000000_tablet_test_counter{unit_type=\"bytes\"} 11\n"
+      "kudu_tablet_000000_tablet_test_counter{unit_type=\"bytes\"} 11\n"
   );
   ASSERT_STR_CONTAINS(out,
-      "# HELP kudu_tablet_1111111111_tablet_test_counter Tablet-wise test counter description.\n"
-      "# TYPE kudu_tablet_1111111111_tablet_test_counter counter\n"
-      "kudu_tablet_1111111111_tablet_test_counter{unit_type=\"bytes\"} 2\n"
-  );
-  ASSERT_STR_CONTAINS(out,
-      "# HELP kudu_table_table1_table_test_counter Table-wise test counter description.\n"
+      "# HELP kudu_table_table1_table_test_counter "
+      "Table-wise test counter description.\n"
       "# TYPE kudu_table_table1_table_test_counter counter\n"
       "kudu_table_table1_table_test_counter{unit_type=\"bytes\"} 888\n"
   );
-  ASSERT_STR_CONTAINS(out,
-      "# HELP kudu_table_table2_table_test_counter Table-wise test counter description.\n"
-      "# TYPE kudu_table_table2_table_test_counter counter\n"
-      "kudu_table_table2_table_test_counter{unit_type=\"bytes\"} 1\n"
-  );
-  ASSERT_STR_CONTAINS(out,
-      "# HELP kudu_table_55555555555555555555555555555555_table_test_counter "
-          "Table-wise test counter description.\n"
-      "# TYPE kudu_table_55555555555555555555555555555555_table_test_counter "
-          "counter\n"
-      "kudu_table_55555555555555555555555555555555_table_test_counter{unit_type=\"bytes\"} 5\n"
-  );
-
-  // The lines above and one trailing empty line is the only output expected.
-  const vector<string> lines = strings::Split(out, "\n");
-  ASSERT_EQ(3 + 3 + 3 + 3 + 3 + 1, lines.size());
-  ASSERT_TRUE(lines.back().empty());
 }
 
 TEST_F(MetricsTest, CounterPrometheusTest) {
@@ -216,7 +265,7 @@ TEST_F(MetricsTest, CounterPrometheusTest) {
 
   ostringstream output;
   PrometheusWriter writer(&output);
-  ASSERT_OK(requests->WriteAsPrometheus(&writer, {}));
+  ASSERT_OK(requests->WriteAsPrometheus(&writer, "", ""));
 
   const string expected_output = "# HELP test_counter Description of test counter\n"
                                  "# TYPE test_counter counter\n"
@@ -286,7 +335,7 @@ TEST_F(MetricsTest, StringGaugeForPrometheus) {
 
   ostringstream output;
   PrometheusWriter writer(&output);
-  ASSERT_OK(state->WriteAsPrometheus(&writer, {}));
+  ASSERT_OK(state->WriteAsPrometheus(&writer, "", ""));
   // String-based gauges are not consumable by Prometheus.
   ASSERT_EQ("", output.str());
 
@@ -295,14 +344,14 @@ TEST_F(MetricsTest, StringGaugeForPrometheus) {
     const Metric* g = state.get();
     ostringstream output;
     PrometheusWriter writer(&output);
-    ASSERT_OK(g->WriteAsPrometheus(&writer, {}));
+    ASSERT_OK(g->WriteAsPrometheus(&writer, "", ""));
     ASSERT_EQ("", output.str());
   }
   {
     const Metric* m = state.get();
     ostringstream output;
     PrometheusWriter writer(&output);
-    ASSERT_OK(m->WriteAsPrometheus(&writer, {}));
+    ASSERT_OK(m->WriteAsPrometheus(&writer, "", ""));
     ASSERT_EQ("", output.str());
   }
 }
@@ -323,7 +372,7 @@ TEST_F(MetricsTest, StringFunctionGaugeForPrometheus) {
 
   ostringstream output;
   PrometheusWriter writer(&output);
-  ASSERT_OK(gauge->WriteAsPrometheus(&writer, {}));
+  ASSERT_OK(gauge->WriteAsPrometheus(&writer, "", ""));
   // String-based gauges are not consumable by Prometheus.
   ASSERT_EQ("", output.str());
 }
@@ -409,15 +458,47 @@ TEST_F(MetricsTest, MeanGaugePrometheusTest) {
 
   ostringstream output;
   PrometheusWriter writer(&output);
-  ASSERT_OK(average_usage->WriteAsPrometheus(&writer, {}));
+  ASSERT_OK(average_usage->WriteAsPrometheus(&writer, "", ""));
 
   const string expected_output = "# HELP test_mean_gauge Description of mean Gauge\n"
                                  "# TYPE test_mean_gauge gauge\n"
                                  "test_mean_gauge{unit_type=\"units\"} 0\n"
+                                 "# HELP test_mean_gauge_count Test mean Gauge (count)\n"
+                                 "# TYPE test_mean_gauge_count gauge\n"
                                  "test_mean_gauge_count{unit_type=\"units\"} 0\n"
+                                 "# HELP test_mean_gauge_sum Description of mean Gauge (sum)\n"
+                                 "# TYPE test_mean_gauge_sum gauge\n"
                                  "test_mean_gauge_sum{unit_type=\"units\"} 0\n";
 
   ASSERT_EQ(expected_output, output.str());
+}
+
+// Define a MeanGauge with a non-"units" unit to verify that _count always
+// reports unit_type="units" while _sum keeps the original unit.
+METRIC_DEFINE_gauge_double(test_entity, test_mean_gauge_bytes, "Test mean Gauge bytes",
+                           MetricUnit::kBytes, "Description of mean Gauge in bytes",
+                           kudu::MetricLevel::kInfo);
+
+TEST_F(MetricsTest, MeanGaugePrometheusCountUnitTest) {
+  scoped_refptr<MeanGauge> gauge =
+    METRIC_test_mean_gauge_bytes.InstantiateMeanGauge(entity_);
+  gauge->set_value(1024.0, 4.0);
+
+  ostringstream output;
+  PrometheusWriter writer(&output);
+  ASSERT_OK(gauge->WriteAsPrometheus(&writer, "", ""));
+
+  const string& result = output.str();
+  // The main metric and _sum should carry the original unit ("bytes").
+  ASSERT_STR_CONTAINS(result, "test_mean_gauge_bytes{unit_type=\"bytes\"} 256");
+  ASSERT_STR_CONTAINS(result, "test_mean_gauge_bytes_sum{unit_type=\"bytes\"} 1024");
+  // _count must carry "units", not "bytes".
+  ASSERT_STR_CONTAINS(result, "test_mean_gauge_bytes_count{unit_type=\"units\"} 4");
+  ASSERT_STR_NOT_CONTAINS(result, "test_mean_gauge_bytes_count{unit_type=\"bytes\"}");
+  // The HELP line of _count should use the metric label, not the description
+  // which may mention the unit (e.g. "...in bytes").
+  ASSERT_STR_CONTAINS(result, "# HELP test_mean_gauge_bytes_count Test mean Gauge bytes (count)");
+  ASSERT_STR_NOT_CONTAINS(result, "# HELP test_mean_gauge_bytes_count Description of mean Gauge in bytes");
 }
 
 METRIC_DEFINE_gauge_uint64(test_entity, test_gauge, "Test uint64 Gauge",
@@ -493,7 +574,7 @@ TEST_F(MetricsTest, AtomicGaugePrometheusTest) {
 
   ostringstream output;
   PrometheusWriter writer(&output);
-  ASSERT_OK(mem_usage->WriteAsPrometheus(&writer, {}));
+  ASSERT_OK(mem_usage->WriteAsPrometheus(&writer, "", ""));
 
   const string expected_output = "# HELP test_gauge Description of Test Gauge\n"
                                  "# TYPE test_gauge gauge\n"
@@ -508,7 +589,7 @@ TEST_F(MetricsTest, AtomicGaugeBooleanPrometheusTest) {
 
   ostringstream output;
   PrometheusWriter writer(&output);
-  ASSERT_OK(clock_extrapolating->WriteAsPrometheus(&writer, {}));
+  ASSERT_OK(clock_extrapolating->WriteAsPrometheus(&writer, "", ""));
 
   const string expected_output = "# HELP test_gauge_bool Description of Test boolean Gauge\n"
                                  "# TYPE test_gauge_bool gauge\n"
@@ -664,7 +745,7 @@ TEST_F(MetricsTest, FunctionGaugePrometheusTest) {
 
   ostringstream output;
   PrometheusWriter writer(&output);
-  ASSERT_OK(gauge->WriteAsPrometheus(&writer, {}));
+  ASSERT_OK(gauge->WriteAsPrometheus(&writer, "", ""));
 
   const string expected_output = "# HELP test_func_gauge Test Gauge 2\n"
                                  "# TYPE test_func_gauge gauge\n"
@@ -729,6 +810,84 @@ TEST_F(MetricsTest, SimpleHistogramMergeTest) {
 }
 
 TEST_F(MetricsTest, HistogramPrometheusTest) {
+  google::FlagSaver saver;
+  FLAGS_metrics_prometheus_use_entity_labels = true;
+
+  constexpr const char* const kExpectedOutput =
+      "# HELP test_hist foo\n"
+      "# TYPE test_hist summary\n"
+      "test_hist{unit_type=\"milliseconds\",quantile=\"0\"} 1\n"
+      "test_hist{unit_type=\"milliseconds\",quantile=\"0.75\"} 2\n"
+      "test_hist{unit_type=\"milliseconds\",quantile=\"0.95\"} 3\n"
+      "test_hist{unit_type=\"milliseconds\",quantile=\"0.99\"} 4\n"
+      "test_hist{unit_type=\"milliseconds\",quantile=\"0.999\"} 5\n"
+      "test_hist{unit_type=\"milliseconds\",quantile=\"0.9999\"} 5\n"
+      "test_hist{unit_type=\"milliseconds\",quantile=\"1\"} 5\n"
+  "# HELP test_hist_sum foo (sum)\n"
+  "# TYPE test_hist_sum counter\n"
+      "test_hist_sum{unit_type=\"milliseconds\"} 1460\n"
+  "# HELP test_hist_count Test Histogram (count)\n"
+  "# TYPE test_hist_count counter\n"
+      "test_hist_count{unit_type=\"units\"} 1000\n";
+
+  scoped_refptr<Histogram> hist = METRIC_test_hist.Instantiate(entity_);
+  hist->IncrementBy(1, 700);
+  hist->IncrementBy(2, 200);
+  hist->IncrementBy(3, 50);
+  hist->IncrementBy(4, 40);
+  hist->IncrementBy(5, 10);
+
+  ostringstream output;
+  PrometheusWriter writer(&output);
+  ASSERT_OK(hist->WriteAsPrometheus(&writer, "", ""));
+  ASSERT_EQ(kExpectedOutput, output.str());
+}
+
+// Verify that when the histogram uses a non-trivial unit (e.g. milliseconds),
+// the _count metric reports unit_type="units" (dimensionless) while _sum
+// keeps the original unit. Uses non-empty entity labels to match the real-world
+// scenario (e.g. tablet entities) reported in code review.
+TEST_F(MetricsTest, HistogramPrometheusCountUnitTest) {
+  google::FlagSaver saver;
+  FLAGS_metrics_prometheus_use_entity_labels = true;
+
+  scoped_refptr<Histogram> hist = METRIC_test_hist.Instantiate(entity_);
+  hist->IncrementBy(10, 5);
+
+  ostringstream output;
+  PrometheusWriter writer(&output);
+  // Pass entity labels to simulate a real tablet entity context, e.g.:
+  //   kudu_test_hist_count{type="tablet",id="abc123",...,unit_type="units"} 5
+  ASSERT_OK(hist->WriteAsPrometheus(
+      &writer, "kudu_", "type=\"tablet\",id=\"abc123\""));
+
+  const string& result = output.str();
+  // The quantile lines should carry the original unit.
+  ASSERT_STR_CONTAINS(result,
+      "type=\"tablet\",id=\"abc123\",unit_type=\"milliseconds\",quantile=");
+  // _sum should carry the original unit.
+  ASSERT_STR_CONTAINS(result,
+      "kudu_test_hist_sum{type=\"tablet\",id=\"abc123\","
+      "unit_type=\"milliseconds\"}");
+  // _count must carry "units", not the histogram's native unit.
+  ASSERT_STR_CONTAINS(result,
+      "kudu_test_hist_count{type=\"tablet\",id=\"abc123\","
+      "unit_type=\"units\"}");
+  // Make sure _count does NOT carry the histogram's native unit.
+  ASSERT_STR_NOT_CONTAINS(result,
+      "test_hist_count{type=\"tablet\",id=\"abc123\","
+      "unit_type=\"milliseconds\"}");
+  // The HELP line of _count should use the metric label, not the description
+  // which may include unit-specific wording (e.g. "Microseconds spent on...").
+  ASSERT_STR_CONTAINS(result, "# HELP kudu_test_hist_count Test Histogram (count)");
+  ASSERT_STR_NOT_CONTAINS(result, "# HELP kudu_test_hist_count foo");
+}
+
+TEST_F(MetricsTest, HistogramLegacyPrometheusTest) {
+  google::FlagSaver saver;
+  // Verify legacy histogram format: space after comma, _sum/_count have no labels.
+  FLAGS_metrics_prometheus_use_entity_labels = false;
+
   constexpr const char* const kExpectedOutput =
       "# HELP test_hist foo\n"
       "# TYPE test_hist summary\n"
@@ -739,7 +898,11 @@ TEST_F(MetricsTest, HistogramPrometheusTest) {
       "test_hist{unit_type=\"milliseconds\", quantile=\"0.999\"} 5\n"
       "test_hist{unit_type=\"milliseconds\", quantile=\"0.9999\"} 5\n"
       "test_hist{unit_type=\"milliseconds\", quantile=\"1\"} 5\n"
+      "# HELP test_hist_sum foo (sum)\n"
+      "# TYPE test_hist_sum counter\n"
       "test_hist_sum 1460\n"
+      "# HELP test_hist_count Test Histogram (count)\n"
+      "# TYPE test_hist_count counter\n"
       "test_hist_count 1000\n";
 
   scoped_refptr<Histogram> hist = METRIC_test_hist.Instantiate(entity_);
@@ -751,7 +914,7 @@ TEST_F(MetricsTest, HistogramPrometheusTest) {
 
   ostringstream output;
   PrometheusWriter writer(&output);
-  ASSERT_OK(hist->WriteAsPrometheus(&writer, {}));
+  ASSERT_OK(hist->WriteAsPrometheus(&writer, "", ""));
   ASSERT_EQ(kExpectedOutput, output.str());
 }
 
