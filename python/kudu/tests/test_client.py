@@ -17,7 +17,7 @@
 # under the License.
 
 from kudu.compat import CompatUnitTest, long
-from kudu.tests.common import KuduTestBase
+from kudu.tests.common import KuduTestBase, master_flags
 from kudu.client import (Partitioning,
                          RangePartition,
                          ENCRYPTION_OPTIONAL,
@@ -1223,6 +1223,7 @@ class TestSoftDelete(KuduTestBase, CompatUnitTest):
             except:
                 pass
 
+    @master_flags("--check_expired_table_interval_seconds=2")
     def test_soft_delete_and_recall_table_after_reserve_time(self):
         # Create and open the table before soft-deleting it.
         table_name = "test_soft_delete_and_recall_table_after_reserve_time"

@@ -21,6 +21,7 @@ from __future__ import division
 import json
 import os
 import subprocess
+import tempfile
 
 import kudu
 from kudu.client import Partitioning
@@ -30,15 +31,96 @@ from kudu.client import Partitioning
 class TimeoutError(Exception):
     pass
 
+
+def master_flags(*flags):
+    """Decorator to set extra master flags for a single test method.
+
+    The test will run against a dedicated mini-cluster started with these
+    flags merged on top of the class-level base flags.
+
+    Example::
+
+        @master_flags("--flag_name=value", "--other_flag=value")
+        def test_something(self):
+            ...
+    """
+    def decorator(fn):
+        fn._master_flags = list(flags)
+        return fn
+    return decorator
+
+
+def tserver_flags(*flags):
+    """Decorator to set extra tserver flags for a single test method.
+
+    The test will run against a dedicated mini-cluster started with these
+    flags merged on top of the class-level base flags.
+
+    Example::
+
+        @tserver_flags("--flag_name=value", "--other_flag=value")
+        def test_something(self):
+            ...
+    """
+    def decorator(fn):
+        fn._tserver_flags = list(flags)
+        return fn
+    return decorator
+
+
 class KuduTestBase(object):
 
     """
-    Base test class that will start a configurable number of master and
-    tablet servers.
+    Base test class that manages a Kudu mini-cluster for tests.
+
+    Cluster lifecycle
+    -----------------
+    Most tests run against a *shared* cluster that is started once per test
+    class in setUpClass() and torn down in tearDownClass().  This keeps the
+    test suite fast: cluster startup (~5-10 s) is paid only once per class
+    regardless of how many test methods it contains.
+
+    Some tests require specific master or tserver flags that differ from the
+    class defaults for example, to disable a feature flag in order to test
+    the rejected code path. Decorating such a test method with @master_flags
+    or @tserver_flags causes setUp() to spin up a *dedicated* mini-cluster
+    for that test alone, started with the requested extra flags merged on top
+    of _BASE_MASTER_FLAGS / _BASE_TSERVER_FLAGS.  The dedicated cluster is
+    stopped automatically via addCleanup() when the test finishes, whether
+    it passes or fails.
+
+    How self.client and related attributes resolve to the right cluster
+    --------------------------------------------------------------------
+    setUpClass() writes client, master_hosts, master_ports, and
+    master_http_hostports as *class* attributes. setUp() for decorated tests
+    writes the dedicated cluster's equivalents as *instance* attributes with
+    the same names, which shadow the class attributes for that test instance
+    (KuduTestBase inherits from object, so instance attributes take precedence
+    over ordinary class attributes in both Python 2 and Python 3). Because
+    unittest creates a new test instance per method, these instance attributes
+    are confined to the decorated test and do not affect others.
     """
 
     NUM_MASTER_SERVERS = 3
     NUM_TABLET_SERVERS = 3
+
+    # By default, components of the external mini-cluster harness are run
+    # with shortest keys to save CPU resources and speed up tests. In
+    # contemporary or security-hardened OS distros that requires customizing
+    # OpenSSL's security level at the client side, lowering it down to 0
+    # (otherwise, the client side rejects certificates signed by
+    # not-strong-enough keys). Since customization of the security level
+    # for the kudu-client library via gflags is not trivial, let's override
+    # the length of the RSA keys used for CA and server certificates,
+    # making them acceptable even at OpenSSL's security level 2.
+    _BASE_MASTER_FLAGS = [
+        "--default_num_replicas=1",
+        "--ipki_ca_key_size=2048",
+        "--ipki_server_key_size=2048",
+    ]
+    _BASE_TSERVER_FLAGS = [
+        "--ipki_server_key_size=2048",
+    ]
 
     valid_account_id = "valid_account_id"
     invalid_account_id = "invalid_account_id"
@@ -55,7 +137,13 @@ class KuduTestBase(object):
         return response
 
     @classmethod
-    def start_cluster(cls):
+    def start_cluster(cls, extra_master_flags=None, extra_tserver_flags=None,
+                      cluster_root=None):
+        if extra_master_flags is None:
+            extra_master_flags = []
+        if extra_tserver_flags is None:
+            extra_tserver_flags = []
+
         kudu_build = os.getenv("KUDU_BUILD")
         if not kudu_build:
             kudu_build = os.path.join(os.getenv("KUDU_HOME"), "build", "latest")
@@ -70,41 +158,23 @@ class KuduTestBase(object):
         p = subprocess.Popen(args, shell=False,
                              stdin=subprocess.PIPE, stdout=subprocess.PIPE)
 
-        # Create and start a cluster.
-        #
-        # Only make one replica so that our tests don't need to worry about
-        # setting consistency modes.
-        #
-        # By default, components of the external mini-cluster harness are run
-        # with shortest keys to save CPU resources and speed up tests. In
-        # contemporary or security-hardened OS distros that requires customizing
-        # OpenSSL's security level at the client side, lowering it down to 0
-        # (otherwise, the client side rejects certificates signed by
-        # not-strong-enough keys). Since customization of the security level
-        # for the kudu-client library via gflags is not trivial, let's override
-        # the length of the RSA keys used for CA and server certificates,
-        # making them acceptable even at OpenSSL's security level 2.
-        cls.send_and_receive(
-            p, { "create_cluster" :
-                 { "numMasters" : cls.NUM_MASTER_SERVERS,
-                   "numTservers" : cls.NUM_TABLET_SERVERS,
-                   "extraMasterFlags" : [
-                       "--default_num_replicas=1",
-                       "--ipki_ca_key_size=2048",
-                       "--ipki_server_key_size=2048",
-                       # TODO: once setting flags per unittest is implemented,
-                       # remove this line here and add it to the test:
-                       # 'test_soft_delete_and_recall_table_after_reserve_time'
-                       "--check_expired_table_interval_seconds=2" ],
-                   "extraTserverFlags" : [ "--ipki_server_key_size=2048" ],
-                   "mini_oidc_options" :
-                   { "expiration_time" : "300000",
-                     "jwks_options" :
-                     [{ "account_id" : cls.valid_account_id,
-                       "is_valid_key" : "true" },
-                       { "account_id" : cls.invalid_account_id,
-                       "is_valid_key" : "false" },
-                       ]}}})
+        create_req = {
+            "numMasters" : cls.NUM_MASTER_SERVERS,
+            "numTservers" : cls.NUM_TABLET_SERVERS,
+            "extraMasterFlags" : cls._BASE_MASTER_FLAGS + extra_master_flags,
+            "extraTserverFlags" : cls._BASE_TSERVER_FLAGS + extra_tserver_flags,
+            "mini_oidc_options" :
+            { "expiration_time" : "300000",
+              "jwks_options" :
+              [{ "account_id" : cls.valid_account_id,
+                "is_valid_key" : "true" },
+                { "account_id" : cls.invalid_account_id,
+                "is_valid_key" : "false" },
+                ]}}
+        if cluster_root is not None:
+            create_req["clusterRoot"] = cluster_root
+
+        cls.send_and_receive(p, {"create_cluster": create_req})
         cls.send_and_receive(p, { "start_cluster" : {}})
 
         # Get information about the cluster's masters.
@@ -118,17 +188,40 @@ class KuduTestBase(object):
 
         return p, master_hosts, master_ports, master_http_hostports
 
-    @classmethod
-    def stop_cluster(cls):
-        cls.cluster_proc.stdin.close()
-        ret = cls.cluster_proc.wait()
+    @staticmethod
+    def _stop_and_cleanup_cluster(proc, cluster_root):
+        proc.stdin.close()
+        ret = proc.wait()
+        # The mini cluster control shell cleans up the cluster root on exit.
+        # See tool_action_test.cc and MiniKuduCluster.java for reference.
         if ret != 0:
             raise Exception("Minicluster process exited with code {0}".format(ret))
 
+    def setUp(self):
+        method = getattr(self, self._testMethodName)
+        m_flags = getattr(method, '_master_flags', [])
+        t_flags = getattr(method, '_tserver_flags', [])
+        if m_flags or t_flags:
+            # Use a unique temp directory so that the dedicated cluster does
+            # not conflict with the shared class-level cluster (e.g. on NTP
+            # server PID files or other per-cluster resources).
+            cluster_root = tempfile.mkdtemp(prefix='kudu-test-')
+            proc, master_hosts, master_ports, master_http_hostports = \
+                self.start_cluster(extra_master_flags=m_flags,
+                                   extra_tserver_flags=t_flags,
+                                   cluster_root=cluster_root)
+            self.addCleanup(self._stop_and_cleanup_cluster, proc, cluster_root)
+            self.master_hosts = master_hosts
+            self.master_ports = master_ports
+            self.master_http_hostports = master_http_hostports
+            self.client = kudu.connect(master_hosts, master_ports)
+
     @classmethod
     def setUpClass(cls):
+        cls.cluster_root = tempfile.mkdtemp(prefix='kudu-test-')
         cls.cluster_proc, cls.master_hosts, cls.master_ports, \
-                cls.master_http_hostports = cls.start_cluster()
+                cls.master_http_hostports = cls.start_cluster(
+                    cluster_root=cls.cluster_root)
 
         cls.client = kudu.connect(cls.master_hosts, cls.master_ports)
 
@@ -142,7 +235,7 @@ class KuduTestBase(object):
 
     @classmethod
     def tearDownClass(cls):
-        cls.stop_cluster()
+        cls._stop_and_cleanup_cluster(cls.cluster_proc, cls.cluster_root)
 
     @classmethod
     def example_schema(cls):

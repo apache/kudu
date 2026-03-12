@@ -135,7 +135,7 @@ class TestScanBase(KuduTestBase, CompatUnitTest):
         ]
 
     def setUp(self):
-        pass
+        super(TestScanBase, self).setUp()
 
     def insert_new_unixtime_micros_rows(self):
         # Get current UTC datetime to be used for read at snapshot test
