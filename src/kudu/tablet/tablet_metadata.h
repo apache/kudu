@@ -185,7 +185,20 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   // this method.
   Status UnPinFlush();
 
-  Status Flush();
+  // Stats produced by a orphaned block cleanup pass that runs at the end of each Flush() call.
+  struct OrphanBlockCleanupStats {
+    // Number of orphaned blocks successfully deleted from disk.
+    int64_t blocks_cleaned = 0;
+    // Number of orphaned blocks that could not be deleted (e.g. I/O error).
+    // These are removed from the superblock regardless (see DeleteOrphanedBlocks),
+    // so any unreclaimed disk space must be recovered via 'kudu fs check --repair'.
+    int64_t blocks_failed = 0;
+  };
+
+  // Flushes the tablet superblock to disk and then attempts to delete any
+  // orphaned blocks recorded in the superblock. If 'orphan_stats' is non-null
+  // it is populated with the outcome of the cleanup attempt.
+  Status Flush(OrphanBlockCleanupStats* orphan_stats = nullptr);
 
   // Updates the metadata in the following ways:
   // 1. Adds rowsets from 'to_add'.
@@ -193,11 +206,14 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   // 3. Adds orphaned blocks from 'to_remove'.
   // 4. Updates the last durable MRS ID from 'last_durable_mrs_id',
   //    assuming it's not kNoMrsFlushed.
+  // 5. If 'orphan_stats' is non-null it receives the orphaned block cleanup
+  //    outcome (see Flush()).
   static const int64_t kNoMrsFlushed = -1;
   Status UpdateAndFlush(const RowSetMetadataIds& to_remove,
                         const RowSetMetadataVector& to_add,
                         int64_t last_durable_mrs_id,
-                        const std::vector<TxnInfoBeingFlushed>& txns_being_flushed = {});
+                        const std::vector<TxnInfoBeingFlushed>& txns_being_flushed = {},
+                        OrphanBlockCleanupStats* orphan_stats = nullptr);
 
   // Adds the blocks referenced by 'block_ids' to 'orphaned_blocks_'.
   //
@@ -404,7 +420,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   // 'orphaned_blocks_' set.
   //
   // Failures are logged, but are not fatal.
-  void DeleteOrphanedBlocks(const BlockIdContainer& blocks);
+  OrphanBlockCleanupStats DeleteOrphanedBlocks(const BlockIdContainer& blocks);
 
   enum State {
     kNotLoadedYet,

@@ -218,6 +218,22 @@ METRIC_DEFINE_counter(tablet, ops_timed_out_in_prepare_queue,
                       "acknowledged with TimedOut error status.",
                       kudu::MetricLevel::kWarn);
 
+METRIC_DEFINE_counter(tablet, orphaned_blocks_cleaned,
+                      "Orphaned Blocks Cleaned",
+                      kudu::MetricUnit::kBlocks,
+                      "Number of orphaned blocks successfully deleted from disk. "
+                      "Orphaned blocks are created during compaction and rowset GC "
+                      "and are cleaned up after each metadata flush.",
+                      kudu::MetricLevel::kInfo);
+
+METRIC_DEFINE_counter(tablet, orphaned_block_cleanup_failures,
+                      "Orphaned Block Cleanup Failures",
+                      kudu::MetricUnit::kBlocks,
+                      "Number of orphaned blocks that could not be deleted from disk "
+                      "during a cleanup attempt. A non-zero value may indicate disk "
+                      "I/O errors. Failed blocks are retried on the next metadata flush.",
+                      kudu::MetricLevel::kWarn);
+
 METRIC_DEFINE_histogram(tablet, bloom_lookups_per_op, "Bloom Lookups per Operation",
                         kudu::MetricUnit::kProbes,
                         "Tracks the number of bloom filter lookups performed by each "
@@ -472,6 +488,8 @@ TabletMetrics::TabletMetrics(const scoped_refptr<MetricEntity>& entity)
     MINIT(deleted_rowset_gc_bytes_deleted),
     MINIT(undo_delta_block_gc_bytes_deleted),
     MINIT(ops_timed_out_in_prepare_queue),
+    MINIT(orphaned_blocks_cleaned),
+    MINIT(orphaned_block_cleanup_failures),
     MINIT(bloom_lookups_per_op),
     MINIT(key_file_lookups_per_op),
     MINIT(delta_file_lookups_per_op),

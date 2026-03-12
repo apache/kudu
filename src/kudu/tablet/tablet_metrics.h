@@ -81,6 +81,12 @@ struct TabletMetrics {
   scoped_refptr<Counter> undo_delta_block_gc_bytes_deleted;
   scoped_refptr<Counter> ops_timed_out_in_prepare_queue;
 
+  // Orphaned block stats.
+  // Number of orphaned blocks successfully deleted from disk.
+  scoped_refptr<Counter> orphaned_blocks_cleaned;
+  // Number of orphaned blocks that could not be deleted due to underlying error.
+  scoped_refptr<Counter> orphaned_block_cleanup_failures;
+
   scoped_refptr<Histogram> bloom_lookups_per_op;
   scoped_refptr<Histogram> key_file_lookups_per_op;
   scoped_refptr<Histogram> delta_file_lookups_per_op;

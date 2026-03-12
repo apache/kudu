@@ -39,7 +39,6 @@
 #include "kudu/fs/io_context.h"
 #include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/threading/thread_collision_warner.h"
 #include "kudu/tablet/lock_manager.h"
@@ -760,6 +759,12 @@ class Tablet {
                        const RowSetMetadataVector& to_add,
                        int64_t mrs_being_flushed,
                        const std::vector<TxnInfoBeingFlushed>& txns_being_flushed);
+
+  // Updates tablet metrics with the orphaned block info from metadata flush outcome.
+  void UpdateOrphanBlockMetrics(const TabletMetadata::OrphanBlockCleanupStats& orphan_stats);
+
+  // Flushes tablet metadata and updates metrics.
+  Status FlushTabletMetadataAndUpdateMetrics();
 
   // Computes on-disk size of all the deltas in provided rowsets.
   size_t GetAllDeltasSizeOnDisk(const RowSetsInCompactionOrFlush& input);

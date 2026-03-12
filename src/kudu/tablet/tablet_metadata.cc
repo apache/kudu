@@ -543,12 +543,13 @@ Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) 
 Status TabletMetadata::UpdateAndFlush(const RowSetMetadataIds& to_remove,
                                       const RowSetMetadataVector& to_add,
                                       int64_t last_durable_mrs_id,
-                                      const vector<TxnInfoBeingFlushed>& txns_being_flushed) {
+                                      const vector<TxnInfoBeingFlushed>& txns_being_flushed,
+                                      OrphanBlockCleanupStats* orphan_stats) {
   {
     std::lock_guard l(data_lock_);
     RETURN_NOT_OK(UpdateUnlocked(to_remove, to_add, last_durable_mrs_id, txns_being_flushed));
   }
-  return Flush();
+  return Flush(orphan_stats);
 }
 
 void TabletMetadata::AddOrphanedBlocks(const BlockIdContainer& block_ids) {
@@ -558,15 +559,23 @@ void TabletMetadata::AddOrphanedBlocks(const BlockIdContainer& block_ids) {
 
 void TabletMetadata::AddOrphanedBlocksUnlocked(const BlockIdContainer& block_ids) {
   DCHECK(data_lock_.is_locked());
+  VLOG_WITH_PREFIX(1) << Substitute("Scheduling $0 orphaned block(s) for cleanup, "
+                                    "total pending: $1", block_ids.size(),
+                                    orphaned_blocks_.size() + block_ids.size());
   orphaned_blocks_.insert(block_ids.begin(), block_ids.end());
 }
 
-void TabletMetadata::DeleteOrphanedBlocks(const BlockIdContainer& blocks) {
+TabletMetadata::OrphanBlockCleanupStats TabletMetadata::DeleteOrphanedBlocks(
+    const BlockIdContainer& blocks) {
+  if (blocks.empty()) {
+    return {};
+  }
+
   if (PREDICT_FALSE(!FLAGS_enable_tablet_orphaned_block_deletion)) {
-    LOG_WITH_PREFIX(WARNING) << "Not deleting " << blocks.size()
-        << " block(s) from disk. Block deletion disabled via "
-        << "--enable_tablet_orphaned_block_deletion=false";
-    return;
+    LOG_WITH_PREFIX(WARNING) << Substitute(
+        "Not deleting $0 orphaned block(s) from disk. Block deletion disabled via "
+        "--enable_tablet_orphaned_block_deletion=false", blocks.size());
+    return {};
   }
 
   auto bm = fs_manager()->block_manager();
@@ -574,8 +583,22 @@ void TabletMetadata::DeleteOrphanedBlocks(const BlockIdContainer& blocks) {
   for (const BlockId& b : blocks) {
     transaction->AddDeletedBlock(b);
   }
-  WARN_NOT_OK(transaction->CommitDeletedBlocks(nullptr),
-              "not all orphaned blocks were deleted");
+
+  vector<BlockId> deleted_blocks;
+  Status s = transaction->CommitDeletedBlocks(&deleted_blocks);
+
+  OrphanBlockCleanupStats stats;
+  stats.blocks_cleaned = static_cast<int64_t>(deleted_blocks.size());
+  stats.blocks_failed = static_cast<int64_t>(blocks.size()) - stats.blocks_cleaned;
+
+  if (PREDICT_FALSE(!s.ok())) {
+    LOG_WITH_PREFIX(WARNING) << Substitute(
+        "$2: failed cleaning up $0 of $1 removed block(s); running "
+        "'kudu fs check --repair' can help to reclaim the disk space.",
+        stats.blocks_failed, blocks.size(), s.ToString());
+  } else {
+    VLOG_WITH_PREFIX(1) << "Deleted " << stats.blocks_cleaned << " orphaned block(s)";
+  }
 
   // Regardless of whether we deleted all the blocks or not, remove them from
   // the orphaned blocks list. If we failed to delete the blocks due to
@@ -587,6 +610,7 @@ void TabletMetadata::DeleteOrphanedBlocks(const BlockIdContainer& blocks) {
       orphaned_blocks_.erase(b);
     }
   }
+  return stats;
 }
 
 void TabletMetadata::PinFlush() {
@@ -607,7 +631,7 @@ Status TabletMetadata::UnPinFlush() {
   return Status::OK();
 }
 
-Status TabletMetadata::Flush() {
+Status TabletMetadata::Flush(OrphanBlockCleanupStats* orphan_stats) {
   TRACE_EVENT1("tablet", "TabletMetadata::Flush",
                "tablet_id", tablet_id_);
 
@@ -649,7 +673,10 @@ Status TabletMetadata::Flush() {
   //
   // If we crash just before the deletion, we'll retry when reloading from
   // disk; the orphaned blocks were persisted as part of the superblock.
-  DeleteOrphanedBlocks(orphaned);
+  OrphanBlockCleanupStats stats = DeleteOrphanedBlocks(orphaned);
+  if (orphan_stats) {
+    *orphan_stats = stats;
+  }
 
   return Status::OK();
 }

@@ -3358,6 +3358,7 @@ Status LogBlockManager::RemoveLogBlocks(const vector<BlockId>& block_ids,
     lbs_by_container.emplace_back(std::move(lb));
   }
 
+  size_t total_orphaned_count = 0;
   for (auto& [container, clbs] : lbs_by_containers) {
     for (const auto& lb : clbs) {
       VLOG(3) << "Deleting block " << lb->block_id();
@@ -3376,14 +3377,33 @@ Status LogBlockManager::RemoveLogBlocks(const vector<BlockId>& block_ids,
     // fsync).
     //
     // TODO(KUDU-829): Implement GC of orphaned blocks.
-    // TODO(yingchun): Add some metrics to track the number of orphaned blocks.
     if (s.ok()) {
       container->PostWorkOfBlocksDeleted();
     } else {
       if (first_failure.ok()) {
         first_failure = s.CloneAndPrepend("Unable to append deletion record(s) to block metadata");
       }
-      // Purge the blocks that failed to delete.
+      // Blocks whose deletion metadata could not be written are permanently
+      // orphaned i.e., their data occupies space on disk. They will not be cleaned
+      // up automatically and may cause unreclaimed disk space accumulation over time.
+      // RemoveBlockIdsFromMetadata writes records in the same order as clbs,
+      // so deleted_block_ids.size() is the index of the first failure: the
+      // failed blocks form a contiguous suffix of clbs.
+      const size_t orphaned_count =
+          clbs.size() - deleted_block_ids.size();
+      for (auto it = clbs.cbegin() + deleted_block_ids.size(); it != clbs.cend(); ++it) {
+        KLOG_EVERY_N_SECS(ERROR, 1) << Substitute(
+            "Block $0 in container $1 is now orphaned (failed to commit deletion record): $2, "
+            "with unreclaimed disk space left behind. Run 'kudu fs check --repair' to reclaim it.",
+            (*it)->block_id().ToString(), container->ToString(), s.ToString()) << THROTTLE_MSG;
+      }
+      KLOG_EVERY_N_SECS(ERROR, 1) << Substitute(
+          "$0 block(s) in container $1 are now orphaned (failed to commit "
+          "deletion records): $2, with unreclaimed disk space left behind. "
+          "Run 'kudu fs check --repair' to reclaim it.",
+          orphaned_count, container->ToString(), s.ToString()) << THROTTLE_MSG;
+      total_orphaned_count += orphaned_count;
+      // Purge the blocks that failed to delete from the current batch.
       clbs.resize(deleted_block_ids.size());
     }
 
@@ -3391,6 +3411,13 @@ Status LogBlockManager::RemoveLogBlocks(const vector<BlockId>& block_ids,
       std::move(deleted_block_ids.begin(), deleted_block_ids.end(), std::back_inserter(*deleted));
     }
     std::move(clbs.begin(), clbs.end(), std::back_inserter(*log_blocks));
+  }
+
+  if (total_orphaned_count > 0) {
+    LOG(ERROR) << Substitute(
+        "$0 block(s) across $1 container(s) are now orphaned with unreclaimed "
+        "disk space. Run 'kudu fs check --repair' to reclaim it.",
+        total_orphaned_count, lbs_by_containers.size());
   }
 
   return first_failure;
