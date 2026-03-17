@@ -67,3 +67,6 @@ cmake-build-*
 
 # Cursor
 .cursor/
+
+# Claude code
+.claude/
