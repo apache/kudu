@@ -713,7 +713,7 @@ for online applications.
 
 References:
  - http://vertica-forums.com/viewtopic.php?f=48&t=345&start=10
- - http://vldb.org/pvldb/vol5/p1790_andrewlamb_vldb2012.pdf
+ - https://vldb.org/pvldb/vol5/p1790_andrewlamb_vldb2012.pdf
 
 
 PostgreSQL
@@ -729,7 +729,7 @@ update does not incur N separate seeks.
 
 References:
  - postgres source code
- - http://www.packtpub.com/article/transaction-model-of-postgresql
+ - https://www.packtpub.com/article/transaction-model-of-postgresql
 
 Oracle Database
 ---------------
@@ -753,4 +753,4 @@ row-id.
 NOTE: the above is very simplified, but the overall idea is correct.
 
 References:
- - http://asktom.oracle.com/pls/asktom/f?p=100:11:0::::P11_QUESTION_ID:275215756923
+ - https://asktom.oracle.com/pls/asktom/f?p=100:11:0::::P11_QUESTION_ID:275215756923

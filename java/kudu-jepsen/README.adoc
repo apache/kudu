@@ -19,8 +19,8 @@
 
 :author: Kudu Team
 
-A link:http://clojure.org[Clojure] library designed to run
-link:http://kudu.apache.org[Apache Kudu] consistency tests using
+A link:https://clojure.org[Clojure] library designed to run
+link:https://kudu.apache.org[Apache Kudu] consistency tests using
 the link:https://aphyr.com/tags/Jepsen[Jepsen] framework. Currently, a simple
 linearizability test for read/write register is implemented and run
 for several fault injection scenarios.

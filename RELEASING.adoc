@@ -21,7 +21,7 @@
 
 This document gives the steps required to perform a Kudu release, and is a
 resource for Kudu release managers. Make sure to read and understand the
-link:http://www.apache.org/legal/release-policy.html[ASF policy on software
+link:https://www.apache.org/legal/release-policy.html[ASF policy on software
 releases] prior to conducting the release management activity. Pay attention to
 the link:https://www.apache.org/legal/resolved.html[3rd-party license policy],
 making sure the release doesn't include anything from the
@@ -156,10 +156,10 @@ Example doc: https://s.apache.org/kudu1.16rn
 . Before building a release candidate, make sure you have followed the
   Apache committer guide for
   link:https://www.apache.org/dev/new-committers-guide.html#set-up-security-and-pgp-keys[
-  setting up your PGP keys]. In addition to the link:http://pgp.mit.edu/[MIT
+  setting up your PGP keys]. In addition to the link:https://pgp.mit.edu/[MIT
   PGP public key server] referenced in the committer guide, consider adding
   your keys to one of link:http://pool.sks-keyservers.net:11371[SKS OpenPGP
-  keyservers] or link:http://keyserver.ubuntu.com:11371[Ubuntu OpenPGP
+  keyservers] or link:https://keyserver.ubuntu.com[Ubuntu OpenPGP
   keyserver]. The MIT keyserver sometimes is not available, and it takes some
   time to propagate key updates anyways: the latter two servers are used by the
   link:https://repository.apache.org[Apache Maven repo server] to verify the

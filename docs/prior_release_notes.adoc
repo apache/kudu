@@ -34,7 +34,7 @@ changes in prior releases of Apache Kudu.
 
 NOTE: The list of known issues and limitations for prior releases are not
 reproduced on this page. Please consult the
-link:http://kudu.apache.org/releases/[documentation of the appropriate release]
+link:https://kudu.apache.org/releases/[documentation of the appropriate release]
 for a list of known issues and limitations.
 
 [[rn_1.18.0]]
@@ -1579,7 +1579,7 @@ details).
 creation options using JSON.
 
 * Kudu now supports DATE and VARCHAR data types. See the
-link:http://kudu.apache.org/docs/schema_design.html[schema design documentation]
+link:https://kudu.apache.org/docs/schema_design.html[schema design documentation]
 for more details.
 
 
@@ -4644,11 +4644,11 @@ This feature may be configured using the `fs_data_dirs_reserved_bytes` and
   incremental increase in disk space usage.
 
 - The Kudu C++ client library now has Doxygen-based
-  link:http://kudu.apache.org/cpp-client-api/[API documentation]
+  link:https://kudu.apache.org/cpp-client-api/[API documentation]
   available online.
 
 - Kudu now
-  link:http://kudu.apache.org/2016/06/17/raft-consensus-single-node.html[
+  link:https://kudu.apache.org/2016/06/17/raft-consensus-single-node.html[
   uses the Raft consensus algorithm even for unreplicated tables].
   This change simplifies code and will also allow administrators to enable
   replication on a previously-unreplicated table. This change is internal and
@@ -4767,7 +4767,7 @@ All Kudu clients have longer default timeout values, as listed below.
 - Some default settings related to I/O behavior during flushes and compactions have been changed:
   The default for `flush_threshold_mb` has been increased from 64MB to 1000MB. The default
   `cfile_do_on_finish` has been changed from `close` to `flush`.
-  link:http://getkudu.io/2016/04/26/ycsb.html[Experiments using YCSB] indicate that these
+  link:https://kudu.apache.org/2016/04/26/ycsb.html[Experiments using YCSB] indicate that these
   values will provide better throughput for write-heavy applications on typical server hardware.
 
 
@@ -4962,7 +4962,7 @@ link:https://gcc.gnu.org/onlinedocs/libstdc++/manual/using_dual_abi.html[old gcc
 If you use gcc5 to build a Kudu application, your application must use the old ABI
 as well. This is typically achieved by defining the `_GLIBCXX_USE_CXX11_ABI` macro
 at compile-time when building your application. For more information, see the
-previous link and link:http://developerblog.redhat.com/2015/02/05/gcc5-and-the-c11-abi/.
+previous link and link:https://developers.redhat.com/blog/2015/02/05/gcc5-and-the-c11-abi/.
 
 - The Python client is no longer considered experimental.
 

@@ -24,7 +24,7 @@
 #   https://docs.docker.com/develop/develop-images/dockerfile_best-practices
 #
 # Note: This file uses the shared label namespace for common labels. See:
-#   http://label-schema.org/rc1/
+#   https://label-schema.org/rc1/
 
 # Base OS Image Arguments.
 # ARGs defined before the first FROM, thus outside of any build-stage, are global.
@@ -425,7 +425,7 @@ RUN ./bootstrap-maven-env.sh \
 WORKDIR /impala
 
 # Download and un-tar an Impala source release.
-RUN wget -nv http://archive.apache.org/dist/impala/${IMPALA_VERSION}/apache-impala-${IMPALA_VERSION}.tar.gz -O apache-impala.tar.gz \
+RUN wget -nv https://archive.apache.org/dist/impala/${IMPALA_VERSION}/apache-impala-${IMPALA_VERSION}.tar.gz -O apache-impala.tar.gz \
   && tar -xzf apache-impala.tar.gz --strip-components=1 \
   && rm apache-impala.tar.gz
 

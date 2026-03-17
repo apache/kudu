@@ -98,7 +98,7 @@ Once complete, you can use `CTRL + D` to exit the REPL and `exit` to exit the co
 == Load the Dataflow Template
 
 The `Random_User_Kudu.xml` template downloads randomly generated user data from
-http://randomuser.me and then pushes the data into Kudu. The data is pulled in
+https://randomuser.me and then pushes the data into Kudu. The data is pulled in
 100 records at a time and then split into individual records. The incoming data
 is in JSON Format.
 

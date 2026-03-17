@@ -813,7 +813,7 @@ DROP TABLE my_first_table;
 
 The examples above have only explored a fraction of what you can do with Impala Shell.
 
-- Learn about the link:http://impala.io[Impala project].
+- Learn about the link:https://impala.apache.org[Impala project].
 - Read the link:https://impala.apache.org/impala-docs.html[Impala documentation].
 - View the link:https://impala.apache.org/docs/build/html/topics/impala_langref.html[Impala SQL reference].
 - Read about Impala internals or learn how to contribute to Impala on the link:https://cwiki.apache.org/confluence/display/IMPALA/Impala+Home[Impala Wiki].

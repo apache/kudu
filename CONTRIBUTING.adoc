@@ -15,4 +15,4 @@
 // specific language governing permissions and limitations
 // under the License.
 
-Please read the instructions for http://getkudu.io/docs/contributing.html[how to contribute to Kudu].
+Please read the instructions for https://kudu.apache.org/docs/contributing.html[how to contribute to Kudu].

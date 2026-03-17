@@ -32,7 +32,7 @@ See the [Kudu @@KUDU_VERSION@@ Release Notes](docs/release_notes.html).
 
 Downloads of Kudu @@KUDU_VERSION@@ are available in the following formats:
 
-* [Kudu @@KUDU_VERSION@@ source tarball](http://www.apache.org/dyn/closer.cgi?path=kudu/@@KUDU_VERSION@@/apache-kudu-@@KUDU_VERSION@@.tar.gz)
+* [Kudu @@KUDU_VERSION@@ source tarball](https://www.apache.org/dyn/closer.cgi?path=kudu/@@KUDU_VERSION@@/apache-kudu-@@KUDU_VERSION@@.tar.gz)
   ([SHA512](https://www.apache.org/dist/kudu/@@KUDU_VERSION@@/apache-kudu-@@KUDU_VERSION@@.tar.gz.sha512),
   [Signature](https://www.apache.org/dist/kudu/@@KUDU_VERSION@@/apache-kudu-@@KUDU_VERSION@@.tar.gz.asc))
 

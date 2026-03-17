@@ -49,7 +49,7 @@ installed on the buses in the SF MTA's fleet.
 1. Download the sample data.
 +
 The SF MTA's site is often a bit slow, so we've mirrored a sample CSV file from the
-dataset at http://kudu-sample-data.s3.amazonaws.com/sfmtaAVLRawData01012013.csv.gz
+dataset at https://kudu-sample-data.s3.amazonaws.com/sfmtaAVLRawData01012013.csv.gz
 +
 The original dataset uses DOS-style line endings, so we'll convert it to
 UNIX-style during the upload process using `tr`.
@@ -58,7 +58,7 @@ There is also a missing line break after the header, so we add it using `sed`.
 +
 [source,bash]
 ----
-wget http://kudu-sample-data.s3.amazonaws.com/sfmtaAVLRawData01012013.csv.gz
+wget https://kudu-sample-data.s3.amazonaws.com/sfmtaAVLRawData01012013.csv.gz
 gunzip -c sfmtaAVLRawData01012013.csv.gz | tr -d '\r' | \
   sed 's/PREDICTABLE/PREDICTABLE\n/g' > sfmtaAVLRawData01012013.csv
 ----
@@ -221,7 +221,7 @@ Spark and Kudu. The real power of Kudu, however, is the ability to ingest and
 mutate data in a streaming fashion.
 
 As an exercise to learn the Kudu programmatic APIs, try implementing a program
-that uses the link:http://www.nextbus.com/xmlFeedDocs/NextBusXMLFeed.pdf[SFMTA XML data feed]
+that uses the link:https://www.nextbus.com/xmlFeedDocs/NextBusXMLFeed.pdf[SFMTA XML data feed]
 to ingest this same dataset in real time into the Kudu table.
 
 == Help

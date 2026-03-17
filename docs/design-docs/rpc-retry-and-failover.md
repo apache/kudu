@@ -230,4 +230,4 @@ to rebuild the original response, when a request is replayed on tablet bootstrap
 
 ### References
 
-[1][Implementing Linearizability at Large Scale and Low Latency](http://web.stanford.edu/~ouster/cgi-bin/papers/rifl.pdf)
+[1][Implementing Linearizability at Large Scale and Low Latency](https://web.stanford.edu/~ouster/cgi-bin/papers/rifl.pdf)

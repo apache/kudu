@@ -171,8 +171,8 @@ to work around this issue.
 === Eclipse
 
 Follow the instructions as laid out
-http://www.vogella.com/tutorials/EclipseGradle/article.html#eclipse-gradle-support[here]
+https://www.vogella.com/tutorials/EclipseGradle/article.html#eclipse-gradle-support[here]
 to install the Eclipse Gradle (Buildship) tooling.
 Then follow the instruction on the same page
-http://www.vogella.com/tutorials/EclipseGradle/article.html#import-an-existing-gradle-project[here]
+https://www.vogella.com/tutorials/EclipseGradle/article.html#import-an-existing-gradle-project[here]
 to import an existing project.

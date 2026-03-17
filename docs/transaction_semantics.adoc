@@ -95,7 +95,7 @@ consistent across all replicas of a tablet through consensus. Therefore, write o
 are totally ordered with regard to clock-assigned timestamps, relative to other writes
 in the same tablet. In other words, writes have strict-serializable semantics,
 though in an admittedly limited context. See this
-link:http://www.bailis.org/blog/linearizability-versus-serializability[blog post]
+link:https://www.bailis.org/blog/linearizability-versus-serializability[blog post]
 for a little more context regarding what these semantics mean.
 
 While Isolated and Durable in an ACID sense, multi-row write operations, even within a single
@@ -347,8 +347,8 @@ frequently.
 
 [bibliography]
 == References
-- [[[ht,1]]] David Alves, Todd Lipcon and Vijay Garg. Technical Report: HybridTime - Accessible Global Consistency with High Clock Uncertainty. April, 2014. http://users.ece.utexas.edu/~garg/pdslab/david/hybrid-time-tech-report-01.pdf
+- [[[ht,1]]] David Alves, Todd Lipcon and Vijay Garg. Technical Report: HybridTime - Accessible Global Consistency with High Clock Uncertainty. April, 2014. https://users.ece.utexas.edu/~garg/pdslab/david/hybrid-time-tech-report-01.pdf
 - [[[spanner,2]]] James C. Corbett, Jeffrey Dean, Michael Epstein, Andrew Fikes, Christopher Frost, J. J. Furman, Sanjay Ghemawat, Andrey Gubarev, Christopher Heiser, Peter Hochschild, Wilson Hsieh, Sebastian Kanthak, Eugene Kogan, Hongyi Li, Alexander Lloyd, Sergey Melnik, David Mwaura, David Nagle, Sean Quinlan, Rajesh Rao, Lindsay Rolig, Yasushi Saito, Michal Szymaniak, Christopher Taylor, Ruth Wang, and Dale Woodford. 2012. Spanner: Google's globally-distributed database. In Proceedings of the 10th USENIX conference on Operating Systems Design and Implementation (OSDI'12). USENIX Association, Berkeley, CA, USA, 251-264.
-- [[[fdt,3]]] Alexander Thomson, Thaddeus Diamond, Shu-Chun Weng, Kun Ren, Philip Shao, and Daniel J. Abadi. 2012. Calvin: fast distributed transactions for partitioned database systems. In Proceedings of the 2012 ACM SIGMOD International Conference on Management of Data (SIGMOD '12). ACM, New York, NY, USA, 1-12. DOI=10.1145/2213836.2213838 http://doi.acm.org/10.1145/2213836.2213838
+- [[[fdt,3]]] Alexander Thomson, Thaddeus Diamond, Shu-Chun Weng, Kun Ren, Philip Shao, and Daniel J. Abadi. 2012. Calvin: fast distributed transactions for partitioned database systems. In Proceedings of the 2012 ACM SIGMOD International Conference on Management of Data (SIGMOD '12). ACM, New York, NY, USA, 1-12. DOI=10.1145/2213836.2213838 https://doi.acm.org/10.1145/2213836.2213838
 - [[[consensus,4]]] Diego Ongaro and John Ousterhout. 2014. In search of an understandable consensus algorithm. In Proceedings of the 2014 USENIX conference on USENIX Annual Technical Conference (USENIX ATC'14), Garth Gibson and Nickolai Zeldovich (Eds.). USENIX Association, Berkeley, CA, USA, 305-320.
 - [[[consistency,5]]] Kwei-Jay Lin, "Consistency issues in real-time database systems," in System Sciences, 1989. Vol.II: Software Track, Proceedings of the Twenty-Second Annual Hawaii International Conference on , vol.2, no., pp.654-661 vol.2, 3-6 Jan 1989 doi: 10.1109/HICSS.1989.48069

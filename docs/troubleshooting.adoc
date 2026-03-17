@@ -1003,7 +1003,7 @@ reduce the number of replicas on the tablet server. This may involve rethinking
 the table's partitioning schema. For the recommended limits on number of
 replicas per tablet server, see the known issues and scaling limitations
 documentation for the appropriate Kudu release. The
-link:http://kudu.apache.org/releases/[releases page] has links to documentation
+link:https://kudu.apache.org/releases/[releases page] has links to documentation
 for previous versions of Kudu; for the latest release, see the
 link:known_issues.html[known issues page].
 

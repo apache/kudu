@@ -30,6 +30,6 @@
 
 // tag::version[]
 NOTE: This document applies to Apache Kudu version {KUDU_VERSION}. Please consult the
-link:http://kudu.apache.org/releases/[documentation of the appropriate release] that's applicable
+link:https://kudu.apache.org/releases/[documentation of the appropriate release] that's applicable
 to the version of the Kudu cluster.
 // end::version[]

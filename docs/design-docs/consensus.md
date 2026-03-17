@@ -264,16 +264,16 @@ References
    D. Ongaro and J. Ousterhout.
    2014 USENIX Annual Technical Conference (USENIX ATC 14). 2014.
 2. [ARIES: A transaction recovery method supporting fine-granularity locking and partial
-   rollbacks using write-ahead logging](http://www.cs.berkeley.edu/~brewer/cs262/Aries.pdf).
+   rollbacks using write-ahead logging](https://www.cs.berkeley.edu/~brewer/cs262/Aries.pdf).
    C. Mohan, D. Haderle, D. Lindsay, H. Pirahesh, and P. Schwartz.
    ACM Transactions on Database Systems (TODS) 17.1 (1992): 94-162.
 3. [Viewstamped replication: A new primary copy method to support highly-available
-   distributed systems](http://www.pmg.csail.mit.edu/papers/vr.pdf).
+   distributed systems](https://www.pmg.csail.mit.edu/papers/vr.pdf).
    B. Oki and B. Liskov.
    Proceedings of the seventh annual ACM Symposium on Principles of distributed computing.
    ACM, 1988.
-4. [Viewstamped Replication Revisited](http://pmg.csail.mit.edu/papers/vr-revisited.pdf).
+4. [Viewstamped Replication Revisited](https://pmg.csail.mit.edu/papers/vr-revisited.pdf).
    B. Liskov and J. Cowling. 2012.
-5. [Aether: A Scalable Approach to logging](http://pandis.net/resources/vldb10aether.pdf).
+5. [Aether: A Scalable Approach to logging](https://pandis.net/resources/vldb10aether.pdf).
    R. Johnson, I. Pandis, R. Stoica, M. Athanassoulis, and A. Ailamaki.
    Proceedings of the VLDB Endowment 3.1-2 (2010): 681-692.

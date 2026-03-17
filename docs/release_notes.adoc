@@ -107,8 +107,8 @@ documentation.
 [[resources_and_next_steps]]
 == Resources
 
-- link:http://kudu.apache.org[Kudu Website]
-- link:http://github.com/apache/kudu[Kudu GitHub Repository]
+- link:https://kudu.apache.org[Kudu Website]
+- link:https://github.com/apache/kudu[Kudu GitHub Repository]
 - link:index.html[Kudu Documentation]
 - link:prior_release_notes.html[Release notes for older releases]
 

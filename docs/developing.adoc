@@ -96,7 +96,7 @@ The following Maven `<dependency>` element is valid for the Apache Kudu public r
 ----
 
 Convenience binary artifacts for the Java client and various Java integrations (e.g. Spark, Flume)
-are also available via the link:http://repository.apache.org[ASF Maven repository] and
+are also available via the link:https://repository.apache.org[ASF Maven repository] and
 link:https://mvnrepository.com/artifact/org.apache.kudu[Maven Central repository].
 
 == Example Impala Commands With Kudu
@@ -121,7 +121,7 @@ Use kudu-spark2_2.11 artifact if using Spark 2 with Scala 2.11.
 
 NOTE: kudu-spark versions 1.8.0 and below have slightly different syntax.
 See the documentation of your version for a valid example. Versioned documentation can be found
-on the link:http://kudu.apache.org/releases/[releases page].
+on the link:https://kudu.apache.org/releases/[releases page].
 
 [source]
 ----

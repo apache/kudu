@@ -227,4 +227,4 @@ to communicate only the most important known issues.
   imposes additional overhead, since all the accumulated deltas must be processed, negatively
   affecting performance. Decreasing the value of this flag can improve performance, and if
   the workload does not rely on long history retention, it is safe to reduce the value
-  (see http://issues.apache.org/jira/browse/KUDU-3583[KUDU-3583]).
+  (see https://issues.apache.org/jira/browse/KUDU-3583[KUDU-3583]).

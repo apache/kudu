@@ -17,7 +17,7 @@ limitations under the License.
 ## Background & Motivation
 
 This document assumes advanced knowledge of Kudu partitioning, see the
-[schema design guide](http://getkudu.io/docs/schema_design.html) and the
+[schema design guide](https://kudu.apache.org/docs/schema_design.html) and the
 [partition pruning design doc](scan-optimization-partition-pruning.md) for more
 background.
 

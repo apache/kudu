@@ -33,7 +33,7 @@ link:https://kudu.apache.org/docs/contributing.html[Contributing to Kudu].
 
 == Asciidoc
 Kudu documentation is written in link:https://en.wikipedia.org/wiki/AsciiDoc[Asciidoc]
-and compiled into HTML and output using the link:http://asciidoctor.org/[Asciidoctor]
+and compiled into HTML and output using the link:https://asciidoctor.org/[Asciidoctor]
 toolchain. This provides several advantages. Among them:
 
 - Asciidoc is a superset of Markdown, so if you already know Markdown you can get
@@ -99,16 +99,16 @@ link:https://hbase.apache.org/book.html#_hbase_reference_guide_style_guide_and_c
 \include::path/to/app.rb[]
 ----
 ................
-| Include only part of a separate file | Similar to Javadoc | See http://asciidoctor.org/docs/user-manual/#by-tagged-regions
+| Include only part of a separate file | Similar to Javadoc | See https://asciidoctor.org/docs/user-manual/#by-tagged-regions
 | File names, directory names, new terms | italic | \_hbase-default.xml_
 | External naked URLs | A link with the URL as link text |
 ----
-http://www.google.com
+https://www.google.com
 ----
 
 | External URLs with text | A link with arbitrary link text |
 ----
-link:http://www.google.com[Google]
+link:https://www.google.com[Google]
 ----
 
 | Create an internal anchor to cross-reference | not rendered |
@@ -135,7 +135,7 @@ image:sunset.jpg [Alt Text]
 (only one colon)
 | Link to a remote image | show an image hosted elsewhere |
 ----
-image::http://inkscape.org/doc/examples/tux.svg[Tux,250,350]
+image::https://inkscape.org/doc/examples/tux.svg[Tux,250,350]
 ----
 (or `image:`)
 | Add dimensions or a URL to the image | depends | inside the brackets after the alt text, specify width, height and/or link="http://my_link.com"
@@ -168,12 +168,12 @@ some source code
 ----
 * list item 1
 ----
-(see http://asciidoctor.org/docs/user-manual/#unordered-lists)
+(see https://asciidoctor.org/docs/user-manual/#unordered-lists)
 | Numbered lists | numbered list |
 ----
 . list item 2
 ----
-(see http://asciidoctor.org/docs/user-manual/#ordered-lists)
+(see https://asciidoctor.org/docs/user-manual/#ordered-lists)
 | Checklists | Checked or unchecked boxes |
 Checked:
 ----
@@ -205,7 +205,7 @@ Title::
 *File -> Print*
 ........
 renders like *File -> Print*
-| Sidebars, quotes, or other blocks of text | a block of text, formatted differently from the default | Delimited using different delimiters, see http://asciidoctor.org/docs/user-manual/#built-in-blocks-summary. Some of the examples above use delimiters like \...., ----,====.
+| Sidebars, quotes, or other blocks of text | a block of text, formatted differently from the default | Delimited using different delimiters, see https://asciidoctor.org/docs/user-manual/#built-in-blocks-summary. Some of the examples above use delimiters like \...., ----,====.
 ........
 [example]
 ====
@@ -249,7 +249,7 @@ include::[/path/to/file.adoc]
 ----
 
 For plenty of examples. see _docs/docs.adoc_.
-| A table | a table | See http://asciidoctor.org/docs/user-manual/#tables. Generally rows are separated by newlines and columns by pipes
+| A table | a table | See https://asciidoctor.org/docs/user-manual/#tables. Generally rows are separated by newlines and columns by pipes
 | Comment out a single line | A  line is skipped during rendering |
 `+//+ This line won't show up`
 | Comment out a block | A section of the file is skipped during rendering |

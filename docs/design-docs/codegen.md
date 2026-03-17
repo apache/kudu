@@ -237,9 +237,9 @@ the bottom of this document. A worked example is available in row_projector.cc.
 
 Useful resources
 ----------------
-http://llvm.org/docs/doxygen/html/index.html
-http://llvm.org/docs/tutorial/
-http://llvm.org/docs/LangRef.html
+https://llvm.org/docs/doxygen/html/index.html
+https://llvm.org/docs/tutorial/
+https://llvm.org/docs/LangRef.html
 
 Debugging
 ---------

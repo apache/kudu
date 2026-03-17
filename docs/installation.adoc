@@ -588,7 +588,7 @@ link:https://issues.apache.org/jira/browse/KUDU-2715[Get all tests passing on ma
 ====
 
 The link:https://developer.apple.com/xcode/[Xcode] package is necessary for
-compiling Kudu. Some of the instructions below use link:http://brew.sh/[Homebrew]
+compiling Kudu. Some of the instructions below use link:https://brew.sh/[Homebrew]
 to install dependencies, but manual dependency installation is possible.
 
 [NOTE]
