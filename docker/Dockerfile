@@ -425,7 +425,7 @@ RUN ./bootstrap-maven-env.sh \
 WORKDIR /impala
 
 # Download and un-tar an Impala source release.
-RUN wget -nv http://archive.apache.org/dist/impala/${IMPALA_VERSION}/apache-impala-${IMPALA_VERSION}.tar.gz -O apache-impala.tar.gz \
+RUN wget -nv https://archive.apache.org/dist/impala/${IMPALA_VERSION}/apache-impala-${IMPALA_VERSION}.tar.gz -O apache-impala.tar.gz \
   && tar -xzf apache-impala.tar.gz --strip-components=1 \
   && rm apache-impala.tar.gz
 
