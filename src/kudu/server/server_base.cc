@@ -342,7 +342,8 @@ METRIC_DEFINE_gauge_int64(server, uptime,
                           "Server Uptime",
                           kudu::MetricUnit::kMicroseconds,
                           "Time interval since the server has started",
-                          kudu::MetricLevel::kInfo);
+                          kudu::MetricLevel::kInfo,
+                          kudu::EXPOSE_AS_COUNTER);
 METRIC_DEFINE_gauge_int64(server, wal_dir_space_available_bytes,
                           "WAL Directory Space Free",
                           kudu::MetricUnit::kBytes,
