@@ -12,6 +12,7 @@
     # zlib
     adler32*;
     crc32*;
+    compress*;
     deflate*;
     get_crc_table;
     inflate*;
