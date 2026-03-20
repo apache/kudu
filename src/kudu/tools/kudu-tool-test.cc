@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <signal.h>
 #include <sys/stat.h>
 
 #include <algorithm>
@@ -8610,6 +8611,96 @@ TEST_P(ControlShellToolTest, TestControlShell) {
     req.mutable_destroy_cluster();
     ASSERT_OK(SendReceive(req, &resp));
   }
+}
+
+// Verify that setting leave_files=true in CreateClusterRequestPB causes the
+// cluster root to be preserved when the control shell exits.
+TEST_P(ControlShellToolTest, TestLeaveFiles) {
+  const string cluster_root = JoinPathSegments(test_dir_, "leave-files-cluster");
+  ASSERT_OK(env_->CreateDir(cluster_root));
+
+  {
+    ControlShellRequestPB req;
+    ControlShellResponsePB resp;
+    req.mutable_create_cluster()->set_cluster_root(cluster_root);
+    req.mutable_create_cluster()->set_num_tservers(1);
+    req.mutable_create_cluster()->set_leave_files(true);
+    ASSERT_OK(SendReceive(req, &resp));
+  }
+
+  // Close the protocol (EOF on stdin triggers shell exit).
+  proto_.reset();
+  ASSERT_OK(shell_->Wait());
+  int exit_status;
+  ASSERT_OK(shell_->GetExitStatus(&exit_status));
+  ASSERT_EQ(0, exit_status);
+
+  // The cluster root should still exist.
+  ASSERT_TRUE(env_->FileExists(cluster_root));
+  ASSERT_OK(env_->DeleteRecursively(cluster_root));
+}
+
+// Verify that without leave_files (the default), the cluster root is deleted
+// when the control shell exits.
+TEST_P(ControlShellToolTest, TestDeleteOnExit) {
+  const string cluster_root = JoinPathSegments(test_dir_, "delete-on-exit-cluster");
+  ASSERT_OK(env_->CreateDir(cluster_root));
+
+  {
+    ControlShellRequestPB req;
+    ControlShellResponsePB resp;
+    req.mutable_create_cluster()->set_cluster_root(cluster_root);
+    req.mutable_create_cluster()->set_num_tservers(1);
+    // leave_files defaults to false; cluster root should be cleaned up on exit.
+    ASSERT_OK(SendReceive(req, &resp));
+  }
+
+  // Close the protocol (EOF on stdin triggers shell exit).
+  proto_.reset();
+  ASSERT_OK(shell_->Wait());
+  int exit_status;
+  ASSERT_OK(shell_->GetExitStatus(&exit_status));
+  ASSERT_EQ(0, exit_status);
+
+  // The cluster root should have been deleted.
+  ASSERT_FALSE(env_->FileExists(cluster_root));
+}
+
+// Verify that when the control shell exits abnormally (non-zero exit status),
+// the cluster root is preserved regardless of the leave_files setting.
+TEST_P(ControlShellToolTest, TestPreserveFilesOnAbnormalExit) {
+  const string cluster_root = JoinPathSegments(test_dir_, "abnormal-exit-cluster");
+  ASSERT_OK(env_->CreateDir(cluster_root));
+
+  {
+    ControlShellRequestPB req;
+    ControlShellResponsePB resp;
+    req.mutable_create_cluster()->set_cluster_root(cluster_root);
+    req.mutable_create_cluster()->set_num_tservers(1);
+    // leave_files defaults to false, but the shell won't reach the cleanup
+    // path when killed abnormally.
+    ASSERT_OK(SendReceive(req, &resp));
+  }
+
+  // Shell is already dead after the kill below; prevent TearDown from waiting
+  // on it again. Use SCOPED_CLEANUP so this runs even if an assertion fires.
+  SCOPED_CLEANUP({
+    proto_.reset();
+    shell_.reset();
+  });
+
+  // Kill the shell to force an abnormal exit that bypasses normal cleanup.
+  // SIGKILL is used instead of SIGTERM because it cannot be caught or handled.
+  ASSERT_OK(shell_->Kill(SIGKILL));
+  ASSERT_OK(shell_->Wait());
+  int exit_status;
+  ASSERT_OK(shell_->GetExitStatus(&exit_status));
+  ASSERT_NE(0, exit_status);
+
+  // Even though leave_files is false, the cluster root should still exist
+  // because the shell was killed before it could run cleanup.
+  ASSERT_TRUE(env_->FileExists(cluster_root));
+  ASSERT_OK(env_->DeleteRecursively(cluster_root));
 }
 
 static void CreateTableWithFlushedData(const string& table_name,

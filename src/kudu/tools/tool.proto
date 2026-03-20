@@ -83,6 +83,10 @@ message CreateClusterRequestPB {
     repeated JwksOptionsPB jwks_options = 2;
   }
   optional MiniOidcOptionsPB mini_oidc_options = 11;
+
+  // If true, the cluster root directory will not be deleted when the control
+  // shell exits. Useful for preserving cluster data on test failure.
+  optional bool leave_files = 12;
 }
 
 // Destroys a cluster created via 'create_cluster'.

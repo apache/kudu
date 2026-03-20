@@ -400,6 +400,7 @@ Status RunControlShell(const RunnerContext& /*context*/) {
 
   // Run the shell loop, processing each message as it is received.
   unique_ptr<ExternalMiniCluster> cluster;
+  bool leave_files = false;
   while (true) {
     ControlShellRequestPB req;
     ControlShellResponsePB resp;
@@ -419,6 +420,9 @@ Status RunControlShell(const RunnerContext& /*context*/) {
 
     if (s.ok()) {
       // We've successfully received a message. Try to process it.
+      if (req.has_create_cluster()) {
+        leave_files = req.create_cluster().leave_files();
+      }
       s = ProcessRequest(req, &resp, &cluster);
     }
 
@@ -436,11 +440,15 @@ Status RunControlShell(const RunnerContext& /*context*/) {
     RETURN_NOT_OK(s);
   }
 
-  // Normal exit, clean up cluster root.
+  // Normal exit, clean up cluster root unless the caller opted out.
   if (cluster) {
     cluster->Shutdown();
-    WARN_NOT_OK(Env::Default()->DeleteRecursively(cluster->cluster_root()),
-                "Could not delete cluster root");
+    if (leave_files) {
+      LOG(INFO) << "Leaving cluster files at " << cluster->cluster_root();
+    } else {
+      WARN_NOT_OK(Env::Default()->DeleteRecursively(cluster->cluster_root()),
+                  "Could not delete cluster root");
+    }
   }
   return Status::OK();
 }
