@@ -28,6 +28,7 @@
 #include <string>
 #include <type_traits>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags.h>
@@ -110,6 +111,7 @@ DEFINE_validator(metrics_default_level, [](const char* flag_name, const string& 
 
 // For configuration dashboard
 DECLARE_bool(webserver_require_spnego);
+DECLARE_bool(metrics_prometheus_use_entity_labels);
 DECLARE_string(redact);
 DECLARE_string(rpc_encryption);
 DECLARE_string(rpc_authentication);
@@ -524,10 +526,14 @@ static void WriteMetricsAsJson(const MetricRegistry* const metrics,
 }
 
 static void WriteMetricsAsPrometheus(const MetricRegistry* const metrics,
+                                     const string& hostname,
                                      const Webserver::WebRequest& /*req*/,
                                      Webserver::PrerenderedWebResponse* resp) {
   MetricPrometheusOptions opts;
   opts.filters.entity_level = FLAGS_metrics_default_level;
+  if (FLAGS_metrics_prometheus_use_entity_labels) {
+    opts.hostname = hostname;
+  }
 
   PrometheusWriter writer(&resp->output);
   WARN_NOT_OK(metrics->WriteAsPrometheus(&writer, opts),
@@ -548,10 +554,13 @@ void RegisterMetricsJsonHandler(Webserver* webserver, const MetricRegistry* cons
   webserver->RegisterJsonPathHandler("/jsonmetricz", "Metrics", callback, not_on_nav_bar);
 }
 
-void RegisterMetricsPrometheusHandler(Webserver* webserver, const MetricRegistry* const metrics) {
-  auto callback = [metrics](const Webserver::WebRequest& req,
-                            Webserver::PrerenderedWebResponse* resp) {
-    WriteMetricsAsPrometheus(metrics, req, resp);
+void RegisterMetricsPrometheusHandler(Webserver* webserver,
+                                      const MetricRegistry* const metrics,
+                                      string hostname) {
+  auto callback = [metrics, hostname = std::move(hostname)](
+                      const Webserver::WebRequest& req,
+                      Webserver::PrerenderedWebResponse* resp) {
+    WriteMetricsAsPrometheus(metrics, hostname, req, resp);
   };
   constexpr bool is_on_nav_bar = true;
   webserver->RegisterPrerenderedPathHandler("/metrics_prometheus", "Prometheus Metrics", callback,

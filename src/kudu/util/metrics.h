@@ -521,6 +521,12 @@ struct MetricPrometheusOptions {
   // NOTE: for Prometheus format metrics, the only applicable filtering
   //       is by 'MetricFilters::entity_level' field.
   MetricFilters filters;
+
+  // The hostname of the node serving the metrics. Attached as hostname="..."
+  // label to every metric line when both --metrics_prometheus_use_entity_labels
+  // and --metrics_prometheus_export_hostname are true.
+  // Empty when hostname is unavailable.
+  std::string hostname;
 };
 
 class MetricEntityPrototype {

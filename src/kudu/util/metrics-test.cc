@@ -57,6 +57,7 @@ using std::vector;
 
 DECLARE_int32(metrics_retirement_age_ms);
 DECLARE_bool(metrics_prometheus_use_entity_labels);
+DECLARE_bool(metrics_prometheus_export_hostname);
 
 namespace kudu {
 
@@ -74,6 +75,12 @@ METRIC_DEFINE_counter(table, table_test_counter,
                       "Table-wise test counter label",
                       kudu::MetricUnit::kBytes,
                       "Table-wise test counter description.",
+                      kudu::MetricLevel::kDebug);
+
+METRIC_DEFINE_counter(server, server_test_counter,
+                      "Server-wise test counter label",
+                      kudu::MetricUnit::kBytes,
+                      "Server-wise test counter description.",
                       kudu::MetricLevel::kDebug);
 
 
@@ -1474,6 +1481,140 @@ TEST_F(MetricsTest, TestFilter) {
     d.Parse<0>(out.str().c_str());
     ASSERT_EQ(kNum + kEntityCount + 2, d.Size());
   }
+}
+
+// Test that when --metrics_prometheus_use_entity_labels is true and hostname is
+// set in MetricPrometheusOptions, the hostname label is appended to every
+// metric line for all entity types (tablet, table, server).
+TEST_F(MetricsTest, PrometheusHostnameLabelTest) {
+  google::FlagSaver saver;
+  FLAGS_metrics_prometheus_use_entity_labels = true;
+
+  MetricRegistry registry;
+
+  auto tablet_entity = METRIC_ENTITY_tablet.Instantiate(&registry, "t1");
+  auto tablet_counter = METRIC_tablet_test_counter.Instantiate(tablet_entity);
+  tablet_counter->IncrementBy(42);
+
+  auto table_entity = METRIC_ENTITY_table.Instantiate(&registry, "tbl1");
+  auto table_counter = METRIC_table_test_counter.Instantiate(table_entity);
+  table_counter->IncrementBy(888);
+
+  auto server_entity = METRIC_ENTITY_server.Instantiate(
+      &registry, kMetricEntityIdTabletServer);
+  auto server_counter = METRIC_server_test_counter.Instantiate(server_entity);
+  server_counter->IncrementBy(777);
+
+  ostringstream output;
+  PrometheusWriter writer(&output);
+  MetricPrometheusOptions opts;
+  opts.hostname = "ts-01.example.com";
+  ASSERT_OK(registry.WriteAsPrometheus(&writer, opts));
+
+  const auto& out = output.str();
+  // Tablet entity should contain hostname label.
+  ASSERT_STR_CONTAINS(out,
+      "kudu_tablet_test_counter{type=\"tablet\",id=\"t1\","
+      "hostname=\"ts-01.example.com\",unit_type=\"bytes\"} 42\n");
+  // Table entity should contain hostname label.
+  ASSERT_STR_CONTAINS(out,
+      "kudu_table_test_counter{type=\"table\",id=\"tbl1\","
+      "hostname=\"ts-01.example.com\",unit_type=\"bytes\"} 888\n");
+  // Server entity should contain hostname label.
+  ASSERT_STR_CONTAINS(out,
+      "kudu_server_test_counter{type=\"tserver\","
+      "hostname=\"ts-01.example.com\",unit_type=\"bytes\"} 777\n");
+}
+
+// Test that when --metrics_prometheus_use_entity_labels is false (legacy mode),
+// the hostname label is NOT emitted even if opts.hostname is set.
+TEST_F(MetricsTest, PrometheusHostnameLabelLegacyNoEffect) {
+  google::FlagSaver saver;
+  FLAGS_metrics_prometheus_use_entity_labels = false;
+
+  MetricRegistry registry;
+
+  auto tablet_entity = METRIC_ENTITY_tablet.Instantiate(&registry, "t1");
+  auto tablet_counter = METRIC_tablet_test_counter.Instantiate(tablet_entity);
+  tablet_counter->IncrementBy(42);
+
+  auto table_entity = METRIC_ENTITY_table.Instantiate(&registry, "tbl1");
+  auto table_counter = METRIC_table_test_counter.Instantiate(table_entity);
+  table_counter->IncrementBy(888);
+
+  auto server_entity = METRIC_ENTITY_server.Instantiate(
+      &registry, kMetricEntityIdTabletServer);
+  auto server_counter = METRIC_server_test_counter.Instantiate(server_entity);
+  server_counter->IncrementBy(777);
+
+  ostringstream output;
+  PrometheusWriter writer(&output);
+  MetricPrometheusOptions opts;
+  opts.hostname = "ts-01.example.com";
+  ASSERT_OK(registry.WriteAsPrometheus(&writer, opts));
+
+  const auto& out = output.str();
+  // Legacy format: no hostname label, entity ID in prefix.
+  ASSERT_STR_NOT_CONTAINS(out, "hostname=");
+  ASSERT_STR_CONTAINS(out,
+      "kudu_tablet_t1_tablet_test_counter{unit_type=\"bytes\"} 42\n");
+  ASSERT_STR_CONTAINS(out,
+      "kudu_table_tbl1_table_test_counter{unit_type=\"bytes\"} 888\n");
+  ASSERT_STR_CONTAINS(out,
+      "kudu_tserver_server_test_counter{unit_type=\"bytes\"} 777\n");
+}
+
+// Test that when --metrics_prometheus_export_hostname is false, the hostname
+// label is NOT emitted even if entity labels are enabled and hostname is set.
+TEST_F(MetricsTest, PrometheusHostnameExportFlagOff) {
+  google::FlagSaver saver;
+  FLAGS_metrics_prometheus_use_entity_labels = true;
+  FLAGS_metrics_prometheus_export_hostname = false;
+
+  MetricRegistry registry;
+
+  auto tablet_entity = METRIC_ENTITY_tablet.Instantiate(&registry, "t1");
+  auto tablet_counter = METRIC_tablet_test_counter.Instantiate(tablet_entity);
+  tablet_counter->IncrementBy(1);
+
+  ostringstream output;
+  PrometheusWriter writer(&output);
+  MetricPrometheusOptions opts;
+  opts.hostname = "ts-01.example.com";
+  ASSERT_OK(registry.WriteAsPrometheus(&writer, opts));
+
+  const auto& out = output.str();
+  // hostname label must not appear when the export flag is off.
+  ASSERT_STR_NOT_CONTAINS(out, "hostname=");
+  // Entity labels should still be present.
+  ASSERT_STR_CONTAINS(out,
+      "kudu_tablet_test_counter{type=\"tablet\",id=\"t1\",unit_type=\"bytes\"} 1\n");
+}
+
+// Test that when --metrics_prometheus_use_entity_labels is true but hostname
+// is empty, no hostname label is emitted (no trailing comma or empty value).
+TEST_F(MetricsTest, PrometheusEmptyHostnameLabel) {
+  google::FlagSaver saver;
+  FLAGS_metrics_prometheus_use_entity_labels = true;
+
+  MetricRegistry registry;
+
+  auto tablet_entity = METRIC_ENTITY_tablet.Instantiate(&registry, "t1");
+  auto tablet_counter = METRIC_tablet_test_counter.Instantiate(tablet_entity);
+  tablet_counter->IncrementBy(1);
+
+  ostringstream output;
+  PrometheusWriter writer(&output);
+  MetricPrometheusOptions opts;
+  // hostname is empty (default).
+  ASSERT_OK(registry.WriteAsPrometheus(&writer, opts));
+
+  const auto& out = output.str();
+  // No hostname label should appear.
+  ASSERT_STR_NOT_CONTAINS(out, "hostname=");
+  // Output should match the format from the prior patch (entity labels, no hostname).
+  ASSERT_STR_CONTAINS(out,
+      "kudu_tablet_test_counter{type=\"tablet\",id=\"t1\",unit_type=\"bytes\"} 1\n");
 }
 
 } // namespace kudu

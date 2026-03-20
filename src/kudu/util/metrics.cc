@@ -45,6 +45,13 @@ DEFINE_bool(metrics_prometheus_use_entity_labels, false,
             "If false, entity IDs are embedded in metric names (legacy format).");
 TAG_FLAG(metrics_prometheus_use_entity_labels, runtime);
 
+DEFINE_bool(metrics_prometheus_export_hostname, true,
+            "If true and --metrics_prometheus_use_entity_labels is also true, "
+            "a 'hostname' label identifying the serving node is added to every "
+            "Prometheus metric line. Set to false to omit the hostname label, "
+            "e.g. when using Prometheus relabel_configs for custom labeling.");
+TAG_FLAG(metrics_prometheus_export_hostname, runtime);
+
 // Process/server-wide metrics should go into the 'server' entity.
 // More complex applications will define other entities.
 METRIC_DEFINE_entity(server);
@@ -423,7 +430,11 @@ Status MetricEntity::WriteAsPrometheus(
   }
   RETURN_NOT_OK(s);
   if (FLAGS_metrics_prometheus_use_entity_labels) {
-    const string labels = BuildPrometheusLabels(prototype_->name(), id_, attrs);
+    string labels = BuildPrometheusLabels(prototype_->name(), id_, attrs);
+    // Append hostname label if available and not disabled via flag.
+    if (FLAGS_metrics_prometheus_export_hostname && !opts.hostname.empty()) {
+      labels += ",hostname=\"" + EscapePrometheusLabelValue(opts.hostname) + "\"";
+    }
     WriteMetricsPrometheus(writer, metrics, "kudu_", labels);
     return Status::OK();
   }

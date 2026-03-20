@@ -18,6 +18,8 @@
 #ifndef KUDU_SERVER_DEFAULT_PATH_HANDLERS_H
 #define KUDU_SERVER_DEFAULT_PATH_HANDLERS_H
 
+#include <string>
+
 namespace kudu {
 
 class MetricRegistry;
@@ -35,7 +37,9 @@ void AddPostInitializedDefaultPathHandlers(Webserver* webserver);
 void RegisterMetricsJsonHandler(Webserver* webserver, const MetricRegistry* metrics);
 
 // Adds an endpoint to get metrics in Prometheus format.
-void RegisterMetricsPrometheusHandler(Webserver* webserver, const MetricRegistry* metrics);
+void RegisterMetricsPrometheusHandler(Webserver* webserver,
+                                      const MetricRegistry* metrics,
+                                      std::string hostname);
 } // namespace kudu
 
 #endif // KUDU_SERVER_DEFAULT_PATH_HANDLERS_H
