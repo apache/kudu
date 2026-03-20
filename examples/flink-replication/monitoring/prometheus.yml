@@ -1,0 +1,98 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# Prometheus scrape configuration for the Kudu Replication Demo.
+#
+# The monitoring stack (Prometheus + Grafana + json-exporter) starts
+# automatically with: make up  (or: docker compose up -d)
+#
+# Hot-reload after editing this file (no restart needed):
+#   curl -X POST http://localhost:9090/-/reload
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+
+  # Flink replication job metrics
+  # JobManager exposes coordinator metrics (enumerator timestamps, split counts)
+  # on port 9250. TaskManager exposes operator-level metrics on port 9251.
+  - job_name: "replication"
+    static_configs:
+      - targets: ["flink-jobmanager:9250"]
+        labels:
+          app: "replication"
+          component: "jobmanager"
+      - targets: ["flink-taskmanager:9251"]
+        labels:
+          app: "replication"
+          component: "taskmanager"
+
+  # Kudu tserver metrics
+  # /metrics_prometheus embeds the tablet ID in each metric name, e.g.:
+  #   kudu_tablet_<tablet-id>_rows_upserted
+  # metric_relabel_configs normalizes this into a label so metrics are
+  # queryable by table name via a join with kudu_tablet_info (see below).
+  - job_name: "kudu"
+    metrics_path: "/metrics_prometheus"
+    static_configs:
+      - targets:
+          - "src-kudu-tserver-1:8050"
+          - "src-kudu-tserver-2:8050"
+        labels:
+          app: "kudu"
+          cluster: "source"
+      - targets:
+          - "snk-kudu-tserver-1:8050"
+          - "snk-kudu-tserver-2:8050"
+        labels:
+          app: "kudu"
+          cluster: "sink"
+    metric_relabel_configs:
+      # Extract tablet_id from the metric name into a label
+      - source_labels: [__name__]
+        regex: 'kudu_tablet_([a-f0-9]{32})_(.*)'
+        target_label: tablet_id
+        replacement: '$1'
+      # Strip the embedded tablet_id from the metric name
+      - source_labels: [__name__]
+        regex: 'kudu_tablet_([a-f0-9]{32})_(.*)'
+        target_label: __name__
+        replacement: 'kudu_tablet_$2'
+
+  # Kudu tablet -> table name mapping (via json_exporter)
+  # json_exporter reads the Kudu JSON metrics endpoint and exposes a
+  # kudu_tablet_info metric with tablet_id, table_name, and table_id labels.
+  # Used in PromQL join expressions to filter metrics by table name.
+  - job_name: "kudu_tablet_info"
+    metrics_path: /probe
+    params:
+      module: [default]
+    static_configs:
+      - targets:
+          - "http://src-kudu-tserver-1:8050/metrics?types=tablet"
+          - "http://src-kudu-tserver-2:8050/metrics?types=tablet"
+          - "http://snk-kudu-tserver-1:8050/metrics?types=tablet"
+          - "http://snk-kudu-tserver-2:8050/metrics?types=tablet"
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: "json-exporter:7979"

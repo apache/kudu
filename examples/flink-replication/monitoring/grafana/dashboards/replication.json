@@ -1,0 +1,616 @@
+{
+  "title": "Kudu Replication Demo",
+  "uid": "kudu-replication-demo",
+  "description": "End-to-end view of the Kudu -> Kudu replication pipeline: source write activity, enumerator state, true lag, and row-count consistency.",
+  "tags": [
+    "kudu",
+    "flink",
+    "replication"
+  ],
+  "schemaVersion": 38,
+  "version": 14,
+  "refresh": "5s",
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "graphTooltip": 1,
+  "editable": true,
+  "annotations": {
+    "list": []
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "table",
+        "label": "Table",
+        "type": "constant",
+        "query": "demo_table",
+        "current": {
+          "value": "demo_table",
+          "text": "demo_table"
+        },
+        "hide": 0,
+        "description": "Replicated table name (matches DEMO_TABLE in .env)"
+      }
+    ]
+  },
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Job Uptime",
+      "description": "Time since the Flink replication job last started. Turns green once stable.",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 30000
+              },
+              {
+                "color": "green",
+                "value": 60000
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "flink_jobmanager_job_uptime",
+          "legendFormat": "uptime"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Full Restarts",
+      "description": "Number of full job restarts since submission. Green = 0, red >= 3.",
+      "gridPos": {
+        "x": 6,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 3
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "flink_jobmanager_job_fullRestarts",
+          "legendFormat": "restarts"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Last Checkpoint Duration",
+      "description": "Duration of the most recently completed Flink checkpoint.",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 500
+              },
+              {
+                "color": "red",
+                "value": 2000
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "flink_jobmanager_job_lastCheckpointDuration",
+          "legendFormat": "duration"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Replication Lag",
+      "description": "Minutes elapsed since the enumerator last completed a diff scan. Should stay near discoveryIntervalSeconds/60 (~=0.17 min for 10 s). Very large on first startup until the initial scan finishes - this is expected.",
+      "gridPos": {
+        "x": 18,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "m",
+          "decimals": 2,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.5
+              },
+              {
+                "color": "red",
+                "value": 2
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "(time() - (flink_jobmanager_job_operator_coordinator_enumerator_lastEndTimestamp / 1000)) / 60",
+          "legendFormat": "lag"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Live Row Count - Source vs Sink",
+      "description": "Approximate live rows on each cluster for the replicated table. The sink line should track the source within one discovery interval. Row-count equality is a necessary but not sufficient consistency check (upserts don't change counts).",
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 24,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "source"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#5794F2",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "sink"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#73BF69",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "expr": "sum(\n  kudu_tablet_live_row_count\n  * on(tablet_id) group_left(table_name)\n  (max by (tablet_id, table_name) (kudu_tablet_info{table_name=\"$table\"}))\n) by (cluster)",
+          "legendFormat": "{{cluster}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Source - Write Activity (rows / min by operation)",
+      "description": "Rate of each write operation type on the source table. Use to verify the writer is running and to spot unexpected operation mixes.",
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(kudu_tablet_rows_inserted{cluster=\"source\"}[1m]) * on(tablet_id) group_left(table_name) (max by (tablet_id, table_name, table_id) (kudu_tablet_info{table_name=\"$table\"}))) * 60",
+          "legendFormat": "inserted"
+        },
+        {
+          "expr": "sum(rate(kudu_tablet_rows_upserted{cluster=\"source\"}[1m]) * on(tablet_id) group_left(table_name) (max by (tablet_id, table_name, table_id) (kudu_tablet_info{table_name=\"$table\"}))) * 60",
+          "legendFormat": "upserted"
+        },
+        {
+          "expr": "sum(rate(kudu_tablet_rows_updated{cluster=\"source\"}[1m]) * on(tablet_id) group_left(table_name) (max by (tablet_id, table_name, table_id) (kudu_tablet_info{table_name=\"$table\"}))) * 60",
+          "legendFormat": "updated"
+        },
+        {
+          "expr": "sum(rate(kudu_tablet_rows_deleted{cluster=\"source\"}[1m]) * on(tablet_id) group_left(table_name) (max by (tablet_id, table_name, table_id) (kudu_tablet_info{table_name=\"$table\"}))) * 60",
+          "legendFormat": "deleted"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Sink - Write Activity (rows / min by operation)",
+      "description": "Rate of each write operation type landing on the sink table. Healthy replication produces only upserts. Any inserts or deletes are unexpected and worth investigating.",
+      "gridPos": {
+        "x": 12,
+        "y": 12,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(kudu_tablet_rows_inserted{cluster=\"sink\"}[1m]) * on(tablet_id) group_left(table_name) (max by (tablet_id, table_name, table_id) (kudu_tablet_info{table_name=\"$table\"}))) * 60",
+          "legendFormat": "inserted"
+        },
+        {
+          "expr": "sum(rate(kudu_tablet_rows_upserted{cluster=\"sink\"}[1m]) * on(tablet_id) group_left(table_name) (max by (tablet_id, table_name, table_id) (kudu_tablet_info{table_name=\"$table\"}))) * 60",
+          "legendFormat": "upserted"
+        },
+        {
+          "expr": "sum(rate(kudu_tablet_rows_updated{cluster=\"sink\"}[1m]) * on(tablet_id) group_left(table_name) (max by (tablet_id, table_name, table_id) (kudu_tablet_info{table_name=\"$table\"}))) * 60",
+          "legendFormat": "updated"
+        },
+        {
+          "expr": "sum(rate(kudu_tablet_rows_deleted{cluster=\"sink\"}[1m]) * on(tablet_id) group_left(table_name) (max by (tablet_id, table_name, table_id) (kudu_tablet_info{table_name=\"$table\"}))) * 60",
+          "legendFormat": "deleted"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Scan Cadence - replication lag over time",
+      "description": "Time elapsed since the KuduSource enumerator last completed a diff scan. Forms a sawtooth wave rising from 0 to ~DISCOVERY_INTERVAL, then resetting. A frozen or climbing line indicates the enumerator has stalled. Uses timestamp() instead of time() to keep the result a labelled vector.",
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "single"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "m",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "expr": "(timestamp(flink_jobmanager_job_operator_coordinator_enumerator_lastEndTimestamp) - (flink_jobmanager_job_operator_coordinator_enumerator_lastEndTimestamp / 1000)) / 60",
+          "legendFormat": "lag (min)"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Enumerator Split State",
+      "description": "Number of splits in each state during a discovery cycle. Transitions are sub-millisecond with a healthy pipeline so values are usually 0; a sustained non-zero unassigned or pending count indicates a stalled or slow reader. More visible with 16 tablets than with 4.",
+      "gridPos": {
+        "x": 12,
+        "y": 20,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "label_replace(flink_jobmanager_job_operator_coordinator_enumerator_pendingCount, \"split_state\", \"pending\", \"\", \"\")",
+          "legendFormat": "{{split_state}}"
+        },
+        {
+          "expr": "label_replace(flink_jobmanager_job_operator_coordinator_enumerator_pendingRemovalCount, \"split_state\", \"pendingRemoval\", \"\", \"\")",
+          "legendFormat": "{{split_state}}"
+        },
+        {
+          "expr": "label_replace(flink_jobmanager_job_operator_coordinator_enumerator_unassignedCount, \"split_state\", \"unassigned\", \"\", \"\")",
+          "legendFormat": "{{split_state}}"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Flink Operator Throughput - records / sec",
+      "description": "KuduSource out: records emitted per second from diff scans. KuduSink in: records written per second to the sink cluster. The two lines should track each other closely.",
+      "gridPos": {
+        "x": 0,
+        "y": 28,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "rps",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "KuduSource out"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#5794F2",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "KuduSink in"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#73BF69",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "expr": "sum(flink_taskmanager_job_task_operator_numRecordsOutPerSecond{operator_name=\"Source:_KuduSource\"})",
+          "legendFormat": "KuduSource out"
+        },
+        {
+          "expr": "sum(flink_taskmanager_job_task_operator_numRecordsInPerSecond{operator_name=\"Sink:_Writer\"})",
+          "legendFormat": "KuduSink in"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Checkpoint Duration History",
+      "description": "Duration of each Flink checkpoint over time. Consistently low values (< 500 ms) indicate a healthy pipeline.",
+      "gridPos": {
+        "x": 12,
+        "y": 28,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#FF9830"
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "flink_jobmanager_job_lastCheckpointDuration",
+          "legendFormat": "checkpoint duration"
+        }
+      ]
+    }
+  ]
+}

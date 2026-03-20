@@ -1,0 +1,340 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# Kudu Replication Demo Environment
+#
+# Two lean Kudu clusters (source + sink), a Flink cluster running the
+# kudu-replication job, and a Python writer service.
+#
+# All services share the 'kudu-demo' bridge network.  Kudu masters and
+# tservers advertise themselves by Docker service name so no KUDU_QUICKSTART_IP
+# is required.
+#
+# Usage:
+#   docker compose up -d                  # start infrastructure (no ingest)
+#   docker compose --profile ingest up -d # also start the kudu-ingest container
+#
+# See the Makefile for convenience targets.
+
+networks:
+  kudu-demo:
+    name: kudu-demo
+
+volumes:
+  src-kudu-master-1:
+  src-kudu-tserver-1:
+  src-kudu-tserver-2:
+  snk-kudu-master-1:
+  snk-kudu-tserver-1:
+  snk-kudu-tserver-2:
+  flink-checkpoints:
+
+# Re-usable fragments
+
+x-kudu-defaults: &kudu-defaults
+  image: apache/kudu:${KUDU_VERSION:-1.18.1-ubuntu}
+  restart: unless-stopped
+  networks:
+    - kudu-demo
+
+x-flink-defaults: &flink-defaults
+  image: flink:${FLINK_VERSION:-1.19.2-java17}
+  restart: unless-stopped
+  networks:
+    - kudu-demo
+  user: root
+  volumes:
+    - flink-checkpoints:/checkpoints
+
+services:
+
+  # Source Kudu cluster  (src-*)
+  #   Master  : localhost:7051  (RPC) / localhost:8051 (UI)
+  #   TServer1: localhost:7050  (RPC) / localhost:8050 (UI)
+  #   TServer2: localhost:7150  (RPC) / localhost:8150 (UI)
+
+  src-kudu-master-1:
+    <<: *kudu-defaults
+    command: ["master"]
+    ports:
+      - "7051:7051"
+      - "8051:8051"
+    volumes:
+      - src-kudu-master-1:/var/lib/kudu
+    environment:
+      - KUDU_MASTERS=src-kudu-master-1:7051
+      - >
+        MASTER_ARGS=--rpc_bind_addresses=0.0.0.0:7051
+        --rpc_advertised_addresses=src-kudu-master-1:7051
+        --webserver_port=8051
+        --webserver_advertised_addresses=src-kudu-master-1:8051
+        --unlock_unsafe_flags=true
+        --default_num_replicas=1
+        --use_hybrid_clock=true
+        --time_source=builtin
+    healthcheck:
+      test: ["CMD-SHELL", "kudu master status src-kudu-master-1:7051 > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 30s
+
+  src-kudu-tserver-1:
+    <<: *kudu-defaults
+    command: ["tserver"]
+    ports:
+      - "7050:7050"
+      - "8050:8050"
+    volumes:
+      - src-kudu-tserver-1:/var/lib/kudu
+    environment:
+      - KUDU_MASTERS=src-kudu-master-1:7051
+      - >
+        TSERVER_ARGS=--rpc_bind_addresses=0.0.0.0:7050
+        --rpc_advertised_addresses=src-kudu-tserver-1:7050
+        --webserver_port=8050
+        --webserver_advertised_addresses=src-kudu-tserver-1:8050
+        --unlock_unsafe_flags=true
+        --use_hybrid_clock=true
+        --time_source=builtin
+    depends_on:
+      src-kudu-master-1:
+        condition: service_healthy
+
+  src-kudu-tserver-2:
+    <<: *kudu-defaults
+    command: ["tserver"]
+    ports:
+      - "7150:7050"
+      - "8150:8050"
+    volumes:
+      - src-kudu-tserver-2:/var/lib/kudu
+    environment:
+      - KUDU_MASTERS=src-kudu-master-1:7051
+      - >
+        TSERVER_ARGS=--rpc_bind_addresses=0.0.0.0:7050
+        --rpc_advertised_addresses=src-kudu-tserver-2:7050
+        --webserver_port=8050
+        --webserver_advertised_addresses=src-kudu-tserver-2:8050
+        --unlock_unsafe_flags=true
+        --use_hybrid_clock=true
+        --time_source=builtin
+    depends_on:
+      src-kudu-master-1:
+        condition: service_healthy
+
+  # Sink Kudu cluster  (snk-*)
+  #   Master  : localhost:17051 (RPC) / localhost:18051 (UI)
+  #   TServer1: localhost:17050 (RPC) / localhost:18050 (UI)
+  #   TServer2: localhost:17150 (RPC) / localhost:18150 (UI)
+
+  snk-kudu-master-1:
+    <<: *kudu-defaults
+    command: ["master"]
+    ports:
+      - "17051:7051"
+      - "18051:8051"
+    volumes:
+      - snk-kudu-master-1:/var/lib/kudu
+    environment:
+      - KUDU_MASTERS=snk-kudu-master-1:7051
+      - >
+        MASTER_ARGS=--rpc_bind_addresses=0.0.0.0:7051
+        --rpc_advertised_addresses=snk-kudu-master-1:7051
+        --webserver_port=8051
+        --webserver_advertised_addresses=snk-kudu-master-1:8051
+        --unlock_unsafe_flags=true
+        --default_num_replicas=1
+        --use_hybrid_clock=true
+        --time_source=builtin
+    healthcheck:
+      test: ["CMD-SHELL", "kudu master status snk-kudu-master-1:7051 > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 30s
+
+  snk-kudu-tserver-1:
+    <<: *kudu-defaults
+    command: ["tserver"]
+    ports:
+      - "17050:7050"
+      - "18050:8050"
+    volumes:
+      - snk-kudu-tserver-1:/var/lib/kudu
+    environment:
+      - KUDU_MASTERS=snk-kudu-master-1:7051
+      - >
+        TSERVER_ARGS=--rpc_bind_addresses=0.0.0.0:7050
+        --rpc_advertised_addresses=snk-kudu-tserver-1:7050
+        --webserver_port=8050
+        --webserver_advertised_addresses=snk-kudu-tserver-1:8050
+        --unlock_unsafe_flags=true
+        --use_hybrid_clock=true
+        --time_source=builtin
+    depends_on:
+      snk-kudu-master-1:
+        condition: service_healthy
+
+  snk-kudu-tserver-2:
+    <<: *kudu-defaults
+    command: ["tserver"]
+    ports:
+      - "17150:7050"
+      - "18150:8050"
+    volumes:
+      - snk-kudu-tserver-2:/var/lib/kudu
+    environment:
+      - KUDU_MASTERS=snk-kudu-master-1:7051
+      - >
+        TSERVER_ARGS=--rpc_bind_addresses=0.0.0.0:7050
+        --rpc_advertised_addresses=snk-kudu-tserver-2:7050
+        --webserver_port=8050
+        --webserver_advertised_addresses=snk-kudu-tserver-2:8050
+        --unlock_unsafe_flags=true
+        --use_hybrid_clock=true
+        --time_source=builtin
+    depends_on:
+      snk-kudu-master-1:
+        condition: service_healthy
+
+  # Flink cluster
+  #   JobManager REST/UI : localhost:8081
+
+  flink-jobmanager:
+    <<: *flink-defaults
+    # chmod runs as root (user: root in flink-defaults) before the entrypoint
+    # drops privileges to the 'flink' user via su-exec, giving Flink write
+    # access to the named volume mounted at /checkpoints.
+    entrypoint: ["/bin/bash", "-c"]
+    command: ["chmod 777 /checkpoints && exec /docker-entrypoint.sh jobmanager"]
+    ports:
+      - "8081:8081"
+      - "9250:9250"   # Prometheus metrics (jobmanager / coordinator)
+    environment:
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+        rest.port: 8081
+        parallelism.default: 2
+        metrics.reporters: prom
+        metrics.reporter.prom.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory
+        metrics.reporter.prom.port: 9250
+    volumes:
+      - ./flink/jars:/opt/flink/usrlib:ro
+      - flink-checkpoints:/checkpoints
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8081' 2>/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+
+  flink-taskmanager:
+    <<: *flink-defaults
+    entrypoint: ["/bin/bash", "-c"]
+    command: ["chmod 777 /checkpoints && exec /docker-entrypoint.sh taskmanager"]
+    ports:
+      - "9251:9251"   # Prometheus metrics (taskmanager / operator)
+    environment:
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: 2
+        metrics.reporters: prom
+        metrics.reporter.prom.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory
+        metrics.reporter.prom.port: 9251
+    volumes:
+      - ./flink/jars:/opt/flink/usrlib:ro
+      - flink-checkpoints:/checkpoints
+    depends_on:
+      flink-jobmanager:
+        condition: service_healthy
+
+  # Ingest simulator (profile: ingest)
+  #
+  # Runs ingest/ingest.py inside apache/kudu:${KUDU_PYTHON_VERSION} (set in .env).
+  # Applies a configurable mix of INSERT / UPDATE / DELETE operations so all
+  # operation types are visible on the Grafana dashboard.
+  #
+  # Start:  make start-ingest
+  # Stop:   make stop-ingest   (pauses; data is preserved)
+  # Resume: make start-ingest
+
+  kudu-ingest:
+    image: apache/kudu:${KUDU_PYTHON_VERSION:-kudu-python-1.18.1-ubuntu}
+    profiles: [ingest]
+    restart: unless-stopped
+    networks:
+      - kudu-demo
+    entrypoint: ["python"]
+    command:
+      - "/ingest/ingest.py"
+      - "--master"
+      - "src-kudu-master-1:7051"
+    volumes:
+      - ./ingest/ingest.py:/ingest/ingest.py:ro
+    environment:
+      - KUDU_TABLE=${DEMO_TABLE:-demo_table}
+      - INGEST_INTERVAL=${INGEST_INTERVAL:-1.0}
+      - INSERT_RATE=${INSERT_RATE:-0.4}
+      - UPDATE_RATE=${UPDATE_RATE:-0.2}
+      - DELETE_RATE=${DELETE_RATE:-0.15}
+      - UPSERT_RATE=${UPSERT_RATE:-0.25}
+    depends_on:
+      src-kudu-master-1:
+        condition: service_healthy
+
+  # Observability — always started with 'make up'
+
+  json-exporter:
+    image: quay.io/prometheuscommunity/json-exporter:${JSON_EXPORTER_VERSION:-v0.7.0}
+    ports:
+      - "7979:7979"
+    volumes:
+      - ./monitoring/kudu_tablet_info.yml:/config.yml:ro
+    command: ["--config.file=/config.yml"]
+    networks:
+      - kudu-demo
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:${PROMETHEUS_VERSION:-v3.10.0}
+    ports:
+      - "9090:9090"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--web.enable-lifecycle"   # allows curl -X POST /-/reload
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    networks:
+      - kudu-demo
+    restart: unless-stopped
+    depends_on:
+      - json-exporter
+
+  grafana:
+    image: grafana/grafana:${GRAFANA_VERSION:-12.4.2}
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - ./monitoring/grafana:/etc/grafana/provisioning:ro
+    networks:
+      - kudu-demo
+    restart: unless-stopped
+    depends_on:
+      - prometheus

@@ -222,6 +222,9 @@ Example doc: https://s.apache.org/kudu1.16rn
   `examples/java/insert-loadgen/pom.xml`, etc.).
   The idea is making all examples use the artifacts of the newly released
   `1.x.y` version of Kudu. Commit and send out the changes for review on Gerrit.
++
+NOTE: Don't forget to also update `KUDU_VERSION` and `KUDU_PYTHON_VERSION` in
+`examples/flink-replication/.env`.
 
 . When ready, create a new lightweight tag and push it to the Apache Git repository.
 +
@@ -459,7 +462,8 @@ link:https://issues.apache.org/jira/browse/INFRA-23166[INFRA-23166].
   information under the `examples` sub-directory to make all examples using the
   fresh artifacts of latest released version.  This should be done only after
   publishing the officially released artifacts, so they are available while
-  building the examples.
+  building the examples. Don't forget to also update `KUDU_VERSION` and
+  `KUDU_PYTHON_VERSION` in `examples/flink-replication/.env`.
 
 . In the `master` branch of the project git repo, add the previous release notes to the
   `prior_release_notes.adoc` and send out the change for review on Gerrit.
