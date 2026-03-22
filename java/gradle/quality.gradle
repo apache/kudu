@@ -130,8 +130,20 @@ if (project.name != "kudu-proto" && project.name != "kudu-jepsen" &&
       html.enabled true
     }
   }
-  jacocoTestReport {
-    dependsOn test // tests are required to run before generating the report
+  // In coverage builds (-PgenerateCoverage), wire jacocoTestReport as a
+  // finalizer of the test task so it always runs even if tests fail, ensuring
+  // coverage data from .exec files is never silently discarded on a partial
+  // test failure. Because jacocoTestReport has no dependsOn test, there is no
+  // hard dependency chain jacocoAggregatedReport -> jacocoTestReport -> test, so
+  // a failed test task does not cause Gradle to skip jacocoAggregatedReport.
+  // When the coverage aggregation step runs as a separate Gradle invocation,
+  // jacocoTestReport is UP-TO-DATE (already ran as a finalizer) and is skipped,
+  // so tests are never re-executed.
+  // See: https://docs.gradle.org/current/userguide/jacoco_plugin.html#sec:jacoco_getting_started
+  if (project.hasProperty("generateCoverage")) {
+    test {
+      finalizedBy jacocoTestReport
+    }
   }
 }
 

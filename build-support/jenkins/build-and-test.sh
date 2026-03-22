@@ -408,6 +408,11 @@ EXTRA_GRADLE_FLAGS="$EXTRA_GRADLE_FLAGS --build-cache"
 # KUDU-2524: temporarily disable scalafmt until we can work out its JDK
 # incompatibility issue.
 EXTRA_GRADLE_FLAGS="$EXTRA_GRADLE_FLAGS -DskipFormat"
+# In coverage builds, pass -PgenerateCoverage so that quality.gradle wires
+# jacocoTestReport as a finalizer of the test task (runs even on test failure).
+if [ "$DO_COVERAGE" == "1" ]; then
+  EXTRA_GRADLE_FLAGS="$EXTRA_GRADLE_FLAGS -PgenerateCoverage"
+fi
 EXTRA_GRADLE_FLAGS="$EXTRA_GRADLE_FLAGS $GRADLE_FLAGS"
 
 # Assemble the cmake command line, starting with environment variables.
@@ -658,14 +663,22 @@ if [ "$BUILD_JAVA" == "1" ]; then
     fi
   else
     if [ "$DO_COVERAGE" == "1" ]; then
-      # Clean previous report results
-      rm -rf ./build
-
-      # jacocoAggregatedReport will trigger test execution if necessary.
-      if ! ./gradlew $EXTRA_GRADLE_FLAGS clean jacocoAggregatedReport; then
+      # Step 1: run all tests.
+      # quality.gradle wires "test.finalizedBy jacocoTestReport" in coverage mode, so
+      # per-subproject .exec files and HTML/XML reports are written even when some tests
+      # fail. --continue (already in EXTRA_GRADLE_FLAGS) ensures every subproject runs.
+      if ! ./gradlew $EXTRA_GRADLE_FLAGS clean test; then
         TESTS_FAILED=1
+        FAILURES="$FAILURES"$'Java Gradle tests failed\n'
+      fi
+
+      # Step 2: aggregate coverage across all subprojects.
+      # jacocoTestReport tasks are UP-TO-DATE (already ran as finalizers in step 1) so
+      # tests are not re-executed. jacocoAggregatedReport simply merges the existing
+      # per-subproject reports.
+      if ! ./gradlew $EXTRA_GRADLE_FLAGS jacocoAggregatedReport; then
         EXIT_STATUS=1
-        FAILURES="$FAILURES"$'Java Gradle test/coverage aggregation failed\n'
+        FAILURES="$FAILURES"$'Java Jacoco aggregated report failed\n'
       fi
 
       if ! $SOURCE_ROOT/build-support/process_jacoco_report.sh; then
