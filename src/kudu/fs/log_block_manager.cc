@@ -128,6 +128,12 @@ DEFINE_uint64(log_container_rdb_delete_batch_count, 256,
               "effective when --block_manager='logr'");
 TAG_FLAG(log_container_rdb_delete_batch_count, experimental);
 TAG_FLAG(log_container_rdb_delete_batch_count, advanced);
+
+DEFINE_uint32(log_container_rdb_delete_fail_after_n_batches_for_tests, 0,
+             "For testing purpose only. 0 disables error injection. If the value is non-zero, "
+             "LogBlockContainerRdbMeta::RemoveBlockIdsFromMetadata() injects a write failure "
+             "before the (n+1)th batch write, after n batches have been committed.");
+TAG_FLAG(log_container_rdb_delete_fail_after_n_batches_for_tests, hidden);
 #endif
 
 DEFINE_double(log_container_excess_space_before_cleanup_fraction, 0.10,
@@ -2115,11 +2121,20 @@ Status LogBlockContainerRdbMeta::RemoveBlockIdsFromMetadata(
   // Note: We don't check for sufficient disk space for metadata writes in
   // order to allow for block deletion on full disks.
   DCHECK(deleted_block_ids);
+  deleted_block_ids->reserve(lbs.size());
+
+  size_t committed_count = 0;
+  SCOPED_CLEANUP({
+    // Keep only those block IDs that were successfully deleted.
+    deleted_block_ids->resize(committed_count);
+  });
+
   // Perform batch delete has a better performance than single deletes.
   rocksdb::WriteBatch batch;
   // The 'keys' is used to keep the lifetime of the data referenced by Slices in 'batch'.
   vector<string> keys;
   keys.reserve(lbs.size());
+  uint32_t write_count = 0;
   for (const auto& lb : lbs) {
     deleted_block_ids->emplace_back(lb->block_id());
 
@@ -2131,14 +2146,28 @@ Status LogBlockContainerRdbMeta::RemoveBlockIdsFromMetadata(
 
     // Tune --log_container_rdb_delete_batch_count to achieve better performance.
     if (batch.Count() >= FLAGS_log_container_rdb_delete_batch_count) {
+      if (PREDICT_FALSE(FLAGS_log_container_rdb_delete_fail_after_n_batches_for_tests > 0 &&
+          write_count >= FLAGS_log_container_rdb_delete_fail_after_n_batches_for_tests)) {
+        RETURN_NOT_OK_HANDLE_ERROR(Status::IOError("Injected failure for testing"));
+      }
+      int batch_count = batch.Count();
       RETURN_NOT_OK_HANDLE_ERROR(FromRdbStatus(rdb_->Write({}, &batch)));
+      committed_count += batch_count;
+      write_count++;
       batch.Clear();
       keys.clear();
     }
   }
 
   if (batch.Count() > 0) {
+    if (PREDICT_FALSE(FLAGS_log_container_rdb_delete_fail_after_n_batches_for_tests > 0 &&
+        write_count >= FLAGS_log_container_rdb_delete_fail_after_n_batches_for_tests)) {
+      RETURN_NOT_OK_HANDLE_ERROR(Status::IOError("Injected failure for testing"));
+    }
+    int batch_count = batch.Count();
     RETURN_NOT_OK_HANDLE_ERROR(FromRdbStatus(rdb_->Write({}, &batch)));
+    committed_count += batch_count;
+    write_count++;
   }
 
   return Status::OK();

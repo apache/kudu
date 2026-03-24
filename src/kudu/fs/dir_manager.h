@@ -363,6 +363,7 @@ class DirManager {
  protected:
 #if !defined(NO_ROCKSDB)
   FRIEND_TEST(LogBlockManagerRdbMetaTest, TestHalfPresentContainer);
+  FRIEND_TEST(LogBlockManagerRdbMetaTest, TestRemoveBlockIdsFromMetadataPartialFailure);
 #endif
 
   // The name to be used by this directory manager for each sub-directory of
