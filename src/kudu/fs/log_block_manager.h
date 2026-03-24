@@ -634,6 +634,7 @@ class LogBlockManagerRdbMeta : public LogBlockManager {
   friend class internal::LogBlockContainerRdbMeta;
   friend class RdbMetadataLBMCorruptor;
   FRIEND_TEST(LogBlockManagerRdbMetaTest, TestHalfPresentContainer);
+  FRIEND_TEST(LogBlockManagerRdbMetaTest, TestRemoveBlockIdsFromMetadataPartialFailure);
 
   size_t EstimateContainerCount(size_t children_count) const override {
     // TODO(yingchun): exclude the kRocksDBDirName directory when get the children count.

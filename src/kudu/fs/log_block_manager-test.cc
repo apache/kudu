@@ -118,6 +118,10 @@ DEFINE_double(startup_benchmark_deleted_block_percentage, 90.0,
 DEFINE_validator(startup_benchmark_deleted_block_percentage,
                  [](const char* /*n*/, double v) { return 0 <= v && v <= 100; });
 DECLARE_bool(encrypt_data_at_rest);
+#if !defined(NO_ROCKSDB)
+DECLARE_uint64(log_container_rdb_delete_batch_count);
+DECLARE_uint32(log_container_rdb_delete_fail_after_n_batches_for_tests);
+#endif
 
 // Block manager metrics.
 METRIC_DECLARE_counter(block_manager_total_blocks_deleted);
@@ -2868,6 +2872,91 @@ TEST_P(LogBlockManagerRdbMetaTest, TestHalfPresentContainer) {
 
     ASSERT_TRUE(env_->FileExists(data_file_name));
     ASSERT_EQ(1, MetadataEntriesCount(container_name));
+  }
+}
+
+// Tests that RemoveBlockIdsFromMetadata() correctly trims 'deleted_block_ids'
+// to only those blocks whose deletions were actually committed to RocksDB,
+// even when a write failure occurs partway through the batch loop.
+//
+// This is a regression test for a bug where 'deleted_block_ids' was populated
+// quite early before each write, causing it to include IDs from failed batch
+// writes. The caller uses deleted_block_ids.size() as the index of the first
+// failure, that can lead to incorrect number of deleted blocks and space leak.
+//
+// Test layout (batch_count=5, 10 total blocks, inject error for 2nd batch):
+//
+//   blocks [0..4]  — 1st batch, committed successfully via mid-loop flush
+//   blocks [5..9]  — 2nd batch, error injection triggers before its write
+TEST_P(LogBlockManagerRdbMetaTest, TestRemoveBlockIdsFromMetadataPartialFailure) {
+  ASSERT_OK(ReopenBlockManager());
+
+  // Two equal batches of 5. The first commits; the injection fires before
+  // the second, so its 5 blocks remain in RocksDB.
+  constexpr int kBatchSize = 5;
+  constexpr int kCommittedBlocks = kBatchSize;    // first batch:  blocks [0..4]
+  constexpr int kUncommittedBlocks = kBatchSize;  // second batch: blocks [5..9]
+  constexpr int kTotalBlocks = kCommittedBlocks + kUncommittedBlocks;  // 10
+
+  vector<BlockId> block_ids;
+  block_ids.reserve(kTotalBlocks);
+  for (int i = 0; i < kTotalBlocks; i++) {
+    unique_ptr<WritableBlock> writer;
+    ASSERT_OK(bm_->CreateBlock(test_block_opts_, &writer));
+    block_ids.push_back(writer->id());
+    ASSERT_OK(writer->Finalize());
+    ASSERT_OK(writer->Close());
+  }
+
+  // Capture container name and dir for RocksDB verification below.
+  // GetOnlyContainerDataFile() asserts there is exactly one data file,
+  // which also confirms all 10 blocks ended up in the same container.
+  string data_file_name;
+  NO_FATALS(GetOnlyContainerDataFile(&data_file_name));
+  Dir* pdir = dd_manager_->FindDirByFullPathForTests(data_file_name);
+  ASSERT_NE(nullptr, pdir);
+  vector<string> name_parts = Split(BaseName(data_file_name), ".", SkipEmpty());
+  ASSERT_FALSE(name_parts.empty());
+  string container_name = name_parts[0];
+
+  // Blocks [0..4] correspond to first batch that is committed on-disk.
+  // Blocks [5..9] correspond to second batch for which failure is triggered
+  // while committing to disk.
+  google::FlagSaver flag_saver;
+  FLAGS_log_container_rdb_delete_batch_count = kBatchSize;
+  FLAGS_log_container_rdb_delete_fail_after_n_batches_for_tests = 1;
+
+  vector<BlockId> deleted;
+  shared_ptr<BlockDeletionTransaction> txn = bm_->NewDeletionTransaction();
+  for (const auto& id : block_ids) {
+    txn->AddDeletedBlock(id);
+  }
+  Status s = txn->CommitDeletedBlocks(&deleted);
+  ASSERT_FALSE(s.ok()) << "Expected a failure from the injected error";
+
+  // With the fix, 'deleted' contains exactly kCommittedBlocks (5) entries.
+  // Before the fix, the early population would cause 'deleted' to include all 10
+  // block IDs (blocks [5..9] pushed before the injection check), masking the
+  // uncommitted deletions as false positive.
+  ASSERT_EQ(kCommittedBlocks, deleted.size());
+  for (int i = 0; i < kCommittedBlocks; i++) {
+    ASSERT_EQ(block_ids[i], deleted[i]);
+  }
+
+  // Confirm the RocksDB state directly.
+  auto* rdb = down_cast<RdbDir*>(pdir)->rdb();
+  const auto HasRdbEntry = [&](const BlockId& id) -> bool {
+    string key = LogBlockManagerRdbMeta::ConstructRocksDBKey(container_name, id);
+    string value;
+    return rdb->Get(rocksdb::ReadOptions(), rocksdb::Slice(key), &value).ok();
+  };
+  // Blocks [0..4]: deletion committed — must be absent from RDB.
+  for (int i = 0; i < kCommittedBlocks; i++) {
+    EXPECT_FALSE(HasRdbEntry(block_ids[i])) << "block " << i << " should be deleted";
+  }
+  // Blocks [5..9]: deletion not committed — must still be present in RDB.
+  for (int i = kCommittedBlocks; i < kTotalBlocks; i++) {
+    EXPECT_TRUE(HasRdbEntry(block_ids[i])) << "block " << i << " should NOT be deleted";
   }
 }
 #endif
