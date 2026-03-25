@@ -1,0 +1,1112 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+[[flink_replication]]
+= Apache Kudu Flink-Based Replication
+
+:author: Kudu Team
+:imagesdir: ./images
+:icons: font
+:toc: left
+:toclevels: 3
+:doctype: book
+:backend: html5
+:sectlinks:
+:experimental:
+
+This document describes how to use the Apache Flink-based replication job to continuously
+replicate data from one Apache Kudu cluster to another.
+
+== Overview
+
+The Kudu replication job is an Apache Flink streaming application that continuously copies data
+from a *source* Kudu table to a *sink* Kudu table. It uses Kudu's diff scan capability to
+efficiently detect and replicate only the rows that changed between two points in time, rather
+than scanning the full table on every cycle.
+
+The replication mechanism works as follows:
+
+. On first startup, the job performs a full snapshot scan of the source table and records the
+  snapshot timestamp `t0`.
+. On each subsequent discovery cycle, it performs a diff scan over the interval
+  `[t_previous, t_now]`, which returns all inserted, updated, and deleted rows in that window.
+. Deleted rows are identified via Kudu's `IS_DELETED` virtual column and replicated as delete
+  operations on the sink.
+. All writes to the sink use upsert-ignore semantics, making replication idempotent and
+  compatible with at-least-once Flink checkpointing.
+
+Flink checkpoints are taken regularly to enable fault-tolerant recovery. On restart from a
+checkpoint, any splits that were in-flight at the time of the checkpoint are re-processed.
+Because sink writes are idempotent, re-processing is safe.
+
+[NOTE]
+====
+Known limitations of the current implementation:
+
+* Schema changes are not applied automatically and require the <<schema-change-handling>>
+  procedure to be followed strictly. Before applying any DDL, the replication pipeline must
+  be fully drained (no records in flight between source and sink) and all writes to the
+  source table must be stopped. The equivalent change must then be applied to both clusters
+  before restarting the job.
+* The `ARRAY` column type is not currently supported. Tables with array columns cannot be
+  replicated.
+* Renaming a replicated table requires following a specific procedure.
+  See <<procedure-for-renaming-a-table>>.
+====
+
+.Replication job flow: full snapshot on first startup, followed by incremental diff scan cycles
+image::kudu-flink-replication-flow.png[Replication job flow diagram,align="center"]
+
+== Prerequisites
+
+* A running Apache Flink cluster (session or per-job mode).
+* A source Kudu cluster with the table to replicate.
+* A sink Kudu cluster with the destination table already created, or `job.createTable=true`
+  to have the job create it automatically.
+* A shared filesystem (e.g. HDFS, S3) accessible by all Flink TaskManagers for storing
+  Flink checkpoints.
+* The replication job JAR (`kudu-replication-<version>.jar`). This is a shaded JAR with all
+  Kudu dependencies bundled. Flink APIs are not included — they are expected to be provided
+  by the Flink cluster at runtime.
+
+=== Source cluster configuration
+
+Kudu retains MVCC history for diff scans for a configurable duration controlled by the
+`--tablet_history_max_age_sec`
+footnote:[link:https://kudu.apache.org/docs/configuration_reference.html#kudu-tserver_tablet_history_max_age_sec[tablet_history_max_age_sec configuration reference]]
+tablet server flag (default: 7 days). If the replication job is stopped for longer than this
+retention period, the next diff scan may fail because the required history has been garbage
+collected. Ensure this value is set to at least as long as the maximum expected downtime of
+the replication job.
+
+NOTE: The MasterServer also accepts this flag but overrides its default to 5 minutes, since
+the MasterServer only ever reads the latest snapshot from the system catalog and does not need
+a long history. The TServer default of 7 days is what governs user table data.
+
+The flag can also be overridden per-table via the `history_max_age_sec`
+footnote:[link:https://kudu.apache.org/docs/configuration.html#_configure_kudu_tables[Configure Kudu tables]]
+extra config.
+
+[[security]]
+== Security
+
+=== Kerberos authentication
+
+The Kudu Java client negotiates Kerberos authentication automatically using the ambient
+Kerberos ticket cache (via GSSAPI/JAAS). There are no explicit keytab or principal flags in
+the replication job's own configuration — authentication is handled entirely at the environment
+level.
+
+On YARN, the standard approach is:
+
+. Ensure a valid Kerberos ticket exists for the submitting user on the node where `flink run`
+  is executed (`kinit -kt /path/to/user.keytab user@REALM`).
+. YARN propagates Hadoop delegation tokens into the JobManager and TaskManager containers
+  automatically. The Kudu client inside each container picks up the ticket from the token cache.
+
+If you need to provide credentials explicitly (e.g. for long-running jobs where ticket renewal
+cannot be guaranteed by the environment), use Flink's built-in keytab support via `-D` flags
+at submission time:
+
+[source,bash]
+----
+flink run-application -t yarn-application \
+  -Dsecurity.kerberos.login.keytab=/path/to/user.keytab \
+  -Dsecurity.kerberos.login.principal=user@REALM \
+  -Dclassloader.parent-first-patterns.additional=org.apache.kudu \
+  -c org.apache.kudu.replication.ReplicationJob \
+  kudu-replication-<version>.jar \
+  ...
+----
+
+Flink will automatically renew the keytab-based TGT at regular intervals
+(`security.kerberos.relogin.period`, default: 1 minute) and ship the keytab to YARN nodes
+(`yarn.security.kerberos.ship-local-keytab`, default: `true`).
+
+=== Authorization (Ranger)
+
+If the Kudu cluster has Apache Ranger integration enabled, the user submitting the replication
+job must have the following Ranger privileges:
+
+[cols="1,1", options="header"]
+|===
+| Resource | Required privilege
+| Source table | select, metadata
+| Sink database | create (only if `job.createTable=true`)
+| Sink table | all
+|===
+
+[[protecting-the-sink-cluster-from-accidental-writes]]
+=== Protecting the sink cluster from accidental writes
+
+When using the sink cluster as a disaster recovery (DR) target, it is strongly recommended to
+restrict write access on the sink cluster so that only the replication job's service user can
+write to replicated tables. This prevents accidental data manipulation on the DR side that
+would cause divergence between source and sink and invalidate the replication state.
+
+The recommended Ranger policy setup on the sink cluster is:
+
+[cols="1,1,1,2", options="header"]
+|===
+| Principal | Resource | Privilege | Rationale
+| Replication service user | Sink tables | all
+  | Required for the replication job to upsert and delete rows
+| All other users | Sink tables | select, metadata (read-only)
+  | Allows querying the DR cluster without risk of writes
+| All other users | Sink tables | _(no insert/update/delete)_
+  | Explicitly deny or omit write privileges
+|===
+
+NOTE: Ranger deny policies can be used to explicitly block write operations (insert, update,
+delete) on the sink tables for all users except the replication service user, even if those
+users have broad database-level grants elsewhere. This is the safest approach for a DR cluster.
+
+NOTE: If `job.createTable=true` is set, the replication service user also requires CREATE
+privilege on the target database so the job can create the sink table on first startup.
+DDL operations (ALTER TABLE) on the sink should similarly be restricted to the replication
+service user to prevent schema drift between source and sink.
+
+=== Classloader isolation
+
+When running on a secured cluster, always pass the following `-D` flag to avoid
+classloader conflicts between the Kudu client and Flink's child-first classloader:
+
+[source,bash]
+----
+-Dclassloader.parent-first-patterns.additional=org.apache.kudu
+----
+
+This ensures Kudu classes are loaded by the same parent classloader as Hadoop security classes
+(`org.apache.hadoop.*` is already in Flink's default parent-first list), preventing
+`ClassCastException` errors during Kerberos negotiation.
+
+== Starting the Replication Job
+
+The replication job is started by submitting the shaded JAR to a Flink cluster using the
+standard `flink run` command. All configuration is passed as `--key value` command-line
+arguments.
+
+=== Minimal example
+
+[source,bash]
+----
+flink run-application -t yarn-application \
+  -Dclassloader.parent-first-patterns.additional=org.apache.kudu \
+  -c org.apache.kudu.replication.ReplicationJob \
+  kudu-replication-<version>.jar \
+  --job.sourceMasterAddresses source-master1:7051,source-master2:7051 \
+  --job.sinkMasterAddresses   sink-master1:7051,sink-master2:7051 \
+  --job.tableName             my_table \
+  --job.checkpointsDirectory  hdfs:///kudu-replication/checkpoints/my_table
+----
+
+=== Resuming from a checkpoint
+
+To resume from a specific Flink checkpoint or savepoint after a failure or planned restart:
+
+[source,bash]
+----
+flink run-application -t yarn-application \
+  -s hdfs:///kudu-replication/checkpoints/my_table/<checkpoint-id> \
+  -Dclassloader.parent-first-patterns.additional=org.apache.kudu \
+  -c org.apache.kudu.replication.ReplicationJob \
+  kudu-replication-<version>.jar \
+  --job.sourceMasterAddresses source-master1:7051,source-master2:7051 \
+  --job.sinkMasterAddresses   sink-master1:7051,sink-master2:7051 \
+  --job.tableName             my_table \
+  --job.checkpointsDirectory  hdfs:///kudu-replication/checkpoints/my_table
+----
+
+Checkpoints are retained on cancellation (`RETAIN_ON_CANCELLATION`), so the last checkpoint
+directory is always available for recovery.
+
+== Stopping the Replication Job
+
+The replication job should always be stopped via a savepoint. A savepoint is a consistent
+snapshot of the entire job state (enumerator position, in-flight splits, `lastEndTimestamp`)
+written to durable storage. Stopping with a savepoint allows the job to be restarted later
+from exactly where it left off, without re-running the initial full snapshot scan.
+
+[[pre-stop-checklist]]
+=== Pre-stop checklist
+
+Before stopping the job for any reason (schema change, planned failover, maintenance), follow
+this sequence to ensure the pipeline is fully drained and no data is lost:
+
+. *Stop all writes to the source table.* This is an application-level step — quiesce or
+  redirect the write path before proceeding.
+. *Verify no writes are in-flight on the source.* Use the write activity PromQL query from
+  the <<grafana-dashboard>> section. Proceed only when the query returns 0.
+. *Wait for replication lag to normalize.* Use the replication lag query. The lag should reach
+  approximately `job.discoveryIntervalSeconds / 60` minutes, confirming the final diff scan
+  captured all pending changes.
+. *Verify the sink has fully drained.* All three split state metrics (`pendingCount`,
+  `unassignedCount`, `pendingRemovalCount`) should be 0 between discovery cycles.
+. *Verify no write activity on the sink.* Use the same write activity PromQL query from the
+  <<grafana-dashboard>> section, pointed at the sink table, to confirm that the replication
+  job has flushed all buffered operations and no rows are being written to the sink. Proceed
+  only when the query returns 0.
+. *Stop the job with a savepoint:*
++
+[source,bash]
+----
+flink stop -p hdfs:///kudu-replication/savepoints/my_table <job-id>
+----
++
+The command prints the savepoint path on completion:
++
+----
+Savepoint completed. Path: hdfs:///kudu-replication/savepoints/my_table/savepoint-<id>
+----
+
+NOTE: `flink stop` waits for a clean checkpoint barrier to propagate through the entire
+pipeline before writing the savepoint. If the job is processing a large discovery cycle, this
+can take up to `job.checkpointingIntervalMillis` milliseconds. If the job does not stop within
+a reasonable time, check the JobManager log for checkpoint-related warnings.
+
+[[restarting-from-a-savepoint]]
+=== Restarting from a savepoint
+
+To restart from the savepoint, pass the savepoint path with the `-s` flag:
+
+[source,bash]
+----
+flink run-application -t yarn-application \
+  -s hdfs:///kudu-replication/savepoints/my_table/savepoint-<id> \
+  -Dclassloader.parent-first-patterns.additional=org.apache.kudu \
+  -c org.apache.kudu.replication.ReplicationJob \
+  kudu-replication-<version>.jar \
+  --job.sourceMasterAddresses source-master1:7051,source-master2:7051 \
+  --job.sinkMasterAddresses   sink-master1:7051,sink-master2:7051 \
+  --job.tableName             my_table \
+  --job.checkpointsDirectory  hdfs:///kudu-replication/checkpoints/my_table
+----
+
+=== Finding the job ID
+
+To find the job ID of a running replication job on YARN:
+
+[source,bash]
+----
+flink list -t yarn-application -Dyarn.application.id=<yarn-application-id>
+----
+
+Or list all running jobs across the session cluster:
+
+[source,bash]
+----
+flink list
+----
+
+[[configuration-reference]]
+== Configuration Reference
+
+Configuration parameters are grouped into three namespaces: `job.*`, `reader.*`, and
+`writer.*`.
+
+=== Job parameters
+
+These parameters control the overall replication behavior.
+
+[cols="2,1,1,4", options="header"]
+|===
+| Parameter | Required | Default | Description
+| `job.sourceMasterAddresses` | Yes | —
+  | Comma-separated list of source Kudu master addresses (e.g. `host1:7051,host2:7051`).
+| `job.sinkMasterAddresses` | Yes | —
+  | Comma-separated list of sink Kudu master addresses.
+| `job.tableName` | Yes | —
+  | Name of the source Kudu table to replicate.
+| `job.checkpointsDirectory` | Yes | —
+  | Filesystem path where Flink stores checkpoint data (e.g. `hdfs:///path/to/checkpoints`).
+| `job.discoveryIntervalSeconds` | No | 600
+  | How often (in seconds) the job polls for new changes via a diff scan.
+| `job.checkpointingIntervalMillis` | No | 60000
+  | Interval (in milliseconds) at which Flink takes checkpoints. Must be strictly less than
+    `job.discoveryIntervalSeconds * 1000`.
+| `job.createTable` | No | false
+  | If `true`, automatically create the sink table if it does not exist, replicating the full
+    partition schema from the source.
+| `job.tableSuffix` | No | ""
+  | Suffix appended to the sink table name. Useful for testing replication to a table with a
+    different name on the same cluster.
+| `job.restoreOwner` | No | false
+  | If `true` and `job.createTable=true`, copy the table owner from the source to the sink
+    table.
+|===
+
+NOTE: `job.checkpointingIntervalMillis` must be strictly less than
+`job.discoveryIntervalSeconds * 1000`. This ensures the `lastEndTimestamp` advances before the
+next discovery cycle begins. The job will fail to start if this constraint is violated.
+
+=== Reader parameters
+
+These parameters control how data is read from the source Kudu cluster.
+
+[cols="2,1,1,4", options="header"]
+|===
+| Parameter | Required | Default | Description
+| `reader.batchSizeBytes` | No | 20971520 (20 MiB)
+  | Maximum number of bytes fetched in a single scan batch.
+| `reader.splitSizeBytes` | No | Kudu default
+  | Target size in bytes for each scan split when parallelizing input.
+| `reader.scanRequestTimeout` | No | 30000 ms
+  | Timeout in milliseconds for individual scan RPCs.
+| `reader.prefetching` | No | false
+  | Whether to enable prefetching of data blocks from the scanner.
+| `reader.keepAlivePeriodMs` | No | 15000 ms
+  | Period in milliseconds after which an idle scanner sends a keep-alive to the server.
+| `reader.replicaSelection` | No | CLOSEST_REPLICA
+  | Replica selection strategy. Valid values: `CLOSEST_REPLICA`, `LEADER_ONLY`.
+|===
+
+=== Writer parameters
+
+These parameters control how data is written to the sink Kudu cluster.
+
+[cols="2,1,1,4", options="header"]
+|===
+| Parameter | Required | Default | Description
+| `writer.flushMode` | No | AUTO_FLUSH_BACKGROUND
+  | Kudu session flush mode. Valid values: `AUTO_FLUSH_BACKGROUND`, `AUTO_FLUSH_SYNC`,
+    `MANUAL_FLUSH`.
+| `writer.operationTimeout` | No | 30000 ms
+  | Timeout in milliseconds for individual write operations.
+| `writer.maxBufferSize` | No | 1000
+  | Maximum number of operations buffered in the Kudu write session.
+| `writer.flushInterval` | No | 1000 ms
+  | Interval in milliseconds at which buffered operations are flushed automatically.
+| `writer.ignoreNotFound` | No | false
+  | Whether to ignore NOT_FOUND errors at the session level during deletes and updates.
+    Note: has no practical effect on the replication job since `DeleteIgnore` operations
+    are always used, which already suppress NOT_FOUND errors at the operation level.
+| `writer.ignoreDuplicate` | No | false
+  | Whether to ignore duplicate row errors at the session level during inserts.
+    Note: has no practical effect on the replication job since `UpsertIgnore` operations
+    are always used, which already suppress duplicate errors at the operation level.
+|===
+
+== Supported Data Types
+
+The following Kudu column types are supported for replication:
+
+[cols="1,3", options="header"]
+|===
+| Kudu Type | Notes
+| `STRING` | UTF-8 encoded text.
+| `VARCHAR` | Mapped to `STRING` in the Flink connector; length constraint is not enforced.
+| `BOOL` |
+| `INT8` |
+| `INT16` |
+| `INT32` |
+| `INT64` |
+| `FLOAT` |
+| `DOUBLE` |
+| `DECIMAL(precision, scale)` | Precision and scale are preserved.
+| `UNIXTIME_MICROS` | Timestamps with microsecond precision.
+| `BINARY` |
+|===
+
+NOTE: The `ARRAY` column type is not currently supported; this is a limitation of the current
+Flink connector implementation and may be addressed in a future release once the connector
+adds array type support. Tables containing array columns cannot be replicated.
+
+[[schema-change-handling]]
+== Schema Change Handling
+
+WARNING: The schema change procedure depends on monitoring to verify its preconditions.
+Without a working Prometheus setup, there is no reliable way to determine when it is safe to
+apply DDL. Applying a schema change with writes still in flight risks producing rows with
+mismatched schemas on the sink.
+
+The replication job does not automatically detect or apply schema changes. If the source table
+schema changes (e.g. a column is added), you must perform the change manually on both the
+source and sink tables, and restart the replication job from a savepoint.
+
+The key requirement before applying any DDL is that *no writes are in flight on the source
+table* at the moment the schema change is applied. The <<pre-stop-checklist>> covers how to
+verify this and drain the pipeline before stopping the job.
+
+=== Procedure for adding a column
+
+. Follow the <<pre-stop-checklist>> to drain the pipeline and stop the replication job with a
+  savepoint.
+
+. Add the new column to the source Kudu table:
++
+[source,bash]
+----
+kudu table add_column <source-master-addresses> my_table new_column INT32 \
+  --default_value=[0]
+----
+
+. Add the same column with the same definition to the sink Kudu table:
++
+[source,bash]
+----
+kudu table add_column <sink-master-addresses> my_table new_column INT32 \
+  --default_value=[0]
+----
+
+. Restart the replication job from the savepoint (see <<restarting-from-a-savepoint>>).
+
+NOTE: The new column must have a default value so that rows inserted before the column was
+added can be read without error during the next diff scan.
+
+For other schema change types (dropping a column, renaming a column, changing a column
+type), apply the same pre-stop checklist, make the equivalent change on both source and
+sink clusters, and restart from the savepoint. For type changes, ensure the new type is
+compatible with any data already written to the sink.
+
+[[procedure-for-renaming-a-table]]
+=== Procedure for renaming a table
+
+Renaming a replicated table requires coordinated changes on both clusters and a controlled
+job restart. The key safety requirement is that the job must be stopped cleanly, with no
+writes in flight, before any table is renamed.
+
+. Follow the <<pre-stop-checklist>> to drain the pipeline and stop the replication job with
+  a savepoint. Confirm that `pendingCount`, `unassignedCount`, and `pendingRemovalCount` are
+  all zero before stopping — this ensures the savepoint contains no in-flight scan splits.
+
+. Rename the source Kudu table:
++
+[source,bash]
+----
+kudu table rename_table <source-master-addresses> old_name new_name
+----
+
+. Rename the sink Kudu table. If `job.tableSuffix` is configured, the sink table name is
+  `<old_name><suffix>` — rename it to `<new_name><suffix>` to match:
++
+[source,bash]
+----
+# Without a suffix:
+kudu table rename_table <sink-master-addresses> old_name new_name
+
+# With job.tableSuffix=_dr (for example):
+kudu table rename_table <sink-master-addresses> old_name_dr new_name_dr
+----
+
+. Restart the replication job from the savepoint (see <<restarting-from-a-savepoint>>),
+  passing the new table name via `--job.tableName new_name`. The `job.tableSuffix` value,
+  if set, does not change.
+
+[NOTE]
+====
+When the job was stopped cleanly (all split-state metrics at zero), the only durable state
+in the savepoint is `lastEndTimestamp`. This timestamp is a Kudu hybrid time value that is
+independent of the table name, so restarting with the new name from the savepoint correctly
+resumes incremental diff scanning from where the job left off.
+
+If there were any unprocessed splits in the savepoint (i.e. the job was not stopped via the
+clean drain procedure), do *not* restore from that savepoint after renaming. Start the job
+fresh instead — this triggers a new full snapshot scan of the renamed table.
+
+WARNING: Do not rename only one of the two tables. If the source is renamed but the sink is
+not (or vice versa), the replication job will fail or replicate to the wrong table. Always
+rename both atomically within this procedure.
+====
+
+== Resource Configuration
+
+Resource sizing for a replication job has three independent dimensions: the Kudu source
+cluster, the Kudu Java client used inside the replication job, and the Flink cluster itself.
+
+=== Kudu source cluster (TServer)
+
+A longer `--tablet_history_max_age_sec` window means Kudu tablets accumulate more UNDO delta
+data before it is eligible for garbage collection. The tserver flag directly relevant to this
+is:
+
+[cols="2,1,4", options="header"]
+|===
+| Flag | Default | Description
+| `--maintenance_manager_num_threads` | 1
+  | Number of threads for all background maintenance ops (flush, compaction, UNDO GC). With a
+    large history window and many tablets, the single default thread can fall behind on GC.
+    The link:troubleshooting.adoc[recommended ratio] is 1 thread per 3 data directories
+    (e.g. 4 threads for 12 data directories).
+|===
+
+=== Replication job (Kudu Java client)
+
+The `+reader.*+` and `+writer.*+` parameters described in the <<configuration-reference>> are the
+interface for tuning the Kudu Java client embedded in the replication job.
+
+The most impactful parameters for throughput and memory use are:
+
+[cols="2,1,4", options="header"]
+|===
+| Parameter | Default | Why it matters
+| `reader.batchSizeBytes` | 20971520 (20 MiB)
+  | Controls how much data each scan RPC fetches. Increase for large tables on fast networks;
+    decrease to reduce per-reader heap usage.
+| `reader.splitSizeBytes` | Kudu default
+  | Smaller values produce more, finer-grained splits, increasing parallelism at the cost of
+    more scan RPCs.
+| `writer.maxBufferSize` | 1000
+  | Operations buffered client-side before flushing. Increase for higher write throughput;
+    each buffered op consumes heap.
+| `writer.flushInterval` | 1000 ms
+  | How often buffered writes are flushed. Lower values reduce latency; higher values improve
+    batching efficiency.
+|===
+
+=== Flink cluster
+
+The replication job is a simple two-operator pipeline (source -> sink) with no intermediate
+transformations. Resource requirements are proportional to the configured parallelism.
+
+*Deployment mode.* The job runs on YARN in one of two modes:
+
+* *Application mode* (`flink run-application -t yarn-application`) — recommended since
+  Flink 1.15.
+* *Per-job mode* (`flink run -t yarn-per-job`) — deprecated since Flink 1.15 but still
+  supported.
+
+In both modes, YARN spawns *dedicated containers* for the JobManager and TaskManagers of this
+job. The `-D` memory flags below set the size of those YARN containers and apply at submission
+time. If the YARN cluster is shared with other workloads (e.g. Spark, Impala, or other Flink
+jobs), ensure that sufficient YARN resources (memory and vcores) are available for the
+replication job's containers in addition to the existing cluster load.
+
+*Parallelism* is set at submission time with the `-p` flag. Each parallel instance runs one
+KuduSource reader and one KuduSink writer. Multiple parallel readers reduce wall-clock time
+per discovery cycle: the enumerator distributes splits across all registered readers and only
+starts the next diff scan once every split from the current cycle is fully processed.
+
+The effective upper bound on useful parallelism is the number of scan tokens Kudu produces for
+the table, which by default equals the number of tablets. Setting `-p` higher than the tablet
+count does not help, as the extra reader instances will sit idle waiting for splits. To
+increase the number of splits — and thus raise the useful parallelism ceiling — reduce
+`reader.splitSizeBytes` so that Kudu sub-divides large tablets into multiple tokens.
+
+*TaskManager memory.* The right size depends on row width, parallelism, and slot count, so
+start with Flink's defaults and adjust based on observed usage. The main memory drivers per
+TaskManager are the scan batch buffer (`reader.batchSizeBytes`, default 20 MiB, multiplied by
+the number of slots per TaskManager) and the write buffer (`writer.maxBufferSize` x average
+row size per slot). If TaskManagers are OOM-killed by YARN, increase
+`taskmanager.memory.process.size` or reduce `reader.batchSizeBytes`.
+
+*JobManager memory.* The enumerator's footprint is small regardless of table size or
+parallelism. The Flink default is sufficient in almost all cases.
+
+Pass settings as `-D` flags on the submission command:
+
+[source,bash]
+----
+flink run-application -t yarn-application \
+  -p 4 \
+  -Dtaskmanager.numberOfTaskSlots=2 \
+  -Dclassloader.parent-first-patterns.additional=org.apache.kudu \
+  -c org.apache.kudu.replication.ReplicationJob \
+  kudu-replication-<version>.jar \
+  --job.sourceMasterAddresses source-master1:7051 \
+  --job.sinkMasterAddresses   sink-master1:7051 \
+  --job.tableName             my_table \
+  --job.checkpointsDirectory  hdfs:///kudu-replication/checkpoints/my_table
+----
+
+== Failover Procedure (DR Cutover)
+
+When a replicated sink cluster is used as a disaster recovery (DR) target, the following
+procedure describes how to promote the sink cluster to active after a source cluster failure
+or planned maintenance.
+
+NOTE: A working Prometheus/Grafana setup is required to verify replication state before
+cutting over. Without metrics, there is no reliable way to confirm that replication has caught
+up before redirecting traffic.
+
+=== Planned failover (source cluster available)
+
+Use this procedure when the source cluster is still reachable and you need to cut over with
+minimal data loss (e.g. planned maintenance, migration).
+
+. Follow the <<pre-stop-checklist>> to drain the pipeline and stop the replication job with a
+  savepoint.
+
+. *Re-enable writes on the sink cluster.* Update the Ranger policy on the sink cluster to
+  grant write privileges to application users (see
+  <<protecting-the-sink-cluster-from-accidental-writes>>).
+
+. *Redirect application traffic* to the sink cluster (DNS cutover, connection string
+  update, etc.).
+
+NOTE: There is no need to restart the replication job after a planned failover unless you
+intend to replicate back in the reverse direction. If reverse replication is needed, start a
+new replication job with source and sink swapped, pointing to a new checkpoint directory.
+
+=== Unplanned failover (source cluster unavailable)
+
+Use this procedure when the source cluster has failed unexpectedly.
+
+. *Assess replication lag at the time of failure.* Check the last recorded value of
+  `lastEndTimestamp` in Grafana or in Prometheus. The difference between the current wall
+  clock time and `lastEndTimestamp / 1000` is the approximate data loss window (RPO).
+
+. *Stop the replication job* (if it is still running or in a restart loop). Use
+  `flink stop -p` if the job is reachable; otherwise terminate the YARN application via the
+  ResourceManager UI or `yarn application -kill <application-id>`.
+
+. *Re-enable writes on the sink cluster.* Update the Ranger policy as described above.
+
+. *Redirect application traffic* to the sink cluster.
+
+NOTE: In an unplanned failover, some data written to the source after the last completed diff
+scan will not be present on the sink. The data loss window equals the replication lag at the
+time of failure.
+
+== Flink Metrics
+
+The replication job exposes the following custom metrics via the Flink metrics system. These
+metrics are registered on the source enumerator's metric group and are available through any
+configured Flink metrics reporter (e.g. JMX, Prometheus).
+
+[cols="2,1,4", options="header"]
+|===
+| Metric Name | Type | Description
+| `lastEndTimestamp` | Gauge (Long)
+  | The end timestamp (epoch milliseconds) of the most recently completed diff scan.
+    Monotonically increasing. Use this to verify that replication is advancing.
+| `pendingCount` | Gauge (Integer)
+  | Number of scan splits currently assigned to readers but not yet fully processed.
+| `unassignedCount` | Gauge (Integer)
+  | Number of scan splits waiting to be assigned to a reader.
+| `pendingRemovalCount` | Gauge (Integer)
+  | Number of completed splits deferred for removal until the next Flink checkpoint completes.
+|===
+
+In steady state (between discovery cycles), `pendingCount`, `unassignedCount`, and
+`pendingRemovalCount` should all be zero. The `lastEndTimestamp` metric is the primary
+indicator of replication health; if it stops advancing, the replication job has stalled.
+
+== Monitoring
+
+A working reference monitoring stack (Prometheus + Grafana + json_exporter) is included in
+the Kudu source repository at
+link:https://github.com/apache/kudu/tree/master/examples/flink-replication/monitoring/[examples/flink-replication/monitoring/].
+The setup described below mirrors that example.
+Adapt host names, ports, and label names to match your environment.
+
+=== Setting up Prometheus
+
+==== Flink
+
+Add the following to `conf/config.yaml` on the Flink cluster to enable Prometheus metrics
+reporting:
+
+[source,yaml]
+----
+metrics:
+  reporter.prom.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory
+  reporter.prom.port: 9250-9260
+----
+
+The port range 9250-9260 covers one port per TaskManager instance. The JobManager exposes
+coordinator metrics (enumerator state, `lastEndTimestamp`) on the first port in the range;
+each TaskManager picks the next available port.
+
+==== Kudu TServer metrics and table-level relabeling
+
+Kudu's Prometheus endpoint (`/metrics_prometheus`) embeds the tablet ID directly in each
+metric name (e.g. `kudu_tablet_<tablet-id>_rows_upserted`). This is non-standard — Prometheus
+expects a stable metric name with labels for dimensions. Two additional components are needed
+to make metrics queryable by table name:
+
+. *Metric relabeling* in the Prometheus scrape config — extracts the tablet ID into a
+  `tablet_id` label and normalizes the metric name.
+. *json_exporter* — reads Kudu's JSON metrics endpoint (which includes `table_name`) and
+  exposes a `kudu_tablet_info` metric that maps each `tablet_id` to its `table_name`.
+  Dashboard queries then join on `tablet_id` to filter by table.
+
+NOTE: If Kudu's Prometheus integration is normalized in a future release (stable metric names
+with label-based dimensions), the relabeling pipeline and the json_exporter job can be removed.
+
+*Install json_exporter:*
+
+Download the latest release from the
+link:https://github.com/prometheus-community/json_exporter/releases[prometheus-community/json_exporter]
+releases page and place the binary on a host reachable by Prometheus.
+
+Create `kudu_tablet_info.yml`:
+
+[source,yaml]
+----
+modules:
+  default:
+    metrics:
+      - name: kudu_tablet
+        type: object
+        path: "{[?(@.type=='tablet')]}"
+        labels:
+          tablet_id: "{.id}"
+          table_name: "{.attributes.table_name}"
+          table_id: "{.attributes.table_id}"
+        values:
+          info: "1"
+----
+
+NOTE: json_exporter automatically appends `_info` to object-type metric names, so
+`name: kudu_tablet` produces the metric `kudu_tablet_info` in Prometheus.
+
+Start json_exporter:
+
+[source,bash]
+----
+./json_exporter --config.file=kudu_tablet_info.yml --web.listen-address=:7979
+----
+
+==== Scrape config
+
+The example below adds a `cluster` label (`source` / `sink`) to all Kudu tserver targets.
+This makes it possible to write per-cluster queries (e.g. source write activity vs sink write
+activity) without needing separate metric names or separate Prometheus jobs. Adapt target
+addresses and label values to your environment.
+
+[source,yaml]
+----
+scrape_configs:
+
+  # Flink replication job metrics.
+  # JobManager exposes coordinator metrics (enumerator state, lastEndTimestamp) on port 9250.
+  # TaskManagers expose operator-level metrics (records/sec, checkpoint info) on port 9251+.
+  - job_name: "replication"
+    static_configs:
+      - targets: ["<flink-jobmanager>:9250"]
+        labels:
+          app: "replication"
+          component: "jobmanager"
+      - targets: ["<flink-taskmanager>:9251"]
+        labels:
+          app: "replication"
+          component: "taskmanager"
+
+  # Kudu tserver metrics.
+  # metric_relabel_configs extracts the embedded tablet_id into a label
+  # and normalizes the metric name so it is stable and queryable.
+  - job_name: "kudu"
+    metrics_path: "/metrics_prometheus"
+    static_configs:
+      - targets: ["<src-tserver-1>:8050", "<src-tserver-2>:8050"]
+        labels:
+          app: "kudu"
+          cluster: "source"
+      - targets: ["<snk-tserver-1>:8050", "<snk-tserver-2>:8050"]
+        labels:
+          app: "kudu"
+          cluster: "sink"
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'kudu_tablet_([a-f0-9]{32})_(.*)'
+        target_label: tablet_id
+        replacement: '$1'
+      - source_labels: [__name__]
+        regex: 'kudu_tablet_([a-f0-9]{32})_(.*)'
+        target_label: __name__
+        replacement: 'kudu_tablet_$2'
+
+  # Kudu tablet -> table name mapping (via json_exporter).
+  # Scrape all tservers (source and sink) so the mapping covers both clusters.
+  - job_name: "kudu_tablet_info"
+    metrics_path: /probe
+    params:
+      module: [default]
+    static_configs:
+      - targets:
+          - "http://<src-tserver-1>:8050/metrics?types=tablet"
+          - "http://<src-tserver-2>:8050/metrics?types=tablet"
+          - "http://<snk-tserver-1>:8050/metrics?types=tablet"
+          - "http://<snk-tserver-2>:8050/metrics?types=tablet"
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: "<json-exporter-host>:7979"
+----
+
+NOTE: To reload the scrape config without restarting Prometheus, start it with
+`--web.enable-lifecycle` and run `curl -X POST http://localhost:9090/-/reload`.
+
+[[grafana-dashboard]]
+=== Grafana dashboard
+
+A ready-to-import Grafana dashboard is available at
+`examples/flink-replication/monitoring/grafana/dashboards/replication.json`.
+
+The queries below illustrate what each panel is trying to show and give working examples from
+that dashboard. They assume the scrape config above (with `cluster` labels on Kudu targets).
+Adapt label selectors and metric names as needed for your setup — these are not the only way
+to express each query.
+
+==== Job health
+
+*Goal:* Confirm the Flink job is running, has not restarted unexpectedly, and is
+checkpointing normally.
+
+[source]
+----
+# Job uptime — time since the job last (re)started
+flink_jobmanager_job_uptime
+
+# Full restart count — should be 0 in steady state
+flink_jobmanager_job_fullRestarts
+
+# Most recent checkpoint duration
+flink_jobmanager_job_lastCheckpointDuration
+----
+
+==== Replication lag
+
+*Goal:* Verify that the enumerator is completing diff scan cycles regularly. In steady state
+the lag should oscillate between 0 and approximately `job.discoveryIntervalSeconds / 60`
+minutes, forming a sawtooth wave. A value that climbs without resetting indicates a stalled
+enumerator.
+
+[source]
+----
+# lastEndTimestamp is exported in milliseconds; /1000 converts to seconds.
+
+# Instantaneous lag — useful as a stat panel
+(time() - (flink_jobmanager_job_operator_coordinator_enumerator_lastEndTimestamp / 1000)) / 60
+
+# Lag as a labelled time series — use this form when you need a labelled vector
+# that can be plotted as a timeseries panel in Grafana.
+#   timestamp(v)  — scrape time of the sample, in seconds (Unix epoch)
+#   v / 1000      — metric value converted from milliseconds to seconds (Unix epoch)
+# Both sides are in seconds, so the subtraction yields the lag in seconds; /60 gives minutes.
+(timestamp(flink_jobmanager_job_operator_coordinator_enumerator_lastEndTimestamp)
+  - (flink_jobmanager_job_operator_coordinator_enumerator_lastEndTimestamp / 1000)) / 60
+----
+
+NOTE: On first startup, `lastEndTimestamp` is 0 until the initial full snapshot scan
+completes. The lag query will return a very large value during this time — this is expected.
+
+==== Write activity — source and sink
+
+*Goal:* Show the rate of each write operation type landing on the source and sink tables
+separately. On the source, use this to verify data is flowing in and to detect unexpected
+operation mixes. On the sink, healthy replication produces only upserts — any other operation
+type is unexpected and worth investigating. Both panels are also used in the
+<<pre-stop-checklist>> to confirm that the pipeline has fully drained before stopping the job.
+
+The `cluster` label added by the scrape config separates source from sink without needing
+separate metric names. One query per operation type gives a clean legend:
+
+[source]
+----
+# Source — insert rate (rows/min)
+sum(rate(kudu_tablet_rows_inserted{cluster="source"}[1m])
+  * on(tablet_id) group_left(table_name)
+  (max by (tablet_id, table_name, table_id) (kudu_tablet_info{table_name="<table-name>"}))) * 60
+
+# Source — upsert rate (rows/min)
+sum(rate(kudu_tablet_rows_upserted{cluster="source"}[1m])
+  * on(tablet_id) group_left(table_name)
+  (max by (tablet_id, table_name, table_id) (kudu_tablet_info{table_name="<table-name>"}))) * 60
+
+# Source — update rate (rows/min)
+sum(rate(kudu_tablet_rows_updated{cluster="source"}[1m])
+  * on(tablet_id) group_left(table_name)
+  (max by (tablet_id, table_name, table_id) (kudu_tablet_info{table_name="<table-name>"}))) * 60
+
+# Source — delete rate (rows/min)
+sum(rate(kudu_tablet_rows_deleted{cluster="source"}[1m])
+  * on(tablet_id) group_left(table_name)
+  (max by (tablet_id, table_name, table_id) (kudu_tablet_info{table_name="<table-name>"}))) * 60
+----
+
+Replace `cluster="source"` with `cluster="sink"` to build the equivalent sink panel.
+
+NOTE: `rate()` is preferred over `increase()` because it is resilient to counter resets
+caused by TServer restarts or tablet leadership changes.
+
+==== Enumerator split state
+
+*Goal:* Show how many scan splits are in each state during a discovery cycle. In steady state
+(between cycles) all three should be zero. A non-zero `unassignedCount` or `pendingCount`
+that does not drain between cycles indicates a stalled reader.
+
+[source]
+----
+label_replace(flink_jobmanager_job_operator_coordinator_enumerator_pendingCount,
+              "split_state", "pending", "", "")
+or
+label_replace(flink_jobmanager_job_operator_coordinator_enumerator_pendingRemovalCount,
+              "split_state", "pendingRemoval", "", "")
+or
+label_replace(flink_jobmanager_job_operator_coordinator_enumerator_unassignedCount,
+              "split_state", "unassigned", "", "")
+----
+
+Set the Grafana legend to `{{split_state}}`. During an active discovery cycle,
+`unassignedCount` spikes to the number of tablets and drains to zero as splits are assigned;
+`pendingRemovalCount` rises briefly and drops to zero at the next checkpoint. This is normal
+behaviour.
+
+==== Flink operator throughput
+
+*Goal:* Confirm that records are flowing through the pipeline. The KuduSource output rate and
+KuduSink input rate should track each other closely. A growing gap between the two indicates
+backpressure or a slow writer.
+
+[source]
+----
+# Records per second emitted by KuduSource
+sum(flink_taskmanager_job_task_operator_numRecordsOutPerSecond{operator_name="Source:_KuduSource"})
+
+# Records per second consumed by KuduSink
+sum(flink_taskmanager_job_task_operator_numRecordsInPerSecond{operator_name="Sink:_Writer"})
+----
+
+==== Live row count (coarse consistency check)
+
+*Goal:* Compare the approximate total row count on the source and sink tables. The sink line
+should track the source within one discovery interval. When the `cluster` label is applied (as
+in the scrape config above), both clusters appear as separate series in a single query without
+needing to know the table suffix:
+
+[source]
+----
+sum(
+  kudu_tablet_live_row_count
+  * on(tablet_id) group_left(table_name)
+  (max by (tablet_id, table_name) (kudu_tablet_info{table_name="<table-name>"}))
+) by (cluster)
+----
+
+Set the Grafana legend to `{{cluster}}`.
+
+NOTE: Row counts do not reflect upserts — if the sink already has a key that the source
+upserts, the sink count is unchanged even though the row content changed. Row count equality
+is a necessary but not sufficient condition for data consistency.
+
+=== Multiple tables
+
+Each replicated table requires its own replication job. When monitoring multiple tables, update
+the `table_name` filter in the Grafana queries to match the table being monitored. The
+`kudu_tablet_info` mapping metric covers all tables on the TServer automatically — no changes
+to the json_exporter or Prometheus config are needed when new tables are added.
+
+== Troubleshooting
+
+=== Where to look for errors
+
+The replication job embeds the Kudu Java client directly inside the Flink TaskManagers and
+JobManager. Kudu-level errors (scan failures, write errors, authentication failures, timeout
+errors) are surfaced as standard Java exceptions inside the Flink runtime and appear in the
+*Flink logs*, not in the Kudu master or tablet server logs.
+
+The two places to check are:
+
+* *TaskManager logs* — errors that occur during data reading (scan RPCs) or writing
+  (upsert/delete RPCs). Each parallel reader and writer runs inside a TaskManager slot. When a
+  scan or write operation fails, the exception (including the full Kudu error message) appears
+  in the log of the TaskManager that was running that task.
+* *JobManager logs* — errors related to the enumerator (split discovery, diff scan
+  scheduling), checkpoint coordination, and job-level failures such as a failed recovery
+  attempt.
+
+On YARN, logs are accessible via the YARN ResourceManager UI (Application -> Logs) or via the
+command line:
+
+[source,bash]
+----
+yarn logs -applicationId <yarn-application-id>
+----
+
+For a running job, logs are also available through the Flink Web UI
+(Flink JobManager UI -> Job -> Task Managers -> Log).
+
+[NOTE]
+====
+By default, Flink's log level is INFO. If you need more detail from the Kudu Java client
+(e.g. to trace individual RPC retries), you can increase the log level for the
+`org.apache.kudu` package by adding the following to `log4j2.properties` on the Flink cluster:
+
+[source]
+----
+logger.kudu.name = org.apache.kudu
+logger.kudu.level = DEBUG
+----
+====
+
+=== Common errors and remediation
+
+[cols="2,2,3", options="header"]
+|===
+| Error message (in TaskManager log) | Cause | Remediation
+
+| `Snapshot too old`
+  | The diff scan requested a timestamp that falls before Kudu's MVCC history retention window
+    (`--tablet_history_max_age_sec`). This happens if the job was stopped for longer than the
+    history retention period.
+  | Stop the job, delete its checkpoint directory, and restart without `-s`. The job will
+    perform a full snapshot scan from the beginning. Increase `--tablet_history_max_age_sec`
+    to prevent recurrence.
+
+| `Not found: The table does not exist`
+  | The sink table was not created before starting the job and `job.createTable=false`
+    (the default).
+  | Create the sink table manually, or restart with `--job.createTable true`.
+
+| `Timed out: deadline exceeded` on write operations
+  | The sink cluster is overloaded or unreachable.
+  | Check sink TServer health. Increase `writer.operationTimeout`. Check network connectivity
+    between the TaskManagers and the sink cluster.
+
+| `Timed out: deadline exceeded` on scan operations
+  | The source cluster is slow or overloaded.
+  | Check source TServer health. Increase `reader.scanRequestTimeout`.
+
+| `Authentication error` / `GSSAPI` failures
+  | Kerberos ticket has expired or is not available in the TaskManager container.
+  | Re-kinit and resubmit, or use Flink's keytab-based authentication (see <<security>>).
+    Verify that `classloader.parent-first-patterns.additional=org.apache.kudu` is set.
+
+| `ClassCastException` involving Kerberos or JAAS classes
+  | Kudu and Hadoop Kerberos classes loaded by different classloaders.
+  | Add `-Dclassloader.parent-first-patterns.additional=org.apache.kudu` to the submission
+    command.
+|===
+
+=== Replication has stalled (lastEndTimestamp not advancing)
+
+If the `lastEndTimestamp` metric stops increasing, the enumerator is not completing discovery
+cycles. Possible causes:
+
+. *A reader is stuck on a scan split.* Check TaskManager logs for scan timeout errors or
+  hanging RPCs. The `pendingCount` metric will be non-zero and not draining.
+. *Checkpoint is failing.* The enumerator only advances `lastEndTimestamp` after a successful
+  checkpoint. Check the JobManager log for checkpoint failure messages (e.g.
+  `Checkpoint ... expired before completing`). Common causes are a slow or unavailable
+  checkpoint filesystem.
+. *The job has restarted repeatedly and is in a restart loop.* Check the Flink Web UI or
+  JobManager log for repeated `Job restarting` entries. Identify the root exception in the
+  TaskManager log.
+
+=== Job fails immediately on startup
+
+If the job exits immediately after submission, check the JobManager log first. Common causes:
+
+* `job.checkpointingIntervalMillis` is not strictly less than
+  `job.discoveryIntervalSeconds * 1000` — the job validates this at startup and throws an
+  `IllegalArgumentException` if violated.
+* The checkpoint directory path is not accessible or does not exist.
+* The source or sink master addresses are wrong or the masters are unreachable.
