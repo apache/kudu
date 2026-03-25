@@ -32,8 +32,8 @@ if [[ -f "/usr/bin/yum" ]]; then
   # Update the repo.
   yum update -y
 
-  # Install OpenJDK 8.
-  yum install -y java-1.8.0-openjdk-devel
+  # Install OpenJDK 17.
+  yum install -y java-17-openjdk-devel
 
   # Reduce the image size by cleaning up after the install.
   yum clean all
@@ -46,24 +46,8 @@ elif [[ -f "/usr/bin/apt-get" ]]; then
   # Update the repo.
   apt-get update -y
 
-  # Install lsb-release so we can reliably detect the release.
-  apt-get install -y --no-install-recommends lsb-release
-  VERSION_NAME=$(lsb_release -c | cut -d":" -f2 | tr -d '[:blank:]')
-
-  # Install OpenJDK 8.
-  if [[ "$VERSION_NAME" == "jessie" ]]; then
-    apt-get install -y --no-install-recommends software-properties-common
-    add-apt-repository "deb http://http.debian.net/debian jessie-backports main"
-    apt-get update -y
-    apt-get install -y --no-install-recommends -t jessie-backports openjdk-8-jdk
-  elif [[ "$VERSION_NAME" == "trusty" ]]; then
-    apt-get install -y --no-install-recommends software-properties-common
-    add-apt-repository ppa:openjdk-r/ppa
-    apt-get update -y
-    apt-get install -y --no-install-recommends openjdk-8-jdk
-  else
-    apt-get install -y --no-install-recommends openjdk-8-jdk
-  fi
+  # Install OpenJDK 17.
+  apt-get install -y --no-install-recommends openjdk-17-jdk
 
   # Reduce the image size by cleaning up after the install.
   apt-get clean
@@ -75,8 +59,8 @@ elif [[ -f "/usr/bin/zypper" ]]; then
   # Update the repo.
   zypper update -y
 
-  # Install OpenJDK 8.
-  zypper install -y java-1_8_0-openjdk-devel
+  # Install OpenJDK 17.
+  zypper install -y java-17-openjdk-devel
 
   # Reduce the image size by cleaning up after the install.
   zypper clean --all
