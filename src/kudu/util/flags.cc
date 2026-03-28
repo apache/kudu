@@ -416,10 +416,17 @@ bool CheckFlagsAndWarn(const string& tag, bool unlocked) {
 
   int use_count = 0;
   for (const auto& f : flags) {
-    if (f.is_default) continue;
+    // If the flag isn't set, or it is explicitly set to its default value
+    // (it's superfluous, but it's still possible), there isn't much to report.
+    if (f.is_default || f.default_value == f.current_value) {
+      continue;
+    }
     unordered_set<string> tags;
     GetFlagTags(f.name, &tags);
-    if (!ContainsKey(tags, tag)) continue;
+    if (!ContainsKey(tags, tag)) {
+      // No special tags provided for the flag: it's OK to modify its setting.
+      continue;
+    }
 
     if (unlocked) {
       LOG(WARNING) << "Enabled " << tag << " flag: --" << f.name << "=" << f.current_value;

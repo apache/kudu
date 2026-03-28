@@ -29,6 +29,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/util/debug/leakcheck_disabler.h"
 #include "kudu/util/flags.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/flag_validators.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -37,6 +38,15 @@ DEFINE_string(grouped_0, "", "First flag to set.");
 DEFINE_string(grouped_1, "", "Second flag to set.");
 DEFINE_string(grouped_2, "", "Third flag to set.");
 DEFINE_string(grouped_3, "", "Fourth flag to set.");
+
+DEFINE_string(tagged_test_flag_0, "default_value", "");
+TAG_FLAG(tagged_test_flag_0, experimental);
+
+DEFINE_string(tagged_test_flag_1, "dv", "");
+TAG_FLAG(tagged_test_flag_1, unsafe);
+
+DECLARE_bool(unlock_experimental_flags);
+DECLARE_bool(unlock_unsafe_flags);
 
 namespace kudu {
 
@@ -246,6 +256,122 @@ TEST_F(FlagsValidatorsDeathTest, GroupedFailureWithEmptyValues) {
   };
   for (auto argv : argv_sets) {
     RunFailure(argv, kArgvSize);
+  }
+}
+
+// Make sure the flags validator accepts experimental/unsafe flags set
+// to their default values even if experimental/unsafe flags aren't unlocked.
+// Those are available for customization only if unlocked.
+TEST_F(FlagsValidatorsDeathTest, TaggedAccepted) {
+  static constexpr size_t kArgvSize = 1 + 2;
+  const char* argv_sets[][kArgvSize] = {
+    {
+      "argv_set_00",
+      "--unlock_experimental_flags=false",
+      "--tagged_test_flag_0=default_value",
+    },
+    {
+      "argv_set_01",
+      "--unlock_experimental_flags=true",
+      "--tagged_test_flag_0=custom_value",
+    },
+    {
+      "argv_set_10",
+      "--unlock_unsafe_flags=false",
+      "--tagged_test_flag_1=dv",
+    },
+    {
+      "argv_set_11",
+      "--unlock_unsafe_flags=true",
+      "--tagged_test_flag_1=1",
+    },
+  };
+  for (auto* argv : argv_sets) {
+    RunSuccess(argv, kArgvSize);
+  }
+}
+
+// Make sure the flags validator accepts experimental/unsafe flags set
+// to their default values even if experimental/unsafe flags aren't unlocked.
+// Also, verify that the last occurrence of the flag sets the actual value
+// that's propagated to the validators.
+TEST_F(FlagsValidatorsDeathTest, TaggedAcceptedDuplicates) {
+  static constexpr size_t kArgvSize = 1 + 3;
+  const char* argv_sets[][kArgvSize] = {
+    {
+      "argv_set_00",
+      "--unlock_experimental_flags=false",
+      "--tagged_test_flag_0=custom_value",
+      "--tagged_test_flag_0=default_value",
+    },
+    {
+      "argv_set_01",
+      "--unlock_experimental_flags=true",
+      "--tagged_test_flag_0=custom_value",
+      "--tagged_test_flag_0=custom_value_final",
+    },
+    {
+      "argv_set_10",
+      "--unlock_unsafe_flags=false",
+      "--tagged_test_flag_1=custom",
+      "--tagged_test_flag_1=dv",
+    },
+    {
+      "argv_set_11",
+      "--unlock_unsafe_flags=true",
+      "--tagged_test_flag_1=0",
+      "--tagged_test_flag_1=1",
+    },
+  };
+  for (auto* argv : argv_sets) {
+    RunSuccess(argv, kArgvSize);
+  }
+}
+
+// Make sure the flag validator doesn't accept customization of
+// experimental/unsafe flags when such tag groups are locked.
+TEST_F(FlagsValidatorsDeathTest, TaggedLocked) {
+  {
+    const char* argv[] = {
+       "argv_set_00",
+       "--unlock_experimental_flags=false",
+       "--tagged_test_flag_0=custom_value",
+    };
+    EXPECT_EXIT(Run(argv, ARRAYSIZE(argv)), ::testing::ExitedWithCode(1),
+        "Flag --tagged_test_flag_0 is experimental and unsupported");
+  }
+  {
+    // The last occurrence of the flag sets the value -- make sure validators
+    // report and error as expected.
+    const char* argv[] = {
+       "argv_set_01",
+       "--unlock_experimental_flags=false",
+       "--tagged_test_flag_0=default_value",
+       "--tagged_test_flag_0=custom_value",
+    };
+    EXPECT_EXIT(Run(argv, ARRAYSIZE(argv)), ::testing::ExitedWithCode(1),
+        "Flag --tagged_test_flag_0 is experimental and unsupported");
+  }
+  {
+    const char* argv[] = {
+        "argv_set_10",
+        "--unlock_unsafe_flags=false",
+        "--tagged_test_flag_1=custom",
+    };
+    EXPECT_EXIT(Run(argv, ARRAYSIZE(argv)), ::testing::ExitedWithCode(1),
+        "Flag --tagged_test_flag_1 is unsafe and unsupported");
+  }
+  {
+    // The last occurrence of the flag sets the value -- make sure validators
+    // report and error as expected.
+    const char* argv[] = {
+        "argv_set_11",
+        "--unlock_unsafe_flags=false",
+        "--tagged_test_flag_1=dv",
+        "--tagged_test_flag_1=custom",
+    };
+    EXPECT_EXIT(Run(argv, ARRAYSIZE(argv)), ::testing::ExitedWithCode(1),
+        "Flag --tagged_test_flag_1 is unsafe and unsupported");
   }
 }
 
