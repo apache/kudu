@@ -152,8 +152,8 @@ public class ReplicationConfigParser {
    *   {@link org.apache.kudu.client.SessionConfiguration.FlushMode}</li>
    *   <li>{@code writer.operationTimeout} (optional) – timeout in milliseconds for write
    *   operations</li>
-   *   <li>{@code writer.maxBufferSize} (optional) – maximum size in bytes of the client-side write
-   *   buffer</li>
+   *   <li>{@code writer.maxBufferSize} (optional) – maximum number of operations buffered in the
+   *   Kudu write session (maps to {@code mutationBufferMaxOps})</li>
    *   <li>{@code writer.flushInterval} (optional) – interval in milliseconds at which buffered
    *   operations are flushed automatically</li>
    *   <li>{@code writer.ignoreNotFound} (optional) – whether to ignore NOT_FOUND errors during

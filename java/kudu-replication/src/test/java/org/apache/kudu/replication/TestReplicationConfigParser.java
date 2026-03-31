@@ -230,7 +230,7 @@ public class TestReplicationConfigParser {
     String[] args = {
         "--writer.flushMode", "AUTO_FLUSH_SYNC",
         "--writer.operationTimeout", "60000",
-        "--writer.maxBufferSize", "5242880",
+        "--writer.maxBufferSize", "1000",
         "--writer.flushInterval", "2000",
         "--writer.ignoreNotFound", "true",
         "--writer.ignoreDuplicate", "true"
@@ -243,7 +243,7 @@ public class TestReplicationConfigParser {
     assertNotNull("Config should not be null", config);
     assertEquals(SessionConfiguration.FlushMode.AUTO_FLUSH_SYNC, config.getFlushMode());
     assertEquals(60000, config.getOperationTimeout());
-    assertEquals(5242880, config.getMaxBufferSize());
+    assertEquals(1000, config.getMaxBufferSize());
     assertEquals(2000, config.getFlushInterval());
     assertEquals(true, config.isIgnoreNotFound());
     assertEquals(true, config.isIgnoreDuplicate());
