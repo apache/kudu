@@ -1255,33 +1255,45 @@ class TestSoftDelete(KuduTestBase, CompatUnitTest):
 class TestTableStatistics(KuduTestBase, CompatUnitTest):
 
     @staticmethod
-    def _wait_for_live_row_count(client, table_name, min_count, timeout=30):
-        """Poll get_table_statistics until live_row_count >= min_count or timeout.
+    def _wait_for_stat(client, table_name, get_stat, min_value, timeout=30):
+        """Poll get_table_statistics until get_stat(stats) >= min_value or timeout.
 
         Stats are propagated from tablet servers to the master via periodic
-        heartbeats (default ~1s), so a short polling loop is needed after writes.
-        Returns the last observed live_row_count.
+        heartbeats (default ~1s), so a short polling loop is needed before
+        asserting stat values. Returns the last observed value.
+
+        Parameters
+        ----------
+        get_stat : callable
+            Extracts the desired stat from a TableStatistics object,
+            e.g. ``lambda s: s.live_row_count``.
+        min_value : int
+            Keep polling while the stat is below this value.
         """
         deadline = time.time() + timeout
-        count = -1
+        value = -1
         while time.time() < deadline:
-            count = client.get_table_statistics(table_name).live_row_count
-            if count >= min_count:
-                return count
+            value = get_stat(client.get_table_statistics(table_name))
+            if value >= min_value:
+                return value
             time.sleep(0.5)
-        return count
+        return value
 
     def test_get_table_statistics_returns_object(self):
         stats = self.client.get_table_statistics(self.ex_table)
         self.assertIsNotNone(stats)
 
     def test_on_disk_size_is_valid(self):
-        stats = self.client.get_table_statistics(self.ex_table)
-        self.assertGreaterEqual(stats.on_disk_size, 0)
+        size = self._wait_for_stat(self.client, self.ex_table,
+                                   lambda s: s.on_disk_size, min_value=0)
+        self.assertGreaterEqual(size, 0,
+            "on_disk_size still {} after waiting for heartbeat propagation".format(size))
 
     def test_live_row_count_is_valid(self):
-        stats = self.client.get_table_statistics(self.ex_table)
-        self.assertGreaterEqual(stats.live_row_count, 0)
+        count = self._wait_for_stat(self.client, self.ex_table,
+                                    lambda s: s.live_row_count, min_value=0)
+        self.assertGreaterEqual(count, 0,
+            "live_row_count still {} after waiting for heartbeat propagation".format(count))
 
     def test_no_limits_set_on_test_table(self):
         stats = self.client.get_table_statistics(self.ex_table)
@@ -1320,8 +1332,8 @@ class TestTableStatistics(KuduTestBase, CompatUnitTest):
                 op['key'] = i
                 session.apply(op)
             session.flush()
-            first_count = self._wait_for_live_row_count(
-                self.client, table_name, min_count=10)
+            first_count = self._wait_for_stat(
+                self.client, table_name, lambda s: s.live_row_count, min_value=10)
             self.assertEqual(first_count, 10,
                 "Expected live_row_count == 10 after first batch, got {}".format(
                     first_count))
@@ -1332,8 +1344,8 @@ class TestTableStatistics(KuduTestBase, CompatUnitTest):
                 op['key'] = i
                 session.apply(op)
             session.flush()
-            second_count = self._wait_for_live_row_count(
-                self.client, table_name, min_count=20)
+            second_count = self._wait_for_stat(
+                self.client, table_name, lambda s: s.live_row_count, min_value=20)
             self.assertEqual(second_count, 20,
                 "Expected live_row_count == 20 after second batch, got {}".format(
                     second_count))
@@ -1349,17 +1361,18 @@ class TestTableStatistics(KuduTestBase, CompatUnitTest):
         try:
             self.client.create_table(table_name, self.schema, self.partitioning)
             # Poll briefly to let the master register the new (empty) table.
-            count = self._wait_for_live_row_count(
-                self.client, table_name, min_count=0, timeout=10)
-            stats = self.client.get_table_statistics(table_name)
-            self.assertEqual(stats.live_row_count, 0,
-                "Expected live_row_count == 0 for empty table, got {}".format(
-                    stats.live_row_count))
+            count = self._wait_for_stat(
+                self.client, table_name, lambda s: s.live_row_count,
+                min_value=0, timeout=10)
+            self.assertEqual(count, 0,
+                "Expected live_row_count == 0 for empty table, got {}".format(count))
             # on_disk_size includes WAL and tablet metadata; assert it is
             # reported (>= 0) rather than unsupported (-1).
-            self.assertGreaterEqual(stats.on_disk_size, 0,
-                "Expected on_disk_size >= 0 for empty table, got {}".format(
-                    stats.on_disk_size))
+            disk_size = self._wait_for_stat(
+                self.client, table_name, lambda s: s.on_disk_size,
+                min_value=0, timeout=10)
+            self.assertGreaterEqual(disk_size, 0,
+                "Expected on_disk_size >= 0 for empty table, got {}".format(disk_size))
         finally:
             try:
                 self.client.delete_table(table_name)
