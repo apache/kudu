@@ -681,15 +681,29 @@ Status MemRowSet::Iterator::ApplyMutationsToProjectedRow(
         decoder.TwiddleDeleteStatus(&is_deleted_end);
       }
 
-      // TODO(todd): this is slow, since it makes multiple passes through the rowchangelist.
-      // Instead, we should keep the backwards mapping of columns.
-      for (const RowProjector::ProjectionIdxMapping& mapping : projector_->base_cols_mapping()) {
-        RowChangeListDecoder decoder(mut->changelist());
-        RETURN_NOT_OK(decoder.Init());
-        ColumnBlock dst_col = dst_row->column_block(mapping.first);
-        RETURN_NOT_OK(decoder.ApplyToOneColumn(dst_row->row_index(), &dst_col,
-                                               memrowset_->schema_nonvirtual(),
-                                               mapping.second, dst_arena));
+      // Single pass through the changelist: decode each column update and
+      // apply it directly to the projected destination column if the column is
+      // in the projection, using the projection schema's column ID lookup as
+      // the reverse mapping.
+      const Schema& projection = *opts_.projection;
+      while (decoder.HasNext()) {
+        RowChangeListDecoder::DecodedUpdate dec;
+        RETURN_NOT_OK(decoder.DecodeNext(&dec));
+
+        // Use the projection schema to look up the column. Validate() resolves
+        // the column ID to an index within the projection schema, so col_idx
+        // can be used directly with dst_row->column_block().
+        // If the column is not part of the projection, col_idx is kColumnNotFound.
+        int col_idx;
+        const void* new_val = nullptr;
+        RETURN_NOT_OK(dec.Validate(projection, &col_idx, &new_val));
+        if (col_idx == Schema::kColumnNotFound) continue;
+
+        const ColumnSchema& col_schema = projection.column(col_idx);
+        ColumnBlock dst_col = dst_row->column_block(col_idx);
+        SimpleConstCell src(&col_schema, new_val);
+        ColumnBlock::Cell dst_cell = dst_col.cell(dst_row->row_index());
+        RETURN_NOT_OK(CopyCell(src, &dst_cell, dst_arena));
       }
     }
   }

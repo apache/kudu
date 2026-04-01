@@ -27,6 +27,7 @@
 #include <tuple>
 #include <type_traits>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags.h>
@@ -279,6 +280,69 @@ class TestMemRowSet : public KuduTest {
     RETURN_NOT_OK(DeleteRow(mrs, "row 6", &result));
 
     return Status::OK();
+  }
+
+  // Insert a row into a MemRowSet with a wide schema (key + 3 value columns).
+  Status InsertWideRow(MemRowSet* mrs, const Schema& schema,
+                       const string& key, uint32_t a, uint32_t b, uint32_t c) {
+    ScopedOp op(&mvcc_, clock_.Now());
+    RowBuilder rb(&schema);
+    rb.AddString(Slice(key));
+    rb.AddUint32(a);
+    rb.AddUint32(b);
+    rb.AddUint32(c);
+    op.StartApplying();
+    Status s = mrs->Insert(op.timestamp(), rb.row(), op_id_);
+    op.FinishApplying();
+    return s;
+  }
+
+  // Update specific columns of a row in a wide-schema MemRowSet.
+  // 'updates' is a list of (column_index, new_value) pairs.
+  Status UpdateWideRow(MemRowSet* mrs, const Schema& schema,
+                       const Schema& key_schema, const string& key,
+                       const vector<std::pair<int, uint32_t>>& updates) {
+    ScopedOp op(&mvcc_, clock_.Now());
+    op.StartApplying();
+    faststring buf;
+    RowChangeListEncoder enc(&buf);
+    for (const auto& [col_idx, val] : updates) {
+      uint32_t v = val;
+      enc.AddColumnUpdate(schema.column(col_idx),
+                          schema.column_id(col_idx), &v);
+    }
+    RowBuilder rb(&key_schema);
+    rb.AddString(Slice(key));
+    Arena arena(64);
+    RowSetKeyProbe probe(rb.row(), &arena);
+    ProbeStats stats;
+    OperationResultPB result;
+    Status s = mrs->MutateRow(op.timestamp(), probe,
+                              RowChangeList(buf),
+                              op_id_, nullptr, &stats, &result);
+    op.FinishApplying();
+    return s;
+  }
+
+  // Delete a row from a wide-schema MemRowSet.
+  Status DeleteWideRow(MemRowSet* mrs, const Schema& key_schema,
+                       const string& key) {
+    ScopedOp op(&mvcc_, clock_.Now());
+    op.StartApplying();
+    faststring buf;
+    RowChangeListEncoder enc(&buf);
+    enc.SetToDelete();
+    RowBuilder rb(&key_schema);
+    rb.AddString(Slice(key));
+    Arena arena(64);
+    RowSetKeyProbe probe(rb.row(), &arena);
+    ProbeStats stats;
+    OperationResultPB result;
+    Status s = mrs->MutateRow(op.timestamp(), probe,
+                              RowChangeList(buf),
+                              op_id_, nullptr, &stats, &result);
+    op.FinishApplying();
+    return s;
   }
 
   OpId op_id_;
@@ -1015,6 +1079,766 @@ TEST_F(TestMemRowSet, TestAbortAfterBeginningToCommitTransactionalRows) {
     for (const auto& right_snap : all_snaps) {
       NO_FATALS(CheckRowsBetween(mrs.get(), left_snap, right_snap, 0));
     }
+  }
+}
+
+// Test that scanning with a partial column projection correctly applies
+// only relevant mutations and skips mutations for non-projected columns.
+TEST_F(TestMemRowSet, TestUpdateWithPartialColumnProjection) {
+  // Create a wider schema with 3 value columns.
+  SchemaBuilder wide_sb;
+  ASSERT_OK(wide_sb.AddKeyColumn("key", STRING));
+  ASSERT_OK(wide_sb.AddColumn("col_a", UINT32));
+  ASSERT_OK(wide_sb.AddColumn("col_b", UINT32));
+  ASSERT_OK(wide_sb.AddNullableColumn("col_c", UINT32));
+  Schema wide_schema = wide_sb.Build();
+  Schema wide_key_schema = wide_schema.CreateKeyProjection();
+
+  shared_ptr<MemRowSet> mrs;
+  ASSERT_OK(MemRowSet::Create(0, wide_schema, log_anchor_registry_.get(),
+                              MemTracker::GetRootTracker(), &mrs));
+
+  // Insert a row: ("row", 1, 100, 1000).
+  ASSERT_OK(InsertWideRow(mrs.get(), wide_schema, "row", 1, 100, 1000));
+
+  // Update col_a=2, col_b=200.
+  ASSERT_OK(UpdateWideRow(mrs.get(), wide_schema, wide_key_schema, "row", {{1, 2}, {2, 200}}));
+
+  // Update col_c=NULL.
+  {
+    ScopedOp op(&mvcc_, clock_.Now());
+    op.StartApplying();
+
+    faststring buf;
+    RowChangeListEncoder update(&buf);
+    update.AddColumnUpdate(wide_schema.column(3), wide_schema.column_id(3), nullptr);
+
+    RowBuilder rb(&wide_key_schema);
+    rb.AddString(Slice("row"));
+    Arena arena(64);
+    RowSetKeyProbe probe(rb.row(), &arena);
+    ProbeStats stats;
+    OperationResultPB result;
+    ASSERT_OK(mrs->MutateRow(op.timestamp(), probe,
+                             RowChangeList(buf),
+                             op_id_, nullptr, &stats, &result));
+    op.FinishApplying();
+  }
+
+  // Scan with full projection - should see all updated values.
+  {
+    RowIteratorOptions opts;
+    opts.projection = &wide_schema;
+    opts.snap_to_include = MvccSnapshot::CreateSnapshotIncludingAllOps();
+    vector<string> rows;
+    ASSERT_OK(DumpRowSet(*mrs, opts, &rows));
+    ASSERT_EQ(1, rows.size());
+    ASSERT_EQ(R"((string key="row", uint32 col_a=2, uint32 col_b=200, uint32 col_c=NULL))",
+              rows[0]);
+  }
+
+  // Scan with partial projection (key, col_a) - should see updated col_a,
+  // skip non-projected col_b and col_c updates.
+  {
+    SchemaBuilder proj_sb(wide_schema);
+    ASSERT_OK(proj_sb.RemoveColumn("col_b"));
+    ASSERT_OK(proj_sb.RemoveColumn("col_c"));
+    Schema proj = proj_sb.Build();
+
+    RowIteratorOptions opts;
+    opts.projection = &proj;
+    opts.snap_to_include = MvccSnapshot::CreateSnapshotIncludingAllOps();
+    vector<string> rows;
+    ASSERT_OK(DumpRowSet(*mrs, opts, &rows));
+    ASSERT_EQ(1, rows.size());
+    ASSERT_EQ(R"((string key="row", uint32 col_a=2))", rows[0]);
+  }
+
+  // Scan with partial projection (key, col_b) - should see updated col_b,
+  // skip non-projected col_a and col_c updates.
+  {
+    SchemaBuilder proj_sb(wide_schema);
+    ASSERT_OK(proj_sb.RemoveColumn("col_a"));
+    ASSERT_OK(proj_sb.RemoveColumn("col_c"));
+    Schema proj = proj_sb.Build();
+
+    RowIteratorOptions opts;
+    opts.projection = &proj;
+    opts.snap_to_include = MvccSnapshot::CreateSnapshotIncludingAllOps();
+    vector<string> rows;
+    ASSERT_OK(DumpRowSet(*mrs, opts, &rows));
+    ASSERT_EQ(1, rows.size());
+    ASSERT_EQ(R"((string key="row", uint32 col_b=200))", rows[0]);
+  }
+
+  // Scan with partial projection (key, col_c) - should see NULL.
+  {
+    SchemaBuilder proj_sb(wide_schema);
+    ASSERT_OK(proj_sb.RemoveColumn("col_a"));
+    ASSERT_OK(proj_sb.RemoveColumn("col_b"));
+    Schema proj = proj_sb.Build();
+
+    RowIteratorOptions opts;
+    opts.projection = &proj;
+    opts.snap_to_include = MvccSnapshot::CreateSnapshotIncludingAllOps();
+    vector<string> rows;
+    ASSERT_OK(DumpRowSet(*mrs, opts, &rows));
+    ASSERT_EQ(1, rows.size());
+    ASSERT_EQ(R"((string key="row", uint32 col_c=NULL))", rows[0]);
+  }
+
+  // --- REINSERT with partial projection ---
+  // Delete the row, then re-insert it with new values for all columns.
+  // A REINSERT changelist contains values for every column in the base schema,
+  // so with a partial projection the single-pass loop must skip more columns
+  // than in the UPDATE case above.
+
+  // Delete the existing row.
+  ASSERT_OK(DeleteWideRow(mrs.get(), wide_key_schema, "row"));
+
+  // Re-insert with the same key but all-new values: ("row", 10, 1000, 10000).
+  // Internally this creates a REINSERT mutation.
+  ASSERT_OK(InsertWideRow(mrs.get(), wide_schema, "row", 10, 1000, 10000));
+
+  // Scan with full projection after REINSERT - should see all new values.
+  {
+    RowIteratorOptions opts;
+    opts.projection = &wide_schema;
+    opts.snap_to_include = MvccSnapshot::CreateSnapshotIncludingAllOps();
+    vector<string> rows;
+    ASSERT_OK(DumpRowSet(*mrs, opts, &rows));
+    ASSERT_EQ(1, rows.size());
+    ASSERT_EQ(R"((string key="row", uint32 col_a=10, uint32 col_b=1000, uint32 col_c=10000))",
+              rows[0]);
+  }
+
+  // Scan with partial projection (key, col_a) after REINSERT.
+  // The REINSERT changelist contains col_a, col_b, col_c updates;
+  // col_b and col_c are not in the projection and must be skipped.
+  {
+    SchemaBuilder proj_sb(wide_schema);
+    ASSERT_OK(proj_sb.RemoveColumn("col_b"));
+    ASSERT_OK(proj_sb.RemoveColumn("col_c"));
+    Schema proj = proj_sb.Build();
+
+    RowIteratorOptions opts;
+    opts.projection = &proj;
+    opts.snap_to_include = MvccSnapshot::CreateSnapshotIncludingAllOps();
+    vector<string> rows;
+    ASSERT_OK(DumpRowSet(*mrs, opts, &rows));
+    ASSERT_EQ(1, rows.size());
+    ASSERT_EQ(R"((string key="row", uint32 col_a=10))", rows[0]);
+  }
+
+  // Scan with partial projection (key, col_c) after REINSERT.
+  // col_a and col_b must be skipped.
+  {
+    SchemaBuilder proj_sb(wide_schema);
+    ASSERT_OK(proj_sb.RemoveColumn("col_a"));
+    ASSERT_OK(proj_sb.RemoveColumn("col_b"));
+    Schema proj = proj_sb.Build();
+
+    RowIteratorOptions opts;
+    opts.projection = &proj;
+    opts.snap_to_include = MvccSnapshot::CreateSnapshotIncludingAllOps();
+    vector<string> rows;
+    ASSERT_OK(DumpRowSet(*mrs, opts, &rows));
+    ASSERT_EQ(1, rows.size());
+    ASSERT_EQ(R"((string key="row", uint32 col_c=10000))", rows[0]);
+  }
+}
+
+// Save a snapshot between mutations and scan at the intermediate snapshot
+// with a partial projection that excludes some mutated columns.
+// Tests:
+// - Multiple mutations on the same excluded column
+// - Mixed changelists (projected + non-projected columns in the same mutation)
+// - col_c participates in mutations (not just an INSERT placeholder)
+// - DELETE + REINSERT boundary with partial projection
+TEST_F(TestMemRowSet, TestPartialProjectionWithSnapshotBetweenMutations) {
+  SchemaBuilder wide_sb;
+  ASSERT_OK(wide_sb.AddKeyColumn("key", STRING));
+  ASSERT_OK(wide_sb.AddColumn("col_a", UINT32));
+  ASSERT_OK(wide_sb.AddColumn("col_b", UINT32));
+  ASSERT_OK(wide_sb.AddNullableColumn("col_c", UINT32));
+  Schema wide_schema = wide_sb.Build();
+  Schema wide_key_schema = wide_schema.CreateKeyProjection();
+
+  shared_ptr<MemRowSet> mrs;
+  ASSERT_OK(MemRowSet::Create(0, wide_schema, log_anchor_registry_.get(),
+                              MemTracker::GetRootTracker(), &mrs));
+
+  // Sequence:
+  // INSERT ("row", 1, 100, 1000)
+  // @T1: UPDATE col_a=2, col_b=200
+  // @T2: UPDATE col_a=3, col_c=3000
+  // --- snap_between ---
+  // @T3: UPDATE col_b=300, col_c=NULL  (after snapshot)
+
+  // INSERT.
+  ASSERT_OK(InsertWideRow(mrs.get(), wide_schema, "row", 1, 100, 1000));
+
+  // @T1: UPDATE col_a=2, col_b=200. Mixed changelist.
+  ASSERT_OK(UpdateWideRow(mrs.get(), wide_schema, wide_key_schema, "row", {{1, 2}, {2, 200}}));
+
+  // @T2: UPDATE col_a=3, col_c=3000.
+  ASSERT_OK(UpdateWideRow(mrs.get(), wide_schema, wide_key_schema, "row", {{1, 3}, {3, 3000}}));
+
+  // Snapshot after two col_a mutations, before col_b's second update.
+  MvccSnapshot snap_between(mvcc_);
+
+  // @T3: UPDATE col_b=300, col_c=NULL. After the snapshot.
+  {
+    ScopedOp op(&mvcc_, clock_.Now());
+    op.StartApplying();
+    faststring buf;
+    RowChangeListEncoder enc(&buf);
+    uint32_t new_b = 300;
+    enc.AddColumnUpdate(wide_schema.column(2), wide_schema.column_id(2), &new_b);
+    enc.AddColumnUpdate(wide_schema.column(3), wide_schema.column_id(3), nullptr);
+    RowBuilder rb(&wide_key_schema);
+    rb.AddString(Slice("row"));
+    Arena arena(64);
+    RowSetKeyProbe probe(rb.row(), &arena);
+    ProbeStats stats;
+    OperationResultPB result;
+    ASSERT_OK(mrs->MutateRow(op.timestamp(), probe,
+                             RowChangeList(buf),
+                             op_id_, nullptr, &stats, &result));
+    op.FinishApplying();
+  }
+
+  // Scan at snap_between with projection excluding col_a.
+  // col_b=200 (T1 visible), col_c=3000 (T2 visible). T3 not yet visible.
+  {
+    SchemaBuilder proj_sb(wide_schema);
+    ASSERT_OK(proj_sb.RemoveColumn("col_a"));
+    Schema proj = proj_sb.Build();
+
+    RowIteratorOptions opts;
+    opts.projection = &proj;
+    opts.snap_to_include = snap_between;
+    vector<string> rows;
+    ASSERT_OK(DumpRowSet(*mrs, opts, &rows));
+    ASSERT_EQ(1, rows.size());
+    ASSERT_EQ(R"((string key="row", uint32 col_b=200, uint32 col_c=3000))", rows[0]);
+  }
+
+  // Scan at snap_between with projection excluding col_b.
+  // col_a=3 (T2 visible), col_c=3000 (T2 visible).
+  {
+    SchemaBuilder proj_sb(wide_schema);
+    ASSERT_OK(proj_sb.RemoveColumn("col_b"));
+    Schema proj = proj_sb.Build();
+
+    RowIteratorOptions opts;
+    opts.projection = &proj;
+    opts.snap_to_include = snap_between;
+    vector<string> rows;
+    ASSERT_OK(DumpRowSet(*mrs, opts, &rows));
+    ASSERT_EQ(1, rows.size());
+    ASSERT_EQ(R"((string key="row", uint32 col_a=3, uint32 col_c=3000))", rows[0]);
+  }
+
+  // Scan at AllOps with projection excluding col_a.
+  // All mutations visible: col_b=300 (T3), col_c=NULL (T3).
+  {
+    SchemaBuilder proj_sb(wide_schema);
+    ASSERT_OK(proj_sb.RemoveColumn("col_a"));
+    Schema proj = proj_sb.Build();
+
+    RowIteratorOptions opts;
+    opts.projection = &proj;
+    opts.snap_to_include = MvccSnapshot::CreateSnapshotIncludingAllOps();
+    vector<string> rows;
+    ASSERT_OK(DumpRowSet(*mrs, opts, &rows));
+    ASSERT_EQ(1, rows.size());
+    ASSERT_EQ(R"((string key="row", uint32 col_b=300, uint32 col_c=NULL))", rows[0]);
+  }
+
+  // --- DELETE + REINSERT with intermediate snapshot ---
+  // Verify the snapshot boundary around DELETE/REINSERT with partial projection.
+
+  // @T4: DELETE.
+  ASSERT_OK(DeleteWideRow(mrs.get(), wide_key_schema, "row"));
+
+  MvccSnapshot snap_after_delete(mvcc_);
+
+  // @T5: REINSERT ("row", 10, 1000, 10000).
+  ASSERT_OK(InsertWideRow(mrs.get(), wide_schema, "row", 10, 1000, 10000));
+
+  // Scan at snap_after_delete excluding col_a. Row is deleted -> not visible.
+  {
+    SchemaBuilder proj_sb(wide_schema);
+    ASSERT_OK(proj_sb.RemoveColumn("col_a"));
+    Schema proj = proj_sb.Build();
+
+    RowIteratorOptions opts;
+    opts.projection = &proj;
+    opts.snap_to_include = snap_after_delete;
+    vector<string> rows;
+    ASSERT_OK(DumpRowSet(*mrs, opts, &rows));
+    ASSERT_TRUE(rows.empty());
+  }
+
+  // Scan at AllOps excluding col_a after REINSERT.
+  // REINSERT changelist carries col_a (skipped), col_b, col_c.
+  // Expected: col_b=1000, col_c=10000.
+  {
+    SchemaBuilder proj_sb(wide_schema);
+    ASSERT_OK(proj_sb.RemoveColumn("col_a"));
+    Schema proj = proj_sb.Build();
+
+    RowIteratorOptions opts;
+    opts.projection = &proj;
+    opts.snap_to_include = MvccSnapshot::CreateSnapshotIncludingAllOps();
+    vector<string> rows;
+    ASSERT_OK(DumpRowSet(*mrs, opts, &rows));
+    ASSERT_EQ(1, rows.size());
+    ASSERT_EQ(R"((string key="row", uint32 col_b=1000, uint32 col_c=10000))", rows[0]);
+  }
+}
+
+// Use [snap_exclude, snap_include) window scan with a wide schema and a
+// partial projection that omits mutated columns. This covers the
+// snap_to_exclude code path combined with column-skipping for
+// non-projected columns.
+TEST_F(TestMemRowSet, TestPartialProjectionWithSnapToExclude) {
+  SchemaBuilder wide_sb;
+  ASSERT_OK(wide_sb.AddKeyColumn("key", STRING));
+  ASSERT_OK(wide_sb.AddColumn("col_a", UINT32));
+  ASSERT_OK(wide_sb.AddColumn("col_b", UINT32));
+  ASSERT_OK(wide_sb.AddNullableColumn("col_c", UINT32));
+  Schema wide_schema = wide_sb.Build();
+  Schema wide_key_schema = wide_schema.CreateKeyProjection();
+
+  shared_ptr<MemRowSet> mrs;
+  ASSERT_OK(MemRowSet::Create(0, wide_schema, log_anchor_registry_.get(),
+                              MemTracker::GetRootTracker(), &mrs));
+
+  // Sequence of operations with snapshots captured between each:
+  // snap[0]
+  // @1 INSERT ("row", 1, 100, 1000)
+  // snap[1]
+  // @2 UPDATE col_a=2, col_b=200           (projected + non-projected)
+  // snap[2]
+  // @3 UPDATE col_b=300, col_c=3000        (both non-projected)
+  // snap[3]
+  // @4 UPDATE col_a=4, col_c=4000          (projected + non-projected)
+  // snap[4]
+  // @5 DELETE
+  // snap[5]
+  // @6 REINSERT ("row", 10, 1000, 10000)
+  // snap[6]
+  vector<MvccSnapshot> snaps;
+
+  snaps.emplace_back(mvcc_);  // snap[0]
+
+  // @1 INSERT.
+  ASSERT_OK(InsertWideRow(mrs.get(), wide_schema, "row", 1, 100, 1000));
+  snaps.emplace_back(mvcc_);  // snap[1]
+
+  // @2 UPDATE col_a=2, col_b=200. Single changelist touches both a projected
+  // column (col_a) and a non-projected column (col_b).
+  ASSERT_OK(UpdateWideRow(mrs.get(), wide_schema, wide_key_schema, "row", {{1, 2}, {2, 200}}));
+  snaps.emplace_back(mvcc_);  // snap[2]
+
+  // @3 UPDATE col_b=300, col_c=3000. Both columns are outside the projection.
+  ASSERT_OK(UpdateWideRow(mrs.get(), wide_schema, wide_key_schema, "row", {{2, 300}, {3, 3000}}));
+  snaps.emplace_back(mvcc_);  // snap[3]
+
+  // @4 UPDATE col_a=4, col_c=4000. Again mixes projected (col_a) with
+  // non-projected (col_c).
+  ASSERT_OK(UpdateWideRow(mrs.get(), wide_schema, wide_key_schema, "row", {{1, 4}, {3, 4000}}));
+  snaps.emplace_back(mvcc_);  // snap[4]
+
+  // @5 DELETE.
+  ASSERT_OK(DeleteWideRow(mrs.get(), wide_key_schema, "row"));
+  snaps.emplace_back(mvcc_);  // snap[5]
+
+  // @6 REINSERT ("row", 10, 1000, 10000). The REINSERT changelist carries
+  // all value columns; col_b and col_c are outside the projection.
+  ASSERT_OK(InsertWideRow(mrs.get(), wide_schema, "row", 10, 1000, 10000));
+  snaps.emplace_back(mvcc_);  // snap[6]
+
+  // Build partial projection: key + col_a only (omit col_b, col_c).
+  SchemaBuilder proj_sb(wide_schema);
+  ASSERT_OK(proj_sb.RemoveColumn("col_b"));
+  ASSERT_OK(proj_sb.RemoveColumn("col_c"));
+  Schema proj = proj_sb.Build();
+
+  // Helper lambda to scan with [snap_exclude, snap_include) and partial projection.
+  auto DumpAndCheck = [&](const MvccSnapshot& exclude,
+                          const MvccSnapshot& include,
+                          optional<string> expected_row) {
+    RowIteratorOptions opts;
+    opts.projection = &proj;
+    opts.snap_to_exclude = exclude;
+    opts.snap_to_include = include;
+    vector<string> rows;
+    ASSERT_OK(DumpRowSet(*mrs, opts, &rows));
+    if (expected_row) {
+      ASSERT_EQ(1, rows.size());
+      ASSERT_EQ(*expected_row, rows[0]);
+    } else {
+      ASSERT_TRUE(rows.empty());
+    }
+  };
+
+  // [snap[i], snap[i]) - empty range for every snapshot.
+  for (const auto& s : snaps) {
+    NO_FATALS(DumpAndCheck(s, s, nullopt));
+  }
+
+  // --- Single-step windows ---
+
+  // [snap[0], snap[1]) - INSERT only. col_a=1 (initial value).
+  NO_FATALS(DumpAndCheck(snaps[0], snaps[1],
+                         R"((string key="row", uint32 col_a=1))"));
+
+  // [snap[1], snap[2]) - UPDATE col_a=2, col_b=200.
+  // col_a is projected (applied -> 2), col_b is outside the projection (skipped).
+  NO_FATALS(DumpAndCheck(snaps[1], snaps[2],
+                         R"((string key="row", uint32 col_a=2))"));
+
+  // [snap[2], snap[3]) - UPDATE col_b=300, col_c=3000.
+  // Both columns are outside the projection; col_a=2 unchanged.
+  NO_FATALS(DumpAndCheck(snaps[2], snaps[3],
+                         R"((string key="row", uint32 col_a=2))"));
+
+  // [snap[3], snap[4]) - UPDATE col_a=4, col_c=4000.
+  // col_a is projected (applied -> 4), col_c is outside the projection (skipped).
+  NO_FATALS(DumpAndCheck(snaps[3], snaps[4],
+                         R"((string key="row", uint32 col_a=4))"));
+
+  // [snap[4], snap[5]) - DELETE. Row not visible.
+  NO_FATALS(DumpAndCheck(snaps[4], snaps[5], nullopt));
+
+  // [snap[5], snap[6]) - REINSERT. col_b and col_c are outside the
+  // projection; col_a=10.
+  NO_FATALS(DumpAndCheck(snaps[5], snaps[6],
+                         R"((string key="row", uint32 col_a=10))"));
+
+  // --- Wider windows ---
+
+  // [snap[0], snap[2]) - INSERT + UPDATE(col_a, col_b). col_a=2.
+  NO_FATALS(DumpAndCheck(snaps[0], snaps[2],
+                         R"((string key="row", uint32 col_a=2))"));
+
+  // [snap[0], snap[4]) - INSERT through UPDATE(col_a=4, col_c=4000). col_a=4.
+  NO_FATALS(DumpAndCheck(snaps[0], snaps[4],
+                         R"((string key="row", uint32 col_a=4))"));
+
+  // [snap[0], snap[5]) - INSERT through DELETE. Row deleted, not visible.
+  NO_FATALS(DumpAndCheck(snaps[0], snaps[5], nullopt));
+
+  // [snap[0], snap[6]) - Full range. REINSERT visible, col_a=10.
+  NO_FATALS(DumpAndCheck(snaps[0], snaps[6],
+                         R"((string key="row", uint32 col_a=10))"));
+
+  // [snap[1], snap[4]) - Both mixed-column UPDATEs + pure-non-projected UPDATE.
+  // col_a ends at 4.
+  NO_FATALS(DumpAndCheck(snaps[1], snaps[4],
+                         R"((string key="row", uint32 col_a=4))"));
+
+  // [snap[2], snap[4]) - UPDATE(col_b,col_c) + UPDATE(col_a=4,col_c=4000). col_a=4.
+  NO_FATALS(DumpAndCheck(snaps[2], snaps[4],
+                         R"((string key="row", uint32 col_a=4))"));
+
+  // [snap[1], snap[6]) - All mutations through REINSERT. col_a=10.
+  NO_FATALS(DumpAndCheck(snaps[1], snaps[6],
+                         R"((string key="row", uint32 col_a=10))"));
+}
+
+// Multiple rows with different mutation chains exercising the iterator's
+// outer row loop with column-skipping active.
+TEST_F(TestMemRowSet, TestPartialProjectionMultipleRows) {
+  SchemaBuilder wide_sb;
+  ASSERT_OK(wide_sb.AddKeyColumn("key", STRING));
+  ASSERT_OK(wide_sb.AddColumn("col_a", UINT32));
+  ASSERT_OK(wide_sb.AddColumn("col_b", UINT32));
+  ASSERT_OK(wide_sb.AddNullableColumn("col_c", UINT32));
+  Schema wide_schema = wide_sb.Build();
+  Schema wide_key_schema = wide_schema.CreateKeyProjection();
+
+  shared_ptr<MemRowSet> mrs;
+  ASSERT_OK(MemRowSet::Create(0, wide_schema, log_anchor_registry_.get(),
+                              MemTracker::GetRootTracker(), &mrs));
+
+  // row0: INSERT only, no mutations.
+  ASSERT_OK(InsertWideRow(mrs.get(), wide_schema, "row0", 1, 100, 1000));
+
+  // row1: UPDATE col_a only.
+  ASSERT_OK(InsertWideRow(mrs.get(), wide_schema, "row1", 1, 100, 1000));
+  ASSERT_OK(UpdateWideRow(mrs.get(), wide_schema, wide_key_schema, "row1", {{1, 2}}));
+
+  // row2: UPDATE col_a + col_b.
+  ASSERT_OK(InsertWideRow(mrs.get(), wide_schema, "row2", 1, 100, 1000));
+  ASSERT_OK(UpdateWideRow(mrs.get(), wide_schema, wide_key_schema, "row2", {{1, 3}, {2, 300}}));
+
+  // row3: UPDATE col_a + col_b, then UPDATE col_c=NULL.
+  ASSERT_OK(InsertWideRow(mrs.get(), wide_schema, "row3", 1, 100, 1000));
+  ASSERT_OK(UpdateWideRow(mrs.get(), wide_schema, wide_key_schema, "row3", {{1, 4}, {2, 400}}));
+  {
+    ScopedOp op(&mvcc_, clock_.Now());
+    op.StartApplying();
+    faststring buf;
+    RowChangeListEncoder enc(&buf);
+    enc.AddColumnUpdate(wide_schema.column(3), wide_schema.column_id(3), nullptr);
+    RowBuilder rb(&wide_key_schema);
+    rb.AddString(Slice("row3"));
+    Arena arena(64);
+    RowSetKeyProbe probe(rb.row(), &arena);
+    ProbeStats stats;
+    OperationResultPB result;
+    ASSERT_OK(mrs->MutateRow(op.timestamp(), probe,
+                             RowChangeList(buf),
+                             op_id_, nullptr, &stats, &result));
+    op.FinishApplying();
+  }
+
+  // row4: UPDATE col_b, DELETE, then REINSERT with new values.
+  ASSERT_OK(InsertWideRow(mrs.get(), wide_schema, "row4", 1, 100, 1000));
+  ASSERT_OK(UpdateWideRow(mrs.get(), wide_schema, wide_key_schema, "row4", {{2, 500}}));
+  ASSERT_OK(DeleteWideRow(mrs.get(), wide_key_schema, "row4"));
+  ASSERT_OK(InsertWideRow(mrs.get(), wide_schema, "row4", 5, 500, 5000));
+
+  // Scan with partial projection (key + col_a), omitting col_b and col_c.
+  {
+    SchemaBuilder proj_sb(wide_schema);
+    ASSERT_OK(proj_sb.RemoveColumn("col_b"));
+    ASSERT_OK(proj_sb.RemoveColumn("col_c"));
+    Schema proj = proj_sb.Build();
+
+    RowIteratorOptions opts;
+    opts.projection = &proj;
+    opts.snap_to_include = MvccSnapshot::CreateSnapshotIncludingAllOps();
+    vector<string> rows;
+    ASSERT_OK(DumpRowSet(*mrs, opts, &rows));
+    ASSERT_EQ(5, rows.size());
+    ASSERT_EQ(R"((string key="row0", uint32 col_a=1))", rows[0]);
+    ASSERT_EQ(R"((string key="row1", uint32 col_a=2))", rows[1]);
+    ASSERT_EQ(R"((string key="row2", uint32 col_a=3))", rows[2]);
+    ASSERT_EQ(R"((string key="row3", uint32 col_a=4))", rows[3]);
+    ASSERT_EQ(R"((string key="row4", uint32 col_a=5))", rows[4]);
+  }
+
+  // Scan with partial projection (key + col_b), omitting col_a and col_c.
+  {
+    SchemaBuilder proj_sb(wide_schema);
+    ASSERT_OK(proj_sb.RemoveColumn("col_a"));
+    ASSERT_OK(proj_sb.RemoveColumn("col_c"));
+    Schema proj = proj_sb.Build();
+
+    RowIteratorOptions opts;
+    opts.projection = &proj;
+    opts.snap_to_include = MvccSnapshot::CreateSnapshotIncludingAllOps();
+    vector<string> rows;
+    ASSERT_OK(DumpRowSet(*mrs, opts, &rows));
+    ASSERT_EQ(5, rows.size());
+    ASSERT_EQ(R"((string key="row0", uint32 col_b=100))", rows[0]);
+    ASSERT_EQ(R"((string key="row1", uint32 col_b=100))", rows[1]);
+    ASSERT_EQ(R"((string key="row2", uint32 col_b=300))", rows[2]);
+    ASSERT_EQ(R"((string key="row3", uint32 col_b=400))", rows[3]);
+    ASSERT_EQ(R"((string key="row4", uint32 col_b=500))", rows[4]);
+  }
+
+  // Scan with partial projection (key + col_c), omitting col_a and col_b.
+  {
+    SchemaBuilder proj_sb(wide_schema);
+    ASSERT_OK(proj_sb.RemoveColumn("col_a"));
+    ASSERT_OK(proj_sb.RemoveColumn("col_b"));
+    Schema proj = proj_sb.Build();
+
+    RowIteratorOptions opts;
+    opts.projection = &proj;
+    opts.snap_to_include = MvccSnapshot::CreateSnapshotIncludingAllOps();
+    vector<string> rows;
+    ASSERT_OK(DumpRowSet(*mrs, opts, &rows));
+    ASSERT_EQ(5, rows.size());
+    ASSERT_EQ(R"((string key="row0", uint32 col_c=1000))", rows[0]);
+    ASSERT_EQ(R"((string key="row1", uint32 col_c=1000))", rows[1]);
+    ASSERT_EQ(R"((string key="row2", uint32 col_c=1000))", rows[2]);
+    ASSERT_EQ(R"((string key="row3", uint32 col_c=NULL))", rows[3]);
+    ASSERT_EQ(R"((string key="row4", uint32 col_c=5000))", rows[4]);
+  }
+}
+
+// Key-only projection with no value columns. All column updates in every
+// mutation are outside the projection and should be silently skipped.
+// Verifies the scan completes without error.
+TEST_F(TestMemRowSet, TestKeyOnlyProjection) {
+  SchemaBuilder wide_sb;
+  ASSERT_OK(wide_sb.AddKeyColumn("key", STRING));
+  ASSERT_OK(wide_sb.AddColumn("col_a", UINT32));
+  ASSERT_OK(wide_sb.AddColumn("col_b", UINT32));
+  ASSERT_OK(wide_sb.AddNullableColumn("col_c", UINT32));
+  Schema wide_schema = wide_sb.Build();
+  Schema wide_key_schema = wide_schema.CreateKeyProjection();
+
+  shared_ptr<MemRowSet> mrs;
+  ASSERT_OK(MemRowSet::Create(0, wide_schema, log_anchor_registry_.get(),
+                              MemTracker::GetRootTracker(), &mrs));
+
+  // Insert 3 rows and apply different mutations.
+  ASSERT_OK(InsertWideRow(mrs.get(), wide_schema, "aaa", 1, 10, 100));
+  ASSERT_OK(InsertWideRow(mrs.get(), wide_schema, "bbb", 2, 20, 200));
+  ASSERT_OK(InsertWideRow(mrs.get(), wide_schema, "ccc", 3, 30, 300));
+
+  // Update all value columns on "bbb".
+  ASSERT_OK(UpdateWideRow(mrs.get(), wide_schema, wide_key_schema, "bbb",
+                          {{1, 99}, {2, 99}, {3, 99}}));
+
+  // Scan with key-only projection.
+  {
+    Schema key_proj = wide_schema.CreateKeyProjection();
+    RowIteratorOptions opts;
+    opts.projection = &key_proj;
+    opts.snap_to_include = MvccSnapshot::CreateSnapshotIncludingAllOps();
+    vector<string> rows;
+    ASSERT_OK(DumpRowSet(*mrs, opts, &rows));
+    ASSERT_EQ(3, rows.size());
+    ASSERT_EQ(R"((string key="aaa"))", rows[0]);
+    ASSERT_EQ(R"((string key="bbb"))", rows[1]);
+    ASSERT_EQ(R"((string key="ccc"))", rows[2]);
+  }
+
+  // Delete "ccc", then re-insert it. The REINSERT changelist contains all
+  // value columns, but with a key-only projection every entry is outside
+  // the projection and should be skipped.
+  ASSERT_OK(DeleteWideRow(mrs.get(), wide_key_schema, "ccc"));
+  ASSERT_OK(InsertWideRow(mrs.get(), wide_schema, "ccc", 30, 300, 3000));
+
+  // After DELETE + REINSERT, key-only scan should still return 3 rows.
+  {
+    Schema key_proj = wide_schema.CreateKeyProjection();
+    RowIteratorOptions opts;
+    opts.projection = &key_proj;
+    opts.snap_to_include = MvccSnapshot::CreateSnapshotIncludingAllOps();
+    vector<string> rows;
+    ASSERT_OK(DumpRowSet(*mrs, opts, &rows));
+    ASSERT_EQ(3, rows.size());
+    ASSERT_EQ(R"((string key="aaa"))", rows[0]);
+    ASSERT_EQ(R"((string key="bbb"))", rows[1]);
+    ASSERT_EQ(R"((string key="ccc"))", rows[2]);
+  }
+}
+
+// include_deleted_rows=true combined with a partial projection. This covers
+// the interaction between the deleted-row selection logic and the column-skip
+// path.
+TEST_F(TestMemRowSet, TestIncludeDeletedRowsWithPartialProjection) {
+  SchemaBuilder wide_sb;
+  ASSERT_OK(wide_sb.AddKeyColumn("key", STRING));
+  ASSERT_OK(wide_sb.AddColumn("col_a", UINT32));
+  ASSERT_OK(wide_sb.AddColumn("col_b", UINT32));
+  ASSERT_OK(wide_sb.AddNullableColumn("col_c", UINT32));
+  Schema wide_schema = wide_sb.Build();
+  Schema wide_key_schema = wide_schema.CreateKeyProjection();
+
+  shared_ptr<MemRowSet> mrs;
+  ASSERT_OK(MemRowSet::Create(0, wide_schema, log_anchor_registry_.get(),
+                              MemTracker::GetRootTracker(), &mrs));
+
+  // row0: alive, no mutations.
+  ASSERT_OK(InsertWideRow(mrs.get(), wide_schema, "row0", 1, 100, 1000));
+
+  // row1: update col_a and col_b, then delete.
+  ASSERT_OK(InsertWideRow(mrs.get(), wide_schema, "row1", 1, 100, 1000));
+  ASSERT_OK(UpdateWideRow(mrs.get(), wide_schema, wide_key_schema, "row1", {{1, 2}, {2, 200}}));
+  ASSERT_OK(DeleteWideRow(mrs.get(), wide_key_schema, "row1"));
+
+  // row2: update col_a, delete, then reinsert.
+  ASSERT_OK(InsertWideRow(mrs.get(), wide_schema, "row2", 1, 100, 1000));
+  ASSERT_OK(UpdateWideRow(mrs.get(), wide_schema, wide_key_schema, "row2", {{1, 3}}));
+  ASSERT_OK(DeleteWideRow(mrs.get(), wide_key_schema, "row2"));
+  ASSERT_OK(InsertWideRow(mrs.get(), wide_schema, "row2", 10, 1000, 10000));
+
+  // row3: only non-projected column mutations, then delete. The UPDATE
+  // changelist has only col_b entries (all outside the projection), so
+  // nothing is applied to the projected row. Combined with
+  // include_deleted_rows, the row must still appear with col_a at its
+  // initial INSERT value.
+  ASSERT_OK(InsertWideRow(mrs.get(), wide_schema, "row3", 1, 100, 1000));
+  ASSERT_OK(UpdateWideRow(mrs.get(), wide_schema, wide_key_schema, "row3", {{2, 600}}));
+  ASSERT_OK(DeleteWideRow(mrs.get(), wide_key_schema, "row3"));
+
+  // Without include_deleted_rows, partial projection (key + col_a).
+  // Should see row0 and row2 only (row1, row3 are deleted).
+  {
+    SchemaBuilder proj_sb(wide_schema);
+    ASSERT_OK(proj_sb.RemoveColumn("col_b"));
+    ASSERT_OK(proj_sb.RemoveColumn("col_c"));
+    Schema proj = proj_sb.Build();
+
+    RowIteratorOptions opts;
+    opts.projection = &proj;
+    opts.snap_to_include = MvccSnapshot::CreateSnapshotIncludingAllOps();
+    vector<string> rows;
+    ASSERT_OK(DumpRowSet(*mrs, opts, &rows));
+    ASSERT_EQ(2, rows.size());
+    ASSERT_EQ(R"((string key="row0", uint32 col_a=1))", rows[0]);
+    ASSERT_EQ(R"((string key="row2", uint32 col_a=10))", rows[1]);
+  }
+
+  // With include_deleted_rows=true, partial projection (key + col_a).
+  // All 4 rows should be visible. row3's col_a stays at initial value (1)
+  // because its only mutation was on col_b (non-projected, fully skipped).
+  {
+    SchemaBuilder proj_sb(wide_schema);
+    ASSERT_OK(proj_sb.RemoveColumn("col_b"));
+    ASSERT_OK(proj_sb.RemoveColumn("col_c"));
+    Schema proj = proj_sb.Build();
+
+    RowIteratorOptions opts;
+    opts.projection = &proj;
+    opts.snap_to_include = MvccSnapshot::CreateSnapshotIncludingAllOps();
+    opts.include_deleted_rows = true;
+    vector<string> rows;
+    ASSERT_OK(DumpRowSet(*mrs, opts, &rows));
+    ASSERT_EQ(4, rows.size());
+    ASSERT_EQ(R"((string key="row0", uint32 col_a=1))", rows[0]);
+    ASSERT_EQ(R"((string key="row1", uint32 col_a=2))", rows[1]);
+    ASSERT_EQ(R"((string key="row2", uint32 col_a=10))", rows[2]);
+    ASSERT_EQ(R"((string key="row3", uint32 col_a=1))", rows[3]);
+  }
+
+  // With include_deleted_rows=true, partial projection (key + col_a) +
+  // IS_DELETED virtual column. Verify deletion status is correctly reported.
+  {
+    SchemaBuilder proj_sb(wide_schema);
+    ASSERT_OK(proj_sb.RemoveColumn("col_b"));
+    ASSERT_OK(proj_sb.RemoveColumn("col_c"));
+    const bool kFalse = false;
+    ASSERT_OK(proj_sb.AddColumn(ColumnSchemaBuilder()
+                                    .name("deleted")
+                                    .type(IS_DELETED)
+                                    .read_default(&kFalse)));
+    Schema proj = proj_sb.Build();
+
+    RowIteratorOptions opts;
+    opts.projection = &proj;
+    opts.snap_to_include = MvccSnapshot::CreateSnapshotIncludingAllOps();
+    opts.include_deleted_rows = true;
+    vector<string> rows;
+    ASSERT_OK(DumpRowSet(*mrs, opts, &rows));
+    ASSERT_EQ(4, rows.size());
+    // row0: alive.
+    ASSERT_STR_CONTAINS(rows[0], R"(key="row0")");
+    ASSERT_STR_CONTAINS(rows[0], "col_a=1");
+    ASSERT_STR_CONTAINS(rows[0], "deleted=false");
+    // row1: deleted (had mixed mutation col_a+col_b).
+    ASSERT_STR_CONTAINS(rows[1], R"(key="row1")");
+    ASSERT_STR_CONTAINS(rows[1], "col_a=2");
+    ASSERT_STR_CONTAINS(rows[1], "deleted=true");
+    // row2: alive (reinserted).
+    ASSERT_STR_CONTAINS(rows[2], R"(key="row2")");
+    ASSERT_STR_CONTAINS(rows[2], "col_a=10");
+    ASSERT_STR_CONTAINS(rows[2], "deleted=false");
+    // row3: deleted (only non-projected col_b was mutated, col_a unchanged).
+    ASSERT_STR_CONTAINS(rows[3], R"(key="row3")");
+    ASSERT_STR_CONTAINS(rows[3], "col_a=1");
+    ASSERT_STR_CONTAINS(rows[3], "deleted=true");
   }
 }
 
