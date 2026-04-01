@@ -413,7 +413,7 @@ void Connection::QueueOutboundCall(shared_ptr<OutboundCall> call) {
   TransferCallbacks* cb = new CallTransferCallbacks(std::move(call), this);
   awaiting_response_[call_id] = car.release();
   QueueOutbound(unique_ptr<OutboundTransfer>(
-      OutboundTransfer::CreateForCallRequest(call_id, tmp_slices, cb)));
+      OutboundTransfer::CreateForCallRequest(call_id, std::move(tmp_slices), cb)));
 }
 
 // Callbacks for sending an RPC call response from the server.
@@ -491,7 +491,7 @@ void Connection::QueueResponseForCall(unique_ptr<InboundCall> call) {
   // We set a dummy call ID and required feature set, since these are not needed
   // when sending responses.
   unique_ptr<OutboundTransfer> t(
-      OutboundTransfer::CreateForCallResponse(tmp_slices, cb));
+      OutboundTransfer::CreateForCallResponse(std::move(tmp_slices), cb));
 
   reactor_thread_->reactor()->ScheduleReactorTask(
       new QueueTransferTask(std::move(t), this));
