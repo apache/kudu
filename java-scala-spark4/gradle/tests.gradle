@@ -1,0 +1,98 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+// This file contains common tasks and configuration for unit and integration tests.
+
+// Support parallel unit test execution.
+test {
+  maxParallelForks = propertyWithDefault("maxParallelForks", "1").toInteger()
+  if (propertyExists("showTestOutput")) {
+    // Show stdout and stderr from tests on the console.
+    testLogging.showStandardStreams = true
+  }
+}
+
+tasks.withType(Test) {
+  // Log all test events.
+  testLogging {
+    events "passed", "skipped", "failed"
+    exceptionFormat = "full"
+  }
+
+  // Break up the stdout and stderr logging by test case.
+  reports.junitXml.outputPerTestCase = true
+
+  // Fork the jvm for every test class.
+  // This takes more time and resources but ensures isolation.
+  forkEvery 1
+
+  // Enable assertions during tests.
+  jvmArgs += "-enableassertions"
+  // Config 1g maximum java heap size for test JVMs.
+  jvmArgs += "-Xmx1g"
+  // Hide the Java 9+ warnings about illegal reflective access
+  if (JavaVersion.current().isJava9Compatible()) {
+    jvmArgs += "--illegal-access=permit"
+    def reflectionModules = [
+        "java.base/java.io",   // java.io reflection is used by Spark
+        "java.base/java.lang", // java.lang reflection is used by TestUtils
+        "java.base/java.net",  // java.net reflection is used by FakeDNS
+        "java.base/java.nio",  // java.nio reflection is used by Protobuf
+        "java.base/java.util", // java.util reflection is used by Spark
+        "java.base/java.util.concurrent", // java.util.concurrent reflection is used by Spark
+        "java.base/sun.nio.ch", // sun.nio.ch reflection is used by Netty
+        "java.security.jgss/sun.security.krb5" // sun.security.krb5 reflection is used by Hadoop's KerberosUtil
+    ]
+    reflectionModules.forEach { module ->
+      jvmArgs += "--add-opens=$module=ALL-UNNAMED"
+    }
+  }
+  // Enable paranoid Netty leak detection during tests.
+  // https://netty.io/wiki/reference-counted-objects.html#leak-detection-levels
+  if (propertyExists("nettyLeakDetection")) {
+    jvmArgs += "-Dio.netty.leakDetection.level=paranoid"
+  }
+
+  // Set a few system properties.
+  systemProperty "java.awt.headless", true
+  systemProperty "java.net.preferIPv4Stack", true
+  systemProperty "java.security.egd", "file:/dev/urandom" // Improve RNG generation speed.
+
+  if (propertyExists("securityDebug")) {
+    systemProperty "sun.security.krb5.debug", true
+    systemProperty "sun.security.spnego.debug", true
+    systemProperty "javax.net.debug", "all"
+  }
+
+  // Only use the local KuduBinDir if we are not using the kudu-binary jar.
+  if (!propertyExists("useBinJar")) {
+    // Set kuduBinDir to the binaries to use with the MiniKuduCluster.
+    systemProperty "kuduBinDir", propertyWithDefault("kuduBinDir", "$project.rootDir/../build/latest/bin")
+  }
+
+  // Set testRandomSeed to override the seed for the PRNG exposed in
+  // RandomUtils.java and used by various tests. This is useful when trying to
+  // reproduce a test failure for a test that uses the PRNG to generate state.
+  if (propertyExists("testRandomSeed")) {
+    systemProperty "testRandomSeed", propertyWithDefault("testRandomSeed", null)
+  }
+
+  // Force the tests to be rerun if the rerunTests property is set.
+  if (propertyExists("rerunTests")) {
+    outputs.upToDateWhen { false }
+  }
+}
