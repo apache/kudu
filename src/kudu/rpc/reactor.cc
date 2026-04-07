@@ -410,7 +410,7 @@ void ReactorThread::CancelOutboundCall(const shared_ptr<OutboundCall>& call) {
 //
 void ReactorThread::TimerHandler(ev::timer& /*watcher*/, int revents) {
   DCHECK(IsCurrentThread());
-  if (EV_ERROR & revents) {
+  if (PREDICT_FALSE(EV_ERROR & revents)) {
     LOG(WARNING) << "Reactor " << name() << " got an error in "
       "the timer handler.";
     return;
@@ -589,7 +589,7 @@ Status ReactorThread::FindOrStartConnection(const ConnectionId& conn_id,
 
   // Kick off blocking client connection negotiation.
   Status s = StartConnectionNegotiation(*conn);
-  if (s.IsIllegalState()) {
+  if (PREDICT_FALSE(s.IsIllegalState())) {
     // Return a nicer error message to the user indicating -- if we just
     // forward the status we'd get something generic like "ThreadPool is closing".
     return Status::ServiceUnavailable("Client RPC Messenger shutting down");
@@ -764,7 +764,7 @@ void DelayedTask::TimerHandler(ev::timer& /*watcher*/, int revents) {
   // We will free this task's memory.
   thread_->scheduled_tasks_.erase(thread_->scheduled_tasks_.iterator_to(*this));
 
-  if (EV_ERROR & revents) {
+  if (PREDICT_FALSE(EV_ERROR & revents)) {
     string msg = "Delayed task got an error in its timer handler";
     LOG(WARNING) << msg;
     Abort(Status::Aborted(msg)); // Will delete 'this'.
@@ -971,7 +971,7 @@ void Reactor::ScheduleReactorTask(ReactorTask* task) {
 
 bool Reactor::DrainTaskQueue(boost::intrusive::list<ReactorTask>* tasks) { // NOLINT(*)
   std::lock_guard l(lock_);
-  if (closing_) {
+  if (PREDICT_FALSE(closing_)) {
     return false;
   }
   tasks->swap(pending_tasks_);

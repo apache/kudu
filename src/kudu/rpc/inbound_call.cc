@@ -97,8 +97,9 @@ Status InboundCall::ParseFrom(unique_ptr<InboundTransfer> transfer) {
     deadline_ = timing_.time_received + MonoDelta::FromMilliseconds(header_.timeout_millis());
   }
 
-  if (header_.sidecar_offsets_size() > TransferLimits::kMaxSidecars) {
-    return Status::Corruption(strings::Substitute(
+  if (PREDICT_FALSE(header_.sidecar_offsets_size() >
+        TransferLimits::kMaxSidecars)) {
+    return Status::Corruption(Substitute(
             "Received $0 additional payload slices, expected at most %d",
             header_.sidecar_offsets_size(), TransferLimits::kMaxSidecars));
   }
@@ -224,12 +225,12 @@ Status InboundCall::AddOutboundSidecar(unique_ptr<RpcSidecar> car, int* idx) {
   // Check that the number of sidecars does not exceed the number of payload
   // slices that are free (two are used up by the header and main message
   // protobufs).
-  if (outbound_sidecars_.size() > TransferLimits::kMaxSidecars) {
+  if (PREDICT_FALSE(outbound_sidecars_.size() > TransferLimits::kMaxSidecars)) {
     return Status::ServiceUnavailable("All available sidecars already used");
   }
   size_t sidecar_bytes = car->TotalSize();
-  if (outbound_sidecars_total_bytes_ >
-      TransferLimits::kMaxTotalSidecarBytes - sidecar_bytes) {
+  if (PREDICT_FALSE(outbound_sidecars_total_bytes_ + sidecar_bytes >
+        TransferLimits::kMaxTotalSidecarBytes)) {
     return Status::RuntimeError(Substitute("Total size of sidecars $0 would exceed limit $1",
         static_cast<int64_t>(outbound_sidecars_total_bytes_) + sidecar_bytes,
         TransferLimits::kMaxTotalSidecarBytes));
@@ -349,8 +350,8 @@ vector<uint32_t> InboundCall::GetRequiredFeatures() const {
 
 Status InboundCall::GetInboundSidecar(int idx, Slice* sidecar) const {
   DCHECK(transfer_) << "Sidecars have been discarded";
-  if (idx < 0 || idx >= header_.sidecar_offsets_size()) {
-    return Status::InvalidArgument(strings::Substitute(
+  if (PREDICT_FALSE(idx < 0 || idx >= header_.sidecar_offsets_size())) {
+    return Status::InvalidArgument(Substitute(
             "Index $0 does not reference a valid sidecar", idx));
   }
   *sidecar = inbound_sidecar_slices_[idx];

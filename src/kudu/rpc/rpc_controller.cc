@@ -24,6 +24,7 @@
 
 #include <glog/logging.h>
 
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/outbound_call.h"
@@ -145,12 +146,12 @@ MonoDelta RpcController::timeout() const {
 }
 
 Status RpcController::AddOutboundSidecar(unique_ptr<RpcSidecar> car, int* idx) {
-  if (outbound_sidecars_.size() >= TransferLimits::kMaxSidecars) {
+  if (PREDICT_FALSE(outbound_sidecars_.size() >= TransferLimits::kMaxSidecars)) {
     return Status::RuntimeError("All available sidecars already used");
   }
   int64_t sidecar_bytes = car->TotalSize();
-  if (outbound_sidecars_total_bytes_ >
-      TransferLimits::kMaxTotalSidecarBytes - sidecar_bytes) {
+  if (PREDICT_FALSE(outbound_sidecars_total_bytes_ + sidecar_bytes >
+        TransferLimits::kMaxTotalSidecarBytes)) {
     return Status::RuntimeError(Substitute("Total size of sidecars $0 would exceed limit $1",
         static_cast<int64_t>(outbound_sidecars_total_bytes_) + sidecar_bytes,
         TransferLimits::kMaxTotalSidecarBytes));

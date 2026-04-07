@@ -111,7 +111,7 @@ void Proxy::Init(Sockaddr addr) {
   // Effective user and password remain blank.
   string real_user;
   Status s = GetLoggedInUser(&real_user);
-  if (!s.ok()) {
+  if (PREDICT_FALSE(!s.ok())) {
     LOG(WARNING) << Substitute(
       "$0: unable to get logged-in username before connecting to $1 via $2 proxy",
       s.ToString(), hp_.ToString(), service_name_);
@@ -172,7 +172,7 @@ void Proxy::RefreshDnsAndEnqueueRequest(const string& method,
     unique_ptr<RequestPayload> req_payload(req_raw);
     unique_ptr<vector<Sockaddr>> unique_addrs(addrs);
     // If we fail to resolve the address, treat the call as failed.
-    if (!s.ok() || addrs->empty()) {
+    if (PREDICT_FALSE(!s.ok() || addrs->empty())) {
       DCHECK(!controller->call_);
       // NOTE: we need to keep a reference here because the callback may end up
       // destructing the controller and the outbound call, _while_ the callback

@@ -200,7 +200,7 @@ Status ServicePool::QueueInboundCall(unique_ptr<InboundCall> call) {
 void ServicePool::RunThread() {
   while (true) {
     std::unique_ptr<InboundCall> incoming;
-    if (!service_queue_.BlockingGet(&incoming)) {
+    if (PREDICT_FALSE(!service_queue_.BlockingGet(&incoming))) {
       VLOG(1) << "ServicePool: messenger shutting down.";
       return;
     }

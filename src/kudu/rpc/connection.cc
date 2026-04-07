@@ -515,7 +515,7 @@ void Connection::ReadHandler(ev::io& /*watcher*/, int revents) {
   DCHECK(reactor_thread_->IsCurrentThread());
 
   DVLOG(3) << Substitute("$0 ReadHandler(revents=$1)", ToString(), revents);
-  if (revents & EV_ERROR) {
+  if (PREDICT_FALSE(revents & EV_ERROR)) {
     reactor_thread_->DestroyConnection(this, Status::NetworkError(ToString() +
                                      ": ReadHandler encountered an error"));
     return;
@@ -633,14 +633,14 @@ void Connection::HandleCallResponse(unique_ptr<InboundTransfer> transfer) {
 void Connection::WriteHandler(ev::io& /*watcher*/, int revents) {
   DCHECK(reactor_thread_->IsCurrentThread());
 
-  if (revents & EV_ERROR) {
+  if (PREDICT_FALSE(revents & EV_ERROR)) {
     reactor_thread_->DestroyConnection(this, Status::NetworkError(ToString() +
           ": writeHandler encountered an error"));
     return;
   }
   DVLOG(3) << Substitute("$0: writeHandler: revents=$1", ToString(), revents);
 
-  if (outbound_transfers_.empty()) {
+  if (PREDICT_FALSE(outbound_transfers_.empty())) {
     LOG(WARNING) << Substitute(
         "$0 got a ready-to-write callback, but there is nothing to write",
         ToString());

@@ -275,7 +275,7 @@ Status ClientNegotiation::RecvNegotiatePB(NegotiatePB* msg,
 Status ClientNegotiation::ParseError(const Slice& err_data,
                                      unique_ptr<ErrorStatusPB>* rpc_error) {
   unique_ptr<ErrorStatusPB> error(new ErrorStatusPB);
-  if (!error->ParseFromArray(err_data.data(), err_data.size())) {
+  if (PREDICT_FALSE(!error->ParseFromArray(err_data.data(), err_data.size()))) {
     return Status::IOError("invalid error response, missing fields",
                            error->InitializationErrorString());
   }
@@ -403,8 +403,8 @@ Status ClientNegotiation::HandleNegotiate(const NegotiatePB& response) {
     }
   }
 
-  if (encryption_ == RpcEncryption::REQUIRED &&
-      !ContainsKey(server_features_, RpcFeatureFlag::TLS)) {
+  if (PREDICT_FALSE(encryption_ == RpcEncryption::REQUIRED &&
+      !ContainsKey(server_features_, RpcFeatureFlag::TLS))) {
     return Status::NotAuthorized("server does not support required TLS encryption");
   }
 

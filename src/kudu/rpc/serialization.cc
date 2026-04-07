@@ -126,7 +126,7 @@ Status ParseMessage(const Slice& buf,
   DCHECK_EQ(total_len, buf.size() - kMsgLengthPrefixLength)
     << "Got mis-sized buffer: " << KUDU_REDACT(buf.ToDebugString());
 
-  if (total_len > std::numeric_limits<int32_t>::max()) {
+  if (PREDICT_FALSE(total_len > std::numeric_limits<int32_t>::max())) {
     return Status::Corruption(Substitute("Invalid packet: message had a length of $0, "
         "but we only support messages up to $1 bytes\n",
         total_len, std::numeric_limits<int32_t>::max()));

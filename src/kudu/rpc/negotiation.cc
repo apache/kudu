@@ -130,20 +130,19 @@ static Status WaitForClientConnect(Socket* socket, const MonoTime& deadline) {
 #endif
     if (ready == -1) {
       int err = errno;
-      if (err == EINTR) {
-        // We were interrupted by a signal, let's go again.
-        continue;
-      } else {
+      if (PREDICT_FALSE(err != EINTR)) {
         return Status::NetworkError("Error from ppoll() while waiting to connect",
             ErrnoToString(err), err);
       }
-    } else if (ready == 0) {
+      // We were interrupted by a signal, let's go again.
+      continue;
+    }
+    if (ready == 0) {
       // Timeout exceeded. Loop back to the top to our impending doom.
       continue;
-    } else {
-      // Success.
-      break;
     }
+    // Success.
+    break;
   }
 
   // Connect finished, but this doesn't mean that we connected successfully.
@@ -151,7 +150,7 @@ static Status WaitForClientConnect(Socket* socket, const MonoTime& deadline) {
   int so_error = 0;
   socklen_t socklen = sizeof(so_error);
   int rc = getsockopt(fd, SOL_SOCKET, SO_ERROR, &so_error, &socklen);
-  if (rc != 0) {
+  if (PREDICT_FALSE(rc != 0)) {
     return Status::NetworkError("Unable to check connected socket for errors",
                                 ErrnoToString(errno),
                                 errno);
@@ -262,7 +261,7 @@ static Status DoServerNegotiation(Connection* conn,
       messenger->tls_context().is_external_cert())
       << "misconfiguration: check ValidateRpcAuthnFlags() for details";
 
-  if (FLAGS_rpc_negotiation_inject_delay_ms > 0) {
+  if (PREDICT_FALSE(FLAGS_rpc_negotiation_inject_delay_ms > 0)) {
     LOG(WARNING) << "Injecting " << FLAGS_rpc_negotiation_inject_delay_ms
                  << "ms delay in negotiation";
     SleepFor(MonoDelta::FromMilliseconds(FLAGS_rpc_negotiation_inject_delay_ms));

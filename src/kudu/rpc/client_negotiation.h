@@ -146,6 +146,9 @@ class ClientNegotiation {
   static Status CheckGSSAPI() WARN_UNUSED_RESULT;
 
  private:
+  // Parse error status message from raw bytes of an ErrorStatusPB.
+  static Status ParseError(const Slice& err_data,
+                           std::unique_ptr<ErrorStatusPB>* rpc_error) WARN_UNUSED_RESULT;
 
   // Encode and send the specified negotiate request message to the server.
   Status SendNegotiatePB(const NegotiatePB& msg) WARN_UNUSED_RESULT;
@@ -155,10 +158,6 @@ class ClientNegotiation {
   Status RecvNegotiatePB(NegotiatePB* msg,
                          faststring* buffer,
                          std::unique_ptr<ErrorStatusPB>* rpc_error) WARN_UNUSED_RESULT;
-
-  // Parse error status message from raw bytes of an ErrorStatusPB.
-  Status ParseError(const Slice& err_data,
-                    std::unique_ptr<ErrorStatusPB>* rpc_error) WARN_UNUSED_RESULT;
 
   Status SendConnectionHeader() WARN_UNUSED_RESULT;
 
