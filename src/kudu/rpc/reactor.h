@@ -313,6 +313,8 @@ class ReactorThread {
   // Metrics.
   scoped_refptr<Histogram> invoke_us_histogram_;
   scoped_refptr<Histogram> load_percent_histogram_;
+  scoped_refptr<Histogram> max_read_latency_histogram_;
+  scoped_refptr<Histogram> max_write_latency_histogram_;
 
   // Total number of client connections opened during Reactor's lifetime.
   uint64_t total_client_conns_cnt_;
@@ -323,6 +325,12 @@ class ReactorThread {
   // Set prior to calling epoll and then reset back to -1 after each invocation
   // completes. Used for accounting total_poll_cycles_.
   int64_t cycle_clock_before_poll_ = -1;
+
+  // This field is updated after returning from epoll invocation and before
+  // invoking any of the registered I/O hanlders/callbacks. The field is used
+  // to account for the latency of I/O handler invocations in a single libev
+  // loop after receiving the notification on I/O events.
+  int64_t cycle_clock_after_poll_ = -1;
 
   // The total number of cycles spent in epoll_wait() since this thread
   // started.

@@ -24,6 +24,7 @@ package kudu.rpc;
 option java_package = "org.apache.kudu";
 
 import "kudu/rpc/rpc_header.proto";
+import "kudu/util/histogram.proto";
 import "kudu/util/net/socket_info.proto";
 
 message RpcCallInProgressPB {
@@ -71,6 +72,10 @@ message RpcConnectionPB {
 
   // Transport-specific details.
   optional TransportDetailsPB transport_details = 7;
+
+  // Histograms on event loop read/write handler latency of handling
+  // network I/O at the underlying TCP socket.
+  optional HistogramSnapshotsListPB ev_loop_latencies = 8;
 }
 
 message DumpConnectionsRequestPB {

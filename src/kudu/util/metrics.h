@@ -1509,6 +1509,12 @@ class HistogramPrototype : public MetricPrototype {
 
 class Histogram : public Metric {
  public:
+  // Write HdrHistogram's data from the provided snapshot of HdrHistogram
+  // to 'snapshot_pb'. The data in 'snapshot' should not be changing behind
+  // the scenes while running this function.
+  static void HdrHistogramToPB(const HdrHistogram& snapshot,
+                               HistogramSnapshotPB* snapshot_pb);
+
   scoped_refptr<Metric> snapshot() const override {
     auto p = new Histogram(down_cast<const HistogramPrototype*>(prototype_), *histogram_);
     p->m_epoch_.store(m_epoch_);

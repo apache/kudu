@@ -104,6 +104,16 @@ TAG_FLAG(tcp_keepalive_probe_period_s, advanced);
 TAG_FLAG(tcp_keepalive_retry_period_s, advanced);
 TAG_FLAG(tcp_keepalive_retry_count, advanced);
 
+DEFINE_bool(rpc_connection_collect_io_handler_latency, false,
+            "Whether to collect I/O handler invocation latency stats per RPC "
+            "connection. When enabled, per-connection stats for currently open "
+            "connections are avaiable via the '/rpcz' endpoint of the embedded "
+            "webserver, and the stats on the maximum I/O handler latency "
+            "across already closed RPC connections are reported by the "
+            "reactor_ev_loop_max_{read,writer}_latency_us histogram-type "
+            "metrics.");
+TAG_FLAG(rpc_connection_collect_io_handler_latency, runtime);
+
 METRIC_DEFINE_histogram(server, reactor_load_percent,
                         "Reactor Thread Load Percentage",
                         kudu::MetricUnit::kUnits,
@@ -123,6 +133,36 @@ METRIC_DEFINE_histogram(server, reactor_active_latency_us,
                         "to the latency of both inbound and outbound RPCs.",
                         kudu::MetricLevel::kInfo,
                         1000000, 2);
+
+METRIC_DEFINE_histogram(server, reactor_ev_loop_max_read_latency_us,
+                        "I/O Event Loop Maximum Read Handler Latency",
+                        kudu::MetricUnit::kMicroseconds,
+                        "Histogram of the maximum read handler latency for "
+                        "all served and already closed RPC connections; gated "
+                        "by --rpc_connection_collect_io_handler_latency flag. "
+                        "Per-connection maximum latency is recorded into "
+                        "the histogram upon shutting down an RPC connection. "
+                        "Histograms of the read handler latency for currently "
+                        "open connections are available at the /rpcz "
+                        "endpoint of the embedded webserver.",
+                        kudu::MetricLevel::kDebug,
+                        kudu::rpc::Connection::kLatencyHistogramMaxValue,
+                        kudu::rpc::Connection::kLatencyHistogramPrecisionDigits);
+
+METRIC_DEFINE_histogram(server, reactor_ev_loop_max_write_latency_us,
+                        "I/O Event Loop Maximum Write Handler Latency",
+                        kudu::MetricUnit::kMicroseconds,
+                        "Histogram of the maximum write handler latency for "
+                        "all served and already closed RPC connections; gated "
+                        "by --rpc_connection_collect_io_handler_latency flag. "
+                        "Per-connection maximum latency is recorded into "
+                        "the histogram upon shutting down an RPC connection. "
+                        "Histograms of the write handler latency for currently "
+                        "open connections are available at the /rpcz "
+                        "endpoint of the embedded webserver.",
+                        kudu::MetricLevel::kDebug,
+                        kudu::rpc::Connection::kLatencyHistogramMaxValue,
+                        kudu::rpc::Connection::kLatencyHistogramPrecisionDigits);
 
 namespace kudu {
 namespace rpc {
@@ -168,6 +208,10 @@ ReactorThread::ReactorThread(Reactor* reactor, const MessengerBuilder& bld)
         METRIC_reactor_active_latency_us.Instantiate(bld.metric_entity_);
     load_percent_histogram_ =
         METRIC_reactor_load_percent.Instantiate(bld.metric_entity_);
+    max_read_latency_histogram_ =
+        METRIC_reactor_ev_loop_max_read_latency_us.Instantiate(bld.metric_entity_);
+    max_write_latency_histogram_ =
+        METRIC_reactor_ev_loop_max_write_latency_us.Instantiate(bld.metric_entity_);
   }
 }
 
@@ -198,17 +242,20 @@ Status ReactorThread::Init() {
 }
 
 void ReactorThread::InvokePendingCb(struct ev_loop* loop) {
+  // Pre-compute the duration of a single CPU cycle.
+  static const double cycle_duration_us = 1000000.0 / base::CyclesPerSecond();
+
   // Calculate the number of cycles spent calling our callbacks.
   // This is called quite frequently so we use CycleClock rather than MonoTime
   // since it's a bit faster.
   int64_t start = CycleClock::Now();
   ev_invoke_pending(loop);
-  int64_t dur_cycles = CycleClock::Now() - start;
+  int64_t cycles_spent = CycleClock::Now() - start;
 
   // Contribute this to our histogram.
   ReactorThread* thr = static_cast<ReactorThread*>(ev_userdata(loop));
   if (thr->invoke_us_histogram_) {
-    thr->invoke_us_histogram_->Increment(dur_cycles * 1000000 / base::CyclesPerSecond());
+    thr->invoke_us_histogram_->Increment(cycles_spent * cycle_duration_us);
   }
 }
 
@@ -221,13 +268,15 @@ void ReactorThread::AboutToPollCb(struct ev_loop* loop) noexcept {
 
 void ReactorThread::PollCompleteCb(struct ev_loop* loop) noexcept {
   // First things first, capture the time, so that this is as accurate as possible
-  int64_t cycle_clock_after_poll = CycleClock::Now();
+  const int64_t cycle_clock_after_poll = CycleClock::Now();
 
   // Record it in our accounting.
   ReactorThread* thr = static_cast<ReactorThread*>(ev_userdata(loop));
   DCHECK_NE(thr->cycle_clock_before_poll_, -1)
       << "PollCompleteCb called without corresponding AboutToPollCb";
+  DCHECK_GE(cycle_clock_after_poll, thr->cycle_clock_after_poll_);
 
+  thr->cycle_clock_after_poll_ = cycle_clock_after_poll;
   int64_t poll_cycles = cycle_clock_after_poll - thr->cycle_clock_before_poll_;
   thr->cycle_clock_before_poll_ = -1;
   thr->total_poll_cycles_ += poll_cycles;
@@ -583,8 +632,12 @@ Status ReactorThread::FindOrStartConnection(const ConnectionId& conn_id,
   unique_ptr<Socket> new_socket(new Socket(sock.Release()));
 
   // Register the new connection in our map.
-  *conn = new Connection(
-      this, conn_id.remote(), std::move(new_socket), Connection::CLIENT, cred_policy);
+  *conn = new Connection(this,
+                         conn_id.remote(),
+                         std::move(new_socket),
+                         Connection::CLIENT,
+                         cred_policy,
+                         FLAGS_rpc_connection_collect_io_handler_latency);
   (*conn)->set_outbound_connection_id(conn_id);
 
   // Kick off blocking client connection negotiation.
@@ -891,8 +944,13 @@ class RegisterConnectionTask : public ReactorTask {
 void Reactor::RegisterInboundSocket(Socket* socket, const Sockaddr& remote) {
   VLOG(3) << name_ << ": new inbound connection to " << remote.ToString();
   unique_ptr<Socket> new_socket(new Socket(socket->Release()));
-  auto task = new RegisterConnectionTask(
-      new Connection(&thread_, remote, std::move(new_socket), Connection::SERVER));
+  auto* task = new RegisterConnectionTask(new Connection(
+      &thread_,
+      remote,
+      std::move(new_socket),
+      Connection::SERVER,
+      CredentialsPolicy::ANY_CREDENTIALS,
+      FLAGS_rpc_connection_collect_io_handler_latency));
   ScheduleReactorTask(task);
 }
 

@@ -61,13 +61,10 @@
 #include "kudu/util/thread_restrictions.h"
 #include "kudu/util/user.h"
 
-namespace kudu {
-namespace rpc {
-class Messenger;
-} // namespace rpc
-} // namespace kudu
-
 DEFINE_bool(is_panic_test_child, false, "Used by TestRpcPanic");
+
+DECLARE_bool(rpc_connection_collect_io_handler_latency);
+DECLARE_bool(rpc_reopen_outbound_connections);
 DECLARE_bool(socket_inject_short_recvs);
 
 using kudu::pb_util::SecureDebugString;
@@ -78,6 +75,8 @@ using std::vector;
 
 namespace kudu {
 namespace rpc {
+
+class Messenger;
 
 class RpcStubTest : public RpcTestBase {
  public:
@@ -738,6 +737,89 @@ TEST_F(RpcStubTest, DontTimeOutWhenReactorIsBlocked) {
   req.set_sleep_micros(800 * 1000);
   controller.set_timeout(MonoDelta::FromMilliseconds(1200));
   ASSERT_OK(p.Sleep(req, &resp, &controller));
+}
+
+class RpcStatsTest : public RpcTestBase {
+ public:
+  void SetUp() override {
+    RpcTestBase::SetUp();
+    ASSERT_OK(StartTestServer(&server_addr_));
+    ASSERT_OK(CreateMessenger("Client", &client_messenger_));
+  }
+
+ protected:
+  Sockaddr server_addr_;
+  shared_ptr<Messenger> client_messenger_;
+};
+
+// This test scenario verifies the presence of per-connection reactor I/O
+// latency histograms for active RPC connections depending on the
+// --rpc_connection_collect_io_handler_latency flag setting.
+TEST_F(RpcStatsTest, PerConnectionReactorLatency) {
+  constexpr const int sSideCarSize = 1024 * 1024;
+  constexpr const char* const kHostName = "localhost";
+
+  // Collecting per-connection I/O handler latency metrics is disabled
+  // by default.
+  {
+    Proxy p(client_messenger_, server_addr_, kHostName,
+            GenericCalculatorService::static_service_name());
+
+    DoTestSidecar(&p, sSideCarSize, sSideCarSize);
+
+    // Dump the information on the currently open RPC connections.
+    DumpConnectionsResponsePB rpc_connections;
+    ASSERT_OK(server_messenger_->DumpConnections({}, &rpc_connections));
+    const auto& contents_str = SecureDebugString(rpc_connections);
+    ASSERT_STR_NOT_CONTAINS(contents_str, "ev_loop_latencies");
+    ASSERT_STR_NOT_CONTAINS(contents_str, "read I/O latency");
+    ASSERT_STR_NOT_CONTAINS(contents_str, "write I/O latency");
+  }
+
+  // Let the server's reactor close idle RPC connections: the sub-scenario
+  // below needs newly open RPC connections once modifying the setting
+  // for the --rpc_connection_collect_io_handler_latency flag.
+  ASSERT_EVENTUALLY([&] {
+    // Make sure all the RPC connections have been closed: if the server metrics
+    // have accumulated information on maximum latencies RPC connections,
+    // it would be then detectable by the histogram's sample count.
+    DumpConnectionsResponsePB srv_con_pb;
+    ASSERT_OK(server_messenger_->DumpConnections({}, &srv_con_pb));
+    ASSERT_EQ(0, srv_con_pb.outbound_connections_size());
+    ASSERT_EQ(0, srv_con_pb.inbound_connections_size());
+  });
+
+  {
+    google::FlagSaver flag_saver;
+    FLAGS_rpc_connection_collect_io_handler_latency = true;
+
+    Proxy p(client_messenger_, server_addr_, kHostName,
+            GenericCalculatorService::static_service_name());
+
+    DoTestSidecar(&p, sSideCarSize, sSideCarSize);
+
+    // Dump the information on the currently open RPC connections.
+    DumpConnectionsResponsePB rpc_connections;
+    ASSERT_OK(server_messenger_->DumpConnections({}, &rpc_connections));
+    const auto& contents_str = SecureDebugString(rpc_connections);
+    ASSERT_STR_CONTAINS(contents_str,
+                        "  ev_loop_latencies {\n"
+                        "    histograms {\n"
+                        "      type: \"histogram\"\n"
+                        "      description: \"read I/O latency\"\n"
+                        "      unit: \"microseconds\"\n"
+                        "      max_trackable_value: 5000000\n"
+                        "      num_significant_digits: 1\n"
+                        "      total_count: ");
+    ASSERT_STR_CONTAINS(contents_str,
+                        "    histograms {\n"
+                        "      type: \"histogram\"\n"
+                        "      description: \"write I/O latency\"\n"
+                        "      unit: \"microseconds\"\n"
+                        "      max_trackable_value: 5000000\n"
+                        "      num_significant_digits: 1\n"
+                        "      total_count: ");
+  }
 }
 
 } // namespace rpc

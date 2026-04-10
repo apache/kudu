@@ -1142,6 +1142,22 @@ scoped_refptr<Histogram> HistogramPrototype::Instantiate(
 // Histogram
 /////////////////////////////////////////////////
 
+
+void Histogram::HdrHistogramToPB(const HdrHistogram& snapshot,
+                                 HistogramSnapshotPB* snapshot_pb) {
+  snapshot_pb->set_total_count(snapshot.TotalCount());
+  snapshot_pb->set_total_sum(snapshot.TotalSum());
+  snapshot_pb->set_min(snapshot.MinValue());
+  snapshot_pb->set_mean(snapshot.MeanValue());
+  snapshot_pb->set_percentile_75(snapshot.ValueAtPercentile(75));
+  snapshot_pb->set_percentile_95(snapshot.ValueAtPercentile(95));
+  snapshot_pb->set_percentile_99(snapshot.ValueAtPercentile(99));
+  snapshot_pb->set_percentile_99_9(snapshot.ValueAtPercentile(99.9));
+  snapshot_pb->set_percentile_99_99(snapshot.ValueAtPercentile(99.99));
+  snapshot_pb->set_max(snapshot.MaxValue());
+  snapshot_pb->set_last(snapshot.LastValue());
+}
+
 Histogram::Histogram(const HistogramPrototype* proto)
   : Metric(proto),
     histogram_(new HdrHistogram(proto->max_trackable_value(), proto->num_sig_digits())) {
@@ -1291,30 +1307,12 @@ Status Histogram::GetHistogramSnapshotPB(HistogramSnapshotPB* snapshot_pb,
   // when a histogram is tracking some information about a feature not in
   // use, for example.
   if (histogram_->TotalCount() == 0) {
-    snapshot_pb->set_total_count(0);
-    snapshot_pb->set_total_sum(0);
-    snapshot_pb->set_min(0);
-    snapshot_pb->set_mean(0);
-    snapshot_pb->set_percentile_75(0);
-    snapshot_pb->set_percentile_95(0);
-    snapshot_pb->set_percentile_99(0);
-    snapshot_pb->set_percentile_99_9(0);
-    snapshot_pb->set_percentile_99_99(0);
-    snapshot_pb->set_max(0);
-    snapshot_pb->set_last(0);
+    // Use an empty histogram to output all zeros.
+    static const HdrHistogram kEmpty(2, 1);
+    HdrHistogramToPB(kEmpty, snapshot_pb);
   } else {
     HdrHistogram snapshot(*histogram_);
-    snapshot_pb->set_total_count(snapshot.TotalCount());
-    snapshot_pb->set_total_sum(snapshot.TotalSum());
-    snapshot_pb->set_min(snapshot.MinValue());
-    snapshot_pb->set_mean(snapshot.MeanValue());
-    snapshot_pb->set_percentile_75(snapshot.ValueAtPercentile(75));
-    snapshot_pb->set_percentile_95(snapshot.ValueAtPercentile(95));
-    snapshot_pb->set_percentile_99(snapshot.ValueAtPercentile(99));
-    snapshot_pb->set_percentile_99_9(snapshot.ValueAtPercentile(99.9));
-    snapshot_pb->set_percentile_99_99(snapshot.ValueAtPercentile(99.99));
-    snapshot_pb->set_max(snapshot.MaxValue());
-    snapshot_pb->set_last(snapshot.LastValue());
+    HdrHistogramToPB(snapshot, snapshot_pb);
 
     if (opts.include_raw_histograms) {
       RecordedValuesIterator iter(&snapshot);

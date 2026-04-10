@@ -16,6 +16,8 @@
 // under the License.
 
 #include <cstddef>
+#include <cstdint>
+#include <functional>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -24,6 +26,7 @@
 #include <utility>
 #include <vector>
 
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -32,12 +35,14 @@
 #include "kudu/rpc/proxy.h"
 #include "kudu/rpc/rpc-test-base.h"
 #include "kudu/rpc/rpc_controller.h"
+#include "kudu/rpc/rpc_introspection.pb.h"
 #include "kudu/rpc/rpc_service.h"
 #include "kudu/rpc/rtest.pb.h"
 #include "kudu/rpc/service_if.h"
 #include "kudu/rpc/service_pool.h"
 #include "kudu/util/barrier.h"
 #include "kudu/util/countdown_latch.h"
+#include "kudu/util/hdr_histogram.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
@@ -45,12 +50,18 @@
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
+#include "kudu/util/test_util.h"
+
+DECLARE_bool(rpc_connection_collect_io_handler_latency);
 
 METRIC_DECLARE_counter(queue_overflow_rejections_kudu_rpc_test_CalculatorService_Add);
 METRIC_DECLARE_counter(queue_overflow_rejections_kudu_rpc_test_CalculatorService_Sleep);
 METRIC_DECLARE_counter(rpc_connections_accepted);
 METRIC_DECLARE_counter(rpcs_queue_overflow);
+METRIC_DECLARE_histogram(reactor_ev_loop_max_read_latency_us);
+METRIC_DECLARE_histogram(reactor_ev_loop_max_write_latency_us);
 
+using std::ostringstream;
 using std::string;
 using std::shared_ptr;
 using std::thread;
@@ -267,6 +278,150 @@ TEST_F(MultiThreadedRpcTest, TestBlowOutServiceQueue) {
   Counter *rpcs_queue_overflow =
     METRIC_rpcs_queue_overflow.Instantiate(server_messenger_->metric_entity()).get();
   ASSERT_EQ(1, rpcs_queue_overflow->value());
+}
+
+// This scenario verifies that the histogram-type reactor I/O latency metrics
+// for receiving and sending data via server sockets contains no samples:
+// unless configured otherwise, collecting those metrics is disabled per
+// default setting of the --rpc_connection_collect_io_handler_latency flag.
+TEST_F(MultiThreadedRpcTest, ReactorMaxIOLatencyStatsDisabled) {
+  Sockaddr server_addr;
+  ASSERT_OK(StartTestServer(&server_addr));
+
+  shared_ptr<Messenger> client_messenger;
+  ASSERT_OK(CreateMessenger("ClientSC", &client_messenger));
+  Proxy p(client_messenger, server_addr, server_addr.host(),
+          GenericCalculatorService::static_service_name());
+
+  DoTestSidecar(&p, 1024, 1024 * 1024);
+
+  // Let the server's reactor close idle RPC connections.
+  ASSERT_EVENTUALLY([&] {
+    // Make sure all the RPC connections have been closed: if the server metrics
+    // have accumulated information on maximum latencies RPC connections,
+    // it would be then detectable by the histogram's sample count.
+    DumpConnectionsResponsePB srv_con_pb;
+    ASSERT_OK(server_messenger_->DumpConnections({}, &srv_con_pb));
+    ASSERT_EQ(0, srv_con_pb.outbound_connections_size());
+    ASSERT_EQ(0, srv_con_pb.inbound_connections_size());
+  });
+
+  const auto& check_histogram = [&](const HdrHistogram& h, const char* ctx) {
+    SCOPED_TRACE(ctx);
+    ASSERT_GE(h.TotalCount(), 0);
+    if (VLOG_IS_ON(1)) {
+      ostringstream ostr;
+      h.DumpHumanReadable(&ostr);
+      VLOG(1) << ostr.str();
+    }
+  };
+
+  NO_FATALS(check_histogram(
+      *METRIC_reactor_ev_loop_max_read_latency_us.Instantiate(
+          server_messenger_->metric_entity())->histogram(),
+      "read_latency"));
+
+  NO_FATALS(check_histogram(
+      *METRIC_reactor_ev_loop_max_write_latency_us.Instantiate(
+          server_messenger_->metric_entity())->histogram(),
+      "write_latency"));
+}
+
+// This scenario verifies the presence and a few basic invariants of the reactor
+// I/O latency metrics for receiving and sending data via server sockets, i.e.
+// the latency of performing read and write operations since a socket has
+// signalled as I/O-ready.
+TEST_F(MultiThreadedRpcTest, ReactorMaxIOLatencyStatsEnabled) {
+  constexpr const size_t kNumThreads = 5;
+
+  google::FlagSaver flag_saver;
+  FLAGS_rpc_connection_collect_io_handler_latency = true;
+
+  // To induce higher reactor I/O latency, use a single reactor thread in the
+  // server to handle concurrent RPCs from multiple client connections.
+  n_server_reactor_threads_ = 1;
+  n_worker_threads_ = kNumThreads;
+
+  Sockaddr server_addr;
+  ASSERT_OK(StartTestServer(&server_addr));
+
+  thread threads[kNumThreads];
+  CountDownLatch latch_started(1);
+  CountDownLatch latch_completed(kNumThreads);
+  for (size_t i = 0; i < kNumThreads; ++i) {
+    threads[i] = thread([this, server_addr, &latch_started, &latch_completed]() {
+      shared_ptr<Messenger> client_messenger;
+      CHECK_OK(CreateMessenger("ClientSC", &client_messenger));
+      Proxy p(client_messenger, server_addr, server_addr.host(),
+              GenericCalculatorService::static_service_name());
+
+      latch_started.Wait();
+      // Larger sidecars make reactor thread spending more time on
+      // reading/writing the data.
+      constexpr const int kSidecarSize0 = 16 * 1024 * 1024;
+      constexpr const int kSidecarSize1 = 32 * 1024 * 1024;
+      DoTestSidecar(&p, kSidecarSize0, kSidecarSize1);
+      CHECK_OK(DoTestOutgoingSidecar(&p, kSidecarSize0, kSidecarSize1));
+      latch_completed.CountDown();
+    });
+  }
+
+  // Start the client threads.
+  latch_started.CountDown();
+
+  // Let the server complete processing the requests.
+  latch_completed.Wait();
+
+  for (auto& t : threads) {
+    t.join();
+  }
+
+  // Let the server's reactor close idle RPC connections.
+  ASSERT_EVENTUALLY([&] {
+    // Make sure all the RPC connections have been closed, so the server metrics
+    // accumulated the information on maximum latencies for all the RPC
+    // connections that had been around during the activities above.
+    DumpConnectionsResponsePB srv_con_pb;
+    ASSERT_OK(server_messenger_->DumpConnections({}, &srv_con_pb));
+    ASSERT_EQ(0, srv_con_pb.outbound_connections_size());
+    ASSERT_EQ(0, srv_con_pb.inbound_connections_size());
+  });
+
+  const auto& check_histogram = [&](const HdrHistogram& h,
+                                    const char* ctx,
+                                    uint64_t* max) {
+    SCOPED_TRACE(ctx);
+    ASSERT_GE(h.TotalCount(), 1);
+    *max = h.MaxValue();
+    if (VLOG_IS_ON(1)) {
+      ostringstream ostr;
+      h.DumpHumanReadable(&ostr);
+      VLOG(1) << ostr.str();
+    }
+  };
+
+  uint64_t max_rd_latency = 0;
+  NO_FATALS(check_histogram(
+      *METRIC_reactor_ev_loop_max_read_latency_us.Instantiate(
+          server_messenger_->metric_entity())->histogram(),
+      "read_latency",
+      &max_rd_latency));
+
+  uint64_t max_wr_latency = 0;
+  NO_FATALS(check_histogram(
+      *METRIC_reactor_ev_loop_max_write_latency_us.Instantiate(
+          server_messenger_->metric_entity())->histogram(),
+      "write_latency",
+      &max_wr_latency));
+
+  // Due to large sidecars, it should take some time to send and receive data
+  // in the context of a single RPC call. Since there are many active concurrent
+  // connections, the maximum I/O handler latency across all the connections
+  // is much higher than one microsecond if the OS-level maximum socket buffer
+  // size limit isn't significantly higher than 8MiB. At least, that's how it
+  // was on a contemporary hardware at the time of writing.
+  ASSERT_GT(max_wr_latency, 1);
+  ASSERT_GT(max_rd_latency, 1);
 }
 
 TEST_F(MultiThreadedRpcTest, PerMethodQueueOverflowRejectionCounter) {

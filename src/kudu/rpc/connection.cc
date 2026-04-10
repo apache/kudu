@@ -33,6 +33,8 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/sysinfo.h"
+#include "kudu/gutil/walltime.h"
 #include "kudu/rpc/inbound_call.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/outbound_call.h"
@@ -42,10 +44,13 @@
 #include "kudu/rpc/rpc_introspection.pb.h"
 #include "kudu/rpc/transfer.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/histogram.pb.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
+
 
 using std::includes;
 using std::set;
@@ -66,7 +71,8 @@ Connection::Connection(ReactorThread* reactor_thread,
                        const Sockaddr& remote,
                        unique_ptr<Socket> socket,
                        Direction direction,
-                       CredentialsPolicy policy)
+                       CredentialsPolicy policy,
+                       bool collect_io_handler_latency_stats)
     : reactor_thread_(reactor_thread),
       remote_(remote),
       socket_(std::move(socket)),
@@ -75,6 +81,9 @@ Connection::Connection(ReactorThread* reactor_thread,
       is_epoll_registered_(false),
       call_id_(std::numeric_limits<int32_t>::max()),
       credentials_policy_(policy),
+      collect_io_handler_latency_stats_(collect_io_handler_latency_stats),
+      rd_latency_histogram_(kLatencyHistogramMaxValue, kLatencyHistogramPrecisionDigits),
+      wr_latency_histogram_(kLatencyHistogramMaxValue, kLatencyHistogramPrecisionDigits),
       negotiation_complete_(false),
       is_confidential_(false),
       scheduled_for_shutdown_(false) {
@@ -194,6 +203,19 @@ void Connection::Shutdown(const Status& status,
   is_epoll_registered_ = false;
   if (socket_) {
     WARN_NOT_OK(socket_->Close(), "Error closing socket");
+  }
+
+  if (collect_io_handler_latency_stats_) {
+    // Report stats on the highest observed read and write handler latencies
+    // for this connection.
+    if (auto& h = reactor_thread_->max_read_latency_histogram_;
+        h && rd_latency_histogram_.TotalCount() != 0) {
+      h->Increment(rd_latency_histogram_.MaxValue());
+    }
+    if (auto& h = reactor_thread_->max_write_latency_histogram_;
+        h && wr_latency_histogram_.TotalCount() != 0) {
+      h->Increment(wr_latency_histogram_.MaxValue());
+    }
   }
 }
 
@@ -512,6 +534,9 @@ RpczStore* Connection::rpcz_store() {
 }
 
 void Connection::ReadHandler(ev::io& /*watcher*/, int revents) {
+  // Pre-compute the duration of a single CPU cycle.
+  static const double cycle_duration_us = 1000000.0 / base::CyclesPerSecond();
+
   DCHECK(reactor_thread_->IsCurrentThread());
 
   DVLOG(3) << Substitute("$0 ReadHandler(revents=$1)", ToString(), revents);
@@ -521,6 +546,14 @@ void Connection::ReadHandler(ev::io& /*watcher*/, int revents) {
     return;
   }
   last_activity_time_ = reactor_thread_->cur_time();
+
+  if (collect_io_handler_latency_stats_) {
+    // Update the read latency histogram: register how long it's been since
+    // the reactor received notification on I/O event in this epoll loop.
+    const int64_t latency_cycles =
+        CycleClock::Now() - reactor_thread_->cycle_clock_after_poll_;
+    rd_latency_histogram_.Increment(latency_cycles * cycle_duration_us);
+  }
 
   const int64_t rpc_max_size = reactor_thread_->reactor()->messenger()->rpc_max_message_size();
   faststring extra_buf;
@@ -631,6 +664,9 @@ void Connection::HandleCallResponse(unique_ptr<InboundTransfer> transfer) {
 }
 
 void Connection::WriteHandler(ev::io& /*watcher*/, int revents) {
+  // Pre-compute the duration of a single CPU cycle.
+  static const double cycle_duration_us = 1000000.0 / base::CyclesPerSecond();
+
   DCHECK(reactor_thread_->IsCurrentThread());
 
   if (PREDICT_FALSE(revents & EV_ERROR)) {
@@ -639,6 +675,14 @@ void Connection::WriteHandler(ev::io& /*watcher*/, int revents) {
     return;
   }
   DVLOG(3) << Substitute("$0: writeHandler: revents=$1", ToString(), revents);
+
+  if (collect_io_handler_latency_stats_) {
+    // Update the write latency histogram: register how long it's been since
+    // the reactor received notification on I/O event in this epoll loop.
+    const int64_t latency_cycles =
+        CycleClock::Now() - reactor_thread_->cycle_clock_after_poll_;
+    wr_latency_histogram_.Increment(latency_cycles * cycle_duration_us);
+  }
 
   if (PREDICT_FALSE(outbound_transfers_.empty())) {
     LOG(WARNING) << Substitute(
@@ -813,6 +857,29 @@ Status Connection::DumpPB(const DumpConnectionsRequestPB& req,
                 "could not fill in TCP info for RPC connection");
   }
 #endif // #if defined(__linux__) ...
+
+  // Provide information on I/O handler invocation latency, if enabled.
+  if (collect_io_handler_latency_stats_) {
+    HistogramSnapshotsListPB* histograms = resp->mutable_ev_loop_latencies();
+    {
+      HistogramSnapshotPB* rd_latency_pb = histograms->add_histograms();
+      rd_latency_pb->set_type(MetricType::Name(MetricType::kHistogram));
+      rd_latency_pb->set_unit(MetricUnit::Name(MetricUnit::kMicroseconds));
+      rd_latency_pb->set_description("read I/O latency");
+      rd_latency_pb->set_max_trackable_value(kLatencyHistogramMaxValue);
+      rd_latency_pb->set_num_significant_digits(kLatencyHistogramPrecisionDigits);
+      Histogram::HdrHistogramToPB(HdrHistogram(rd_latency_histogram_), rd_latency_pb);
+    }
+    {
+      HistogramSnapshotPB* wr_latency_pb = histograms->add_histograms();
+      wr_latency_pb->set_type(MetricType::Name(MetricType::kHistogram));
+      wr_latency_pb->set_unit(MetricUnit::Name(MetricUnit::kMicroseconds));
+      wr_latency_pb->set_description("write I/O latency");
+      wr_latency_pb->set_max_trackable_value(kLatencyHistogramMaxValue);
+      wr_latency_pb->set_num_significant_digits(kLatencyHistogramPrecisionDigits);
+      Histogram::HdrHistogramToPB(HdrHistogram(wr_latency_histogram_), wr_latency_pb);
+    }
+  }
 
   if (negotiation_complete_ && remote_.is_ip()) {
     WARN_NOT_OK(socket_->GetTransportDetails(resp->mutable_transport_details()),
