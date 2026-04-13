@@ -699,7 +699,7 @@ constexpr const char* const kListenBacklogMax = "/proc/sys/net/core/somaxconn";
 constexpr const char* const kListenBacklogMax = "kern.ipc.somaxconn";
 #endif
 
-int32_t GetEffectiveListenSocketBacklog(Env* env, int backlog) {
+int32_t GetEffectiveListenSocketBacklog([[maybe_unused]] Env* env, int backlog) {
 #if defined(__APPLE__)
   uint32_t buf_val;
   size_t len = sizeof(buf_val);
@@ -972,7 +972,7 @@ Status ServerBase::Init() {
          .set_epki_private_password_key_cmd(FLAGS_rpc_private_key_password_cmd)
          .set_keytab_file(FLAGS_keytab_file)
          .set_hostname(hostname)
-         .set_acceptor_listen_backlog(listen_backlog)
+         .set_acceptor_listen_backlog(effective_listen_backlog)
          .enable_inbound_tls();
 
   auto username = kudu::security::GetLoggedInUsernameFromKeytab();
