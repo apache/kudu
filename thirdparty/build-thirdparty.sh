@@ -112,6 +112,7 @@ else
       "ranger-kms")   F_RANGER_KMS=1 ;;
       "rocksdb")      F_ROCKSDB=1 ;;
       "flatbuffers")  F_FLATBUFFERS=1 ;;
+      "prometheus")   F_PROMETHEUS=1 ;;
       *)              echo "Unknown module: $arg"; exit 1 ;;
     esac
   done
@@ -310,6 +311,13 @@ fi
 # Actual Kudu binaries only use the header-only part
 if [ -n "$F_COMMON" -o -n "$F_FLATBUFFERS" ]; then
   build_flatbuffers
+fi
+
+# Install Prometheus by symlinking its prebuilt binary directory into $PREFIX/opt.
+# Prometheus is a Go binary and does not require compilation.
+if [ -n "$F_COMMON" -o -n "$F_PROMETHEUS" ]; then
+  mkdir -p $PREFIX/opt
+  ln -nsf $PROMETHEUS_SOURCE $PREFIX/opt/prometheus
 fi
 ### Build C dependencies without instrumentation
 

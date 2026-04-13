@@ -280,3 +280,20 @@ JWT_CPP_SOURCE=$TP_SOURCE_DIR/$JWT_CPP_NAME
 ROCKSDB_VERSION=7.7.3
 ROCKSDB_NAME=rocksdb-$ROCKSDB_VERSION
 ROCKSDB_SOURCE=$TP_SOURCE_DIR/$ROCKSDB_NAME
+
+# Prometheus is downloaded as a prebuilt binary from the S3 bucket.
+# OS and arch are mapped to the Prometheus release naming convention.
+#
+# To update to a new version:
+#   1. Download the tarballs for all supported OS/arch combinations from
+#      https://prometheus.io/download/
+#      (os: linux, darwin; arch: amd64, arm64 — four tarballs total)
+#   2. Upload each tarball to the S3 bucket:
+#      s3cmd put -P prometheus-<version>.<os>-<arch>.tar.gz \
+#        s3://cloudera-thirdparty-libs/
+#   3. Update PROMETHEUS_VERSION below.
+PROMETHEUS_VERSION=3.11.2
+PROMETHEUS_OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+PROMETHEUS_ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+PROMETHEUS_NAME=prometheus-${PROMETHEUS_VERSION}.${PROMETHEUS_OS}-${PROMETHEUS_ARCH}
+PROMETHEUS_SOURCE=$TP_SOURCE_DIR/$PROMETHEUS_NAME

@@ -518,6 +518,12 @@ fetch_and_patch \
  $ROCKSDB_PATCHLEVEL \
  "patch -p1 < $TP_DIR/patches/rocksdb-gcc13.patch"
 
+PROMETHEUS_PATCHLEVEL=0
+fetch_and_patch \
+ ${PROMETHEUS_NAME}.tar.gz \
+ ${PROMETHEUS_SOURCE} \
+ ${PROMETHEUS_PATCHLEVEL}
+
 echo "---------------"
 echo "Thirdparty dependencies downloaded successfully"
 
