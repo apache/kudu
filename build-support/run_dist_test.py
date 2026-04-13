@@ -184,9 +184,9 @@ def main():
   env['RANGER_KMS_HOME'] = glob.glob(os.path.join(ROOT, "thirdparty/src/ranger-*-kms"))[0]
   env['JAVA_HOME'] = find_java_home(options.java_version)
 
-  # Restore the symlinks to the chrony binaries and Postgres and Ranger
-  # directories; tests expect to find them in same directory as the test
-  # binaries themselves.
+  # Restore the symlinks to the chrony binaries and Postgres, Ranger, and
+  # Prometheus directories; tests expect to find them in same directory as
+  # the test binaries themselves.
   for bin_path in glob.glob(os.path.join(ROOT, "build/*/bin")):
     os.symlink(os.path.join(ROOT, "thirdparty/installed/common/bin/chronyc"),
                os.path.join(bin_path, "chronyc"))
@@ -200,6 +200,8 @@ def main():
                os.path.join(bin_path, "postgres-share"))
     os.symlink(glob.glob(os.path.join(ROOT, "thirdparty/src/postgresql-*/postgresql-*.jar"))[0],
                os.path.join(bin_path, "postgresql.jar"))
+    os.symlink(glob.glob(os.path.join(ROOT, "thirdparty/src/prometheus-*"))[0],
+               os.path.join(bin_path, "prometheus-home"))
     os.symlink(glob.glob(os.path.join(ROOT, "thirdparty/src/ranger-*-admin"))[0],
                os.path.join(bin_path, "ranger-home"))
     os.symlink(glob.glob(os.path.join(ROOT, "thirdparty/src/ranger-*-kms"))[0],

@@ -112,13 +112,14 @@ DEPS_FOR_ALL = \
      # Add the Kudu echo subprocess.
      "build/latest/bin/kudu-subprocess.jar",
 
-     # Add Postgres and Ranger. These are symlinks to directories in thirdparty.
+     # Add Postgres, Ranger, and Prometheus. These are symlinks to directories in thirdparty.
      "build/latest/bin/postgres",
      "build/latest/bin/postgres-lib",
      "build/latest/bin/postgres-share",
      "build/latest/bin/postgresql.jar",
      "build/latest/bin/ranger_kms-home",
      "build/latest/bin/ranger-home",
+     "build/latest/bin/prometheus-home",
 
      # Add the Kudu HMS plugin.
      "build/latest/bin/hms-plugin.jar",

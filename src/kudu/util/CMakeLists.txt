@@ -412,6 +412,25 @@ if (KUDU_CLI_TEST_TOOL_ENABLED)
 endif()
 
 #######################################
+# mini_prometheus
+#######################################
+# Link the Prometheus home directory so it can be found via
+# test_util::FindHomeDir in MiniPrometheus::Start.
+execute_process(COMMAND ln -nsf
+                "${THIRDPARTY_DIR}/installed/common/opt/prometheus"
+                "${EXECUTABLE_OUTPUT_PATH}/prometheus-home")
+
+# The mini_prometheus is used only for tests.
+if (KUDU_CLI_TEST_TOOL_ENABLED)
+  add_library(mini_prometheus mini_prometheus.cc)
+  target_link_libraries(mini_prometheus
+    gutil
+    kudu_curl_util
+    kudu_test_util
+    kudu_util)
+endif()
+
+#######################################
 # jwt_test_certs
 #######################################
 # The jwt_test_certs is used only for tests.
@@ -681,6 +700,16 @@ ADD_KUDU_TEST(curl_util-test)
 if(NOT NO_TESTS)
   target_link_libraries(curl_util-test
     kudu_curl_util)
+endif()
+
+#######################################
+# mini_prometheus-test
+#######################################
+ADD_KUDU_TEST(mini_prometheus-test)
+if(NOT NO_TESTS)
+  target_link_libraries(mini_prometheus-test
+    mini_prometheus
+    server_process)
 endif()
 
 #######################################
