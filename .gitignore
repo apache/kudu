@@ -46,6 +46,7 @@ README.html
 .idea/
 .project
 .qt/
+.qtcreator/
 .qtc_clangd/
 .settings/
 .vscode/
