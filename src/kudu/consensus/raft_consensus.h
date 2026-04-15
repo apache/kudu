@@ -187,7 +187,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // NOTE: the implementation is a busy loop; as such, this method should be
   // used sparingly, e.g. only in tests, or in applications that don't require
   // high concurrency.
-  Status WaitUntilLeader(const MonoDelta& timeout) WARN_UNUSED_RESULT;
+  Status WaitUntilLeader(const MonoDelta& timeout);
 
   // Return a copy of the failure detector instance. Only for use in tests.
   std::shared_ptr<rpc::PeriodicTimer> GetFailureDetectorForTests() const {
@@ -548,8 +548,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // pending operations, we proactively abort those pending operations after and including
   // the preceding op in 'req' to avoid a pointless cache miss in the leader's log cache.
   Status EnforceLogMatchingPropertyMatchesUnlocked(const LeaderRequest& req,
-                                                   ConsensusResponsePB* response)
-         WARN_UNUSED_RESULT;
+                                                   ConsensusResponsePB* response);
 
   // Check a request received from a leader, making sure:
   // - The request is in the right term
@@ -561,7 +560,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // the messages to add to our state machine.
   Status CheckLeaderRequestUnlocked(const ConsensusRequestPB* request,
                                     ConsensusResponsePB* response,
-                                    LeaderRequest* deduped_req) WARN_UNUSED_RESULT;
+                                    LeaderRequest* deduped_req);
 
   // Abort any pending operations after the given op index,
   // and also truncate the LogCache accordingly.
@@ -780,22 +779,22 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // Checks that the replica is in the appropriate state and role to replicate
   // the provided operation and that the replicate message does not yet have an
   // OpId assigned.
-  Status CheckSafeToReplicateUnlocked(const ReplicateMsg& msg) const WARN_UNUSED_RESULT;
+  Status CheckSafeToReplicateUnlocked(const ReplicateMsg& msg) const;
 
   // Return Status::IllegalState if 'state_' != kRunning, OK otherwise.
-  Status CheckRunningUnlocked() const WARN_UNUSED_RESULT;
+  Status CheckRunningUnlocked() const;
 
   // Ensure the local peer is the active leader.
   // Returns OK if leader, IllegalState otherwise.
-  Status CheckActiveLeaderUnlocked() const WARN_UNUSED_RESULT;
+  Status CheckActiveLeaderUnlocked() const;
 
   // Returns OK if there is currently *no* configuration change pending, and
   // IllegalState is there *is* a configuration change pending.
-  Status CheckNoConfigChangePendingUnlocked() const WARN_UNUSED_RESULT;
+  Status CheckNoConfigChangePendingUnlocked() const;
 
   // Sets the given configuration as pending commit. Does not persist into the peers
   // metadata. In order to be persisted, SetCommittedConfigUnlocked() must be called.
-  Status SetPendingConfigUnlocked(const RaftConfigPB& new_config) WARN_UNUSED_RESULT;
+  Status SetPendingConfigUnlocked(const RaftConfigPB& new_config);
 
   // Changes the committed config for this replica. Checks that there is a
   // pending configuration and that it is equal to this one. Persists changes to disk.
@@ -808,7 +807,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // If the caller knows that it will call another method soon after
   // to flush the change to disk, it may set 'flush' to 'SKIP_FLUSH_TO_DISK'.
   Status SetCurrentTermUnlocked(int64_t new_term,
-                                FlushToDisk flush) WARN_UNUSED_RESULT;
+                                FlushToDisk flush);
 
   // Returns the term set in the last config change round.
   int64_t CurrentTermUnlocked() const;
@@ -823,7 +822,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
 
   // Record replica's vote for the current term, then flush the consensus
   // metadata to disk.
-  Status SetVotedForCurrentTermUnlocked(const std::string& uuid) WARN_UNUSED_RESULT;
+  Status SetVotedForCurrentTermUnlocked(const std::string& uuid);
 
   // Return replica's vote for the current term.
   // The vote must be set; use HasVotedCurrentTermUnlocked() to check.

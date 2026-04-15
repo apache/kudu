@@ -45,7 +45,7 @@ class TokenSigningPublicKey {
   }
 
   // Initialize the object. Should be called only once.
-  Status Init() WARN_UNUSED_RESULT;
+  Status Init();
 
   // Verify the signature in a given token.
   // This method is thread-safe.
@@ -74,7 +74,7 @@ class TokenSigningPrivateKey {
   ~TokenSigningPrivateKey();
 
   // Sign a token, and store the signature and signing key's sequence number.
-  Status Sign(SignedTokenPB* token) const WARN_UNUSED_RESULT;
+  Status Sign(SignedTokenPB* token) const;
 
   // Export data into corresponding PB structure.
   void ExportPB(TokenSigningPrivateKeyPB* pb) const;

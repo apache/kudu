@@ -748,7 +748,7 @@ class CatalogManagerBgTasks {
 
   ~CatalogManagerBgTasks() {}
 
-  Status Init() WARN_UNUSED_RESULT;
+  Status Init();
   void Shutdown();
 
   void Wake() {

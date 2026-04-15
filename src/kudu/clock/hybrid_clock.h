@@ -141,8 +141,7 @@ class HybridClock : public Clock {
   // Obtains the timestamp corresponding to the current time and the associated
   // error in micros. If the clock is unsynchronized or synchronized but the
   // error is too high, a non-OK status is returned.
-  Status NowWithError(Timestamp* timestamp, uint64_t* max_error_usec)
-      WARN_UNUSED_RESULT;
+  Status NowWithError(Timestamp* timestamp, uint64_t* max_error_usec);
 
   // Static encoding/decoding methods for timestamps. Public mostly
   // for testing/debugging purposes.

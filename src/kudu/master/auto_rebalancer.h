@@ -70,7 +70,7 @@ class AutoRebalancerTask {
   ~AutoRebalancerTask();
 
   // Initializes the auto-rebalancer.
-  Status Init() WARN_UNUSED_RESULT;
+  Status Init();
 
   // Shuts down the auto-rebalancer. This must be called
   // before shutting down the catalog manager.

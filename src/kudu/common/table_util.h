@@ -35,7 +35,7 @@ extern const char* const kInvalidRangerTableError;
 // and table slices must not outlive 'table_name'.
 Status ParseHiveTableIdentifier(const std::string& table_name,
                                 Slice* hms_database,
-                                Slice* hms_table) WARN_UNUSED_RESULT;
+                                Slice* hms_table);
 
 // Parses a Kudu table name of the form '<database>.<table>' into a Ranger
 // database and table name. If the table name doesn't contain a period it
@@ -49,6 +49,6 @@ Status ParseHiveTableIdentifier(const std::string& table_name,
 // empty string.
 Status ParseRangerTableIdentifier(const std::string& table_name,
                                   std::string* ranger_database,
-                                  Slice* ranger_table) WARN_UNUSED_RESULT;
+                                  Slice* ranger_table);
 
 } // namespace kudu

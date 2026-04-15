@@ -557,7 +557,7 @@ class ExternalMiniCluster : public MiniCluster {
   // is considered unsafe to change at runtime, it is changed.
   Status SetFlag(ExternalDaemon* daemon,
                  const std::string& flag,
-                 const std::string& value) WARN_UNUSED_RESULT;
+                 const std::string& value);
 
   // Enable Hive Metastore integration.
   // Overrides HMS integration options set by ExternalMiniClusterOptions.
@@ -746,10 +746,10 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
   Status SetEncryptionKey(const std::string& tenant_id = kDefaultTenantID);
 
   // Sends a SIGSTOP signal to the daemon.
-  Status Pause() WARN_UNUSED_RESULT;
+  Status Pause();
 
   // Sends a SIGCONT signal to the daemon.
-  Status Resume() WARN_UNUSED_RESULT;
+  Status Resume();
 
   // Return true if we have explicitly shut down the process.
   bool IsShutdown() const;
@@ -777,7 +777,7 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
   virtual void Shutdown();
 
   // Delete files specified by 'wal_dir_' and 'data_dirs_'.
-  Status DeleteFromDisk() const WARN_UNUSED_RESULT;
+  Status DeleteFromDisk() const;
 
   const std::string& wal_dir() const { return opts_.wal_dir; }
 
@@ -891,7 +891,7 @@ class ExternalMaster : public ExternalDaemon {
 
   // Restarts the daemon.
   // Requires that it has previously been shutdown.
-  Status Restart() override WARN_UNUSED_RESULT;
+  Status Restart() override;
 
   Env* env() const override { return env_.get(); }
 
@@ -907,7 +907,7 @@ class ExternalMaster : public ExternalDaemon {
     DONT_WAIT_FOR_LEADERSHIP
   };
   Status WaitForCatalogManager(
-      WaitMode wait_mode = DONT_WAIT_FOR_LEADERSHIP) WARN_UNUSED_RESULT;
+      WaitMode wait_mode = DONT_WAIT_FOR_LEADERSHIP);
 
   // Get all flags for a master from the supplied 'opts'.
   // It does not include executable or any positional arguments like "master run".
@@ -934,7 +934,7 @@ class ExternalTabletServer : public ExternalDaemon {
 
   // Restarts the daemon.
   // Requires that it has previously been shutdown.
-  Status Restart() override WARN_UNUSED_RESULT;
+  Status Restart() override;
 
   Env* env() const override { return env_.get(); }
  private:

@@ -229,12 +229,12 @@ class SubprocessServer {
   virtual ~SubprocessServer();
 
   // Initialize the server, starting the subprocess and worker threads.
-  virtual Status Init() WARN_UNUSED_RESULT;
+  virtual Status Init();
 
   // Synchronously sends a request to the subprocess and populates 'resp' with
   // contents returned from the subprocess, or returns an error if anything
   // failed or timed out along the way.
-  virtual Status Execute(SubprocessRequestPB* req, SubprocessResponsePB* resp) WARN_UNUSED_RESULT;
+  virtual Status Execute(SubprocessRequestPB* req, SubprocessResponsePB* resp);
 
  private:
   FRIEND_TEST(SubprocessServerTest, TestCallsReturnWhenShuttingDown);
@@ -251,7 +251,7 @@ class SubprocessServer {
   // The call's callback is run asynchronously upon receiving a response from
   // the subprocess, matched by ID, or when the deadline checker thread detects
   // that the call has timed out.
-  Status QueueCall(const std::shared_ptr<SubprocessCall>& call) WARN_UNUSED_RESULT;
+  Status QueueCall(const std::shared_ptr<SubprocessCall>& call);
 
   // Long running thread that repeatedly looks at the in-flight call with the
   // lowest ID, checks whether its deadline has expired, and runs its callback

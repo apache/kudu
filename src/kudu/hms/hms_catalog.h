@@ -76,15 +76,14 @@ class HmsCatalog {
                      const std::optional<std::string>& owner,
                      const Schema& schema,
                      const std::string& comment,
-                     const std::string& table_type = hms::HmsClient::kManagedTable)
-                     WARN_UNUSED_RESULT;
+                     const std::string& table_type = hms::HmsClient::kManagedTable);
 
   // Drops a table entry from the HMS.
   //
   // This method will fail if the HMS is unreachable, if the table does not
   // exist in the HMS, or if the table entry in the HMS doesn't match the
   // specified Kudu table ID.
-  Status DropTable(const std::string& id, const std::string& name) WARN_UNUSED_RESULT;
+  Status DropTable(const std::string& id, const std::string& name);
 
   // Drops a legacy table from the HMS.
   //
@@ -94,7 +93,7 @@ class HmsCatalog {
   // Note: it's possible to drop a non-legacy table using this method, but that
   // should be avoided, since it will skip the table ID checks in the Kudu HMS
   // plugin.
-  Status DropLegacyTable(const std::string& name) WARN_UNUSED_RESULT;
+  Status DropLegacyTable(const std::string& name);
 
   // Alters a table entry in the HMS.
   //
@@ -108,7 +107,7 @@ class HmsCatalog {
                     const std::optional<std::string>& owner,
                     const Schema& schema,
                     const std::string& comment,
-                    const bool& check_id = true) WARN_UNUSED_RESULT;
+                    const bool& check_id = true);
 
   // Upgrades a legacy Impala table entry in the HMS.
   //
@@ -119,13 +118,13 @@ class HmsCatalog {
                                   const std::string& db_name,
                                   const std::string& tb_name,
                                   const Schema& schema,
-                                  const std::string& comment) WARN_UNUSED_RESULT;
+                                  const std::string& comment);
 
   // Downgrades to a legacy Impala table entry in the HMS.
   //
   // This method will fail if the HMS is unreachable, if the table is not a
   // Kudu table, or if the table entry in not in the HMS.
-  Status DowngradeToLegacyImpalaTable(const std::string& name) WARN_UNUSED_RESULT;
+  Status DowngradeToLegacyImpalaTable(const std::string& name);
 
   // Retrieves all Kudu tables in the HMS.
   //
@@ -134,17 +133,17 @@ class HmsCatalog {
   // handler.
   //
   // This method will fail if the HMS is unreachable.
-  Status GetKuduTables(std::vector<hive::Table>* kudu_tables) WARN_UNUSED_RESULT;
+  Status GetKuduTables(std::vector<hive::Table>* kudu_tables);
 
   // Retrieves notification log events from the HMS.
   //
   // The events will begin at id 'last_event_id + 1', and at most 'max_events'
   // events are returned.
   Status GetNotificationEvents(int64_t last_event_id, int max_events,
-                               std::vector<hive::NotificationEvent>* events) WARN_UNUSED_RESULT;
+                               std::vector<hive::NotificationEvent>* events);
 
   // Retrieves the latest notification event id from the HMS.
-  Status GetCurrentNotificationEventId(int64_t* event_id) WARN_UNUSED_RESULT;
+  Status GetCurrentNotificationEventId(int64_t* event_id);
 
   // Get the UUID associated with the remote HMS instance. This is an identifier
   // stored in the HMS's backing database which does not change even if the
@@ -154,7 +153,7 @@ class HmsCatalog {
   // vendor releases (eg CDH6). This function may return Status::NotSupported()
   // in such cases, or if the HmsCatalog has been unable to connect to the HMS
   // (i.e. the HMS has been down for the entirety of the HmsCatalog's lifespan).
-  Status GetUuid(std::string* uuid) WARN_UNUSED_RESULT;
+  Status GetUuid(std::string* uuid);
 
   // Validates the hive_metastore_uris gflag.
   static bool ValidateUris(const char* flag_name, const std::string& metastore_uris);
@@ -176,7 +175,7 @@ class HmsCatalog {
                               const std::string& cluster_id,
                               const std::string& master_addresses,
                               const std::string& table_type,
-                              hive::Table* table) WARN_UNUSED_RESULT;
+                              hive::Table* table);
 
   // Validates and canonicalizes the provided table name according to HMS rules.
   // If the table name is not valid it will not be modified. If the table name
@@ -192,7 +191,7 @@ class HmsCatalog {
   // Hive handles validating and canonicalizing table names in
   // org.apache.hadoop.hive.metastore.MetaStoreUtils.validateName and
   // org.apache.hadoop.hive.common.util.normalizeIdentifier.
-  static Status NormalizeTableName(std::string* table_name) WARN_UNUSED_RESULT;
+  static Status NormalizeTableName(std::string* table_name);
 
  private:
 
@@ -202,7 +201,7 @@ class HmsCatalog {
 
   // Drops a table entry from the HMS, supplying the provided environment context.
   Status DropTable(const std::string& name,
-                   const hive::EnvironmentContext& env_ctx) WARN_UNUSED_RESULT;
+                   const hive::EnvironmentContext& env_ctx);
 
   // Repeatedly tries to fetch the HMS' DB UUID, sleeping in between attempts.
   //

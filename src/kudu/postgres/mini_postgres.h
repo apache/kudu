@@ -94,7 +94,7 @@ class MiniPostgres {
   }
 
   // Tests connection to Postgres, blocking until success or it times out.
-  Status WaitForReady() const WARN_UNUSED_RESULT;
+  Status WaitForReady() const;
 
   // 'pg_root' is the subdirectory in which the Postgres data files will live.
   Status CreateConfigs();

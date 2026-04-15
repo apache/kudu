@@ -227,8 +227,7 @@ class TokenSigner {
   // so additional cycle of CheckNeedKey/AddKey might be needed.
   //
   // See the class comment above for more information about the intended usage.
-  Status ImportKeys(const std::vector<TokenSigningPrivateKeyPB>& keys)
-      WARN_UNUSED_RESULT;
+  Status ImportKeys(const std::vector<TokenSigningPrivateKeyPB>& keys);
 
   // Check whether it's time to generate and add a new key. If so, the new key
   // is generated and output into the 'tsk' parameter so it's possible to
@@ -267,14 +266,13 @@ class TokenSigner {
   //   AddKey(k1);
   //
   // See the class comment above for more information about the intended usage.
-  Status CheckNeedKey(std::unique_ptr<TokenSigningPrivateKey>* tsk) const
-      WARN_UNUSED_RESULT;
+  Status CheckNeedKey(std::unique_ptr<TokenSigningPrivateKey>* tsk) const;
 
   // Add the new key into the token signing keys queue. Call TryRotateKey()
   // to make the newly added key active when it's time.
   //
   // See the class comment above for more information about the intended usage.
-  Status AddKey(std::unique_ptr<TokenSigningPrivateKey> tsk) WARN_UNUSED_RESULT;
+  Status AddKey(std::unique_ptr<TokenSigningPrivateKey> tsk);
 
   // Check whether it's possible and it's time to switch to next signing key
   // from the token signing keys queue. A key can be added using the
@@ -284,22 +282,22 @@ class TokenSigner {
   // The intended use case is to call TryRotateKey() periodically.
   //
   // See the class comment above for more information about the intended usage.
-  Status TryRotateKey(bool* has_rotated = nullptr) WARN_UNUSED_RESULT;
+  Status TryRotateKey(bool* has_rotated = nullptr);
 
   // Populates 'signed_token' with a signed authorization token with the given
   // 'username' and table privilege. Returns an error if 'username' is empty,
   // or if the created authn token could not be serialized for some reason.
   Status GenerateAuthzToken(std::string username,
                             TablePrivilegePB privilege,
-                            SignedTokenPB* signed_token) const WARN_UNUSED_RESULT;
+                            SignedTokenPB* signed_token) const;
 
   // Populates 'signed_token' with a signed authentication token with the given
   // 'username'. Returns an error if 'username' is empty, or if the created
   // authz token could not be serialized for some reason.
   Status GenerateAuthnToken(std::string username,
-                            SignedTokenPB* signed_token) const WARN_UNUSED_RESULT;
+                            SignedTokenPB* signed_token) const;
 
-  Status SignToken(SignedTokenPB* token) const WARN_UNUSED_RESULT;
+  Status SignToken(SignedTokenPB* token) const;
 
   const TokenVerifier& verifier() const { return *verifier_; }
 
@@ -316,7 +314,7 @@ class TokenSigner {
   static Status GenerateSigningKey(int64_t key_seq_num,
                                    int64_t key_expiration,
                                    const std::string& password,
-                                   std::unique_ptr<TokenSigningPrivateKey>* tsk) WARN_UNUSED_RESULT;
+                                   std::unique_ptr<TokenSigningPrivateKey>* tsk);
 
   std::shared_ptr<TokenVerifier> verifier_;
 

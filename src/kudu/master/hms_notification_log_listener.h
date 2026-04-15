@@ -86,7 +86,7 @@ class HmsNotificationLogListenerTask {
 
   // Initializes the HMS notification log listener. When invoking this method,
   // the catalog manager must be in the process of initializing.
-  Status Init() WARN_UNUSED_RESULT;
+  Status Init();
 
   // Shuts down the HMS notification log listener. This must be called before
   // shutting down the catalog manager.
@@ -98,7 +98,7 @@ class HmsNotificationLogListenerTask {
   // Note: an error will be returned if the listener is unable to retrieve the
   // latest notifications from the HMS. If individual notifications are unable
   // to be processed, no error will be returned.
-  Status WaitForCatchUp(const MonoTime& deadline) WARN_UNUSED_RESULT;
+  Status WaitForCatchUp(const MonoTime& deadline);
 
  private:
   friend class HmsNotificationLogListenerTest;
@@ -114,14 +114,14 @@ class HmsNotificationLogListenerTask {
   // The event is parsed, and if it is a rename table event for a Kudu table,
   // the table is renamed in the local catalog.  All other events are ignored.
   Status HandleAlterTableEvent(const hive::NotificationEvent& event,
-                               int64_t* durable_event_id) WARN_UNUSED_RESULT;
+                               int64_t* durable_event_id);
 
   // Handles a DROP TABLE event. Must only be called on the listening thread.
   //
   // The event is parsed, and if it is a drop table event for a Kudu table, the
   // table is deleted in the local catalog. All other events are ignored.
   Status HandleDropTableEvent(const hive::NotificationEvent& event,
-                              int64_t* durable_event_id) WARN_UNUSED_RESULT;
+                              int64_t* durable_event_id);
 
   // Parses the event message from a notification event. See
   // org.apache.hadoop.hive.metastore.messaging.MessageFactory and
@@ -136,12 +136,12 @@ class HmsNotificationLogListenerTask {
   // compatible with Hive distributions that do not include HIVE-10562
   // but still have the proper JSON message.
   static Status ParseMessage(const hive::NotificationEvent& event,
-                             rapidjson::Document* message) WARN_UNUSED_RESULT;
+                             rapidjson::Document* message);
 
   // Decodes an event that was Gzip encoded by Hive.
   // Hive also Base64 encodes the content after compressing.
   static Status DecodeGzipMessage(const std::string& encoded,
-                                  std::string* decoded) WARN_UNUSED_RESULT;
+                                  std::string* decoded);
 
   // The associated catalog manager.
   //

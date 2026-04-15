@@ -72,10 +72,10 @@ class MiniKdc {
   ~MiniKdc();
 
   // Starts the mini Kerberos KDC.
-  Status Start() WARN_UNUSED_RESULT;
+  Status Start();
 
   // Stops the mini Kerberos KDC.
-  Status Stop() WARN_UNUSED_RESULT;
+  Status Stop();
 
   uint16_t port() const {
     CHECK(kdc_process_) << "must start first";
@@ -84,7 +84,7 @@ class MiniKdc {
 
   // Creates a new user with the given username.
   // The password is the same as the username.
-  Status CreateUserPrincipal(const std::string& username) WARN_UNUSED_RESULT;
+  Status CreateUserPrincipal(const std::string& username);
 
   // Creates a new service principal and associated keytab, returning its
   // path in 'path'. 'spn' is the desired service principal name
@@ -110,19 +110,19 @@ class MiniKdc {
   std::string GetKeytabPathForPrincipal(const std::string& spn) const;
 
   // Kinit a user to the mini KDC.
-  Status Kinit(const std::string& username) WARN_UNUSED_RESULT;
+  Status Kinit(const std::string& username);
 
   // Destroy any credentials in the current ticket cache.
   // Equivalent to 'kdestroy -A'.
-  Status Kdestroy() WARN_UNUSED_RESULT;
+  Status Kdestroy();
 
   // Call the 'klist' utility.  This is useful for logging the local ticket
   // cache state.
-  Status Klist(std::string* output) WARN_UNUSED_RESULT;
+  Status Klist(std::string* output);
 
   // Call the 'klist' utility to list the contents of a specific keytab.
   Status KlistKeytab(const std::string& keytab_path,
-                     std::string* output) WARN_UNUSED_RESULT;
+                     std::string* output);
 
   // Sets the environment variables used by the krb5 library
   // in the current process. This points the SASL library at the
@@ -138,10 +138,10 @@ class MiniKdc {
   std::vector<std::string> MakeArgv(const std::vector<std::string>& in_argv);
 
   // Creates a krb5.conf in the data root.
-  Status CreateKrb5Conf() const WARN_UNUSED_RESULT;
+  Status CreateKrb5Conf() const;
 
   // Creates a kdc.conf in the data root.
-  Status CreateKdcConf() const WARN_UNUSED_RESULT;
+  Status CreateKdcConf() const;
 
   std::unique_ptr<Subprocess> kdc_process_;
   MiniKdcOptions options_;

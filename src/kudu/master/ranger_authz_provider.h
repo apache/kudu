@@ -52,40 +52,40 @@ class RangerAuthzProvider : public AuthzProvider {
 
   Status AuthorizeCreateTable(const std::string& table_name,
                               const std::string& user,
-                              const std::string& owner) override WARN_UNUSED_RESULT;
+                              const std::string& owner) override;
 
   Status AuthorizeDropTable(const std::string& table_name,
                             const std::string& user,
-                            bool is_owner) override WARN_UNUSED_RESULT;
+                            bool is_owner) override;
 
   Status AuthorizeAlterTable(const std::string& old_table,
                              const std::string& new_table,
                              const std::string& user,
-                             bool is_owner) override WARN_UNUSED_RESULT;
+                             bool is_owner) override;
 
   Status AuthorizeGetTableMetadata(const std::string& table_name,
                                    const std::string& user,
-                                   bool is_owner) override WARN_UNUSED_RESULT;
+                                   bool is_owner) override;
 
   Status AuthorizeListTables(const std::string& user,
                              std::unordered_map<std::string, bool>* is_owner_by_table_name,
-                             bool* checked_table_names) override WARN_UNUSED_RESULT;
+                             bool* checked_table_names) override;
 
   Status AuthorizeGetTableStatistics(const std::string& table_name,
                                      const std::string& user,
-                                     bool is_owner) override WARN_UNUSED_RESULT;
+                                     bool is_owner) override;
 
   Status FillTablePrivilegePB(const std::string& table_name,
                               const std::string& user,
                               bool is_owner,
                               const SchemaPB& schema_pb,
-                              security::TablePrivilegePB* pb) override WARN_UNUSED_RESULT;
+                              security::TablePrivilegePB* pb) override;
 
   Status AuthorizeChangeOwner(const std::string& table_name,
                               const std::string& user,
-                              bool is_owner) override WARN_UNUSED_RESULT;
+                              bool is_owner) override;
 
-  Status RefreshPolicies() override WARN_UNUSED_RESULT;
+  Status RefreshPolicies() override;
 
   // Returns true if 'ranger_policy_server' flag is set indicating Ranger
   // authorization is enabled.

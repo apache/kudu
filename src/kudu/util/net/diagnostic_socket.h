@@ -97,7 +97,7 @@ class DiagnosticSocket final {
   // Open the diagnostic socket of the NETLINK_SOCK_DIAG protocol in the
   // AF_NETLINK domain, so it's possible to fetch the requested information
   // from the kernel using the netlink facility via the API of this class.
-  Status Init() WARN_UNUSED_RESULT;
+  Status Init();
 
   // Whether this wrapper has been initialized: the underlying netlink socket
   // successfully opened, etc.

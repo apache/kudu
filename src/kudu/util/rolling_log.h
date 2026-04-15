@@ -91,7 +91,7 @@ class RollingLog {
   // threshold, a new empty log file is created. Note that this is a synchronous API and
   // causes potentially-blocking IO on the current thread. However, this does not fsync()
   // or otherwise ensure durability of the appended data.
-  Status Append(StringPiece data) WARN_UNUSED_RESULT;
+  Status Append(StringPiece data);
 
   // Close the log.
   Status Close();

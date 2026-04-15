@@ -43,7 +43,6 @@
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/walltime.h"
@@ -683,7 +682,7 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // but this function does not itself respond to the RPC.
   Status DeleteTableRpc(const DeleteTableRequestPB& req,
                         DeleteTableResponsePB* resp,
-                        rpc::RpcContext* rpc) WARN_UNUSED_RESULT;
+                        rpc::RpcContext* rpc);
 
   // Delete the specified table.
   Status DeleteTableWithUser(const DeleteTableRequestPB& req,
@@ -700,7 +699,7 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // log listener event.
   Status DeleteTableHms(const std::string& table_name,
                         const std::string& table_id,
-                        int64_t notification_log_event_id) WARN_UNUSED_RESULT;
+                        int64_t notification_log_event_id);
 
   // Recall a table in response to a RecallDeletedTableRequestPB RPC.
   //
@@ -708,7 +707,7 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // but this function does not itself respond to the RPC.
   Status RecallDeletedTableRpc(const RecallDeletedTableRequestPB& req,
                                RecallDeletedTableResponsePB* resp,
-                               rpc::RpcContext* rpc) WARN_UNUSED_RESULT;
+                               rpc::RpcContext* rpc);
 
   enum class AlterType {
     // Only normal type tables are allowed to be altered, not soft-deleted tables.
@@ -741,7 +740,7 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
                         const std::optional<std::string>& new_table_name,
                         const std::optional<std::string>& new_table_owner,
                         const std::optional<std::string>& new_table_comment,
-                        int64_t notification_log_event_id) WARN_UNUSED_RESULT;
+                        int64_t notification_log_event_id);
 
   // Get the information about an in-progress alter operation. If 'user' is
   // provided, checks that the user is authorized to get such information.
@@ -1080,7 +1079,7 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   Status DeleteTable(const DeleteTableRequestPB& req,
                      DeleteTableResponsePB* resp,
                      std::optional<int64_t> hms_notification_log_event_id,
-                     const std::optional<std::string>& user) WARN_UNUSED_RESULT;
+                     const std::optional<std::string>& user);
 
   // Common logic for AlterTableRpc and AlterTableWithUser.
   // The rpc context is optional because this function is used by both AlterTableRpc (RPC API)
@@ -1103,7 +1102,7 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   Status AlterTable(const AlterTableRequestPB& req,
                     AlterTableResponsePB* resp,
                     std::optional<int64_t> hms_notification_log_event_id,
-                    const std::optional<std::string>& user) WARN_UNUSED_RESULT;
+                    const std::optional<std::string>& user);
 
   // Called by SysCatalog::SysCatalogStateChanged when this node
   // becomes the leader of a consensus configuration. Executes
@@ -1261,7 +1260,7 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
                                    const std::optional<std::string>& user,
                                    scoped_refptr<TableInfo>* table_info,
                                    TableMetadataLock* table_lock,
-                                   TableInfoMapType map_type = kAllTableType) WARN_UNUSED_RESULT;
+                                   TableInfoMapType map_type = kAllTableType);
 
   // Extract the set of tablets that must be processed because not running yet.
   void ExtractTabletsToProcess(std::vector<scoped_refptr<TabletInfo>>* tablets_to_process);
@@ -1388,7 +1387,7 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // response code in the case of an error.
   template <typename RespClass>
   Status WaitForNotificationLogListenerCatchUp(RespClass* resp,
-                                               rpc::RpcContext* rpc) WARN_UNUSED_RESULT;
+                                               rpc::RpcContext* rpc);
 
   enum class ValidateType {
     kCreateTable = 0,

@@ -54,7 +54,7 @@ class AuthzProvider {
   // Otherwise, may return other Status error codes depend on actual errors.
   virtual Status AuthorizeCreateTable(const std::string& table_name,
                                       const std::string& user,
-                                      const std::string& owner) WARN_UNUSED_RESULT = 0;
+                                      const std::string& owner) = 0;
 
   // Checks if the table deletion is authorized for the given user.
   //
@@ -62,7 +62,7 @@ class AuthzProvider {
   // Otherwise, may return other Status error codes depend on actual errors.
   virtual Status AuthorizeDropTable(const std::string& table_name,
                                     const std::string& user,
-                                    bool is_owner) WARN_UNUSED_RESULT = 0;
+                                    bool is_owner) = 0;
 
   // Checks if the table alteration is authorized for the given user.
   //
@@ -71,7 +71,7 @@ class AuthzProvider {
   virtual Status AuthorizeAlterTable(const std::string& old_table,
                                      const std::string& new_table,
                                      const std::string& user,
-                                     bool is_owner) WARN_UNUSED_RESULT = 0;
+                                     bool is_owner) = 0;
 
   // Checks if retrieving metadata about the table is authorized for the
   // given user. For example, when checking for table presence or locations.
@@ -80,7 +80,7 @@ class AuthzProvider {
   // Otherwise, may return other Status error codes depend on actual errors.
   virtual Status AuthorizeGetTableMetadata(const std::string& table_name,
                                            const std::string& user,
-                                           bool is_owner) WARN_UNUSED_RESULT = 0;
+                                           bool is_owner) = 0;
 
   // Filters the given table names, removing any the user is not authorized to
   // see.
@@ -91,7 +91,7 @@ class AuthzProvider {
   // have not changed during authorization.
   virtual Status AuthorizeListTables(const std::string& user,
                                      std::unordered_map<std::string, bool>* is_owner_by_table_name,
-                                     bool* checked_table_names) WARN_UNUSED_RESULT = 0;
+                                     bool* checked_table_names) = 0;
 
   // Checks if statistics of the table is authorized for the
   // given user.
@@ -100,7 +100,7 @@ class AuthzProvider {
   // Otherwise, may return other Status error codes depend on actual errors.
   virtual Status AuthorizeGetTableStatistics(const std::string& table_name,
                                              const std::string& user,
-                                             bool is_owner) WARN_UNUSED_RESULT = 0;
+                                             bool is_owner) = 0;
 
   // Populates the privilege fields of 'pb' with the table-specific privileges
   // for the given user, using 'schema_pb' for metadata (e.g. column IDs). This
@@ -110,7 +110,7 @@ class AuthzProvider {
                                       const std::string& user,
                                       bool is_owner,
                                       const SchemaPB& schema_pb,
-                                      security::TablePrivilegePB* pb) WARN_UNUSED_RESULT = 0;
+                                      security::TablePrivilegePB* pb) = 0;
 
   // Checks if changing the owner of the table is authorized for the given user.
   // 'is_owner' indicates whether 'user' is the current owner of the table.
@@ -119,10 +119,10 @@ class AuthzProvider {
   // Otherwise, may return other Status error codes depend on actual errors.
   virtual Status AuthorizeChangeOwner(const std::string& table_name,
                                       const std::string& user,
-                                      bool is_owner) WARN_UNUSED_RESULT = 0;
+                                      bool is_owner) = 0;
 
   // Refreshes policies in the authorization provider plugin.
-  virtual Status RefreshPolicies() WARN_UNUSED_RESULT = 0;
+  virtual Status RefreshPolicies() = 0;
 
   // Checks if the given user is trusted and thus can be exempted from
   // authorization validation.

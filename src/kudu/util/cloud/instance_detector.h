@@ -59,7 +59,7 @@ class InstanceDetector {
   //                          determine the type of the environment
   //
   // TODO(aserbin): do we need async version of this method?
-  Status Detect(std::unique_ptr<InstanceMetadata>* metadata) WARN_UNUSED_RESULT;
+  Status Detect(std::unique_ptr<InstanceMetadata>* metadata);
 
  private:
   static const size_t kNoIdx;

@@ -275,7 +275,7 @@ class Scanner {
   // that a call is actively being processed. Upon destruction of the returned Lock
   // object, the last-access time will be set to the current time and the internal lock
   // released.
-  AccessLock LockForAccess() WARN_UNUSED_RESULT {
+  [[nodiscard]] AccessLock LockForAccess() {
     return AccessLock(this);
   }
 
@@ -283,7 +283,7 @@ class Scanner {
   // is already locked by another thread.
   //
   // Check result.owns_lock() to see if the lock was successful.
-  AccessLock TryLockForAccess() WARN_UNUSED_RESULT {
+  [[nodiscard]] AccessLock TryLockForAccess() {
     return AccessLock(this, std::try_to_lock);
   }
 

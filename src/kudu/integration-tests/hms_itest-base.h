@@ -40,19 +40,17 @@ class KuduClient;
 
 class HmsITestHarness {
  public:
-  Status StartHms(const std::unique_ptr<cluster::ExternalMiniCluster>& cluster)
-    WARN_UNUSED_RESULT;
-  Status StopHms(const std::unique_ptr<cluster::ExternalMiniCluster>& cluster)
-    WARN_UNUSED_RESULT;
+  Status StartHms(const std::unique_ptr<cluster::ExternalMiniCluster>& cluster);
+  Status StopHms(const std::unique_ptr<cluster::ExternalMiniCluster>& cluster);
 
   // Creates a database in the HMS catalog.
-  Status CreateDatabase(const std::string& database_name) WARN_UNUSED_RESULT;
+  Status CreateDatabase(const std::string& database_name);
 
   // Creates a table in Kudu.
   static Status CreateKuduTable(const std::string& database_name,
                                 const std::string& table_name,
                                 const client::sp::shared_ptr<client::KuduClient>& client,
-                                MonoDelta timeout = {}) WARN_UNUSED_RESULT;
+                                MonoDelta timeout = {});
 
   // Creates a table in the HMS catalog.
   // If supplied, 'kudu_table_name' will be used for the 'kudu.table_name'
@@ -65,25 +63,25 @@ class HmsITestHarness {
   // Renames a table entry in the HMS catalog.
   Status RenameHmsTable(const std::string& database_name,
                         const std::string& old_table_name,
-                        const std::string& new_table_name) WARN_UNUSED_RESULT;
+                        const std::string& new_table_name);
 
   // Drops all columns from a Kudu HMS table entry.
   Status AlterHmsTableDropColumns(const std::string& database_name,
-                                  const std::string& table_name) WARN_UNUSED_RESULT;
+                                  const std::string& table_name);
 
   // Alter the HMS entry to be an external table with `external.table.purge = true`.
   Status AlterHmsTableExternalPurge(const std::string& database_name,
-                                    const std::string& table_name) WARN_UNUSED_RESULT;
+                                    const std::string& table_name);
 
   // Changes the table owner in the HMS catalog.
   Status ChangeHmsOwner(const std::string& database_name,
                         const std::string& table_name,
-                        const std::string& new_table_owner) WARN_UNUSED_RESULT;
+                        const std::string& new_table_owner);
 
   // Changes the table comment in the HMS catalog.
   Status ChangeHmsTableComment(const std::string& database_name,
                                const std::string& table_name,
-                               const std::string& new_table_comment) WARN_UNUSED_RESULT;
+                               const std::string& new_table_comment);
 
   // Checks that the Kudu table schema and the HMS table entry in their
   // respective catalogs are synchronized for a particular table. It also

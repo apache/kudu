@@ -74,29 +74,29 @@ class RpcServer {
     too_busy_hook_ = std::move(hook);
   }
 
-  Status Init(const std::shared_ptr<rpc::Messenger>& messenger) WARN_UNUSED_RESULT;
+  Status Init(const std::shared_ptr<rpc::Messenger>& messenger);
 
   // Add an additional address to bind and accept connections on.
-  Status AddBindAddress(const Sockaddr& addr) WARN_UNUSED_RESULT;
+  Status AddBindAddress(const Sockaddr& addr);
 
   // Services need to be registered after Init'ing, but before Start'ing.
   // The service's ownership will be given to a ServicePool.
-  Status RegisterService(std::unique_ptr<rpc::ServiceIf> service) WARN_UNUSED_RESULT;
-  Status Bind() WARN_UNUSED_RESULT;
-  Status Start() WARN_UNUSED_RESULT;
+  Status RegisterService(std::unique_ptr<rpc::ServiceIf> service);
+  Status Bind();
+  Status Start();
   void Shutdown();
 
   std::string ToString() const;
 
   // Return the addresses that this server has successfully
   // bound to. Requires that the server has been Start()ed.
-  Status GetBoundAddresses(std::vector<Sockaddr>* addresses) const WARN_UNUSED_RESULT;
-  Status GetBoundHostPorts(std::vector<HostPort>* hostports) const WARN_UNUSED_RESULT;
+  Status GetBoundAddresses(std::vector<Sockaddr>* addresses) const;
+  Status GetBoundHostPorts(std::vector<HostPort>* hostports) const;
 
   // Return the addresses that this server is advertising externally
   // to the world. Requires that the server has been Start()ed.
-  Status GetAdvertisedAddresses(std::vector<Sockaddr>* addresses) const WARN_UNUSED_RESULT;
-  Status GetAdvertisedHostPorts(std::vector<HostPort>* hostports) const WARN_UNUSED_RESULT;
+  Status GetAdvertisedAddresses(std::vector<Sockaddr>* addresses) const;
+  Status GetAdvertisedHostPorts(std::vector<HostPort>* hostports) const;
 
   // Return addresses advertised at a TCP proxy for clients connecting from
   // an external network.

@@ -92,16 +92,16 @@ class MiniRanger {
       env_(Env::Default()) {}
 
   // Starts Ranger and its dependencies.
-  Status Start() WARN_UNUSED_RESULT;
+  Status Start();
 
   // Stops Ranger and its dependencies.
-  Status Stop() WARN_UNUSED_RESULT;
+  Status Stop();
 
   // Adds a new policy to Ranger.
-  Status AddPolicy(AuthorizationPolicy policy) WARN_UNUSED_RESULT;
+  Status AddPolicy(AuthorizationPolicy policy);
 
   // Creates the client configs files in the given directory.
-  Status CreateClientConfig(const std::string& client_config_dir) WARN_UNUSED_RESULT;
+  Status CreateClientConfig(const std::string& client_config_dir);
 
   void EnableKerberos(std::string krb5_config,
                       std::string admin_ktpath,
@@ -131,28 +131,26 @@ class MiniRanger {
   bool IsRunning() const { return process_ && process_->IsStarted(); }
 
   // Sends a POST request to Ranger with 'payload'.
-  Status PostToRanger(const std::string& url, const EasyJson& payload, bool secure = false)
-    WARN_UNUSED_RESULT;
+  Status PostToRanger(const std::string& url, const EasyJson& payload, bool secure = false);
 
 private:
   // Starts the Ranger service.
-  Status StartRanger() WARN_UNUSED_RESULT;
+  Status StartRanger();
 
   // Initializes Ranger within 'admin_home' (home directory of the Ranger
   // admin). Sets 'fresh_install' to true if 'admin_home' didn't exist before
   // calling InitRanger().
-  Status InitRanger(const std::string& admin_home, bool* fresh_install)
-    WARN_UNUSED_RESULT;
+  Status InitRanger(const std::string& admin_home, bool* fresh_install);
 
   // Creates configuration files.
-  Status CreateConfigs() WARN_UNUSED_RESULT;
+  Status CreateConfigs();
 
   // Initializes Ranger's database.
   Status DbSetup(const std::string& admin_home, const std::string& ews_dir,
-                 const std::string& web_app_dir) WARN_UNUSED_RESULT;
+                 const std::string& web_app_dir);
 
   // Creates a Kudu service in Ranger.
-  Status CreateKuduService() WARN_UNUSED_RESULT;
+  Status CreateKuduService();
 
   std::string bin_dir() const {
     std::string exe;

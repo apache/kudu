@@ -120,7 +120,7 @@ class faststring {
   //
   // NOTE: the data pointer returned by release() always points to dynamically
   // allocated memory and the caller must be responsible for releasing it.
-  uint8_t *release() WARN_UNUSED_RESULT {
+  [[nodiscard]] uint8_t *release() {
     uint8_t *ret = data_;
     if (ret == initial_data_) {
       ret = new uint8_t[len_];

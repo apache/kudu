@@ -63,7 +63,7 @@ int64_t CountTableRows(KuduTable* table);
 Status CountRowsWithRetries(KuduScanner* scanner, size_t* row_count);
 
 Status ScanToStrings(KuduScanner* scanner,
-                     std::vector<std::string>* row_strings) WARN_UNUSED_RESULT;
+                     std::vector<std::string>* row_strings);
 
 } // namespace client
 } // namespace kudu

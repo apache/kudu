@@ -138,7 +138,7 @@ class ServerNegotiation {
   //
   // Returns OK on success, otherwise may return NotAuthorized, NotSupported, or
   // another non-OK status.
-  Status Negotiate() WARN_UNUSED_RESULT;
+  Status Negotiate();
 
   // SASL callback for plugin options, supported mechanisms, etc.
   // Returns SASL_FAIL if the option is not handled, which does not fail the handshake.
@@ -151,71 +151,71 @@ class ServerNegotiation {
 
   // Perform a "pre-flight check" that everything required to act as a Kerberos
   // server is properly set up.
-  static Status PreflightCheckGSSAPI(const std::string& sasl_proto_name) WARN_UNUSED_RESULT;
+  static Status PreflightCheckGSSAPI(const std::string& sasl_proto_name);
 
  private:
 
   // Parse a negotiate request from the client, deserializing it into 'msg'.
   // If the request is malformed, sends an error message to the client.
-  Status RecvNegotiatePB(NegotiatePB* msg, faststring* recv_buf) WARN_UNUSED_RESULT;
+  Status RecvNegotiatePB(NegotiatePB* msg, faststring* recv_buf);
 
   // Encode and send the specified negotiate response message to the server.
-  Status SendNegotiatePB(const NegotiatePB& msg) WARN_UNUSED_RESULT;
+  Status SendNegotiatePB(const NegotiatePB& msg);
 
   // Encode and send the specified RPC error message to the client.
   // Calls Status.ToString() for the embedded error message.
-  Status SendError(ErrorStatusPB::RpcErrorCodePB code, const Status& err) WARN_UNUSED_RESULT;
+  Status SendError(ErrorStatusPB::RpcErrorCodePB code, const Status& err);
 
   // Parse and validate connection header.
-  Status ValidateConnectionHeader(faststring* recv_buf) WARN_UNUSED_RESULT;
+  Status ValidateConnectionHeader(faststring* recv_buf);
 
   // Initialize the SASL server negotiation instance.
-  Status InitSaslServer() WARN_UNUSED_RESULT;
+  Status InitSaslServer();
 
   // Handle case when client sends NEGOTIATE request. Builds the set of
   // client-supported RPC features, determines a mutually supported
   // authentication type to use for the connection, and sends a NEGOTIATE
   // response.
-  Status HandleNegotiate(const NegotiatePB& request) WARN_UNUSED_RESULT;
+  Status HandleNegotiate(const NegotiatePB& request);
 
   // Handle a TLS_HANDSHAKE request message from the server.
-  Status HandleTlsHandshake(const NegotiatePB& request) WARN_UNUSED_RESULT;
+  Status HandleTlsHandshake(const NegotiatePB& request);
 
   // Send a TLS_HANDSHAKE response message to the server with the provided token.
-  Status SendTlsHandshake(std::string tls_token) WARN_UNUSED_RESULT;
+  Status SendTlsHandshake(std::string tls_token);
 
   // Authenticate the client using SASL. Populates the 'authenticated_user_'
   // field with the SASL principal.
   // 'recv_buf' allows a receive buffer to be reused.
-  Status AuthenticateBySasl(faststring* recv_buf) WARN_UNUSED_RESULT;
+  Status AuthenticateBySasl(faststring* recv_buf);
 
   // Authenticate the client using a token. Populates the
   // 'authenticated_user_' field with the token's principal.
   // 'recv_buf' allows a receive buffer to be reused.
-  Status AuthenticateByToken(faststring* recv_buf) WARN_UNUSED_RESULT;
+  Status AuthenticateByToken(faststring* recv_buf);
 
-  Status AuthenticateByJwt(faststring* recv_buf) WARN_UNUSED_RESULT;
+  Status AuthenticateByJwt(faststring* recv_buf);
 
   // Authenticate the client using the client's TLS certificate. Populates the
   // 'authenticated_user_' field with the certificate's subject.
-  Status AuthenticateByCertificate() WARN_UNUSED_RESULT;
+  Status AuthenticateByCertificate();
 
   // Handle case when client sends SASL_INITIATE request.
   // Returns Status::OK if the SASL negotiation is complete, or
   // Status::Incomplete if a SASL_RESPONSE step is expected.
-  Status HandleSaslInitiate(const NegotiatePB& request) WARN_UNUSED_RESULT;
+  Status HandleSaslInitiate(const NegotiatePB& request);
 
   // Handle case when client sends SASL_RESPONSE request.
-  Status HandleSaslResponse(const NegotiatePB& request) WARN_UNUSED_RESULT;
+  Status HandleSaslResponse(const NegotiatePB& request);
 
   // Send a SASL_CHALLENGE response to the client with a challenge token.
-  Status SendSaslChallenge(const char* challenge, unsigned clen) WARN_UNUSED_RESULT;
+  Status SendSaslChallenge(const char* challenge, unsigned clen);
 
   // Send a SASL_SUCCESS response to the client.
-  Status SendSaslSuccess() WARN_UNUSED_RESULT;
+  Status SendSaslSuccess();
 
   // Receive and validate the ConnectionContextPB.
-  Status RecvConnectionContext(faststring* recv_buf) WARN_UNUSED_RESULT;
+  Status RecvConnectionContext(faststring* recv_buf);
 
   // Returns true if connection is from trusted subnets or local networks.
   static bool IsTrustedConnection(const Sockaddr& addr);

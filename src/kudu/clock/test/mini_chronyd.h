@@ -178,8 +178,7 @@ class MiniChronyd {
   // for clock synchronisation via NTP, even if the offset of the client's clock
   // from the reference clock provided by NTP server(s) is huge.
   static Status CheckNtpSource(const std::vector<HostPort>& servers,
-                               int timeout_sec = 3)
-      WARN_UNUSED_RESULT;
+                               int timeout_sec = 3);
 
   // Create a new MiniChronyd with the provided options, or with defaults
   // if the 'options' argument is omitted.
@@ -198,16 +197,16 @@ class MiniChronyd {
   HostPort address() const;
 
   // Start the mini chronyd in server-only mode.
-  Status Start() WARN_UNUSED_RESULT;
+  Status Start();
 
   // Stop the mini chronyd.
-  Status Stop() WARN_UNUSED_RESULT;
+  Status Stop();
 
   // Sends SIGSTOP signal to the underlying chronyd.
-  Status Pause() WARN_UNUSED_RESULT;
+  Status Pause();
 
   // Sends SIGCONT signal to the underlying chronyd.
-  Status Resume() WARN_UNUSED_RESULT;
+  Status Resume();
 
   // Get NTP server statistics as output by 'chronyc serverstats'.
   Status GetServerStats(ServerStats* stats) const;
@@ -215,7 +214,7 @@ class MiniChronyd {
   // Manually set the reference time for the underlying chronyd
   // with the precision of 1 second. The input is number of seconds
   // from the beginning of the Epoch.
-  Status SetTime(time_t time) WARN_UNUSED_RESULT;
+  Status SetTime(time_t time);
 
  private:
   friend class MiniChronydTest;
@@ -245,13 +244,13 @@ class MiniChronyd {
 
   // Create a chrony.conf file with server-only mode settings and other options
   // corresponding to MiniChronydOptions in the data root of Kudu mini cluster.
-  Status CreateConf() WARN_UNUSED_RESULT;
+  Status CreateConf();
 
   // Run chronyc command with arguments as specified by 'args', targeting this
   // chronyd instance.
   Status RunChronyCmd(const std::vector<std::string>& args,
                       std::string* out_stdout = nullptr,
-                      std::string* out_stderr = nullptr) const WARN_UNUSED_RESULT;
+                      std::string* out_stderr = nullptr) const;
 
   MiniChronydOptions options_;
   std::string cmd_socket_dir_;

@@ -87,7 +87,7 @@ class Batcher : public RefCountedThreadSafe<Batcher> {
   // Add a new operation to the batch. Requires that the batch has not yet been flushed.
   //
   // NOTE: If this returns not-OK, does not take ownership of 'write_op'.
-  Status Add(KuduWriteOperation* write_op) WARN_UNUSED_RESULT;
+  Status Add(KuduWriteOperation* write_op);
 
   // Return true if any operations are still pending. An operation is no longer considered
   // pending once it has either errored or succeeded.  Operations are considering pending

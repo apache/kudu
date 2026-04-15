@@ -56,6 +56,6 @@ std::string BaseName(const std::string& path);
 // as well as the $PATH environment variable.
 Status FindExecutable(const std::string& binary,
                       const std::vector<std::string>& search,
-                      std::string* path) WARN_UNUSED_RESULT;
+                      std::string* path);
 
 } // namespace kudu

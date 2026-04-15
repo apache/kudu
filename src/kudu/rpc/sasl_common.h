@@ -82,10 +82,10 @@ struct SaslProtection {
 //
 // This function is thread safe and uses a static lock.
 // This function should NOT be called during static initialization.
-Status SaslInit(bool kerberos_keytab_provided = false) WARN_UNUSED_RESULT;
+Status SaslInit(bool kerberos_keytab_provided = false);
 
 // Disable Kudu's initialization of SASL. See equivalent method in client.h.
-Status DisableSaslInitialization() WARN_UNUSED_RESULT;
+Status DisableSaslInitialization();
 
 // Wrap a call into the SASL library. 'call' should be a lambda which
 // returns a SASL error code, 'conn' is the SASL connection to perform
@@ -102,7 +102,7 @@ Status DisableSaslInitialization() WARN_UNUSED_RESULT;
 // to the underlying sasl_errdetails() call.
 Status WrapSaslCall(sasl_conn_t* conn,
                     const std::function<int()>& call,
-                    const char* description) WARN_UNUSED_RESULT;
+                    const char* description);
 
 // Return <ip>;<port> string formatted for SASL library use.
 std::string SaslIpPortString(const Sockaddr& addr);
@@ -121,7 +121,7 @@ sasl_callback_t SaslBuildCallback(int id, int (*proc)(void), void* context);
 // size.
 Status EnableProtection(sasl_conn_t* sasl_conn,
                         SaslProtection::Type minimum_protection = SaslProtection::kAuthentication,
-                        size_t max_recv_buf_size = kSaslMaxBufSize) WARN_UNUSED_RESULT;
+                        size_t max_recv_buf_size = kSaslMaxBufSize);
 
 // Returns true if the SASL connection has been negotiated with auth-int or
 // auth-conf. 'sasl_conn' must already be negotiated.
@@ -129,7 +129,7 @@ bool NeedsWrap(sasl_conn_t* sasl_conn);
 
 // Retrieves the negotiated maximum send buffer size for auth-int or auth-conf
 // protected channels.
-uint32_t GetMaxSendBufferSize(sasl_conn_t* sasl_conn) WARN_UNUSED_RESULT;
+[[nodiscard]] uint32_t GetMaxSendBufferSize(sasl_conn_t* sasl_conn);
 
 // Encode the provided data.
 //
@@ -138,7 +138,7 @@ uint32_t GetMaxSendBufferSize(sasl_conn_t* sasl_conn) WARN_UNUSED_RESULT;
 // The output 'ciphertext' slice is only valid until the next use of the SASL connection.
 Status SaslEncode(sasl_conn_t* conn,
                   Slice plaintext,
-                  Slice* ciphertext) WARN_UNUSED_RESULT;
+                  Slice* ciphertext);
 
 // Decode the provided SASL-encoded data.
 //
@@ -147,7 +147,7 @@ Status SaslEncode(sasl_conn_t* conn,
 // The output 'plaintext' slice is only valid until the next use of the SASL connection.
 Status SaslDecode(sasl_conn_t* conn,
                   Slice ciphertext,
-                  Slice* plaintext) WARN_UNUSED_RESULT;
+                  Slice* plaintext);
 
 // Deleter for sasl_conn_t instances, for use with unique_ptr after calling sasl_*_new().
 struct SaslDeleter {

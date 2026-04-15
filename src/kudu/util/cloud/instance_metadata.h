@@ -62,7 +62,7 @@ class InstanceMetadata {
   // If the basic information has been retrieved successfully, returns
   // Status::OK(), otherwise returns non-OK status to reflect the error
   // encountered.
-  virtual Status Init() WARN_UNUSED_RESULT;
+  virtual Status Init();
 
   // Get the type of the cloud instance.
   virtual CloudType type() const = 0;
@@ -75,7 +75,7 @@ class InstanceMetadata {
   //                            NTP service for its instances
   //   * Status::IllegalState() if the metadata object requires initialization,
   //                            but it hasn't been initialized yet
-  virtual Status GetNtpServer(std::string* server) const WARN_UNUSED_RESULT = 0;
+  virtual Status GetNtpServer(std::string* server) const = 0;
 
  protected:
   // Fetch data from specified URL and output into the 'out' parameter. This
@@ -111,12 +111,12 @@ class InstanceMetadata {
 class AwsInstanceMetadata : public InstanceMetadata {
  public:
   AwsInstanceMetadata() = default;
-  ~AwsInstanceMetadata() = default;
+  ~AwsInstanceMetadata() override = default;
 
-  Status Init() override WARN_UNUSED_RESULT;
+  Status Init() override;
 
   CloudType type() const override { return CloudType::AWS; }
-  Status GetNtpServer(std::string* server) const override WARN_UNUSED_RESULT;
+  Status GetNtpServer(std::string* server) const override;
 
  protected:
   const std::vector<std::string>& request_headers() const override;
@@ -129,10 +129,10 @@ class AwsInstanceMetadata : public InstanceMetadata {
 class AzureInstanceMetadata : public InstanceMetadata {
  public:
   AzureInstanceMetadata() = default;
-  ~AzureInstanceMetadata() = default;
+  ~AzureInstanceMetadata() override = default;
 
   CloudType type() const override { return CloudType::AZURE; }
-  Status GetNtpServer(std::string* server) const override WARN_UNUSED_RESULT;
+  Status GetNtpServer(std::string* server) const override;
 
  protected:
   const std::vector<std::string>& request_headers() const override;
@@ -144,10 +144,10 @@ class AzureInstanceMetadata : public InstanceMetadata {
 class GceInstanceMetadata : public InstanceMetadata {
  public:
   GceInstanceMetadata() = default;
-  ~GceInstanceMetadata() = default;
+  ~GceInstanceMetadata() override = default;
 
   CloudType type() const override { return CloudType::GCE; }
-  Status GetNtpServer(std::string* server) const override WARN_UNUSED_RESULT;
+  Status GetNtpServer(std::string* server) const override;
 
  protected:
   const std::vector<std::string>& request_headers() const override;
@@ -163,10 +163,10 @@ class GceInstanceMetadata : public InstanceMetadata {
 class OpenStackInstanceMetadata : public InstanceMetadata {
  public:
   OpenStackInstanceMetadata() = default;
-  ~OpenStackInstanceMetadata() = default;
+  ~OpenStackInstanceMetadata() override = default;
 
   CloudType type() const override { return CloudType::OPENSTACK; }
-  Status GetNtpServer(std::string* server) const override WARN_UNUSED_RESULT;
+  Status GetNtpServer(std::string* server) const override;
 
  protected:
   const std::vector<std::string>& request_headers() const override;

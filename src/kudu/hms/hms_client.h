@@ -100,21 +100,21 @@ class HmsClient {
   // returned.
   //
   // Must be called before any subsequent operations using the client.
-  Status Start() WARN_UNUSED_RESULT;
+  Status Start();
 
   // Stops the HMS client.
   //
   // This is optional; if not called the destructor will stop the client.
-  Status Stop() WARN_UNUSED_RESULT;
+  Status Stop();
 
   // Returns 'true' if the client is connected to the remote server.
-  bool IsConnected() WARN_UNUSED_RESULT;
+  [[nodiscard]] bool IsConnected();
 
   // Creates a new database in the HMS.
   //
   // If a database already exists by the same name an AlreadyPresent status is
   // returned.
-  Status CreateDatabase(const hive::Database& database) WARN_UNUSED_RESULT;
+  Status CreateDatabase(const hive::Database& database);
 
   // Drops a database in the HMS.
   //
@@ -122,81 +122,78 @@ class HmsClient {
   // be dropped (this is the default in HiveQL). Otherwise, the operation will
   // return IllegalState if the database contains tables.
   Status DropDatabase(const std::string& database_name,
-                      Cascade cascade = Cascade::kFalse) WARN_UNUSED_RESULT;
+                      Cascade cascade = Cascade::kFalse);
 
   // Returns all HMS databases.
-  Status GetAllDatabases(std::vector<std::string>* databases) WARN_UNUSED_RESULT;
+  Status GetAllDatabases(std::vector<std::string>* databases);
 
   // Retrieves a database from the HMS.
-  Status GetDatabase(const std::string& pattern, hive::Database* database) WARN_UNUSED_RESULT;
+  Status GetDatabase(const std::string& pattern, hive::Database* database);
 
   // Creates a table in the HMS.
   Status CreateTable(const hive::Table& table,
-                     const hive::EnvironmentContext& env_ctx = hive::EnvironmentContext())
-    WARN_UNUSED_RESULT;
+                     const hive::EnvironmentContext& env_ctx = {});
 
   // Alter a table in the HMS.
   Status AlterTable(const std::string& database_name,
                     const std::string& table_name,
                     const hive::Table& table,
-                    const hive::EnvironmentContext& env_ctx = hive::EnvironmentContext())
-    WARN_UNUSED_RESULT;
+                    const hive::EnvironmentContext& env_ctx = {});
 
   // Drops a Kudu table in the HMS.
   Status DropTable(const std::string& database_name,
                    const std::string& table_name,
-                   const hive::EnvironmentContext& env_ctx = hive::EnvironmentContext())
-    WARN_UNUSED_RESULT;
+                   const hive::EnvironmentContext& env_ctx = {});
 
   // Retrieves an HMS table metadata.
   Status GetTable(const std::string& database_name,
                   const std::string& table_name,
-                  hive::Table* table) WARN_UNUSED_RESULT;
+                  hive::Table* table);
 
   // Retrieves HMS table metadata for all tables in 'table_names'.
   Status GetTables(const std::string& database_name,
                    const std::vector<std::string>& table_names,
-                   std::vector<hive::Table>* tables) WARN_UNUSED_RESULT;
+                   std::vector<hive::Table>* tables);
 
   // Retrieves all table names in an HMS database.
   Status GetTableNames(const std::string& database_name,
-                       std::vector<std::string>* table_names) WARN_UNUSED_RESULT;
+                       std::vector<std::string>* table_names);
 
   // Retrieves all table names in an HMS database matching a filter. See the
   // docs for 'get_table_names_by_filter' in hive_metastore.thrift for filter
   // syntax examples.
   Status GetTableNames(const std::string& database_name,
                        const std::string& filter,
-                       std::vector<std::string>* table_names) WARN_UNUSED_RESULT;
+                       std::vector<std::string>* table_names);
 
   // Retrieves a the current HMS notification event ID.
-  Status GetCurrentNotificationEventId(int64_t* event_id) WARN_UNUSED_RESULT;
+  Status GetCurrentNotificationEventId(int64_t* event_id);
 
   // Retrieves HMS notification log events, beginning after 'last_event_id'.
   Status GetNotificationEvents(int64_t last_event_id,
                                int32_t max_events,
-                               std::vector<hive::NotificationEvent>* events) WARN_UNUSED_RESULT;
+                               std::vector<hive::NotificationEvent>* events);
 
   // Get the HMS's UUID (see HmsCatalog::GetUuid).
-  Status GetUuid(std::string* uuid) WARN_UNUSED_RESULT;
+  Status GetUuid(std::string* uuid);
 
   // Adds partitions to an HMS table.
   Status AddPartitions(const std::string& database_name,
                        const std::string& table_name,
-                       std::vector<hive::Partition> partitions) WARN_UNUSED_RESULT;
+                       std::vector<hive::Partition> partitions);
 
   // Retrieves the partitions of an HMS table.
   Status GetPartitions(const std::string& database_name,
                        const std::string& table_name,
-                       std::vector<hive::Partition>* partitions) WARN_UNUSED_RESULT;
+                       std::vector<hive::Partition>* partitions);
 
   // Returns true if the HMS table is a Kudu table.
-  static bool IsKuduTable(const hive::Table& table) WARN_UNUSED_RESULT;
+  [[nodiscard]] static bool IsKuduTable(const hive::Table& table);
 
   // Returns if the HMS table should be synchronized.
   // Returns true if the HMS table is a managed table or
   // if the HMS is an external table with `external.table.purge = true`.
-  static bool IsSynchronized(const hive::Table& table) WARN_UNUSED_RESULT;
+  [[nodiscard]] static bool IsSynchronized(const hive::Table& table);
 
   // Deserializes a JSON encoded table.
   //
@@ -205,7 +202,7 @@ class HmsClient {
   //
   // See org.apache.hadoop.hive.metastore.messaging.json.JSONMessageFactory for
   // the Java equivalent.
-  static Status DeserializeJsonTable(Slice json, hive::Table* table) WARN_UNUSED_RESULT;
+  static Status DeserializeJsonTable(Slice json, hive::Table* table);
 
  private:
   bool verify_kudu_sync_config_;

@@ -209,14 +209,14 @@ class Tablet {
   void StartApplying(ParticipantOpState* op_state);
 
   // Apply all of the row operations associated with this op.
-  Status ApplyRowOperations(WriteOpState* op_state) WARN_UNUSED_RESULT;
+  Status ApplyRowOperations(WriteOpState* op_state);
 
   // Apply a single row operation, which must already be prepared.
   // The result is set back into row_op->result.
   Status ApplyRowOperation(const fs::IOContext* io_context,
                            WriteOpState* op_state,
                            RowOp* row_op,
-                           ProbeStats* stats) WARN_UNUSED_RESULT;
+                           ProbeStats* stats);
 
   // Begins the transaction, recording its presence in the tablet metadata.
   // Upon calling this, 'op_id' will be anchored until the metadata is flushed,
@@ -435,7 +435,7 @@ class Tablet {
   // Calculates the ancient history mark and returns true iff tablet history GC
   // is enabled, which requires the use of a HybridClock.
   // Otherwise, returns false.
-  bool GetTabletAncientHistoryMark(Timestamp* ancient_history_mark) const WARN_UNUSED_RESULT;
+  [[nodiscard]] bool GetTabletAncientHistoryMark(Timestamp* ancient_history_mark) const;
 
   // Calculates history GC options based on properties of the Clock implementation.
   HistoryGcOpts GetHistoryGcOpts() const;
@@ -722,7 +722,7 @@ class Tablet {
   // row keys in the RowSets in the current RowSetTree (as determined by the op's
   // captured TabletComponents).
   Status BulkCheckPresence(const fs::IOContext* io_context,
-                           WriteOpState* op_state) WARN_UNUSED_RESULT;
+                           WriteOpState* op_state);
 
   // Capture a set of iterators which, together, reflect all of the data in the tablet.
   //

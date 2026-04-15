@@ -51,20 +51,20 @@ class Webserver : public WebCallbackRegistry {
 
   // Starts a webserver on the port passed to the constructor. The webserver runs in a
   // separate thread, so this call is non-blocking.
-  Status Start() WARN_UNUSED_RESULT;
+  Status Start();
 
   // Stops the webserver synchronously.
   void Stop();
 
   // Return the addresses that this server has successfully
   // bound to. Requires that the server has been Start()ed.
-  Status GetBoundAddresses(std::vector<Sockaddr>* addrs) const WARN_UNUSED_RESULT;
-  Status GetBoundHostPorts(std::vector<HostPort>* hostports) const WARN_UNUSED_RESULT;
+  Status GetBoundAddresses(std::vector<Sockaddr>* addrs) const;
+  Status GetBoundHostPorts(std::vector<HostPort>* hostports) const;
 
   // Return the addresses that this server is advertising externally
   // to the world. Requires that the server has been Start()ed.
-  Status GetAdvertisedAddresses(std::vector<Sockaddr>* addresses) const WARN_UNUSED_RESULT;
-  Status GetAdvertisedHostPorts(std::vector<HostPort>* hostports) const WARN_UNUSED_RESULT;
+  Status GetAdvertisedAddresses(std::vector<Sockaddr>* addresses) const;
+  Status GetAdvertisedHostPorts(std::vector<HostPort>* hostports) const;
 
   // Register a route 'path' to be rendered via template.
   // The appropriate template to use is determined by 'path'.
@@ -149,7 +149,7 @@ class Webserver : public WebCallbackRegistry {
   bool static_pages_available() const;
 
   // Build the string to pass to mongoose specifying where to bind.
-  Status BuildListenSpec(std::string* spec) const WARN_UNUSED_RESULT;
+  Status BuildListenSpec(std::string* spec) const;
 
   // Returns whether or not a mustache template corresponding
   // to the given path can be found.

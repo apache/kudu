@@ -67,16 +67,16 @@ class MiniRangerKMS {
   }
 
   // Starts Ranger and its dependencies.
-  Status Start() WARN_UNUSED_RESULT;
+  Status Start();
 
   // Stops Ranger and its dependencies.
-  Status Stop() WARN_UNUSED_RESULT;
+  Status Stop();
 
   Status CreateKMSService();
 
   Status GetKeys() const;
 
-  Status CreateClusterKey(const std::string& name, std::string* version) WARN_UNUSED_RESULT;
+  Status CreateClusterKey(const std::string& name, std::string* version);
 
 
   void EnableKerberos(std::string krb5_config,
@@ -94,21 +94,21 @@ class MiniRangerKMS {
 
  private:
   // Starts RangerKMS Service
-  Status StartRangerKMS() WARN_UNUSED_RESULT;
+  Status StartRangerKMS();
 
   // Initializes Ranger KMS within 'kms_home' (home directory of the Ranger KMS
   // admin). Sets 'fresh_install' to true if 'kms_home' didn't exist before
   // calling InitRangerKMS().
-  Status InitRangerKMS(const std::string& kms_home, bool* fresh_install) WARN_UNUSED_RESULT;
+  Status InitRangerKMS(const std::string& kms_home, bool* fresh_install);
 
   // Creates configuration files.
   // ref:
   // https://docs.cloudera.com/HDPDocuments/HDP2/HDP-2.6.5/bk_security/content/ranger_kms_properties.html
-  Status CreateConfigs(const std::string& conf_dir) WARN_UNUSED_RESULT;
+  Status CreateConfigs(const std::string& conf_dir);
 
   // Initializes Ranger KMS' database.
   Status DbSetup(const std::string& kms_home, const std::string& ews_dir,
-                 const std::string& web_app_dir) WARN_UNUSED_RESULT;
+                 const std::string& web_app_dir);
 
   // Returns RangerKMS' home directory.
   std::string ranger_kms_home() const {

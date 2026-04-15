@@ -35,7 +35,7 @@ struct MiniChronydOptions;
 // and output into the 'chronyd' out parameter.
 Status StartChronydAtAutoReservedPort(
     MiniChronydOptions options,
-    std::unique_ptr<MiniChronyd>* chronyd) WARN_UNUSED_RESULT;
+    std::unique_ptr<MiniChronyd>* chronyd);
 
 } // namespace clock
 } // namespace kudu

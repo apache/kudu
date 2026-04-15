@@ -100,7 +100,7 @@ using PasswordCallback = std::function<Status(std::string*)>;
 
 // Disable initialization of OpenSSL. Must be called before
 // any call to InitializeOpenSSL().
-Status DisableOpenSSLInitialization() WARN_UNUSED_RESULT;
+Status DisableOpenSSLInitialization();
 
 // Set whether the OpenSSL library is initialized in the context of a standalone
 // application. This should be called only once during static initialization.

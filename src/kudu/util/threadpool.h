@@ -183,7 +183,7 @@ class ThreadPool {
   void Shutdown();
 
   // Submits a new task.
-  Status Submit(std::function<void()> f) WARN_UNUSED_RESULT;
+  Status Submit(std::function<void()> f);
 
   // Waits until all the tasks are completed.
   void Wait();
@@ -525,7 +525,7 @@ class ThreadPoolToken {
   ~ThreadPoolToken();
 
   // Submits a new task.
-  Status Submit(std::function<void()> f) WARN_UNUSED_RESULT;
+  Status Submit(std::function<void()> f);
 
   // Marks the token as unusable for future submissions, returning immediately.
   // This lets all the in-flight and scheduled tasks on this token to complete,

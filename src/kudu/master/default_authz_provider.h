@@ -36,51 +36,51 @@ namespace master {
 // Default AuthzProvider which always authorizes any operations.
 class DefaultAuthzProvider : public AuthzProvider {
  public:
-  Status Start() override WARN_UNUSED_RESULT { return Status::OK(); }
+  Status Start() override { return Status::OK(); }
 
   void Stop() override {}
 
   Status AuthorizeCreateTable(const std::string& /*table_name*/,
                               const std::string& /*user*/,
-                              const std::string& /*owner*/) override WARN_UNUSED_RESULT {
+                              const std::string& /*owner*/) override {
     return Status::OK();
   }
 
   Status AuthorizeDropTable(const std::string& /*table_name*/,
                             const std::string& /*user*/,
-                            bool /*is_owner*/) override WARN_UNUSED_RESULT {
+                            bool /*is_owner*/) override {
     return Status::OK();
   }
 
   Status AuthorizeAlterTable(const std::string& /*old_table*/,
                              const std::string& /*new_table*/,
                              const std::string& /*user*/,
-                             bool /*is_owner*/) override WARN_UNUSED_RESULT {
+                             bool /*is_owner*/) override {
     return Status::OK();
   }
 
   Status AuthorizeGetTableMetadata(const std::string& /*table_name*/,
                                    const std::string& /*user*/,
-                                   bool /*is_owner*/) override WARN_UNUSED_RESULT {
+                                   bool /*is_owner*/) override {
     return Status::OK();
   }
 
   Status AuthorizeListTables(const std::string& /*user*/,
                              std::unordered_map<std::string, bool>* /*is_owner_by_table_name*/,
-                             bool* checked_table_names) override WARN_UNUSED_RESULT {
+                             bool* checked_table_names) override {
     *checked_table_names = false;
     return Status::OK();
   }
 
   Status AuthorizeGetTableStatistics(const std::string& /*table_name*/,
                                      const std::string& /*user*/,
-                                     bool /*is_owner*/) override WARN_UNUSED_RESULT {
+                                     bool /*is_owner*/) override {
     return Status::OK();
   }
 
   Status AuthorizeChangeOwner(const std::string& /*table_name*/,
                               const std::string& /*user*/,
-                              bool /*is_owner*/) override WARN_UNUSED_RESULT {
+                              bool /*is_owner*/) override {
     return Status::OK();
   }
 
@@ -88,7 +88,7 @@ class DefaultAuthzProvider : public AuthzProvider {
                               const std::string& /*user*/,
                               bool /*is_owner*/,
                               const SchemaPB& /*schema_pb*/,
-                              security::TablePrivilegePB* pb) override WARN_UNUSED_RESULT {
+                              security::TablePrivilegePB* pb) override {
     DCHECK(pb);
     DCHECK(pb->has_table_id());
     pb->set_delete_privilege(true);
@@ -98,7 +98,7 @@ class DefaultAuthzProvider : public AuthzProvider {
     return Status::OK();
   }
 
-  Status RefreshPolicies() override WARN_UNUSED_RESULT {
+  Status RefreshPolicies() override {
     return Status::OK();
   }
 };

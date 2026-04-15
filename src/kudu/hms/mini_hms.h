@@ -61,19 +61,19 @@ class MiniHms {
   //
   // If the MiniHms has already been started and stopped, it will be restarted
   // using the same listening port.
-  Status Start() WARN_UNUSED_RESULT;
+  Status Start();
 
   // Stops the mini Hive metastore.
-  Status Stop() WARN_UNUSED_RESULT;
+  Status Stop();
 
   // Pause the Hive metastore process.
-  Status Pause() WARN_UNUSED_RESULT;
+  Status Pause();
 
   // Unpause the Hive metastore process.
-  Status Resume() WARN_UNUSED_RESULT;
+  Status Resume();
 
   // Delete the HMS database directory.
-  Status DeleteDatabaseDir() WARN_UNUSED_RESULT;
+  Status DeleteDatabaseDir();
 
   // Returns the address of the Hive metastore. Should only be called after the
   // metastore is started.
@@ -93,16 +93,16 @@ class MiniHms {
  private:
 
   // Creates a security.properties file for use via `-Djava.security.properties` in the mini HMS.
-  Status CreateSecurityProperties() const WARN_UNUSED_RESULT;
+  Status CreateSecurityProperties() const;
 
   // Creates a hive-site.xml for the mini HMS.
-  Status CreateHiveSite() const WARN_UNUSED_RESULT;
+  Status CreateHiveSite() const;
 
   // Creates a core-site.xml for the mini HMS.
-  Status CreateCoreSite() const WARN_UNUSED_RESULT;
+  Status CreateCoreSite() const;
 
   // Creates a log4j2 configuration properties file for the mini HMS.
-  Status CreateLogConfig() const WARN_UNUSED_RESULT;
+  Status CreateLogConfig() const;
 
   std::unique_ptr<Subprocess> hms_process_;
   MonoDelta notification_log_ttl_ = MonoDelta::FromSeconds(86400);

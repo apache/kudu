@@ -65,6 +65,6 @@ std::ostream& operator<<(std::ostream& os, const Version& v);
 
 // Parse 'version_str' into 'v'. 'v' must not be null.
 Status ParseVersion(const std::string& version_str,
-                    Version* v) WARN_UNUSED_RESULT;
+                    Version* v);
 
 } // namespace kudu

@@ -24,11 +24,11 @@ namespace kudu {
 
 // Return a NotSupported Status if the current CPU does not support the CPU flags
 // required for Kudu.
-Status CheckCPUFlags() WARN_UNUSED_RESULT;
+Status CheckCPUFlags();
 
 // Initialize Kudu, checking that the platform we are running on is supported,
 // etc. Returns non-OK status if we fail to init. Calls abort() if it turns out
 // that at least one of the standard descriptors is not open.
-Status InitKudu() WARN_UNUSED_RESULT;
+Status InitKudu();
 
 } // namespace kudu

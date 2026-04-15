@@ -78,7 +78,7 @@ class MiniOidc {
   explicit MiniOidc(MiniOidcOptions options);
   ~MiniOidc();
 
-  Status Start() WARN_UNUSED_RESULT;
+  Status Start();
   void Stop();
 
   // Creates a JWT with the given `account_id` and `subject`. If `is_valid` is set to false, the

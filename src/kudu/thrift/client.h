@@ -115,7 +115,7 @@ class HaClient {
   void Stop();
 
   // Synchronously executes a task with exclusive access to the thrift service client.
-  Status Execute(std::function<Status(Service*)> task) WARN_UNUSED_RESULT;
+  Status Execute(std::function<Status(Service*)> task);
 
   // Set metrics to account for various events.
   void SetMetrics(std::unique_ptr<HaClientMetrics> metrics);

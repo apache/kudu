@@ -252,10 +252,10 @@ class SysCatalogTable {
   Status VisitTServerStates(TServerStateVisitor* visitor);
 
   // Get the latest processed HMS notification log event ID.
-  Status GetLatestNotificationLogEventId(int64_t* event_id) WARN_UNUSED_RESULT;
+  Status GetLatestNotificationLogEventId(int64_t* event_id);
 
   // Get the cluster ID from the system table.
-  Status GetClusterIdEntry(SysClusterIdEntryPB* entry) WARN_UNUSED_RESULT;
+  Status GetClusterIdEntry(SysClusterIdEntryPB* entry);
 
   // Retrive the CA entry (private key and certificate) from the system table.
   Status GetCertAuthorityEntry(SysCertAuthorityEntryPB* entry);

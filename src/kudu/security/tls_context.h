@@ -84,7 +84,7 @@ class TlsContext {
 
   ~TlsContext() = default;
 
-  Status Init() WARN_UNUSED_RESULT;
+  Status Init();
 
   // Returns true if this TlsContext has been configured with a cert and key for
   // use with TLS-encrypted connections.
@@ -114,17 +114,17 @@ class TlsContext {
   // passed in to 'UseCertificateAndKey()' or 'AdoptSignedCert()'.
   //
   // If this cert has already been marked as trusted, this has no effect.
-  Status AddTrustedCertificate(const Cert& cert) WARN_UNUSED_RESULT;
+  Status AddTrustedCertificate(const Cert& cert);
 
   // Dump all of the certs that are currently trusted by this context, in DER
   // form, into 'cert_ders'.
-  Status DumpTrustedCerts(std::vector<std::string>* cert_ders) const WARN_UNUSED_RESULT;
+  Status DumpTrustedCerts(std::vector<std::string>* cert_ders) const;
 
   // Uses 'cert' and 'key' as the cert and key for use with TLS connections.
   //
   // Checks that the CA that issued the signature on 'cert' is already trusted
   // by this context (e.g. by AddTrustedCertificate()).
-  Status UseCertificateAndKey(const Cert& cert, const PrivateKey& key) WARN_UNUSED_RESULT;
+  Status UseCertificateAndKey(const Cert& cert, const PrivateKey& key);
 
   // Generates a self-signed cert and key for use with TLS connections.
   //
@@ -133,7 +133,7 @@ class TlsContext {
   // CA-signed cert for the generated private key, and 'AdoptSignedCert' can be
   // used to transition to using the CA-signed cert with subsequent TLS
   // connections.
-  Status GenerateSelfSignedCertAndKey() WARN_UNUSED_RESULT;
+  Status GenerateSelfSignedCertAndKey();
 
   // Returns a new certificate signing request (CSR) in DER format, if this
   // context's cert is self-signed. If the cert is already signed, returns
@@ -149,27 +149,26 @@ class TlsContext {
   // by this context (e.g. by AddTrustedCertificate()).
   //
   // This has no effect if the instance already has a CA-signed cert.
-  Status AdoptSignedCert(const Cert& cert) WARN_UNUSED_RESULT;
+  Status AdoptSignedCert(const Cert& cert);
 
   // Convenience functions for loading cert/CA/key from file paths.
   // -------------------------------------------------------------
 
   // Load the server certificate and key (PEM encoded).
   Status LoadCertificateAndKey(const std::string& certificate_path,
-                               const std::string& key_path) WARN_UNUSED_RESULT;
+                               const std::string& key_path);
 
   // Load the server certificate and key (PEM encoded), and use the callback
   // 'password_cb' to obtain the password that can decrypt the key.
   Status LoadCertificateAndPasswordProtectedKey(const std::string& certificate_path,
                                                 const std::string& key_path,
-                                                const PasswordCallback& password_cb)
-                                                WARN_UNUSED_RESULT;
+                                                const PasswordCallback& password_cb);
 
   // Load the certificate authority (PEM encoded).
-  Status LoadCertificateAuthority(const std::string& certificate_path) WARN_UNUSED_RESULT;
+  Status LoadCertificateAuthority(const std::string& certificate_path);
 
   // Initiates a new TlsHandshake instance.
-  Status InitiateHandshake(TlsHandshake* handshake) const WARN_UNUSED_RESULT;
+  Status InitiateHandshake(TlsHandshake* handshake) const;
 
   // Return the number of certs that have been marked as trusted.
   // Used by tests.
@@ -188,7 +187,7 @@ class TlsContext {
 
  private:
 
-  Status VerifyCertChainUnlocked(const Cert& cert) WARN_UNUSED_RESULT;
+  Status VerifyCertChainUnlocked(const Cert& cert);
 
   // The cipher suite preferences to use for RPC connections secured with
   // pre-TLSv1.3 protocols. Uses the OpenSSL cipher preference list format.

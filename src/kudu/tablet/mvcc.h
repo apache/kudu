@@ -278,7 +278,7 @@ class MvccManager {
   // then the returned snapshot is repeatable.
   Status WaitForSnapshotWithAllApplied(Timestamp timestamp,
                                        MvccSnapshot* snapshot,
-                                       const MonoTime& deadline) const WARN_UNUSED_RESULT;
+                                       const MonoTime& deadline) const;
 
   // Wait for all operations that are currently APPLYING to finish applying.
   //
@@ -286,7 +286,7 @@ class MvccManager {
   // just that those that were APPLYING at call time are finished upon return.
   //
   // Returns Status::Aborted() if MVCC closed while waiting.
-  Status WaitForApplyingOpsToApply() const WARN_UNUSED_RESULT;
+  Status WaitForApplyingOpsToApply() const;
 
   // Returns the earliest possible timestamp for an nonapplied op. All
   // timestamps before this one are guaranteed to be applied.
@@ -397,7 +397,7 @@ class MvccManager {
 
   // Waits until all ops before the given time are applied.
   Status WaitUntil(WaitFor wait_for, Timestamp ts,
-                   const MonoTime& deadline) const WARN_UNUSED_RESULT;
+                   const MonoTime& deadline) const;
 
   // Return true if the condition that the given waiter is waiting on has
   // been achieved.

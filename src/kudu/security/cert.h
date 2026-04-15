@@ -50,9 +50,9 @@ int GetKuduKerberosPrincipalOidNid();
 // TODO(unknown): Currently, there isn't a mechanism to add to the chain. Implement it when needed.
 class Cert : public RawDataWrapper<STACK_OF(X509)> {
  public:
-  Status FromString(const std::string& data, DataFormat format) WARN_UNUSED_RESULT;
-  Status ToString(std::string* data, DataFormat format) const WARN_UNUSED_RESULT;
-  Status FromFile(const std::string& fpath, DataFormat format) WARN_UNUSED_RESULT;
+  Status FromString(const std::string& data, DataFormat format);
+  Status ToString(std::string* data, DataFormat format) const;
+  Status FromFile(const std::string& fpath, DataFormat format);
 
   int chain_len() const { return sk_X509_num(data_.get()); }
 
@@ -70,17 +70,17 @@ class Cert : public RawDataWrapper<STACK_OF(X509)> {
 
   // Check whether the specified private key matches the end-user certificate.
   // Return Status::OK() if key match the end-user certificate.
-  Status CheckKeyMatch(const PrivateKey& key) const WARN_UNUSED_RESULT;
+  Status CheckKeyMatch(const PrivateKey& key) const;
 
   // Determine the digest (hash) algorithm used in the signature of the certificate
   // as needed to implement RFC 5929. If the hash algorithm can be determined,
   // return the NID in digest_nid_out and return Status::OK(). Otherwise, return
   // an error.
-  Status GetSignatureHashAlgorithm(int* digest_nid_out) const WARN_UNUSED_RESULT;
+  Status GetSignatureHashAlgorithm(int* digest_nid_out) const;
 
   // Returns the 'tls-server-end-point' channel bindings for the end-user certificate as
   // specified in RFC 5929.
-  Status GetServerEndPointChannelBindings(std::string* channel_bindings) const WARN_UNUSED_RESULT;
+  Status GetServerEndPointChannelBindings(std::string* channel_bindings) const;
 
   // Adopts the provided STACK_OF(X509), and increments the reference count of the X509 cert
   // contained within it. Currently, only one certificate should be contained in the stack.
@@ -94,7 +94,7 @@ class Cert : public RawDataWrapper<STACK_OF(X509)> {
   void AdoptAndAddRefX509(X509* cert);
 
   // Returns the end-user certificate's public key.
-  Status GetPublicKey(PublicKey* key) const WARN_UNUSED_RESULT;
+  Status GetPublicKey(PublicKey* key) const;
 
   // Get the first certificate in the chain, otherwise known as the 'end-user' certificate.
   X509* GetTopOfChainX509() const;
@@ -102,9 +102,9 @@ class Cert : public RawDataWrapper<STACK_OF(X509)> {
 
 class CertSignRequest : public RawDataWrapper<X509_REQ> {
  public:
-  Status FromString(const std::string& data, DataFormat format) WARN_UNUSED_RESULT;
-  Status ToString(std::string* data, DataFormat format) const WARN_UNUSED_RESULT;
-  Status FromFile(const std::string& fpath, DataFormat format) WARN_UNUSED_RESULT;
+  Status FromString(const std::string& data, DataFormat format);
+  Status ToString(std::string* data, DataFormat format) const;
+  Status FromFile(const std::string& fpath, DataFormat format);
 
   // Returns a clone of the CSR.
   //
@@ -114,7 +114,7 @@ class CertSignRequest : public RawDataWrapper<X509_REQ> {
   CertSignRequest Clone() const;
 
   // Returns the CSR's public key.
-  Status GetPublicKey(PublicKey* key) const WARN_UNUSED_RESULT;
+  Status GetPublicKey(PublicKey* key) const;
 };
 
 } // namespace security

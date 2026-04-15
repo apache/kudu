@@ -53,11 +53,11 @@ class ScanConfiguration {
   explicit ScanConfiguration(KuduTable* table);
   ~ScanConfiguration() = default;
 
-  Status SetProjectedColumnNames(const std::vector<std::string>& col_names) WARN_UNUSED_RESULT;
+  Status SetProjectedColumnNames(const std::vector<std::string>& col_names);
 
-  Status SetProjectedColumnIndexes(const std::vector<int>& col_indexes) WARN_UNUSED_RESULT;
+  Status SetProjectedColumnIndexes(const std::vector<int>& col_indexes);
 
-  Status AddConjunctPredicate(std::unique_ptr<KuduPredicate> pred) WARN_UNUSED_RESULT;
+  Status AddConjunctPredicate(std::unique_ptr<KuduPredicate> pred);
 
   void AddConjunctPredicate(ColumnPredicate pred);
 
@@ -77,11 +77,11 @@ class ScanConfiguration {
 
   Status SetBatchSizeBytes(uint32_t batch_size);
 
-  Status SetSelection(KuduClient::ReplicaSelection selection) WARN_UNUSED_RESULT;
+  Status SetSelection(KuduClient::ReplicaSelection selection);
 
-  Status SetReadMode(KuduScanner::ReadMode read_mode) WARN_UNUSED_RESULT;
+  Status SetReadMode(KuduScanner::ReadMode read_mode);
 
-  Status SetFaultTolerant(bool fault_tolerant) WARN_UNUSED_RESULT;
+  Status SetFaultTolerant(bool fault_tolerant);
 
   void SetSnapshotMicros(uint64_t snapshot_timestamp_micros);
 
