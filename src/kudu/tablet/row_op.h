@@ -102,7 +102,7 @@ struct RowOp {
   // True if an ignore op was ignored due to an error.
   bool error_ignored = false;
 
-  // True if this op has any error occured and failed to compelte this op.
+  // True if this op has any error occurred and failed to complete this op.
   bool failed = false;
 
   // The RowSet in which this op's key has been found present and alive.
