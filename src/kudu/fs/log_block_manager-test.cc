@@ -30,6 +30,7 @@
 #include <random>
 #include <set>
 #include <string>
+#include <thread>
 #include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
@@ -51,6 +52,7 @@
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
@@ -58,9 +60,11 @@
 #include "kudu/util/env.h"
 #include "kudu/util/file_cache.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/random.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h" // IWYU pragma: keep
@@ -69,9 +73,11 @@
 #include "kudu/util/threadpool.h"
 
 using kudu::pb_util::ReadablePBContainerFile;
+using std::atomic;
 using std::set;
 using std::string;
 using std::shared_ptr;
+using std::thread;
 using std::unique_ptr;
 using std::unordered_map;
 using std::unordered_set;
@@ -92,6 +98,8 @@ DECLARE_uint64(log_container_max_size);
 DECLARE_uint64(log_container_metadata_max_size);
 DECLARE_bool(log_container_metadata_runtime_compact);
 DECLARE_double(log_container_metadata_size_before_compact_ratio);
+DECLARE_int32(log_block_manager_inject_latency_load_container_ms);
+DECLARE_uint64(fs_max_thread_count_per_data_dir);
 DEFINE_int32(startup_benchmark_block_count_for_testing, 1000000,
              "Block count to do startup benchmark.");
 DEFINE_int32(startup_benchmark_data_dir_count_for_testing, 8,
@@ -2452,6 +2460,152 @@ TEST_P(LogBlockManagerTest, TestHalfPresentContainer) {
     // The container is ok.
     NO_FATALS(CheckOK());
   }
+}
+
+// Verify that containers_processed tracks LoadContainer completion, not just
+// OpenContainer (file handle opening).
+TEST_P(LogBlockManagerTest, TestContainersProcessedTracksLoadCompletion) {
+  SetEncryptionFlags(GetParam());
+  google::FlagSaver flag_saver;
+  constexpr int kNumContainers = 20;
+
+  // Force each block into its own container.
+  FLAGS_log_container_max_size = 1;
+  FLAGS_log_container_preallocate_bytes = 0;
+  {
+    unique_ptr<BlockCreationTransaction> transaction = bm_->NewCreationTransaction();
+    for (int i = 0; i < kNumContainers; i++) {
+      unique_ptr<WritableBlock> block;
+      ASSERT_OK(bm_->CreateBlock(test_block_opts_, &block));
+      ASSERT_OK(block->Append("a"));
+      transaction->AddCreatedBlock(std::move(block));
+    }
+    ASSERT_OK(transaction->CommitCreatedBlocks());
+  }
+
+  // Destroy the block manager. Set flags before reopening the directory
+  // manager so the per-dir thread pool picks them up.
+  bm_.reset();
+  FLAGS_log_block_manager_inject_latency_load_container_ms = 200;
+  FLAGS_fs_max_thread_count_per_data_dir = 1;
+  ASSERT_OK(DataDirManager::OpenExistingForTests(
+      env_, { test_dir_ }, DataDirManagerOptions(), &dd_manager_));
+  ASSERT_OK(dd_manager_->LoadDataDirGroupFromPB(test_tablet_name_, test_group_pb_));
+
+  atomic<int> containers_processed(0);
+  atomic<int> containers_total(0);
+
+  // Sample containers_processed in a background thread during Open().
+  atomic<bool> done(false);
+  // Track whether we ever observed a state where containers_processed < containers_total
+  // while Open() was still running. This proves the counter is no longer
+  // prematurely reaching 100%.
+  atomic<bool> saw_intermediate(false);
+
+  thread sampler([&] {
+    while (!done.load()) {
+      int p = containers_processed.load();
+      int t = containers_total.load();
+      if (t > 0 && p < t) {
+        saw_intermediate.store(true);
+      }
+      SleepFor(MonoDelta::FromMilliseconds(10));
+    }
+  });
+  SCOPED_CLEANUP({
+    done.store(true);
+    sampler.join();
+  });
+
+  bm_.reset(CreateBlockManager(scoped_refptr<MetricEntity>()));
+  ASSERT_OK(bm_->Open(nullptr, &containers_processed, &containers_total));
+
+  // Final values must be consistent.
+  ASSERT_EQ(containers_total.load(), containers_processed.load());
+  ASSERT_GE(containers_total.load(), kNumContainers);
+
+  // With 20 containers × 200ms delay and serial execution, the total load
+  // time is ~4s. The sampler polls every 10ms, so it must have observed
+  // an intermediate state where processed < total. The 200ms per-container
+  // delay also leaves a comfortable safety margin under TSAN, where the
+  // sampler thread may be descheduled for far longer than its 10ms sleep.
+  ASSERT_TRUE(saw_intermediate.load())
+      << "Expected to observe intermediate progress (processed < total) "
+      << "during Open(), but containers_processed jumped to total immediately. "
+      << "This indicates containers_processed is being incremented too early "
+      << "(after OpenContainer rather than after LoadContainer).";
+}
+
+// Verify that when OpenContainer() fails (returns Aborted), the failed
+// container is still counted in containers_processed so that progress
+// tracking doesn't stall at less than 100%.
+TEST_P(LogBlockManagerTest, TestOpenContainerFailureStillCountsProgress) {
+  SetEncryptionFlags(GetParam());
+  google::FlagSaver flag_saver;
+  constexpr int kNumContainers = 10;
+
+  // Force each block into its own container.
+  FLAGS_log_container_max_size = 1;
+  FLAGS_log_container_preallocate_bytes = 0;
+  {
+    unique_ptr<BlockCreationTransaction> transaction = bm_->NewCreationTransaction();
+    for (int i = 0; i < kNumContainers; i++) {
+      unique_ptr<WritableBlock> block;
+      ASSERT_OK(bm_->CreateBlock(test_block_opts_, &block));
+      ASSERT_OK(block->Append("a"));
+      transaction->AddCreatedBlock(std::move(block));
+    }
+    ASSERT_OK(transaction->CommitCreatedBlocks());
+  }
+
+  // Find all container data files and corrupt one by truncating it to 0 bytes.
+  // This will cause OpenContainer() to return Aborted ("orphaned empty or
+  // invalid length file") for that container.
+  vector<string> container_names;
+  NO_FATALS(GetContainerNames(&container_names));
+  ASSERT_EQ(kNumContainers, container_names.size());
+
+  string data_file_to_corrupt = StrCat(container_names[0],
+                                       LogBlockManager::kContainerDataFileSuffix);
+  // Also truncate the metadata file (for NativeMeta) so both files appear
+  // empty/invalid, which guarantees the Aborted path regardless of backend.
+  string metadata_file_to_corrupt = StrCat(container_names[0],
+                                           LogBlockManager::kContainerMetadataFileSuffix);
+  {
+    unique_ptr<RWFile> file;
+    ASSERT_OK(env_->NewRWFile(data_file_to_corrupt, &file));
+    ASSERT_OK(file->Truncate(0));
+    ASSERT_OK(file->Close());
+  }
+  // Truncate metadata file if it exists (NativeMeta has it, RdbMeta does not).
+  if (env_->FileExists(metadata_file_to_corrupt)) {
+    unique_ptr<RWFile> file;
+    ASSERT_OK(env_->NewRWFile(metadata_file_to_corrupt, &file));
+    ASSERT_OK(file->Truncate(0));
+    ASSERT_OK(file->Close());
+  }
+
+  // Reopen the block manager with progress tracking.
+  bm_.reset();
+  ASSERT_OK(DataDirManager::OpenExistingForTests(
+      env_, { test_dir_ }, DataDirManagerOptions(), &dd_manager_));
+  ASSERT_OK(dd_manager_->LoadDataDirGroupFromPB(test_tablet_name_, test_group_pb_));
+
+  atomic<int> containers_processed(0);
+  atomic<int> containers_total(0);
+
+  bm_.reset(CreateBlockManager(scoped_refptr<MetricEntity>()));
+  FsReport report;
+  ASSERT_OK(bm_->Open(&report, &containers_processed, &containers_total));
+
+  // The corrupted container should appear in the incomplete_container_check.
+  ASSERT_GE(report.incomplete_container_check->entries.size(), 1);
+
+  // Key assertion: containers_processed must equal containers_total even
+  // though one container's OpenContainer() failed. Without the fix, the
+  // failed container would not be counted, leaving processed < total.
+  ASSERT_EQ(containers_total.load(), containers_processed.load());
+  ASSERT_EQ(kNumContainers, containers_total.load());
 }
 
 } // namespace fs
