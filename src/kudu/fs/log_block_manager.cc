@@ -178,6 +178,12 @@ DEFINE_int32(log_container_metadata_rewrite_inject_latency_ms, 0,
              "Only for testing.");
 TAG_FLAG(log_container_metadata_rewrite_inject_latency_ms, hidden);
 
+DEFINE_int32(log_block_manager_inject_latency_load_container_ms, 0,
+             "Amount of latency in ms to inject when loading a container "
+             "during Open(). Only for testing.");
+TAG_FLAG(log_block_manager_inject_latency_load_container_ms, hidden);
+TAG_FLAG(log_block_manager_inject_latency_load_container_ms, unsafe);
+
 METRIC_DEFINE_gauge_uint64(server, log_block_manager_bytes_under_management,
                            "Bytes Under Management",
                            kudu::MetricUnit::kBytes,
@@ -3475,13 +3481,15 @@ void LogBlockManager::OpenDataDir(
     results->emplace_back(new internal::LogBlockContainerLoadResult());
     LogBlockContainerRefPtr container;
     s = OpenContainer(dir, &results->back()->report, container_name, &container);
-    if (containers_processed) {
-      ++*containers_processed;
-      if (metrics_) {
-        metrics()->processed_containers_startup->Increment();
-      }
-    }
     if (!s.ok()) {
+      // Even if the container failed to open, count it as processed so progress
+      // tracking doesn't stall.
+      if (containers_processed) {
+        ++*containers_processed;
+        if (metrics_) {
+          metrics()->processed_containers_startup->Increment();
+        }
+      }
       if (s.IsAborted()) {
         // Skip the container. Open() added a record of it to 'results->back()->report' for us.
         continue;
@@ -3497,9 +3505,24 @@ void LogBlockManager::OpenDataDir(
     }
 
     // Load the container's records asynchronously.
+    // Increment containers_processed after LoadContainer completes so that
+    // the progress counter reflects containers that have been fully loaded
+    // (metadata records read and processed), not just containers whose file
+    // handles have been opened.
+    //
+    // Note: 'containers_processed' is guaranteed to outlive this closure
+    // because LogBlockManager::Open() (the caller of OpenDataDir()) blocks on
+    // dd_manager_->WaitOnClosures() before returning, so the pointer remains
+    // valid for the entire duration of this background task.
     auto* r = results->back().get();
-    dir->ExecClosure([this, dir, container, r]() {
+    dir->ExecClosure([this, dir, container, r, containers_processed]() {
       this->LoadContainer(dir, container, r);
+      if (containers_processed) {
+        ++*containers_processed;
+        if (metrics_) {
+          metrics()->processed_containers_startup->Increment();
+        }
+      }
     });
   }
 }
@@ -3507,6 +3530,7 @@ void LogBlockManager::OpenDataDir(
 void LogBlockManager::LoadContainer(Dir* dir,
                                     LogBlockContainerRefPtr container,
                                     internal::LogBlockContainerLoadResult* result) {
+  MAYBE_INJECT_FIXED_LATENCY(FLAGS_log_block_manager_inject_latency_load_container_ms);
   // Process the records, building a container-local map for live blocks and
   // a list of dead blocks.
   //
