@@ -17,7 +17,9 @@
 
 #include "kudu/rpc/inbound_call.h"
 
+#include <algorithm>
 #include <cstdint>
+#include <iterator>
 #include <limits>
 #include <memory>
 #include <ostream>
@@ -50,6 +52,8 @@ class FieldDescriptor;
 using google::protobuf::ArenaOptions;
 using google::protobuf::FieldDescriptor;
 using google::protobuf::MessageLite;
+using google::protobuf::RepeatedFieldBackInserter;
+using std::copy;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -126,9 +130,8 @@ void InboundCall::RespondUnsupportedFeature(const vector<uint32_t>& unsupported_
   ErrorStatusPB err;
   err.set_message("unsupported feature flags");
   err.set_code(ErrorStatusPB::ERROR_INVALID_REQUEST);
-  for (uint32_t feature : unsupported_features) {
-    err.add_unsupported_feature_flags(feature);
-  }
+  copy(unsupported_features.begin(), unsupported_features.end(),
+       RepeatedFieldBackInserter(err.mutable_unsupported_feature_flags()));
 
   Respond(err, false);
 }
@@ -341,10 +344,9 @@ MonoTime InboundCall::GetTimeHandled() const {
 }
 
 vector<uint32_t> InboundCall::GetRequiredFeatures() const {
+  const auto& ff = header_.required_feature_flags();
   vector<uint32_t> features;
-  for (uint32_t feature : header_.required_feature_flags()) {
-    features.push_back(feature);
-  }
+  copy(ff.begin(), ff.end(), std::back_inserter(features));
   return features;
 }
 
