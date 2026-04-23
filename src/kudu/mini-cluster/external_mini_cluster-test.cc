@@ -17,31 +17,48 @@
 
 #include "kudu/mini-cluster/external_mini_cluster.h"
 
+#include <atomic>
+#include <cstdint>
+#include <functional>
 #include <iosfwd>
 #include <memory>
 #include <ostream>
 #include <string>
+#include <thread>
 #include <tuple>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
 #include <glog/logging.h>
 #include <glog/stl_logging.h> // IWYU pragma: keep
 #include <gtest/gtest.h>
+#include <rapidjson/document.h>
 
+#include "kudu/client/client.h"
+#include "kudu/client/schema.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h" // IWYU pragma: keep
 #include "kudu/hms/hms_client.h"
 #include "kudu/hms/mini_hms.h"
+#include "kudu/integration-tests/cluster_itest_util.h"
+#include "kudu/master/sys_catalog.h"
 #include "kudu/security/test/mini_kdc.h"
 #include "kudu/thrift/client.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+METRIC_DECLARE_histogram(log_gc_duration);
+METRIC_DECLARE_entity(tablet);
+
+using kudu::client::sp::shared_ptr;
+using rapidjson::Value;
 using std::string;
 using std::tuple;
 using std::unique_ptr;
@@ -341,6 +358,115 @@ TEST_P(ExternalMiniClusterTest, TestAddMaster) {
   // Shutdown the cluster explicitly on top of the one in the cluster's
   // destructor to test repeated calls to Shutdown().
   cluster->Shutdown();
+}
+
+class Kudu3762Test : public ExternalMiniClusterTest {};
+// Verifies that a new Master can join the cluster when its initial log index (0)
+// is already garbage collected on the leader. This specifically tests the fix
+// for KUDU-3762, ensuring a newly joining peer isn't prematurely flagged as
+// unrecoverable (wal_catchup_possible = false) while its log index is still 0
+// during initialization.
+TEST_F(Kudu3762Test, AddMaster) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+  ExternalMiniClusterOptions opts;
+
+  opts.num_masters = 2;
+  opts.num_tablet_servers = 3;
+  // We need at least one WAL segment to be garbage collected to reproduce the issue. So
+  // ensure we flush to the disk aggressively while retaining lower number of smaller sized
+  // log segments. More number of maintenance manager threads with low polling intervals
+  // increase the odd of the WAL segment getting garbage collected
+  opts.extra_master_flags.emplace_back("--flush_threshold_mb=0");
+  opts.extra_master_flags.emplace_back("--flush_threshold_secs=1");
+  opts.extra_master_flags.emplace_back("--log_cache_size_limit_mb=1");
+  opts.extra_master_flags.emplace_back("--log_compression_codec=no_compression");
+  opts.extra_master_flags.emplace_back("--log_max_segments_to_retain=3");
+  opts.extra_master_flags.emplace_back("--log_segment_size_mb=1");
+  opts.extra_master_flags.emplace_back("--maintenance_manager_num_threads=4");
+  opts.extra_master_flags.emplace_back("--maintenance_manager_polling_interval_ms=10");
+  opts.extra_master_flags.emplace_back("--unlock_experimental_flags=true");
+
+  unique_ptr<ExternalMiniCluster> cluster(new ExternalMiniCluster(opts));
+  ASSERT_OK(cluster->Start());
+
+  // Create a client to add and delete a table in loop to constantly add new entries/indices
+  // in the WAL of system catalog
+  client::KuduSchema schema;
+  {
+    client::KuduSchemaBuilder builder;
+    builder.AddColumn("key")->NotNull()->Type(client::KuduColumnSchema::INT64)->PrimaryKey();
+    builder.AddColumn("col")->Nullable()->Type(client::KuduColumnSchema::INT64);
+    ASSERT_OK(builder.Build(&schema));
+  }
+
+  shared_ptr<client::KuduClient> new_client;
+  ASSERT_OK(cluster->CreateClient(nullptr, &new_client));
+  std::atomic<bool> stop_churn(false);
+  Status churn_status = Status::OK();
+  int64_t num_wal_gc_count = 0;
+
+  std::thread churn_thread([&]() {
+    for (int i = 0; !stop_churn.load(); ++i) {
+      string table_name = Substitute("table-$0", i);
+      unique_ptr<client::KuduTableCreator> table_creator(new_client->NewTableCreator());
+
+      // Create a table and wait for its creation to finish
+      auto run_step = [&]() -> Status {
+        RETURN_NOT_OK(table_creator->table_name(table_name)
+                     .schema(&schema)
+                     .num_replicas(3)
+                     .add_hash_partitions({"key"}, 16)
+                     .Create());
+
+        bool in_progress = true;
+        MonoTime deadline = MonoTime::Now() + MonoDelta::FromSeconds(30);
+        while (in_progress && MonoTime::Now() < deadline) {
+          RETURN_NOT_OK(new_client->IsCreateTableInProgress(table_name, &in_progress));
+          if (in_progress) {
+            SleepFor(MonoDelta::FromMilliseconds(100));
+          }
+        }
+        if (in_progress) {
+          return Status::TimedOut("Table creation stuck");
+        }
+        return new_client->DeleteTable(table_name);
+      };
+
+      if (Status s = run_step(); !s.ok()) {
+        churn_status = s;
+        stop_churn = true;
+        break;
+      }
+    }
+  });
+
+  auto cleanup = MakeScopedCleanup([&](){
+    stop_churn = true;
+    if (churn_thread.joinable()) {
+      churn_thread.join();
+    }
+  });
+
+  // Wait a maximum of two minutes for at least one WAL segment to be garbage collected
+  AssertEventually([&]() {
+    ASSERT_OK(itest::GetInt64Metric(cluster->leader_master()->bound_http_hostport(),
+        &METRIC_ENTITY_tablet,kudu::master::SysCatalogTable::kSysCatalogTabletId,
+        &METRIC_log_gc_duration,"total_count", &num_wal_gc_count));
+    ASSERT_GT(num_wal_gc_count, 0);
+  }, MonoDelta::FromSeconds(120));
+
+  // Add a master and wait to see if the new master gets stuck in the LMP loop
+  ASSERT_OK(cluster->AddMaster());
+  ASSERT_OK(cluster->master(opts.num_masters)->WaitForCatalogManager());
+
+  // Stop the continuous creation and deletion of tables
+  cleanup.run();
+  ASSERT_OK(churn_status);
+
+  // The new master should be caught up and be promoted to VOTER
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(cluster->VerifyVotersOnAllMasters(opts.num_masters + 1));
+  });
 }
 
 } // namespace cluster

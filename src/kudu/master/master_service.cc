@@ -814,6 +814,12 @@ void MasterServiceImpl::GetMasterRegistration(
   // instance_id must always be set in order for status pages to be useful.
   resp->mutable_instance_id()->CopyFrom(server_->instance_pb());
 
+  // If this master is about join an existing set of masters, the AddMaster()
+  // needs just the instance id which is set already.
+  if (PREDICT_FALSE(server_->catalog_manager()->IsJoiningCluster())) {
+    rpc->RespondSuccess();
+    return;
+  }
   CatalogManager::ScopedLeaderSharedLock l(server_->catalog_manager());
   if (!l.CheckIsInitializedOrRespond(resp, rpc)) {
     return;

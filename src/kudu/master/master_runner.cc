@@ -47,6 +47,7 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
@@ -427,6 +428,7 @@ Status RunMasterServer() {
     // The other masters don't see this master in their quorum. Add it now.
     LOG(INFO) << Substitute(
         "Detected that this master $0 is joining an existing cluster", local_uuid);
+    RETURN_NOT_OK(server->catalog_manager()->SetJoiningCluster(true));
 
     // Send an add master RPC to the leader master.
     LOG(INFO) << Substitute("Initiating AddMaster RPC to add $0", local_hp.ToString());

@@ -977,7 +977,8 @@ CatalogManager::CatalogManager(Master* master)
       hms_notification_log_event_id_(-1),
       leader_lock_(RWMutex::Priority::PREFER_WRITING),
       ipki_private_key_password_(""),
-      tsk_private_key_password_("") {
+      tsk_private_key_password_(""),
+      is_joining_existing_cluster_(false) {
   if (RangerAuthzProvider::IsEnabled()) {
     authz_provider_.reset(new RangerAuthzProvider(master_->fs_manager()->GetEnv(),
                                                   master_->metric_entity()));
@@ -997,6 +998,30 @@ CatalogManager::~CatalogManager() {
   Shutdown();
 }
 
+Status CatalogManager::SetJoiningCluster(bool joining_existing_cluster) {
+  // Shutdown the Catalog Manager to avoid propagating incorrect state of the system catalog
+  // table as the table will be replaced via AddMaster() anyway. See KUDU-3762.
+  // Before shutting down, ensure we are setting the flag from false to true before shutting down
+  // the catalog manager.
+  if (!is_joining_existing_cluster_ && joining_existing_cluster) {
+    if (PREDICT_FALSE(!this->IsInitialized())) {
+      return(Status::ServiceUnavailable(
+            Substitute("Catalog manager is not initialized.")));
+    }
+    if (PREDICT_FALSE(this->state_ != kRunning)) {
+      return(Status::ServiceUnavailable(
+            Substitute("Catalog manager is not running.")));
+    }
+    LOG(INFO) << "Shutting down the Catalog Manager";
+    this->Shutdown();
+  }
+  is_joining_existing_cluster_ = joining_existing_cluster;
+  return Status::OK();
+}
+
+bool CatalogManager::IsJoiningCluster() const {
+  return is_joining_existing_cluster_;
+}
 Status CatalogManager::Init(bool is_first_run) {
   {
     std::lock_guard l(state_lock_);

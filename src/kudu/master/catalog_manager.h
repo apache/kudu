@@ -653,6 +653,13 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
 
   void Shutdown();
 
+  // Used to indicate if the current master is joining an existing set of masters.
+  // If we are setting this to true from false, we shutdown the catalog manager to
+  // avoid incorrect state propagation to the leader master.
+  Status SetJoiningCluster(bool joining_existing_cluster);
+
+  bool IsJoiningCluster() const;
+
   enum TableInfoMapType {
     kNormalTableType = 1 << 0,        // normalized_table_names_map_
     kSoftDeletedTableType = 1 << 1,   // soft_deleted_table_names_map_
@@ -1465,6 +1472,8 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // Lock protecting cluster_id_.
   mutable simple_spinlock cluster_id_lock_;
   std::string cluster_id_;
+
+  bool is_joining_existing_cluster_;
 
   DISALLOW_COPY_AND_ASSIGN(CatalogManager);
 };
