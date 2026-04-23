@@ -49,6 +49,7 @@
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/file_cache.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/malloc.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
@@ -876,8 +877,8 @@ Status FileBlockManager::DeleteBlock(const BlockId& block_id) {
   if (PREDICT_FALSE(!failed_dirs.empty())) {
     int uuid_idx = internal::FileBlockLocation::GetDirIdx(block_id);
     if (ContainsKey(failed_dirs, uuid_idx)) {
-      LOG_EVERY_N(INFO, 10) << Substitute("Block $0 is in a failed directory; not deleting",
-                                          block_id.ToString());
+      KLOG_EVERY_N(INFO, 10) << Substitute("Block $0 is in a failed directory; not deleting",
+                                           block_id.ToString());
       return Status::IOError("Block is in a failed directory");
     }
   }

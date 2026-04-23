@@ -75,6 +75,7 @@
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/flag_validators.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/malloc.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/path_util.h"
@@ -3426,8 +3427,8 @@ Status LogBlockManager::RemoveLogBlock(const BlockId& block_id,
     int uuid_idx;
     CHECK(dd_manager_->FindUuidIndexByDir(container->data_dir(), &uuid_idx));
     if (ContainsKey(failed_dirs, uuid_idx)) {
-      LOG_EVERY_N(INFO, 10) << Substitute("Block $0 is in a failed directory; not deleting",
-                                          block_id.ToString());
+      KLOG_EVERY_N(INFO, 10) << Substitute("Block $0 is in a failed directory; not deleting",
+                                           block_id.ToString());
       return Status::IOError("Block is in a failed directory");
     }
   }
