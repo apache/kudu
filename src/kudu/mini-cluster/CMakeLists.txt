@@ -67,5 +67,5 @@ endif()
 # Unit tests
 #######################################
 
-SET_KUDU_TEST_LINK_LIBS(mini_cluster kudu_hms)
+SET_KUDU_TEST_LINK_LIBS(mini_cluster kudu_hms itest_util)
 ADD_KUDU_TEST(external_mini_cluster-test PROCESSORS 3)
