@@ -162,8 +162,10 @@ Status TlsHandshake::Continue(const string& recv, string* send) {
   }
 
   if (rc == 1) {
-    // SSL_do_handshake() must have read all the pending data.
-    DCHECK_EQ(0, BIO_ctrl_pending(rbio));
+    // At the client side, SSL_do_handshake() must have read all the pending
+    // data at this point. At the server side, it may be encrypted application
+    // data already pending at 'rbio' right after completion of the handshake.
+    DCHECK(type_ == TlsHandshakeType::SERVER || BIO_ctrl_pending(rbio) == 0);
     VLOG(2) << Substitute("TLS Handshake complete");
     return Status::OK();
   }
