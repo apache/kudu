@@ -512,7 +512,16 @@ build_gperftools() {
     LIBS="$cfg_libs" \
     $GPERFTOOLS_SOURCE/configure $cfg_options
   fixup_libtool
-  make -j$PARALLEL $EXTRA_MAKEFLAGS install
+  # KUDU-3776: It seems there is an inconsistency in tracking transitive
+  #            dependencies for the 'install' make target, and some races
+  #            might happen when building in parallel with 'make -jN install'.
+  #            Without digging too deep into the Makefile.in and friends,
+  #            a simple solution is to run the 'install' target after the
+  #            default target has already been built. It's consistent with
+  #            the recommended way of compiling the package per instructions
+  #            in the top-level 'INSTALL' file, section 'Basic Installation'.
+  make -j$PARALLEL $EXTRA_MAKEFLAGS
+  make install
   # Add tcmalloc_guard.h because TCMallocGuard is useful for fine-grained
   # control over the initialization of libtcmalloc internals, and that's
   # helpful in the context of addressing KUDU-2439 and KUDU-3635.
