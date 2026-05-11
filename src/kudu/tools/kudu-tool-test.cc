@@ -6732,6 +6732,88 @@ TEST_F(ToolTest, TestAddColumn) {
   ASSERT_EQ(table->schema().Column(2), expected_schema.Column(1));
 }
 
+// Regression test for the `kudu table add_column` CLI not forwarding
+// type attributes (precision/scale/length) to KuduColumnSpec, which used
+// to make it impossible to add DECIMAL or VARCHAR columns via the tool.
+TEST_F(ToolTest, TestAddDecimalAndVarcharColumn) {
+  NO_FATALS(StartExternalMiniCluster());
+  const string kTableName = "kudu.table.add.column.types";
+  const string kDecimalCol = "dec_col";
+  const string kVarcharCol = "vc_col";
+
+  KuduSchemaBuilder schema_builder;
+  schema_builder.AddColumn("key")
+      ->Type(client::KuduColumnSchema::INT32)
+      ->NotNull()
+      ->PrimaryKey();
+  KuduSchema schema;
+  ASSERT_OK(schema_builder.Build(&schema));
+
+  TestWorkload workload(cluster_.get());
+  workload.set_table_name(kTableName);
+  workload.set_schema(schema);
+  workload.set_num_replicas(1);
+  workload.Setup();
+
+  const string master_addr = cluster_->master()->bound_rpc_addr().ToString();
+  shared_ptr<KuduClient> client;
+  ASSERT_OK(KuduClientBuilder()
+            .add_master_server_addr(master_addr)
+            .Build(&client));
+
+  // 1) Successful DECIMAL add with precision and scale.
+  NO_FATALS(RunActionStdoutNone(Substitute(
+      "table add_column $0 $1 $2 DECIMAL "
+      "-column_precision=10 -column_scale=2",
+      master_addr, kTableName, kDecimalCol)));
+
+  // 2) Successful VARCHAR add with length.
+  NO_FATALS(RunActionStdoutNone(Substitute(
+      "table add_column $0 $1 $2 VARCHAR -column_length=64",
+      master_addr, kTableName, kVarcharCol)));
+
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(client->OpenTable(kTableName, &table));
+  const auto& s = table->schema();
+
+  // Verify DECIMAL column attributes.
+  int dec_idx = -1;
+  int vc_idx = -1;
+  for (size_t i = 0; i < s.num_columns(); ++i) {
+    if (s.Column(i).name() == kDecimalCol) dec_idx = static_cast<int>(i);
+    if (s.Column(i).name() == kVarcharCol) vc_idx = static_cast<int>(i);
+  }
+  ASSERT_NE(-1, dec_idx);
+  ASSERT_NE(-1, vc_idx);
+  ASSERT_EQ(client::KuduColumnSchema::DECIMAL, s.Column(dec_idx).type());
+  ASSERT_EQ(10, s.Column(dec_idx).type_attributes().precision());
+  ASSERT_EQ(2, s.Column(dec_idx).type_attributes().scale());
+  ASSERT_EQ(client::KuduColumnSchema::VARCHAR, s.Column(vc_idx).type());
+  ASSERT_EQ(64, s.Column(vc_idx).type_attributes().length());
+
+  // 3) Missing --column_precision for DECIMAL must be rejected client-side.
+  {
+    string stderr;
+    Status st = RunActionStderrString(
+        Substitute("table add_column $0 $1 dec_missing DECIMAL",
+                   master_addr, kTableName),
+        &stderr);
+    ASSERT_FALSE(st.ok());
+    ASSERT_STR_CONTAINS(stderr, "must specify --column_precision");
+  }
+
+  // 4) Missing --column_length for VARCHAR must be rejected client-side.
+  {
+    string stderr;
+    Status st = RunActionStderrString(
+        Substitute("table add_column $0 $1 vc_missing VARCHAR",
+                   master_addr, kTableName),
+        &stderr);
+    ASSERT_FALSE(st.ok());
+    ASSERT_STR_CONTAINS(stderr, "must specify --column_length");
+  }
+}
+
 TEST_F(ToolTest, TestDeleteColumn) {
   NO_FATALS(StartExternalMiniCluster());
   constexpr const char* const kTableName = "kudu.table.delete.column";

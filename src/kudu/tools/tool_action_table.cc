@@ -62,6 +62,8 @@
 #include "kudu/tools/tool.pb.h"
 #include "kudu/tools/tool_action.h"
 #include "kudu/tools/tool_action_common.h"
+#include "kudu/util/char_util.h"
+#include "kudu/util/decimal_util.h"
 #include "kudu/util/flag_validators.h"
 #include "kudu/util/jsonreader.h"
 #include "kudu/util/jsonwriter.h"
@@ -226,6 +228,17 @@ DEFINE_string(compression_type, "DEFAULT_COMPRESSION",
               "NO_COMPRESSION, SNAPPY, LZ4, ZLIB");
 DEFINE_string(default_value, "", "Default value for this column.");
 DEFINE_string(comment, "", "Comment for this column.");
+DEFINE_int32(column_precision, 0,
+             "Precision for a DECIMAL column. Required when adding a DECIMAL "
+             "column. Valid range: [1, 38]. Example: add_column ... DECIMAL "
+             "--column_precision=10 --column_scale=2");
+DEFINE_int32(column_scale, 0,
+             "Scale for a DECIMAL column. Valid range: [0, precision]. "
+             "Defaults to 0. Use with --column_precision.");
+DEFINE_int32(column_length, 0,
+             "Length for a VARCHAR column. Required when adding a VARCHAR "
+             "column. Valid range: [1, 65535]. Example: add_column ... VARCHAR "
+             "--column_length=100");
 
 DECLARE_bool(show_values);
 DECLARE_string(replica_selection);
@@ -1491,6 +1504,42 @@ Status AddColumn(const RunnerContext& context) {
   RETURN_NOT_OK(KuduColumnSchema::StringToDataType(data_type_name, &data_type));
   column_spec->Type(data_type);
 
+  // Forward type attributes for types that require them. Mirrors the
+  // handling already performed by ParseTableSchema() on the `table create`
+  // JSON path.
+  if (data_type == KuduColumnSchema::DataType::DECIMAL) {
+    if (FLAGS_column_precision == 0) {
+      return Status::InvalidArgument(
+          "must specify --column_precision for a DECIMAL column");
+    }
+    if (FLAGS_column_precision < kMinDecimalPrecision ||
+        FLAGS_column_precision > kMaxDecimalPrecision) {
+      return Status::InvalidArgument(
+          Substitute("invalid --column_precision value $0: must be in range [$1, $2]",
+                     FLAGS_column_precision, kMinDecimalPrecision, kMaxDecimalPrecision));
+    }
+    column_spec->Precision(static_cast<int8_t>(FLAGS_column_precision));
+    if (FLAGS_column_scale < 0 ||
+        FLAGS_column_scale > FLAGS_column_precision) {
+      return Status::InvalidArgument(
+          Substitute("invalid --column_scale value $0: must be in range [0, $1] (precision)",
+                     FLAGS_column_scale, FLAGS_column_precision));
+    }
+    column_spec->Scale(static_cast<int8_t>(FLAGS_column_scale));
+  } else if (data_type == KuduColumnSchema::DataType::VARCHAR) {
+    if (FLAGS_column_length == 0) {
+      return Status::InvalidArgument(
+          "must specify --column_length for a VARCHAR column");
+    }
+    if (FLAGS_column_length < kMinVarcharLength ||
+        FLAGS_column_length > kMaxVarcharLength) {
+      return Status::InvalidArgument(
+          Substitute("invalid --column_length value $0: must be in range [$1, $2]",
+                     FLAGS_column_length, kMinVarcharLength, kMaxVarcharLength));
+    }
+    column_spec->Length(static_cast<uint16_t>(FLAGS_column_length));
+  }
+
   if (!FLAGS_default_value.empty()) {
     KuduValue* value = nullptr;
     RETURN_NOT_OK(ParseValueOfType(FLAGS_default_value, data_type, &value));
@@ -2140,13 +2189,21 @@ unique_ptr<Mode> BuildTableMode() {
       .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddRequiredParameter({ kTableNameArg, "Name of the table to alter" })
       .AddRequiredParameter({ kColumnNameArg, "Name of the table column to add" })
-      .AddRequiredParameter({ kDataTypeArg, "Data Type, eg: INT8, INT16, INT32, INT64, STRING,"
-                            " BOOL, FLOAT, DOUBLE, BINARY, UNIXTIME_MICROS, DECIMAL, VARCHAR,"
-                            " TIMESTAMP, DATE"})
+      .AddRequiredParameter({ kDataTypeArg, "Data type of the column to add. "
+                            "Supported types: INT8, INT16, INT32, INT64, STRING, "
+                            "BOOL, FLOAT, DOUBLE, BINARY, UNIXTIME_MICROS, DATE, "
+                            "DECIMAL, VARCHAR. "
+                            "For DECIMAL, use 'DECIMAL' (not 'DECIMAL(p,s)') and "
+                            "specify --column_precision and optionally --column_scale. "
+                            "For VARCHAR, use 'VARCHAR' (not 'VARCHAR(n)') and "
+                            "specify --column_length."})
       .AddOptionalParameter(kEncodingTypeArg)
       .AddOptionalParameter(kCompressionTypeArg)
       .AddOptionalParameter(kDefaultValueArg)
       .AddOptionalParameter("comment")
+      .AddOptionalParameter("column_precision")
+      .AddOptionalParameter("column_scale")
+      .AddOptionalParameter("column_length")
       .Build();
 
 
