@@ -30,6 +30,7 @@ import java.net.Socket;
 import java.util.Arrays;
 
 import com.google.protobuf.ByteString;
+import org.junit.Assume;
 import org.junit.Rule;
 import org.junit.Test;
 
@@ -162,6 +163,8 @@ public class TestMiniKuduCluster {
 
   @Test(timeout = 100000)
   public void testHiveMetastoreIntegration() throws Exception {
+    Assume.assumeTrue("Hive metastore integration is not yet compatible with JDK 23+",
+        Runtime.version().feature() < 23);
     try (MiniKuduCluster cluster = new MiniKuduCluster.MiniKuduClusterBuilder()
                                                       .numMasterServers(NUM_MASTERS)
                                                       .numTabletServers(NUM_TABLET_SERVERS)

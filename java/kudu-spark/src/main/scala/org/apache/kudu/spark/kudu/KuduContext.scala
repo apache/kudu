@@ -17,15 +17,9 @@
 
 package org.apache.kudu.spark.kudu
 
-import java.security.AccessController
 import java.security.PrivilegedAction
-import javax.security.auth.Subject
-import javax.security.auth.login.AppConfigurationEntry
-import javax.security.auth.login.Configuration
-import javax.security.auth.login.LoginContext
-import scala.annotation.nowarn
-import scala.collection.JavaConverters._
 import scala.collection.mutable
+import org.apache.hadoop.security.UserGroupInformation
 import org.apache.hadoop.util.ShutdownHookManager
 import org.apache.spark.Partitioner
 import org.apache.spark.SparkContext
@@ -166,10 +160,12 @@ class KuduContext(
 
   // Visible for testing.
   private[kudu] val authnCredentials: Array[Byte] = {
-    Subject.doAs(KuduContext.getSubject(sc), new PrivilegedAction[Array[Byte]] {
-      override def run(): Array[Byte] =
-        syncClient.exportAuthenticationCredentials()
-    })
+    KuduContext
+      .getUGI(sc)
+      .doAs(new PrivilegedAction[Array[Byte]] {
+        override def run(): Array[Byte] =
+          syncClient.exportAuthenticationCredentials()
+      })
   }
 
   /**
@@ -569,54 +565,36 @@ private object KuduContext {
   val log: Logger = LoggerFactory.getLogger(classOf[KuduContext])
 
   /**
-   * Returns a new Kerberos-authenticated [[Subject]] if the Spark context contains
-   * principal and keytab options, otherwise returns the currently active subject.
+   * Returns the [[UserGroupInformation]] to run Kudu authentication under.
    *
-   * The keytab and principal options should be set when deploying a Spark
-   * application in cluster mode with Yarn against a secure Kudu cluster. Spark
-   * internally will grab HDFS and HBase delegation tokens (see
-   * [[org.apache.spark.deploy.SparkSubmit]]), so we do something similar.
+   * If the Spark context specifies both a principal and a keytab, logs in from
+   * that keytab and returns the resulting UGI. These options should be set when
+   * deploying a Spark application in cluster mode with Yarn against a secure
+   * Kudu cluster; Spark internally grabs HDFS and HBase delegation tokens the
+   * same way (see [[org.apache.spark.deploy.SparkSubmit]]). Otherwise returns
+   * the current user.
+   *
+   * Delegating to Hadoop's UserGroupInformation keeps this working across JDK
+   * versions without reflecting into javax.security.auth.Subject internals: UGI
+   * encapsulates the JDK17-vs-JDK18+ differences in how the current Subject is
+   * obtained (Subject.getSubject() vs Subject.current()).
    *
    * This method can only be called on the driver, where the SparkContext is
    * available.
    *
-   * @return A Kerberos-authenticated subject if the Spark context contains
-   *         principal and keytab options, otherwise returns the currently
-   *         active subject
+   * @return a keytab-authenticated UGI if the Spark context contains principal
+   *         and keytab options, otherwise the current user
    */
-  @nowarn("cat=deprecation")
-  private def getSubject(sc: SparkContext): Subject = {
-    val subject = Subject.getSubject(AccessController.getContext)
-
-    val principal =
-      sc.getConf.getOption("spark.yarn.principal").getOrElse(return subject)
-    val keytab =
-      sc.getConf.getOption("spark.yarn.keytab").getOrElse(return subject)
-
-    log.info(s"Logging in as principal $principal with keytab $keytab")
-
-    val conf = new Configuration {
-      override def getAppConfigurationEntry(name: String): Array[AppConfigurationEntry] = {
-        val options = Map(
-          "principal" -> principal,
-          "keyTab" -> keytab,
-          "useKeyTab" -> "true",
-          "useTicketCache" -> "false",
-          "doNotPrompt" -> "true",
-          "refreshKrb5Config" -> "true"
-        )
-
-        Array(
-          new AppConfigurationEntry(
-            "com.sun.security.auth.module.Krb5LoginModule",
-            AppConfigurationEntry.LoginModuleControlFlag.REQUIRED,
-            options.asJava))
-      }
+  private def getUGI(sc: SparkContext): UserGroupInformation = {
+    val principal = sc.getConf.getOption("spark.yarn.principal")
+    val keytab = sc.getConf.getOption("spark.yarn.keytab")
+    (principal, keytab) match {
+      case (Some(p), Some(k)) =>
+        log.info(s"Logging in as principal $p with keytab $k")
+        UserGroupInformation.loginUserFromKeytabAndReturnUGI(p, k)
+      case _ =>
+        UserGroupInformation.getCurrentUser()
     }
-
-    val loginContext = new LoginContext("kudu-spark", new Subject(), null, conf)
-    loginContext.login()
-    loginContext.getSubject
   }
 }
 

@@ -19,6 +19,19 @@ apply plugin: "scala"
 apply plugin: "java-library"
 apply from: "$rootDir/gradle/shadow.gradle"
 
+configurations.all {
+  resolutionStrategy {
+    // Spark 3.5.x bundles hadoop-client 3.3.x, whose UGI.getCurrentUser() calls the
+    // JDK18+-removed Subject.getSubject() and fails on JDK17+ (UnsupportedOperationException).
+    // Because we exclude hadoop-common below, nothing upgrades the Spark-provided client, so
+    // force the JDK17+-safe hadoop line (which uses Subject.current()) to match what kudu-spark
+    // already resolves to. Note: at runtime kudu-backup uses the Spark deployment's Hadoop, which
+    // must therefore also be >= this version when running on JDK17+.
+    force libs.hadoopClientApi
+    force libs.hadoopClientRuntime
+  }
+}
+
 dependencies {
   // Note: We don't use the shaded version, so we can control the dependencies.
   implementation(project(path: ":kudu-backup-common")) {

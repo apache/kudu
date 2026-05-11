@@ -959,26 +959,38 @@ public class Negotiator extends SimpleChannelInboundHandler<CallResponse> {
             }
           });
     } catch (RuntimeException e) {
-      if (e.getCause() instanceof PrivilegedActionException) {
+      // Unwrap the checked SaslException thrown by saslClient.evaluateChallenge. The wrapping
+      // depends on the active SecurityManagerCompatibility strategy:
+      //   - legacy (Subject.doAs, JDK <= 17): RuntimeException -> PrivilegedActionException
+      //     -> SaslException
+      //   - modern (Subject.callAs, JDK 18+): CompletionException -> SaslException
+      // Handle both so that a failed negotiation surfaces as a proper SaslException /
+      // NonRecoverableException instead of escaping as an unexpected (recoverable) exception.
+      Throwable cause = e.getCause();
+      SaslException saslException;
+      if (cause instanceof PrivilegedActionException) {
         // This cast is safe because the action above only throws checked SaslException.
-        SaslException saslException = (SaslException) e.getCause().getCause();
-
-        // TODO(KUDU-2121): We should never get to this point if the client does not have
-        // Kerberos credentials, but it seems that on certain platforms it can happen.
-        // So, we try and determine whether the evaluateChallenge failed due to missing
-        // credentials, and return a nicer error message if so.
-        Throwable cause = saslException.getCause();
-        if (cause instanceof GSSException &&
-            ((GSSException) cause).getMajor() == GSSException.NO_CRED) {
-          throw new NonRecoverableException(
-              Status.ConfigurationError(
-                  "Server requires Kerberos, but this client is not authenticated " +
-                      "(missing or expired TGT)"),
-              saslException);
-        }
-        throw saslException;
+        saslException = (SaslException) cause.getCause();
+      } else if (cause instanceof SaslException se) {
+        saslException = se;
+      } else {
+        throw e;
       }
-      throw e;
+
+      // TODO(KUDU-2121): We should never get to this point if the client does not have
+      // Kerberos credentials, but it seems that on certain platforms it can happen.
+      // So, we try and determine whether the evaluateChallenge failed due to missing
+      // credentials, and return a nicer error message if so.
+      Throwable saslCause = saslException.getCause();
+      if (saslCause instanceof GSSException &&
+          ((GSSException) saslCause).getMajor() == GSSException.NO_CRED) {
+        throw new NonRecoverableException(
+            Status.ConfigurationError(
+                "Server requires Kerberos, but this client is not authenticated " +
+                    "(missing or expired TGT)"),
+            saslException);
+      }
+      throw saslException;
     }
   }
 

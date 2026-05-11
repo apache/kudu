@@ -68,6 +68,10 @@ subprojects {
   configurations.all {
     resolutionStrategy {
       force libs.guava
+      if (project.name == "kudu-spark" || project.name == "kudu-spark-tools") {
+        force libs.hadoopClientApi
+        force libs.hadoopClientRuntime
+      }
     }
   }
 }

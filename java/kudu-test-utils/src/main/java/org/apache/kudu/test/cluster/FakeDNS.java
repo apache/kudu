@@ -18,6 +18,7 @@
 package org.apache.kudu.test.cluster;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.InaccessibleObjectException;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
@@ -26,6 +27,7 @@ import java.net.UnknownHostException;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.stream.Stream;
 import javax.annotation.concurrent.GuardedBy;
 
 import com.google.common.net.InetAddresses;
@@ -85,7 +87,9 @@ public class FakeDNS {
     }
     try {
       try {
-        // Override the NameService in Java 9 or later.
+        // Override the NameService in Java 9 or later. On Java 18+ this class was
+        // removed (replaced by java.net.spi.InetAddressResolver), so Class.forName
+        // throws ClassNotFoundException and we fall through to the resolver path below.
         final Class<?> nameServiceInterface = Class.forName("java.net.InetAddress$NameService");
         Field field = InetAddress.class.getDeclaredField("nameService");
         // Get the default NameService to fallback to.
@@ -98,23 +102,58 @@ public class FakeDNS {
             new Class<?>[]{nameServiceInterface}, new NameServiceListener(fallbackNameService));
         field.setAccessible(true);
         field.set(InetAddress.class, proxy);
-      } catch (final ClassNotFoundException | NoSuchFieldException e) {
-        // Override the NameService in Java 8 or earlier.
-        final Class<?> nameServiceInterface = Class.forName("sun.net.spi.nameservice.NameService");
-        Field field = InetAddress.class.getDeclaredField("nameServices");
-        // Get the default NameService to fallback to.
-        Method method = InetAddress.class.getDeclaredMethod("createNSProvider", String.class);
-        method.setAccessible(true);
-        Object fallbackNameService = method.invoke(null, "default");
-        // Create a proxy instance to set on the InetAddress field which will handle
-        // all NameService calls.
-        Object proxy = Proxy.newProxyInstance(nameServiceInterface.getClassLoader(),
-            new Class<?>[]{nameServiceInterface}, new NameServiceListener(fallbackNameService));
-        field.setAccessible(true);
-        // Java 8 or earlier takes a list of NameServices
-        field.set(InetAddress.class, Arrays.asList(proxy));
+      } catch (ReflectiveOperationException | InaccessibleObjectException modernError) {
+        // The Java 9+ NameService path is unavailable (class/field/method
+        // missing) or its reflective access is blocked without --add-opens.
+        // Narrowed to these expected failures so genuine programming errors
+        // (NPE, ClassCastException, ...) surface instead of being silently
+        // treated as "try the next JDK path".
+        // Override InetAddress resolver in Java 25+.
+        try {
+          final Class<?> resolverInterface = Class.forName("java.net.spi.InetAddressResolver");
+          Field resolverField = InetAddress.class.getDeclaredField("resolver");
+          resolverField.setAccessible(true);
+          // Ensure the resolver is initialized before we capture it.
+          try {
+            InetAddress.getByName("localhost");
+          } catch (UnknownHostException e) {
+            throw new AssertionError("localhost must resolve", e);
+          }
+          Object fallbackResolver = resolverField.get(InetAddress.class);
+          if (fallbackResolver == null) {
+            Field builtinResolverField = InetAddress.class.getDeclaredField("BUILTIN_RESOLVER");
+            builtinResolverField.setAccessible(true);
+            fallbackResolver = builtinResolverField.get(InetAddress.class);
+          }
+          Object proxy = Proxy.newProxyInstance(resolverInterface.getClassLoader(),
+              new Class<?>[]{resolverInterface}, new NameServiceListener(fallbackResolver));
+          resolverField.set(InetAddress.class, proxy);
+        } catch (ReflectiveOperationException resolverError) {
+          // Override the NameService in Java 8 or earlier.
+          try {
+            final Class<?> nameServiceInterface =
+                Class.forName("sun.net.spi.nameservice.NameService");
+            Field field = InetAddress.class.getDeclaredField("nameServices");
+            // Get the default NameService to fallback to.
+            Method method = InetAddress.class.getDeclaredMethod("createNSProvider", String.class);
+            method.setAccessible(true);
+            Object fallbackNameService = method.invoke(null, "default");
+            // Create a proxy instance to set on the InetAddress field which will handle
+            // all NameService calls.
+            Object proxy = Proxy.newProxyInstance(nameServiceInterface.getClassLoader(),
+                new Class<?>[]{nameServiceInterface}, new NameServiceListener(fallbackNameService));
+            field.setAccessible(true);
+            // Java 8 or earlier takes a list of NameServices
+            field.set(InetAddress.class, Arrays.asList(proxy));
+          } catch (ReflectiveOperationException legacyError) {
+            // Surface the most relevant failure and preserve other attempts.
+            resolverError.addSuppressed(modernError);
+            legacyError.addSuppressed(resolverError);
+            throw legacyError;
+          }
+        }
       }
-    } catch (ReflectiveOperationException e) {
+    } catch (ReflectiveOperationException | RuntimeException e) {
       throw new RuntimeException(e);
     }
     installed = true;
@@ -150,6 +189,29 @@ public class FakeDNS {
             .getDeclaredMethod("lookupAllHostAddr", String.class);
         method.setAccessible(true);
         return (InetAddress[]) method.invoke(fallbackNameService, host);
+      } catch (NoSuchMethodException e) {
+        try {
+          Class<?> lookupPolicyClass =
+              Class.forName("java.net.spi.InetAddressResolver$LookupPolicy");
+          Method method = fallbackNameService.getClass()
+              .getDeclaredMethod("lookupByName", String.class, lookupPolicyClass);
+          method.setAccessible(true);
+          Field policyField = InetAddress.class.getDeclaredField("PLATFORM_LOOKUP_POLICY");
+          policyField.setAccessible(true);
+          Object lookupPolicy = policyField.get(InetAddress.class);
+          @SuppressWarnings("unchecked")
+          Stream<InetAddress> stream = (Stream<InetAddress>) method.invoke(
+              fallbackNameService, host, lookupPolicy);
+          try (Stream<InetAddress> ignored = stream) {
+            return stream.toArray(InetAddress[]::new);
+          }
+        } catch (ReflectiveOperationException nested) {
+          Throwable cause = nested.getCause();
+          if (cause instanceof UnknownHostException) {
+            throw (UnknownHostException) cause;
+          }
+          throw new AssertionError("unexpected reflection issue", nested);
+        }
       } catch (ReflectiveOperationException e) {
         Throwable cause = e.getCause();
         // Preserve the behavior of the former
@@ -186,6 +248,19 @@ public class FakeDNS {
             .getDeclaredMethod("getHostByAddr", byte[].class);
         method.setAccessible(true);
         return (String) method.invoke(fallbackNameService, (Object) addr);
+      } catch (NoSuchMethodException e) {
+        try {
+          Method method = fallbackNameService.getClass()
+              .getDeclaredMethod("lookupByAddress", byte[].class);
+          method.setAccessible(true);
+          return (String) method.invoke(fallbackNameService, (Object) addr);
+        } catch (ReflectiveOperationException nested) {
+          Throwable cause = nested.getCause();
+          if (cause instanceof UnknownHostException) {
+            throw (UnknownHostException) cause;
+          }
+          throw new AssertionError("unexpected reflection issue", nested);
+        }
       } catch (ReflectiveOperationException e) {
         Throwable cause = e.getCause();
         // Preserve the behavior of the former
@@ -209,7 +284,10 @@ public class FakeDNS {
       switch (method.getName()) {
         case "lookupAllHostAddr":
           return lookupAllHostAddr((String) args[0]);
+        case "lookupByName":
+          return Arrays.stream(lookupAllHostAddr((String) args[0]));
         case "getHostByAddr":
+        case "lookupByAddress":
           return getHostByAddr((byte[]) args[0]);
         default:
           throw new UnsupportedOperationException();

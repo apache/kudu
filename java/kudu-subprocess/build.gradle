@@ -43,6 +43,11 @@ dependencies {
     exclude group: "log4j"
     exclude group: "org.slf4j"
   }
+  // Ranger's RangerPluginConfig uses the old commons-collections 3.x
+  // (org.apache.commons.collections.CollectionUtils). It used to be provided
+  // transitively by hadoop-common, but hadoop-common 3.4.2+ switched to
+  // commons-collections4, so it must now be declared explicitly.
+  implementation libs.commonsCollections
   implementation libs.slf4jApi
   implementation libs.log4jApi
   implementation libs.log4jCore

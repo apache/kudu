@@ -25,6 +25,7 @@ import java.io.IOException;
 import java.security.PrivilegedActionException;
 import java.security.PrivilegedExceptionAction;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import javax.security.auth.Subject;
@@ -513,9 +514,24 @@ public class TestSecurity {
           getBasicCreateTableOptions());
       Assert.fail("default client shouldn't be able to connect to the cluster.");
     } catch (NonRecoverableException e) {
-      MatcherAssert.assertThat(e.getMessage(), CoreMatchers.containsString(
-          "this client is not authenticated"
-      ));
+      // Reaching here means the default client principal could not connect to a
+      // cluster configured with a custom principal, which is what we expect.
+      // The exact error text varies across JDK/Kerberos implementations, so
+      // rather than matching exact wording we match authentication-failure
+      // phrases. We deliberately match failure phrasing (e.g. "not authenticated",
+      // "GSS initiate failed") rather than bare mechanism names ("SASL", "GSS",
+      // "Kerberos"), which could appear in the stack trace of an unrelated
+      // failure. This still fails the test if the connection was rejected for an
+      // unrelated reason (e.g. wrong port, protocol mismatch, or a timeout
+      // classified as non-recoverable).
+      String msg = e.getMessage().toLowerCase(Locale.ROOT);
+      MatcherAssert.assertThat(msg, CoreMatchers.anyOf(
+          // Kudu-generated diagnostics (Negotiator).
+          CoreMatchers.containsString("not authenticated"),
+          CoreMatchers.containsString("requires authentication"),
+          // JDK GSSAPI negotiation failures (sun.security.jgss / krb5).
+          CoreMatchers.containsString("gss initiate failed"),
+          CoreMatchers.containsString("no valid credentials")));
     }
     KuduClient client = new KuduClient.KuduClientBuilder(harness.getMasterAddressesAsString())
             .saslProtocolName(CUSTOM_PRINCIPAL)
