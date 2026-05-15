@@ -19,6 +19,7 @@
 #include <atomic>
 #include <cstdint>
 #include <cstdlib>
+#include <functional>
 #include <iterator>
 #include <memory>
 #include <ostream>
@@ -112,7 +113,32 @@ class CatalogManagerTskITest : public KuduTest {
 
   void SmokeTestCluster() {
     using ::kudu::client::sp::shared_ptr;
-    static const char* kTableName = "test-table";
+    constexpr const char* const kTableName = "test-table";
+
+    // A lambda to invoke system catalog RPC wrapped into std::function<Status()>
+    const auto sys_catalog_rpc_invoker = [&](const char* context_str,
+                                             const std::function<Status()>& func) {
+      SCOPED_TRACE(context_str);
+      Status s;
+      for (auto i = 0; i < 10; ++i) {
+        // Sometimes, an RPC might arrive when a new system tablet leader
+        // replica hasn't yet replicated NO_OP after establishing its leadership
+        // for a new Raft term. The test is based on ExternalMiniCluster where
+        // a dedicated API to check for the presence of particular entries
+        // in the WAL is absent. Instead, let's retry the RPC request upon
+        // receiving an error of a particular type and check for the error
+        // message: it's good enough in a context of a test.
+        s = func();
+        if (s.ok()) {
+          break;
+        }
+        ASSERT_TRUE(s.IsServiceUnavailable()) << s.ToString();
+        ASSERT_STR_CONTAINS(s.ToString(), "leader is not yet ready");
+        SleepFor(MonoDelta::FromMilliseconds(100));
+      }
+      ASSERT_OK(s);
+    };
+
     // Using the setting for both RPC and admin operation timeout.
     const MonoDelta timeout = MonoDelta::FromSeconds(120);
     KuduClientBuilder builder;
@@ -123,29 +149,16 @@ class CatalogManagerTskITest : public KuduTest {
     // Create a table.
     auto schema = KuduSchema::FromSchema(CreateKeyValueTestSchema());
     unique_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
-
-    Status tc_status;
-    for (auto i = 0; i < 10; ++i) {
-      // Sometimes, CreateTable requests might arrive when a new system tablet
-      // leader replica hasn't yet replicated NO_OP after establishing its
-      // leadership in a new Raft term. The test is based on ExternalMiniCluster
-      // where a dedicated API to check for the presence of particular entries
-      // in the WAL is absent. Instead, let's retry CreateTable upon receiving
-      // an error of a particular type and check for the error message: it's
-      // good enough for a test.
-      tc_status = table_creator->table_name(kTableName)
-          .set_range_partition_columns({ "key" })
-          .schema(&schema)
-          .num_replicas(num_tservers_)
-          .Create();
-      if (tc_status.ok()) {
-        break;
-      }
-      ASSERT_TRUE(tc_status.IsServiceUnavailable()) << tc_status.ToString();
-      ASSERT_STR_CONTAINS(tc_status.ToString(), "leader is not yet ready");
-      SleepFor(MonoDelta::FromMilliseconds(100));
-    }
-    ASSERT_OK(tc_status);
+    NO_FATALS(sys_catalog_rpc_invoker(
+        "Creating table",
+        [&]() {
+          return table_creator->table_name(kTableName)
+              .set_range_partition_columns({ "key" })
+              .schema(&schema)
+              .num_replicas(num_tservers_)
+              .Create();
+        }
+    ));
 
     // Insert a row.
     shared_ptr<KuduTable> table;
@@ -161,7 +174,10 @@ class CatalogManagerTskITest : public KuduTest {
     ASSERT_EQ(1, CountTableRows(table.get()));
 
     // Delete the table.
-    ASSERT_OK(client->DeleteTable(kTableName));
+    NO_FATALS(sys_catalog_rpc_invoker(
+        "Deleting table",
+        [&]() { return client->DeleteTable(kTableName); }
+    ));
   }
 
  protected:
