@@ -39,6 +39,7 @@ class TTransport;
 }  // namespace thrift
 }  // namespace apache
 
+using apache::thrift::TOutput;
 using apache::thrift::protocol::TBinaryProtocol;
 using apache::thrift::protocol::TProtocol;
 using apache::thrift::transport::TBufferedTransport;
@@ -61,7 +62,7 @@ shared_ptr<TProtocol> CreateClientProtocol(const HostPort& address, const Client
   // Initialize the global Thrift logging callback.
   static std::once_flag set_thrift_logging_callback;
   std::call_once(set_thrift_logging_callback, [] {
-      apache::thrift::GlobalOutput.setOutputFunction(ThriftOutputFunction);
+      TOutput::instance().setOutputFunction(ThriftOutputFunction);
   });
 
   auto socket = make_shared<TSocket>(address.host(), address.port());

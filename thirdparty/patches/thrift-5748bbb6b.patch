@@ -1,0 +1,43 @@
+commit 5748bbb6bc76b02b0db0f16d9050b8528c2edfe2
+Author: Andrew Bell <andrew.bell.ia@gmail.com>
+Date:   Tue May 19 12:24:01 2026 -0400
+
+    No ticket: change sprintf to snprintf to eliminate security warnings on OSX
+    Client: cpp
+
+diff --git a/lib/cpp/src/thrift/protocol/TDebugProtocol.cpp b/lib/cpp/src/thrift/protocol/TDebugProtocol.cpp
+index 6e88313db..b95c0b3b3 100644
+--- a/lib/cpp/src/thrift/protocol/TDebugProtocol.cpp
++++ b/lib/cpp/src/thrift/protocol/TDebugProtocol.cpp
+@@ -29,7 +29,7 @@ using std::string;
+ 
+ static string byte_to_hex(const uint8_t byte) {
+   char buf[3];
+-  int ret = std::sprintf(buf, "%02x", (int)byte);
++  int ret = std::snprintf(buf, sizeof(buf), "%02x", (int)byte);
+   THRIFT_UNUSED_VARIABLE(ret);
+   assert(ret == 2);
+   assert(buf[2] == '\0');
+diff --git a/lib/cpp/src/thrift/transport/THttpServer.cpp b/lib/cpp/src/thrift/transport/THttpServer.cpp
+index 6fc281674..ace59cc96 100644
+--- a/lib/cpp/src/thrift/transport/THttpServer.cpp
++++ b/lib/cpp/src/thrift/transport/THttpServer.cpp
+@@ -34,7 +34,7 @@ namespace apache {
+ namespace thrift {
+ namespace transport {
+ 
+-THttpServer::THttpServer(std::shared_ptr<TTransport> transport, std::shared_ptr<TConfiguration> config) 
++THttpServer::THttpServer(std::shared_ptr<TTransport> transport, std::shared_ptr<TConfiguration> config)
+   : THttpTransport(transport, config) {
+ 
+ }
+@@ -159,7 +159,8 @@ std::string THttpServer::getTimeRFC1123() {
+   struct tm tmb;
+   THRIFT_GMTIME(tmb, t);
+ 
+-  sprintf(buff,
++  snprintf(buff,
++          sizeof(buff),
+           "%s, %d %s %d %d:%d:%d GMT",
+           Days[tmb.tm_wday],
+           tmb.tm_mday,

@@ -413,11 +413,15 @@ fetch_and_patch \
  $SPARSEPP_SOURCE \
  $SPARSEPP_PATCHLEVEL
 
-THRIFT_PATCHLEVEL=0
+THRIFT_PATCHLEVEL=1
 fetch_and_patch \
  $THRIFT_NAME.tar.gz \
  $THRIFT_SOURCE \
- $THRIFT_PATCHLEVEL
+ $THRIFT_PATCHLEVEL \
+ "patch -p1 < $TP_DIR/patches/thrift-e96bc4015.patch" \
+ "patch -p1 < $TP_DIR/patches/thrift-c1457c69f.patch" \
+ "patch -p1 < $TP_DIR/patches/thrift-5748bbb6b.patch" \
+ "patch -p1 < $TP_DIR/patches/thrift-e3c8c534c.patch"
 
 BISON_PATCHLEVEL=0
 fetch_and_patch \
