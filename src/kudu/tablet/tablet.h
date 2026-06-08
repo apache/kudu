@@ -548,6 +548,7 @@ class Tablet {
   FRIEND_TEST(TabletReplicaTest, TestActiveOpPreventsLogGC);
   FRIEND_TEST(TabletReplicaTest, TestDMSAnchorPreventsLogGC);
   FRIEND_TEST(TabletReplicaTest, TestRestartAfterGCDeletedRowsets);
+  FRIEND_TEST(TestHighMemCompaction, HighDeltaVolumeWithFrequentFlushForRowsetCompaction);
   FRIEND_TEST(TestMajorDeltaCompaction, TestCarryDeletesOver);
   FRIEND_TEST(TestMajorDeltaCompaction, TestCompact);
   FRIEND_TEST(TestMajorDeltaCompaction, TestJustDeletes);
