@@ -543,6 +543,64 @@ TEST(TestMaterializingIterator, TestMaterializingPredicatePushdown) {
   ASSERT_FALSE(dst.selection_vector()->IsRowSelected(30));
 }
 
+// Regression test for KUDU-3782: a tablet server crash (SIGABRT via
+// std::length_error in release builds, or a failed DCHECK_GE in debug builds)
+// observed for "counting" scans (e.g. SELECT count(...)) that also carry
+// predicates.
+//
+// In that scenario the projection materialized by the MaterializingIterator is
+// tiny (or empty), while a lower-level iterator (CFileSet::Iterator) can lift
+// extra predicates from the rowset's primary key bounds onto key columns that
+// are not part of the projection. As a result spec->predicates().size() can
+// exceed schema().num_columns(), and the expression
+//   non_predicate_column_indexes_.reserve(num_columns - predicates().size())
+// underflowed (unsigned arithmetic) to a huge value, throwing std::length_error
+// out of vector::reserve() and aborting the process.
+//
+// This reproduces that state directly: the iterator's projection has a single
+// column, but the scan spec carries two predicates, one of which is on a column
+// absent from the projection. Init() must not crash, must skip the
+// out-of-projection predicate, and must still evaluate the in-projection one.
+TEST(TestMaterializingIterator, TestMorePredicatesThanProjectedColumns) {
+  ScanSpec spec;
+  // In-projection predicate on 'val': selects rows 20-29.
+  TestIntRangePredicate pred_in_proj(20, 30);
+  spec.AddPredicate(pred_in_proj.pred_);
+  // Out-of-projection predicate on a key column that the MaterializingIterator
+  // does not materialize, emulating a predicate lifted from a rowset's primary
+  // key bounds. This pushes predicates().size() (2) above the projection's
+  // column count (1), which previously triggered the unsigned underflow.
+  const ColumnSchema kMissingKeyCol("missing_key", INT64);
+  TestIntRangePredicate pred_out_of_proj(0, 1000, kMissingKeyCol);
+  spec.AddPredicate(pred_out_of_proj.pred_);
+  ASSERT_GT(spec.predicates().size(), kIntSchema.num_columns());
+
+  vector<int64_t> ints(100);
+  for (int i = 0; i < 100; i++) {
+    ints[i] = i;
+  }
+
+  unique_ptr<VectorIterator> colwise(new VectorIterator(ints));
+  unique_ptr<RowwiseIterator> materializing(NewMaterializingIterator(std::move(colwise)));
+  // Must not crash, and must not return an error for the out-of-projection
+  // predicate.
+  ASSERT_OK(materializing->Init(&spec));
+  ASSERT_EQ(0, spec.predicates().size()) << "Iterator should have pushed down predicates";
+
+  RowBlockMemory mem(1024);
+  RowBlock dst(&kIntSchema, 100, &mem);
+  ASSERT_OK(materializing->NextBlock(&dst));
+  ASSERT_EQ(dst.nrows(), 100);
+
+  // Only the in-projection predicate (rows 20-29) should have been applied.
+  ASSERT_EQ(10, dst.selection_vector()->CountSelected());
+  ASSERT_FALSE(dst.selection_vector()->IsRowSelected(0));
+  ASSERT_FALSE(dst.selection_vector()->IsRowSelected(19));
+  ASSERT_TRUE(dst.selection_vector()->IsRowSelected(20));
+  ASSERT_TRUE(dst.selection_vector()->IsRowSelected(29));
+  ASSERT_FALSE(dst.selection_vector()->IsRowSelected(30));
+}
+
 // Test that PredicateEvaluatingIterator will properly evaluate predicates on its
 // input.
 TEST(TestPredicateEvaluatingIterator, TestPredicateEvaluation) {

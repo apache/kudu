@@ -1178,14 +1178,29 @@ Status MaterializingIterator::Init(ScanSpec *spec) {
   if (PREDICT_TRUE(!disallow_pushdown_for_tests_) && spec != nullptr &&
       !spec->predicates().empty()) {
     col_idx_predicates_.reserve(spec->predicates().size());
-    DCHECK_GE(num_columns, spec->predicates().size());
-    non_predicate_column_indexes_.reserve(num_columns - spec->predicates().size());
+    // Reserve an upper bound: this list holds at most one entry per projected
+    // column. Reserving 'num_columns - spec->predicates().size()' would
+    // underflow (the operands are int32_t and size_t) when the spec has more
+    // predicates than there are projected columns, e.g. a counting scan whose
+    // projection is empty but whose spec carries predicates lifted from the
+    // rowset's primary key bounds. That wrapped to a huge size_t and aborted
+    // the server with std::length_error out of vector::reserve().
+    non_predicate_column_indexes_.reserve(num_columns);
 
     for (const auto& col_pred : spec->predicates()) {
       const ColumnPredicate& pred = col_pred.second;
       int col_idx = schema().find_column(pred.column().name());
       if (col_idx == Schema::kColumnNotFound) {
-        return Status::InvalidArgument("No such column", col_pred.first);
+        // This predicate is on a column outside the projection. On the server
+        // scan path that only happens for predicates lifted from the rowset's
+        // primary key bounds (redundant, already enforced by the key range),
+        // since TabletServiceImpl projects all predicate columns via
+        // ScanSpec::GetMissingColumns(). Skip it rather than failing the scan.
+        // TODO(KUDU-3784): honor predicates on non-projected columns generally
+        // instead of skipping; see the disabled TestPushdownIntValueRange in
+        // tablet-pushdown-test.cc.
+        VLOG(1) << "Skipping out-of-projection predicate " << pred.ToString();
+        continue;
       }
       VLOG(1) << "Pushing down predicate " << pred.ToString();
       col_idx_predicates_.emplace_back(col_idx, col_pred.second);
