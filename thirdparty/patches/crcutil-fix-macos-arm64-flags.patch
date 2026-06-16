@@ -1,10 +1,10 @@
----- a/autogen.sh	2025-07-18 14:55:00
-+++ b/autogen.sh	2025-07-19 15:24:27
-@@ -91,6 +91,8 @@
-   crcutil_flags="${crcutil_flags}"
- elif [[ "$PROCESSOR" == "aarch64" ]]; then
+--- a/autogen.sh	2026-06-16 08:47:28
++++ b/autogen.sh	2026-06-16 10:05:10
+@@ -93,6 +93,8 @@
    crcutil_flags="${crcutil_flags} -march=armv8-a"
-+elif [[ "$PROCESSOR" == "arm" && "$KERNEL_NAME" == "Darwin" ]]; then
+ elif [[ "$ARCH_NAME" == "loongarch64" ]]; then
+   crcutil_flags="${crcutil_flags} -march=loongarch64"
++elif [[ "$ARCH_NAME" == "arm64" && "$KERNEL_NAME" == "Darwin" ]]; then
 +  crcutil_flags="${crcutil_flags} -mcpu=apple-m1"
  elif [[ "$IS_CLANG" = "0" ]]; then
    # Newer GCC versions output just the major version with -dumpversion flag,
