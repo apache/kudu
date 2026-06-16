@@ -41,7 +41,7 @@
 #include <utility>
 #include <vector>
 
-#include <gflags/gflags_declare.h>
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
 #include <gmock/gmock.h>
@@ -107,8 +107,8 @@
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/mini-cluster/mini_cluster.h"
+#include "kudu/rpc/messenger.h"  // IWYU pragma: keep
 #include "kudu/rpc/rpc_controller.h"
-#include "kudu/rpc/transfer.h"
 #include "kudu/subprocess/subprocess_protocol.h"
 #include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/metadata.pb.h"
@@ -119,6 +119,7 @@
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/thrift/client.h"
 #include "kudu/tools/tool.pb.h"
+#include "kudu/tools/tool_action_common.h"
 #include "kudu/tools/tool_replica_util.h"
 #include "kudu/tools/tool_test_util.h"
 #include "kudu/tserver/mini_tablet_server.h"
@@ -167,6 +168,7 @@ DECLARE_int32(heartbeat_interval_ms);
 DECLARE_int32(tablet_copy_transfer_chunk_size_bytes);
 DECLARE_int32(tserver_unresponsive_timeout_ms);
 DECLARE_int32(rpc_negotiation_inject_delay_ms);
+DECLARE_int64(rpc_max_message_size);
 DECLARE_string(block_manager);
 DECLARE_string(hive_metastore_uris);
 
@@ -10692,6 +10694,93 @@ TEST_P(ListInFlightTablesTest, TestListInFlightTables) {
         &out));
     ASSERT_TRUE(out.empty()) << out;
   });
+}
+
+// Regression test for a bug where passing a tserver's flagfile to the CLI tool
+// causes a GROUP_FLAG_VALIDATOR failure. Previously the CLI inflated
+// rpc_max_message_size to ~2GB as a global flag default, causing the validator
+// to reject a flagfile-provided tablet_transaction_memory_limit_mb (e.g. 256MB
+// < 2GB). The fix moved the large RPC message size to the messenger layer so
+// it no longer affects the global flag and thus the validator.
+TEST_F(ToolTest, TestFlagfileOverrideTransactionMemoryLimit) {
+  // Create a flagfile similar to what a tserver might use, containing a
+  // tablet_transaction_memory_limit_mb value smaller than the CLI's old
+  // inflated rpc_max_message_size default.
+  const string flagfile_path = GetTestPath("tserver.flags");
+  ASSERT_OK(WriteStringToFile(env_,
+      "--tablet_transaction_memory_limit_mb=256\n",
+      flagfile_path));
+
+  // Run a CLI subcommand that triggers Action::Run() (where ValidateFlags()
+  // is called). "test mini_cluster" is lightweight and doesn't require a
+  // running cluster. Since the CLI no longer inflates rpc_max_message_size
+  // globally (it uses the compiled default of 50MB), 256MB > 50MB and the
+  // validator passes.
+  string stdout_str;
+  string stderr_str;
+  Status s = RunKuduTool(
+      { "--flagfile=" + flagfile_path, "test", "mini_cluster" },
+      &stdout_str, &stderr_str);
+  // The bug manifests as a non-zero exit with "Detected inconsistency in
+  // command-line flags" in stderr.
+  ASSERT_STR_NOT_CONTAINS(stderr_str,
+      "--tablet_transaction_memory_limit_mb is set too low compared with "
+      "--rpc_max_message_size");
+  ASSERT_OK(s);
+}
+
+// Verify that the CLI's BuildMessenger configures a large max message size
+// to handle huge RPC responses.
+TEST_F(ToolTest, TestBuildMessengerRespectsRpcMaxMessageSizeFlag) {
+  {
+    // Default case: flag untouched, messenger gets the large computed value.
+    // This assertion assumes available memory on the machine exceeds the
+    // default --rpc_max_message_size (50MB).
+    std::shared_ptr<rpc::Messenger> messenger;
+    ASSERT_TRUE(google::GetCommandLineFlagInfoOrDie(
+        "rpc_max_message_size").is_default);
+    ASSERT_OK(BuildMessenger("test", &messenger));
+    ASSERT_GT(messenger->rpc_max_message_size(), FLAGS_rpc_max_message_size);
+    messenger->Shutdown();
+  }
+  {
+    // Explicit flag: user sets --rpc_max_message_size, messenger honors it.
+    google::FlagSaver saver;
+    ASSERT_NE("", google::SetCommandLineOption(
+        "rpc_max_message_size", "104857600"));  // 100MB
+    std::shared_ptr<rpc::Messenger> messenger;
+    ASSERT_OK(BuildMessenger("test", &messenger));
+    ASSERT_EQ(104857600, messenger->rpc_max_message_size());
+    messenger->Shutdown();
+  }
+  {
+    // Edge case: flag explicitly set to the compiled default (50MB).
+    // is_default becomes false, so the messenger honors the explicit value
+    // rather than inflating to available_memory.
+    google::FlagSaver saver;
+    ASSERT_NE("", google::SetCommandLineOption(
+        "rpc_max_message_size", "52428800"));  // 50MB (the default)
+    ASSERT_FALSE(google::GetCommandLineFlagInfoOrDie(
+        "rpc_max_message_size").is_default);
+    std::shared_ptr<rpc::Messenger> messenger;
+    ASSERT_OK(BuildMessenger("test", &messenger));
+    ASSERT_EQ(52428800, messenger->rpc_max_message_size());
+    messenger->Shutdown();
+  }
+  {
+    // Assigning the default via FLAGS_xxx leaves is_default == true, and
+    // BuildMessenger auto-sizes based on available memory.
+    // NOTE: this scenario only occurs in test code; in production, flags are
+    // always set via command line or flagfiles (both mark is_default = false).
+    google::FlagSaver saver;
+    FLAGS_rpc_max_message_size = 52428800;  // 50MB (the default)
+    ASSERT_TRUE(google::GetCommandLineFlagInfoOrDie(
+        "rpc_max_message_size").is_default);
+    std::shared_ptr<rpc::Messenger> messenger;
+    ASSERT_OK(BuildMessenger("test", &messenger));
+    ASSERT_GT(messenger->rpc_max_message_size(), FLAGS_rpc_max_message_size);
+    messenger->Shutdown();
+  }
 }
 
 } // namespace tools

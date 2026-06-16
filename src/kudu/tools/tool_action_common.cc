@@ -19,8 +19,10 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <iomanip>
+#include <limits>
 #include <iostream>
 #include <iterator>
 #include <map>
@@ -93,6 +95,7 @@
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/process_memory.h"
 #include "kudu/util/status.h"
 #include "kudu/util/string_case.h"
 #include "kudu/util/yamlreader.h"
@@ -167,6 +170,7 @@ DEFINE_bool(row_count_only, false,
             "an empty projection for the table");
 
 DECLARE_bool(show_values);
+DECLARE_int64(rpc_max_message_size);
 
 DEFINE_string(instance_file, "",
               "Path to the instance file containing the encrypted encryption key.");
@@ -536,10 +540,28 @@ TServerActionBuilder::TServerActionBuilder(std::string name, ActionRunner runner
 }
 
 Status BuildMessenger(std::string name, shared_ptr<Messenger>* messenger) {
+  // If the user explicitly set --rpc_max_message_size, honor their value
+  // (even if they set it to the compiled default -- is_default is false
+  // whenever the flag is set via the command line or SetCommandLineOption).
+  // Otherwise, default to a large size (capped at INT32_MAX or available
+  // memory) to accommodate huge response payloads from CLI operations
+  // (e.g. dumping tablet data).
+  //
+  // NOTE: direct assignment via FLAGS_rpc_max_message_size = <default_value>
+  // does NOT clear is_default (gflag's UpdateModifiedBit only sets modified_
+  // when the value differs from the default), so that path still auto-sizes.
+  int64_t max_msg_size = FLAGS_rpc_max_message_size;
+  if (google::GetCommandLineFlagInfoOrDie("rpc_max_message_size").is_default) {
+    max_msg_size = std::min<int64_t>(
+        std::numeric_limits<int32_t>::max(),
+        process_memory::MaxMemoryAvailable());
+  }
+
   shared_ptr<Messenger> m;
   Status s = MessengerBuilder(std::move(name))
                  .set_rpc_negotiation_timeout_ms(FLAGS_negotiation_timeout_ms)
                  .set_sasl_proto_name(FLAGS_sasl_protocol_name)
+                 .set_rpc_max_message_size(max_msg_size)
                  .Build(&m);
   if (s.ok()) {
     *messenger = std::move(m);
