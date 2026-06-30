@@ -690,6 +690,19 @@ message ListTablesResponsePB {
 
 message GetTableStatisticsRequestPB {
   required TableIdentifierPB table = 1;
+
+  // Whether to include per-tablet statistics in the response. Disabled by
+  // default to avoid the cost of collecting them when they are not needed.
+  optional bool include_tablet_statistics = 2;
+}
+
+message TabletStatisticsPB {
+  optional bytes tablet_id = 1;
+
+  // The on-disk size and live row count come from the latest leader tablet
+  // report. They are left unset if no leader has reported for the tablet yet.
+  optional int64 on_disk_size = 2;
+  optional int64 live_row_count = 3;
 }
 
 message GetTableStatisticsResponsePB {
@@ -703,6 +716,9 @@ message GetTableStatisticsResponsePB {
   // The table limit
   optional int64 disk_size_limit = 4;
   optional int64 row_count_limit = 5;
+
+  // Per-tablet statistics.
+  repeated TabletStatisticsPB tablet_statistics = 6;
 }
 
 // This data structure is used to specify a table's partition key.

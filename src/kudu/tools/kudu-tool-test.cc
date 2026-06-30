@@ -10036,6 +10036,25 @@ TEST_F(ToolTest, TestGetTableStatisticsNotSupported) {
   ASSERT_STR_CONTAINS(stdout, "live row count: N/A");
 }
 
+TEST_F(ToolTest, TestGetTableStatisticsShowTablets) {
+  NO_FATALS(StartExternalMiniCluster());
+
+  TestWorkload workload(cluster_.get());
+  workload.set_num_replicas(1);
+  workload.Setup();
+
+  string stdout;
+  NO_FATALS(RunActionStdoutString(
+      Substitute("table statistics $0 $1 --show_tablets",
+                 cluster_->master()->bound_rpc_addr().ToString(),
+                 TestWorkload::kDefaultTableName),
+      &stdout));
+  ASSERT_STR_CONTAINS(stdout, string("TABLE ") + TestWorkload::kDefaultTableName);
+  ASSERT_STR_CONTAINS(stdout, "tablet_id");
+  ASSERT_STR_CONTAINS(stdout, "on_disk_size");
+  ASSERT_STR_CONTAINS(stdout, "live_row_count");
+}
+
 // Run one of the cluster-targeted subcommands verifying the functionality of
 // the --connection_negotiation_timeout command-line option (the RPC
 // connection negotiation timeout).

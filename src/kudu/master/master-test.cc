@@ -3646,6 +3646,82 @@ TEST_F(MasterTest, TestTableStatisticsWithOldVersion) {
   }
 }
 
+TEST_F(MasterTest, TestGetTableStatisticsContainsTabletStatistics) {
+  const char* kTableName = "testtable_tablet_statistics";
+  const Schema kTableSchema({ ColumnSchema("key", INT32) }, 1);
+  ASSERT_OK(CreateTable(kTableName, kTableSchema));
+
+  vector<scoped_refptr<TableInfo>> tables;
+  {
+    CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
+    master_->catalog_manager()->GetAllTables(&tables);
+    ASSERT_EQ(1, tables.size());
+  }
+  const auto& table = tables[0];
+  vector<scoped_refptr<TabletInfo>> tablets;
+  table->GetAllTablets(&tablets);
+  ASSERT_EQ(3, tablets.size());
+
+  {
+    tablet::ReportedTabletStatsPB stats;
+    stats.set_on_disk_size(1024);
+    stats.set_live_row_count(10);
+    tablets[0]->UpdateStats(stats);
+  }
+  {
+    tablet::ReportedTabletStatsPB stats;
+    stats.set_on_disk_size(2048);
+    tablets[1]->UpdateStats(stats);
+  }
+
+  // By default per-tablet statistics are not collected.
+  {
+    GetTableStatisticsRequestPB req;
+    req.mutable_table()->set_table_name(kTableName);
+    GetTableStatisticsResponsePB resp;
+    RpcController rpc;
+    ASSERT_OK(proxy_->GetTableStatistics(req, &resp, &rpc));
+    ASSERT_FALSE(resp.has_error()) << SecureDebugString(resp);
+    ASSERT_EQ(0, resp.tablet_statistics_size());
+  }
+
+  GetTableStatisticsRequestPB req;
+  req.mutable_table()->set_table_name(kTableName);
+  req.set_include_tablet_statistics(true);
+  GetTableStatisticsResponsePB resp;
+  RpcController rpc;
+  ASSERT_OK(proxy_->GetTableStatistics(req, &resp, &rpc));
+  ASSERT_FALSE(resp.has_error()) << SecureDebugString(resp);
+
+  unordered_map<string, const TabletStatisticsPB*> stats_by_tablet_id;
+  for (const auto& tablet_stats : resp.tablet_statistics()) {
+    stats_by_tablet_id.emplace(tablet_stats.tablet_id(), &tablet_stats);
+  }
+  ASSERT_EQ(tablets.size(), stats_by_tablet_id.size());
+
+  {
+    const auto* stats = FindOrNull(stats_by_tablet_id, tablets[0]->id());
+    ASSERT_NE(nullptr, stats);
+    ASSERT_TRUE((*stats)->has_on_disk_size());
+    ASSERT_TRUE((*stats)->has_live_row_count());
+    ASSERT_EQ(1024, (*stats)->on_disk_size());
+    ASSERT_EQ(10, (*stats)->live_row_count());
+  }
+  {
+    const auto* stats = FindOrNull(stats_by_tablet_id, tablets[1]->id());
+    ASSERT_NE(nullptr, stats);
+    ASSERT_TRUE((*stats)->has_on_disk_size());
+    ASSERT_FALSE((*stats)->has_live_row_count());
+    ASSERT_EQ(2048, (*stats)->on_disk_size());
+  }
+  {
+    const auto* stats = FindOrNull(stats_by_tablet_id, tablets[2]->id());
+    ASSERT_NE(nullptr, stats);
+    ASSERT_FALSE((*stats)->has_on_disk_size());
+    ASSERT_FALSE((*stats)->has_live_row_count());
+  }
+}
+
 TEST_F(MasterTest, TestDeletedTablesAndTabletsCleanup) {
   FLAGS_enable_metadata_cleanup_for_deleted_tables_and_tablets = true;
   FLAGS_metadata_for_deleted_table_and_tablet_reserved_secs = 1;

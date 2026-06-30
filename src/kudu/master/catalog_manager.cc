@@ -4354,6 +4354,28 @@ Status CatalogManager::GetTableStatistics(const GetTableStatisticsRequestPB* req
       resp->set_row_count_limit(TableInfo::TABLE_WRITE_DEFAULT_LIMIT);
     }
   }
+
+  if (req->include_tablet_statistics()) {
+    const auto tablet_map = table->tablet_map();
+    for (const auto& entry : tablet_map) {
+      const auto& tablet = entry.second;
+      TabletMetadataLock tablet_lock(tablet.get(), LockMode::READ);
+      if (tablet_lock.data().is_deleted()) {
+        continue;
+      }
+
+      auto* tablet_stats = resp->add_tablet_statistics();
+      tablet_stats->set_tablet_id(tablet->id());
+      const auto stats = tablet->GetStats();
+      if (stats.has_on_disk_size()) {
+        tablet_stats->set_on_disk_size(stats.on_disk_size());
+      }
+      if (stats.has_live_row_count()) {
+        tablet_stats->set_live_row_count(stats.live_row_count());
+      }
+    }
+  }
+
   return Status::OK();
 }
 

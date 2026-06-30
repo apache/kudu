@@ -52,6 +52,7 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
@@ -91,6 +92,8 @@ using kudu::client::KuduTableStatistics;
 using kudu::client::KuduValue;
 using kudu::client::internal::ReplicaController;
 using kudu::iequals;
+using kudu::master::GetTableStatisticsRequestPB;
+using kudu::master::GetTableStatisticsResponsePB;
 using kudu::master::ListInFlightTablesRequestPB;
 using kudu::master::ListInFlightTablesResponsePB;
 using kudu::master::MasterServiceProxy;
@@ -127,6 +130,9 @@ DEFINE_bool(list_tablets, false,
 DEFINE_bool(show_table_info, false,
             "Include extra information such as number of tablets, replicas, "
             "and live row count for a table in the output");
+DEFINE_bool(show_tablets, false,
+            "Also list per-tablet on-disk size and live row count under the "
+            "table-level statistics output.");
 DEFINE_bool(show_tablet_partition_info, false,
             "Include partition keys information corresponding to tablet in the output.");
 
@@ -1598,13 +1604,55 @@ Status GetTableStatistics(const RunnerContext& context) {
   client::sp::shared_ptr<KuduClient> client;
   RETURN_NOT_OK(CreateKuduClient(context, &client));
 
-  unique_ptr<KuduTableStatistics> statistics;
-  KuduTableStatistics *table_statistics;
-  RETURN_NOT_OK_PREPEND(client->GetTableStatistics(table_name, &table_statistics),
-                        "failed to get table statistics.");
-  statistics.reset(table_statistics);
+  // Use the client API when per-tablet statistics aren't requested.
+  if (!FLAGS_show_tablets) {
+    unique_ptr<KuduTableStatistics> statistics;
+    KuduTableStatistics* table_statistics;
+    RETURN_NOT_OK_PREPEND(client->GetTableStatistics(table_name, &table_statistics),
+                          "failed to get table statistics.");
+    statistics.reset(table_statistics);
+    cout << "TABLE " << table_name << endl;
+    cout << statistics->ToString() << endl;
+    return Status::OK();
+  }
+
+  // Otherwise a single RPC returns both the table-level and per-tablet
+  // statistics, avoiding a redundant round-trip.
+  LeaderMasterProxy proxy;
+  RETURN_NOT_OK(proxy.Init(context));
+
+  GetTableStatisticsRequestPB req;
+  GetTableStatisticsResponsePB resp;
+  req.mutable_table()->set_table_name(table_name);
+  req.set_include_tablet_statistics(true);
+  RETURN_NOT_OK((proxy.SyncRpc<GetTableStatisticsRequestPB, GetTableStatisticsResponsePB>(
+      req, &resp, "GetTableStatistics", &MasterServiceProxy::GetTableStatisticsAsync)));
+
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
+  }
+
   cout << "TABLE " << table_name << endl;
-  cout << statistics->ToString() << endl;
+  cout << Substitute("on disk size: $0\n"
+                     "live row count: $1\n"
+                     "on disk size limit: $2\n"
+                     "live row count limit: $3\n",
+                     resp.has_on_disk_size() ? std::to_string(resp.on_disk_size()) : "N/A",
+                     resp.has_live_row_count() ? std::to_string(resp.live_row_count()) : "N/A",
+                     resp.has_disk_size_limit() ? std::to_string(resp.disk_size_limit()) : "N/A",
+                     resp.has_row_count_limit() ? std::to_string(resp.row_count_limit()) : "N/A")
+       << endl;
+
+  cout << "TABLETS" << endl;
+  DataTable data_table({ "tablet_id", "on_disk_size", "live_row_count" });
+  for (const auto& t : resp.tablet_statistics()) {
+    data_table.AddRow({
+        t.tablet_id(),
+        t.has_on_disk_size() ? HumanReadableNumBytes::ToString(t.on_disk_size()) : "N/A",
+        t.has_live_row_count() ? std::to_string(t.live_row_count()) : "N/A",
+    });
+  }
+  RETURN_NOT_OK(data_table.PrintTo(cout));
 
   return Status::OK();
 }
@@ -2238,6 +2286,7 @@ unique_ptr<Mode> BuildTableMode() {
       ClusterActionBuilder("statistics", &GetTableStatistics)
       .Description("Get table statistics")
       .AddRequiredParameter({ kTableNameArg, "Name of the table to get statistics" })
+      .AddOptionalParameter("show_tablets")
       .Build();
 
   unique_ptr<Action> create_table =
