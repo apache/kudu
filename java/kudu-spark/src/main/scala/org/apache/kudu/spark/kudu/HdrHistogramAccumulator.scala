@@ -40,9 +40,22 @@ private[kudu] class HdrHistogramAccumulator(histogram: HistogramWrapper = new Hi
     extends AccumulatorV2[Int, HistogramWrapper] {
 
   override def isZero: Boolean = {
-    histogram.isZero
+    // Read the field into a local. This method is invoked by Spark's
+    // heartbeater thread on freshly-deserialized copies of the accumulator and
+    // must not throw if `histogram` is observed null -- e.g. due to unsafe
+    // publication across threads before the field write is visible, or due to
+    // constructor-bypassing deserialization (Kryo). A null/absent histogram is
+    // logically zero.
+    val h = histogram
+    h == null || h.isZero
   }
 
+  // copy(), reset(), add(), merge() and value below intentionally do NOT guard
+  // against a null `histogram`. Unlike isZero()/toString() -- which Spark's
+  // heartbeater thread invokes on accumulator copies it did not construct --
+  // these run only on the task-owning executor thread or the driver, both of
+  // which have a happens-before relationship with construction/deserialization
+  // and therefore always observe a fully-published, non-null histogram.
   override def copy(): AccumulatorV2[Int, HistogramWrapper] = {
     new HdrHistogramAccumulator(histogram.copy())
   }
@@ -61,7 +74,10 @@ private[kudu] class HdrHistogramAccumulator(histogram: HistogramWrapper = new Hi
 
   override def value: HistogramWrapper = histogram
 
-  override def toString: String = histogram.toString
+  override def toString: String = {
+    val h = histogram
+    if (h == null) "0ms" else h.toString
+  }
 }
 
 /*
@@ -73,23 +89,38 @@ private[kudu] class HdrHistogramAccumulator(histogram: HistogramWrapper = new Hi
  *
  * An option is used for innerHistogram so we can only initialize the histogram if it is used.
  */
-private[kudu] class HistogramWrapper(var innerHistogram: Option[IntCountsHistogram] = None)
+private[kudu] class HistogramWrapper(
+    @volatile var innerHistogram: Option[IntCountsHistogram] = None)
     extends Serializable {
 
+  // Mutations of `innerHistogram` synchronize on `this`. The previous code
+  // synchronized on the `innerHistogram` field itself, but that field is a
+  // reassignable var, so the monitor changed over time (None vs each Some(...))
+  // and did not actually provide mutual exclusion. `this` is a stable monitor
+  // and -- unlike a dedicated lock object -- does not break serialization
+  // (HistogramWrapper is Serializable and is shipped with the Spark task).
+  //
+  // Note: isZero deliberately does NOT synchronize. It is called by Spark's
+  // heartbeater thread on freshly-deserialized accumulator copies and must
+  // remain safe (and lock-free) even if instance fields are observed null.
+  // `innerHistogram` is @volatile so this lock-free read has a JMM visibility
+  // guarantee on weak memory models; NPE-safety still comes from the null
+  // check, since the pre-publication default is observable regardless.
   def isZero: Boolean = {
-    innerHistogram.synchronized {
-      innerHistogram.isEmpty
-    }
+    // A single atomic reference read; checking emptiness does not touch the
+    // (mutable) underlying histogram, so no locking is required here.
+    val h = innerHistogram
+    h == null || h.isEmpty
   }
 
   def copy(): HistogramWrapper = {
-    innerHistogram.synchronized {
+    this.synchronized {
       new HistogramWrapper(innerHistogram.map(_.copy()))
     }
   }
 
   def reset(): Unit = {
-    innerHistogram.synchronized {
+    this.synchronized {
       if (innerHistogram.isDefined) {
         innerHistogram.get.reset()
       }
@@ -98,14 +129,14 @@ private[kudu] class HistogramWrapper(var innerHistogram: Option[IntCountsHistogr
   }
 
   def add(v: Int) {
-    innerHistogram.synchronized {
+    this.synchronized {
       initializeIfEmpty()
       innerHistogram.get.recordValue(v)
     }
   }
 
   def add(other: HistogramWrapper) {
-    innerHistogram.synchronized {
+    this.synchronized {
       if (other.innerHistogram.isEmpty) {
         return
       }
@@ -121,8 +152,8 @@ private[kudu] class HistogramWrapper(var innerHistogram: Option[IntCountsHistogr
   }
 
   override def toString: String = {
-    innerHistogram.synchronized {
-      if (innerHistogram.isEmpty) {
+    this.synchronized {
+      if (innerHistogram == null || innerHistogram.isEmpty) {
         return "0ms"
       }
 
