@@ -342,9 +342,29 @@ else
   CLANG=$THIRDPARTY_DIR/clang-toolchain/bin/clang
 fi
 
-# Make sure we use JDK8
+# Select the JDK for the local build.
+#
+# Priority (highest to lowest):
+#   1. JAVA8_HOME set in the environment  (explicit env override)
+#   2. Commit message contains 'JAVA8_OVERRIDE'  (per-commit override)
+#   3. JAVA17_HOME set in the environment  (default when the image sets it)
+#   4. System default java
+#
+# branch-1.18.x only supports JDK 8, so put 'JAVA8_OVERRIDE' on a line by
+# itself in the commit message to force JDK 8 on images whose default java
+# is newer. (The dist-test workers on this branch always run JDK 8; see
+# run_dist_test.py.)
+if git log -1 --format=%B 2>/dev/null | grep -Eq '^JAVA8_OVERRIDE$'; then
+  echo "JAVA8_OVERRIDE found in commit message - using JDK 8"
+  # Commit message wins over JAVA17_HOME but loses to an explicit JAVA8_HOME.
+  : "${JAVA8_HOME:=/usr/lib/jvm/java-8-openjdk-amd64}"
+fi
+
 if [ -n "$JAVA8_HOME" ]; then
   export JAVA_HOME="$JAVA8_HOME"
+  export PATH="$JAVA_HOME/bin:$PATH"
+elif [ -n "$JAVA17_HOME" ]; then
+  export JAVA_HOME="$JAVA17_HOME"
   export PATH="$JAVA_HOME/bin:$PATH"
 fi
 
