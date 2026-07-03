@@ -339,9 +339,11 @@ TEST_F(SpnegoWebserverTest, TestUnauthenticatedNoClientAuth) {
 
 // Test some malformed authorization headers.
 TEST_F(SpnegoWebserverTest, TestInvalidHeaders) {
+  curl_.set_return_headers(true);
   EXPECT_EQ(curl_.FetchURL(url_, &buf_, { "Authorization: blahblah" }).ToString(),
-            "Remote error: HTTP 500");
+            "Remote error: HTTP 401");
   EXPECT_STR_CONTAINS(buf_.ToString(), "bad Negotiate header");
+  EXPECT_STR_CONTAINS(buf_.ToString(), "WWW-Authenticate: Negotiate");
   EXPECT_EQ(curl_.FetchURL(url_, &buf_, { "Authorization: Negotiate aaa" }).ToString(),
             "Remote error: HTTP 401");
   EXPECT_STR_CONTAINS(buf_.ToString(), "Not authorized");

@@ -581,9 +581,16 @@ sq_callback_result_t Webserver::BeginRequestCallback(
                    << GetRemoteAddress(request_info).ToString()
                    << " via SPNEGO: " << s.ToString();
       resp.output << s.ToString();
-      resp.status_code = s.IsNotAuthorized() ?
+      // A malformed or unrecognized Authorization scheme is a client
+      // authentication error, not a server fault, map it to 401 alongside
+      // other SPNEGO authentication failures, and include a WWW-Authenticate
+      // challenge so the client knows to (re)start SPNEGO negotiation.
+      resp.status_code = (s.IsNotAuthorized() || s.IsInvalidArgument()) ?
                            HttpStatusCode::AuthenticationRequired :
                            HttpStatusCode::InternalServerError;
+      if (resp.status_code == HttpStatusCode::AuthenticationRequired) {
+        resp.response_headers.emplace("WWW-Authenticate", "Negotiate");
+      }
       SendResponse(connection, &resp);
       return SQ_HANDLED_OK;
     }
