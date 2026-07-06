@@ -178,10 +178,10 @@ def main():
 
   # Add environment variables for Java dependencies. These environment variables
   # are used in mini_hms.cc and mini_ranger.cc.
-  env['HIVE_HOME'] = glob.glob(os.path.join(ROOT, "thirdparty/src/hive-*"))[0]
-  env['HADOOP_HOME'] = glob.glob(os.path.join(ROOT, "thirdparty/src/hadoop-*"))[0]
-  env['RANGER_HOME'] = glob.glob(os.path.join(ROOT, "thirdparty/src/ranger-*-admin"))[0]
-  env['RANGER_KMS_HOME'] = glob.glob(os.path.join(ROOT, "thirdparty/src/ranger-*-kms"))[0]
+  env['HIVE_HOME'] = os.path.join(ROOT, "thirdparty/installed/common/opt/hive")
+  env['HADOOP_HOME'] = os.path.join(ROOT, "thirdparty/installed/common/opt/hadoop")
+  env['RANGER_HOME'] = os.path.join(ROOT, "thirdparty/installed/common/opt/ranger")
+  env['RANGER_KMS_HOME'] = os.path.join(ROOT, "thirdparty/installed/common/opt/ranger-kms")
   env['JAVA_HOME'] = find_java_home(options.java_version)
 
   # Restore the symlinks to the chrony binaries and Postgres, Ranger, and
@@ -198,13 +198,13 @@ def main():
                os.path.join(bin_path, "postgres-lib"))
     os.symlink(os.path.join(ROOT, "thirdparty/installed/common/share/postgresql"),
                os.path.join(bin_path, "postgres-share"))
-    os.symlink(glob.glob(os.path.join(ROOT, "thirdparty/src/postgresql-*/postgresql-*.jar"))[0],
+    os.symlink(os.path.join(ROOT, "thirdparty/installed/common/opt/jdbc/postgresql.jar"),
                os.path.join(bin_path, "postgresql.jar"))
-    os.symlink(glob.glob(os.path.join(ROOT, "thirdparty/src/prometheus-*"))[0],
+    os.symlink(os.path.join(ROOT, "thirdparty/installed/common/opt/prometheus"),
                os.path.join(bin_path, "prometheus-home"))
-    os.symlink(glob.glob(os.path.join(ROOT, "thirdparty/src/ranger-*-admin"))[0],
+    os.symlink(os.path.join(ROOT, "thirdparty/installed/common/opt/ranger"),
                os.path.join(bin_path, "ranger-home"))
-    os.symlink(glob.glob(os.path.join(ROOT, "thirdparty/src/ranger-*-kms"))[0],
+    os.symlink(os.path.join(ROOT, "thirdparty/installed/common/opt/ranger-kms"),
                os.path.join(bin_path, "ranger_kms-home"))
     os.symlink(os.path.join(ROOT, "thirdparty/installed/common/opt/hadoop"),
                os.path.join(bin_path, "hadoop-home"))

@@ -130,7 +130,9 @@ ENV GID=1000
 RUN groupadd -g ${GID} kudu || groupmod -n kudu $(getent group ${GID} | cut -d: -f1) \
     && useradd --shell /bin/bash -u ${UID} -g ${GID} -m kudu \
     && echo 'kudu ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers \
-    && mkdir -p ${BUILD_DIR} && chown -R kudu:kudu ${BUILD_DIR}
+    && mkdir -p ${BUILD_DIR} && chown -R kudu:kudu ${BUILD_DIR} \
+    && mkdir -p /opt/kudu/thirdparty && chown kudu:kudu /opt/kudu/thirdparty \
+    && chmod 775 /opt/kudu/thirdparty \
 # Run the build as the kudu user.
 USER kudu
 

@@ -18,5 +18,7 @@
 installed/
 src/
 build/
+staging/
+prebuilt-cache/
 .build-hash*
 clang-toolchain

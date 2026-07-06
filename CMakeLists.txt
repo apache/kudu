@@ -486,6 +486,23 @@ if (${KUDU_USE_UBSAN})
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DUNDEFINED_SANITIZER")
 endif ()
 
+# Explicitly add rpath for the built binaries: depending on the layout of the
+# 3rd-party clang/clang++ binaries relative to the built-in prefix, CLANG omits
+# adding rpath information into the result binaries if the location of the
+# clang/clang++ binary matches the compiled-in prefix, confusing it with the
+# system-wide prefix. Before the introduction of pre-built 3rd-party components,
+# the issue had been addressed by the 'clang-toolchain' link pointing to the
+# original LLVM/CLANG build directory instead of the installation directory,
+# but build directories aren't present when 3rd-party components are installed
+# from pre-built archives.
+if ("${COMPILER_FAMILY}" STREQUAL "clang")
+  if (${KUDU_USE_TSAN})
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-rpath,${THIRDPARTY_INSTALL_TSAN_DIR}/lib")
+  else ()
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-rpath,${THIRDPARTY_INSTALL_UNINSTRUMENTED_DIR}/lib")
+  endif ()
+endif ()
+
 # Flag to enable thread sanitizer (clang or gcc 4.8)
 if (${KUDU_USE_TSAN})
   if(NOT (("${COMPILER_FAMILY}" STREQUAL "clang") OR
@@ -506,7 +523,6 @@ if (${KUDU_USE_TSAN})
   add_definitions("-D_GLIBCXX_EXTERN_TEMPLATE=0")
 
   # Compile and link against the thirdparty TSAN instrumented libstdcxx.
-  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-rpath,${THIRDPARTY_INSTALL_TSAN_DIR}/lib")
   set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=thread")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdinc++")

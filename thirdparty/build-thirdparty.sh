@@ -38,6 +38,15 @@
 #   * PORTABLE - whether to build portable libraries, otherwise build native libraries. Portable
 #                libraries may cause a slight performance degradation, it's recommend to disable
 #                portable option if there is no port requirements. (defaults to ON).
+#   * USE_PREBUILT_THIRDPARTY - when set to 0, build 3rd-party components from
+#                               source instead of using archived pre-built
+#                               artifacts, when they are available (default: 1).
+#                               NOTE: different prefix is used for pre-built
+#                                     and build-locally-from-source artifacts
+#   * REBUILD_PREBUILT_THIRDPARTY - when set to 1, always build every 3rd-party
+#                                   component from scratch, even if pre-built
+#                                   archive is available either locally or
+#                                   in the designated S3 bucket (default: 0)
 
 set -ex
 
@@ -107,7 +116,7 @@ else
       "gumbo-parser") F_GUMBO_PARSER=1 ;;
       "gumbo-query")  F_GUMBO_QUERY=1 ;;
       "postgres")     F_POSTGRES=1 ;;
-      "psql-jdbc")    F_POSTGRES_JDBC=1 ;;
+      "postgres-jdbc")F_POSTGRES_JDBC=1 ;;
       "ranger")       F_RANGER=1 ;;
       "jwt-cpp")      F_JWT_CPP=1 ;;
       "ranger-kms")   F_RANGER_KMS=1 ;;
@@ -121,6 +130,61 @@ fi
 
 ################################################################################
 
+if [ "${USE_PREBUILT_THIRDPARTY:-1}" != "0" ]; then
+  if [ $UID -eq 0 ]; then
+    # If running as a super-user, prepare the prefix directories for pre-built
+    # components: create necessary directories to match the pre-defined
+    # prefix paths, so symbolic links to be created in these directories after
+    # expanding prebuilt archives will point to the actual location of the
+    # pre-built artifacts under TP_INSTALL_DIR.
+    for PREFIX_DIR in $PREFIX_COMMON $PREFIX_DEPS $PREFIX_DEPS_TSAN; do
+      mkdir -p $(dirname $PREFIX_DIR)
+    done
+  else
+    # If running as a regular user, check for the presence of the pre-defined
+    # prefix and permissions granted to the user on the prefix directory.
+    # If the directory doesn't exist or the necessary permissions aren't
+    # granted, prompt the user to prepare the pre-defined prefix directories
+    # and grant access to these, so it will be possible to create symbolic
+    # links in them after expanding prebuilt archives, pointing the links
+    # to the actual location of the pre-built artifacts under TP_INSTALL_DIR.
+    set +x
+    for PREFIX_DIR in $PREFIX_COMMON $PREFIX_DEPS $PREFIX_DEPS_TSAN; do
+      prefix_dir=$(dirname $PREFIX_DIR)
+      if [ ! -d "$prefix_dir" ]; then
+        echo ""
+        echo ""
+        echo ""
+        echo "  Please create $prefix_dir directory and grant write permissions"
+        echo "  to this user (UID $UID) on the directory to allow the build"
+        echo "  process creating symbolic links in the directory, pointing"
+        echo "  to the actual location of the thirdparty artifacts under the"
+        echo "  $TP_INSTALL_DIR directory"
+        echo ""
+        echo ""
+        echo ""
+        exit 2
+      fi
+      if [ ! -r "$prefix_dir" -o ! -w "$prefix_dir" -o ! -x "$prefix_dir" ]; then
+        echo ""
+        echo ""
+        echo ""
+        echo "  Please grant read, write, and execute permissions to this user"
+        echo "  (UID $UID) on the $prefix_dir directory to allow the build"
+        echo "  process creating and using symbolic links in the directory."
+        echo "  The symbolic links will be pointing to the actual location "
+        echo "  of the thirdparty artifacts under the"
+        echo "  $TP_INSTALL_DIR directory"
+        echo ""
+        echo ""
+        echo ""
+        exit 2
+      fi
+    done
+    set -x
+  fi
+fi
+
 finish() {
   # Run the post-flight checks.
   local postflight_args=
@@ -133,20 +197,6 @@ finish() {
   echo "Thirdparty dependencies '$ARGS_TO_PRINT' built and installed successfully"
   exit 0
 }
-
-for PREFIX_DIR in $PREFIX_COMMON $PREFIX_DEPS $PREFIX_DEPS_TSAN; do
-  mkdir -p $PREFIX_DIR/include
-
-  # PREFIX_COMMON is for header-only libraries.
-  if [ "$PREFIX_DIR" != "$PREFIX_COMMON" ]; then
-    mkdir -p $PREFIX_DIR/lib
-
-    # On some systems, autotools installs libraries to lib64 rather than lib.  Fix
-    # this by setting up lib64 as a symlink to lib.  We have to do this step first
-    # to handle cases where one third-party library depends on another.
-    ln -nsf "$PREFIX_DIR/lib" "$PREFIX_DIR/lib64"
-  fi
-done
 
 # Incorporate the value of these standard compilation environment variables into
 # the EXTRA_* environment variables.
@@ -211,15 +261,6 @@ fi
 ### Build portable libraries by default.
 PORTABLE=${PORTABLE:-"ON"}
 
-### Detect and enable 'ninja' instead of 'make' for faster builds.
-if which ninja-build > /dev/null ; then
-  NINJA=ninja-build
-  EXTRA_CMAKE_FLAGS=-GNinja
-elif which ninja > /dev/null ; then
-  NINJA=ninja
-  EXTRA_CMAKE_FLAGS=-GNinja
-fi
-
 ### Build common tools and header-only libraries
 
 PREFIX=$PREFIX_COMMON
@@ -229,19 +270,19 @@ MODE_SUFFIX=""
 export PATH=$PREFIX/bin:$PATH
 
 if [ -n "$F_COMMON" -o -n "$F_CLIENT_ONLY" -o -n "$F_CMAKE" ]; then
-  build_cmake
+  fetch_prebuilt_or_build cmake common
 fi
 
 if [ -n "$F_COMMON" -o -n "$F_CLIENT_ONLY" -o -n "$F_RAPIDJSON" ]; then
-  build_rapidjson
+  fetch_prebuilt_or_build rapidjson common
 fi
 
 if [ -n "$F_COMMON" -o -n "$F_CPPLINT" ]; then
-  build_cpplint
+  fetch_prebuilt_or_build cpplint common
 fi
 
 if [ -n "$F_COMMON" -o -n "$F_GCOVR" ]; then
-  build_gcovr
+  fetch_prebuilt_or_build gcovr common
 fi
 
 if [ -n "$F_COMMON" -o -n "$F_TRACE_VIEWER" ]; then
@@ -249,77 +290,54 @@ if [ -n "$F_COMMON" -o -n "$F_TRACE_VIEWER" ]; then
 fi
 
 if [ -n "$F_COMMON" -o -n "$F_CLIENT_ONLY" -o -n "$F_SPARSEHASH" ]; then
-  build_sparsehash
+  fetch_prebuilt_or_build sparsehash common
 fi
 
 if [ -n "$F_COMMON" -o -n "$F_SPARSEPP" ]; then
-  build_sparsepp
+  fetch_prebuilt_or_build sparsepp common
 fi
 
 if [ -n "$F_COMMON" -o -n "$F_BISON" ]; then
-  build_bison
+  fetch_prebuilt_or_build bison common
 fi
 
 if [ -n "$F_COMMON" -o -n "$F_CHRONY" ]; then
-  build_chrony
+  fetch_prebuilt_or_build chrony common
 fi
 
 if [ -n "$F_COMMON" -o -n "$F_POSTGRES" ]; then
-  build_postgres
+  fetch_prebuilt_or_build postgres common
 fi
 
 if [ -n "$F_COMMON" -o -n "$F_POSTGRES_JDBC" ]; then
-  mkdir -p $PREFIX/opt/jdbc
-  ln -nsf $POSTGRES_JDBC_SOURCE/$POSTGRES_JDBC_NAME.jar $PREFIX/opt/jdbc/postgresql.jar
+  fetch_prebuilt_or_build postgres_jdbc common
 fi
 
-# Install Hadoop, Hive, and Ranger by symlinking their source directories (which
-# are pre-built) into $PREFIX/opt.
 if [ -n "$F_COMMON" -o -n "$F_HADOOP" ]; then
-  mkdir -p $PREFIX/opt
-  ln -nsf $HADOOP_SOURCE $PREFIX/opt/hadoop
+  fetch_prebuilt_or_build hadoop common
 fi
 
 if [ -n "$F_COMMON" -o -n "$F_HIVE" ]; then
-  mkdir -p $PREFIX/opt
-  ln -nsf $HIVE_SOURCE $PREFIX/opt/hive
+  fetch_prebuilt_or_build hive common
 fi
 
 if [ -n "$F_COMMON" -o -n "$F_RANGER" ]; then
-  mkdir -p $PREFIX/opt
-  # Remove any hadoop jars included in the Ranger package to avoid unexpected
-  # runtime behavior due to different versions of hadoop jars.
-  rm -rf $RANGER_SOURCE/lib/hadoop-[a-z-]*.jar
-  ln -nsf $RANGER_SOURCE $PREFIX/opt/ranger
-
-  # Symlink conf.dist to conf
-  ln -nsf $PREFIX/opt/ranger/ews/webapp/WEB-INF/classes/conf.dist \
-  $PREFIX/opt/ranger/ews/webapp/WEB-INF/classes/conf
+  fetch_prebuilt_or_build ranger common
 fi
 
 if [ -n "$F_COMMON" -o -n "$F_RANGER_KMS" ]; then
-  mkdir -p $PREFIX/opt
-  # Remove any hadoop jars included in the Ranger package to avoid unexpected
-  # runtime behavior due to different versions of hadoop jars.
-  rm -rf $RANGER_KMS_SOURCE/lib/hadoop-[a-z-]*.jar
-  ln -nsf $RANGER_KMS_SOURCE $PREFIX/opt/ranger-kms
-
-  # Symlink conf.dist to conf
-  ln -nsf $PREFIX/opt/ranger-kms/ews/webapp/WEB-INF/classes/conf.dist \
-  $PREFIX/opt/ranger-kms/ews/webapp/WEB-INF/classes/conf
+  fetch_prebuilt_or_build ranger_kms common
 fi
 
 # Actual Kudu binaries only use the header-only part
 if [ -n "$F_COMMON" -o -n "$F_CLIENT_ONLY" -o -n "$F_FLATBUFFERS" ]; then
-  build_flatbuffers
+  fetch_prebuilt_or_build flatbuffers common
 fi
 
-# Install Prometheus by symlinking its prebuilt binary directory into $PREFIX/opt.
-# Prometheus is a Go binary and does not require compilation.
 if [ -n "$F_COMMON" -o -n "$F_PROMETHEUS" ]; then
-  mkdir -p $PREFIX/opt
-  ln -nsf $PROMETHEUS_SOURCE $PREFIX/opt/prometheus
+  fetch_prebuilt_or_build prometheus common
 fi
+
 ### Build C dependencies without instrumentation
 
 PREFIX=$PREFIX_DEPS
@@ -332,33 +350,33 @@ EXTRA_CFLAGS="-g $EXTRA_CFLAGS"
 EXTRA_CXXFLAGS="-g $EXTRA_CXXFLAGS"
 
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_CLIENT_ONLY" -o -n "$F_ZLIB" ]; then
-  build_zlib
+  fetch_prebuilt_or_build zlib uninstrumented
 fi
 
 # Put this after zlib to allow ARM builds to pick up compressed .debug_info support
 if [ -n "$OS_LINUX" ] && \
     [ -n "$F_UNINSTRUMENTED" -o -n "$F_CLIENT_ONLY" -o -n "$F_LIBUNWIND" ]; then
-  build_libunwind
+  fetch_prebuilt_or_build libunwind uninstrumented
 fi
 
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_LZ4" ]; then
-  build_lz4
+  fetch_prebuilt_or_build lz4 uninstrumented
 fi
 
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_BITSHUFFLE" ]; then
-  build_bitshuffle
+  fetch_prebuilt_or_build bitshuffle uninstrumented
 fi
 
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_CLIENT_ONLY" -o -n "$F_LIBEV" ]; then
-  build_libev
+  fetch_prebuilt_or_build libev uninstrumented
 fi
 
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_SQUEASEL" ]; then
-  build_squeasel
+  fetch_prebuilt_or_build squeasel uninstrumented
 fi
 
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_CURL" ]; then
-  build_curl
+  fetch_prebuilt_or_build curl uninstrumented
 fi
 
 restore_env
@@ -368,7 +386,7 @@ restore_env
 # Clang is used by all builds so it is part of the 'common' library group even
 # though its LLVM libraries are installed to $PREFIX_DEPS.
 if [ -n "$F_COMMON" -o -n "$F_LLVM" ]; then
-  build_llvm normal
+  fetch_prebuilt_or_build llvm uninstrumented
 fi
 
 # From this point forward, clang is available for us to use if needed.
@@ -390,83 +408,81 @@ EXTRA_CXXFLAGS="-g $EXTRA_CXXFLAGS"
 
 # Build libc++abi first as it is a dependency for libc++.
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_LLVM" ]; then
-  build_libcxxabi
+  fetch_prebuilt_or_build libcxxabi uninstrumented
 fi
 
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_LLVM" ]; then
-  build_libcxx normal
+  fetch_prebuilt_or_build libcxx uninstrumented
 fi
 
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_CLIENT_ONLY" -o -n "$F_GFLAGS" ]; then
-  build_gflags
+  fetch_prebuilt_or_build gflags uninstrumented
 fi
 
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_CLIENT_ONLY" -o -n "$F_GLOG" ]; then
-  build_glog
+  fetch_prebuilt_or_build glog uninstrumented
 fi
 
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_CLIENT_ONLY" -o -n "$F_GPERFTOOLS" ]; then
-  build_gperftools
+  fetch_prebuilt_or_build gperftools uninstrumented
 fi
 
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_CLIENT_ONLY" -o -n "$F_GMOCK" ]; then
-  build_gmock_gtest
+  fetch_prebuilt_or_build gmock uninstrumented
 fi
 
-
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_CLIENT_ONLY" -o -n "$F_PROTOBUF" ]; then
-  build_protobuf
+  fetch_prebuilt_or_build protobuf uninstrumented
 fi
 
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_SNAPPY" ]; then
-  build_snappy
+  fetch_prebuilt_or_build snappy uninstrumented
 fi
 
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_CLIENT_ONLY" -o -n "$F_CRCUTIL" ]; then
-  build_crcutil
+  fetch_prebuilt_or_build crcutil uninstrumented
 fi
 
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_CLIENT_ONLY" -o -n "$F_BOOST" ]; then
-  build_boost
+  fetch_prebuilt_or_build boost uninstrumented
 fi
 
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_MUSTACHE" ]; then
-  build_mustache
+  fetch_prebuilt_or_build mustache uninstrumented
 fi
 
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_BREAKPAD" ]; then
-  build_breakpad
+  fetch_prebuilt_or_build breakpad uninstrumented
 fi
 
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_THRIFT" ]; then
-  build_thrift
+  fetch_prebuilt_or_build thrift uninstrumented
 fi
 
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_YAML" ]; then
-  build_yaml
+  fetch_prebuilt_or_build yaml uninstrumented
 fi
 
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_GUMBO_PARSER" ]; then
-  # Although it's a C library its tests are written in C++.
-  build_gumbo_parser
+  fetch_prebuilt_or_build gumbo-parser uninstrumented
 fi
 
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_GUMBO_QUERY" ]; then
-  build_gumbo_query
+  fetch_prebuilt_or_build gumbo-query uninstrumented
 fi
 
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_JWT_CPP" ]; then
-  build_jwt_cpp
+  fetch_prebuilt_or_build jwt-cpp uninstrumented
 fi
 
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_ROCKSDB" ]; then
-  build_rocksdb
+  fetch_prebuilt_or_build rocksdb uninstrumented
 fi
 
 restore_env
 
-# If we're on macOS best to exit here, otherwise single dependency builds will try to
-# build the tsan version of the dependency (and fail).
+# If we're on macOS best to exit here, otherwise single dependency builds
+# will try to build the tsan version of the dependency and fail.
 
 if [[ "$OSTYPE" == "darwin"* ]]; then
   echo "Not building tsan dependencies on macOS."
@@ -514,31 +530,31 @@ EXTRA_CFLAGS="-g $EXTRA_CFLAGS"
 EXTRA_CXXFLAGS="-g $EXTRA_CXXFLAGS"
 
 if [ -n "$F_TSAN" -o -n "$F_ZLIB" ]; then
-  build_zlib
+  fetch_prebuilt_or_build zlib tsan
 fi
 
 if [ -n "$OS_LINUX" ] && [ -n "$F_TSAN" -o -n "$F_LIBUNWIND" ]; then
-  build_libunwind
+  fetch_prebuilt_or_build libunwind tsan
 fi
 
 if [ -n "$F_TSAN" -o -n "$F_LZ4" ]; then
-  build_lz4
+  fetch_prebuilt_or_build lz4 tsan
 fi
 
 if [ -n "$F_TSAN" -o -n "$F_BITSHUFFLE" ]; then
-  build_bitshuffle
+  fetch_prebuilt_or_build bitshuffle tsan
 fi
 
 if [ -n "$F_TSAN" -o -n "$F_LIBEV" ]; then
-  build_libev
+  fetch_prebuilt_or_build libev tsan
 fi
 
 if [ -n "$F_TSAN" -o -n "$F_SQUEASEL" ]; then
-  build_squeasel
+  fetch_prebuilt_or_build squeasel tsan
 fi
 
 if [ -n "$F_TSAN" -o -n "$F_CURL" ]; then
-  build_curl
+  fetch_prebuilt_or_build curl tsan
 fi
 
 restore_env
@@ -548,19 +564,19 @@ restore_env
 # Build libc++abi first as it is a dependency for libc++. Its build has no
 # built-in support for sanitizers, so we build it regularly.
 if [ -n "$F_TSAN" -o -n "$F_LLVM" ]; then
-  build_libcxxabi
+  fetch_prebuilt_or_build libcxxabi tsan
 fi
 
 save_env
 
 # Build libc++ with TSAN enabled.
 if [ -n "$F_TSAN" -o -n "$F_LLVM" ]; then
-  build_libcxx tsan
+  fetch_prebuilt_or_build libcxx tsan
 fi
 
 # Build the rest of the dependencies against the TSAN-instrumented libc++
 # instead of the system's C++ standard library.
-EXTRA_CXXFLAGS="-isystem $PREFIX/include/c++/v1 $EXTRA_CXXFLAGS"
+EXTRA_CXXFLAGS="-isystem $PREFIX/include/c++/v1 -nostdinc++ $EXTRA_CXXFLAGS"
 EXTRA_LDFLAGS="-L$PREFIX/lib $EXTRA_LDFLAGS"
 EXTRA_LDFLAGS="-Wl,-rpath,$PREFIX/lib $EXTRA_LDFLAGS"
 
@@ -570,7 +586,7 @@ EXTRA_CXXFLAGS="-fsanitize=thread $EXTRA_CXXFLAGS"
 EXTRA_CXXFLAGS="-DTHREAD_SANITIZER $EXTRA_CXXFLAGS"
 
 if [ -n "$F_TSAN" -o -n "$F_LLVM" ]; then
-  build_llvm tsan
+  fetch_prebuilt_or_build llvm tsan
 fi
 
 # LLVM is told to use libc++ explicitly and thus doesn't need these, but the
@@ -593,64 +609,63 @@ EXTRA_CFLAGS="-g $EXTRA_CFLAGS"
 EXTRA_CXXFLAGS="-g $EXTRA_CXXFLAGS"
 
 if [ -n "$F_TSAN" -o -n "$F_PROTOBUF" ]; then
-  build_protobuf
+  fetch_prebuilt_or_build protobuf tsan
 fi
 
 if [ -n "$F_TSAN" -o -n "$F_GFLAGS" ]; then
-  build_gflags
+  fetch_prebuilt_or_build gflags tsan
 fi
 
 if [ -n "$F_TSAN" -o -n "$F_GLOG" ]; then
-  build_glog
+  fetch_prebuilt_or_build glog tsan
 fi
 
 if [ -n "$F_TSAN" -o -n "$F_GMOCK" ]; then
-  build_gmock_gtest
+  fetch_prebuilt_or_build gmock tsan
 fi
 
 if [ -n "$F_TSAN" -o -n "$F_SNAPPY" ]; then
-  build_snappy
+  fetch_prebuilt_or_build snappy tsan
 fi
 
 if [ -n "$F_TSAN" -o -n "$F_CRCUTIL" ]; then
-  build_crcutil
+  fetch_prebuilt_or_build crcutil tsan
 fi
 
 if [ -n "$F_TSAN" -o -n "$F_BOOST" ]; then
-  build_boost
+  fetch_prebuilt_or_build boost tsan
 fi
 
 if [ -n "$F_TSAN" -o -n "$F_MUSTACHE" ]; then
-  build_mustache
+  fetch_prebuilt_or_build mustache tsan
 fi
 
 if [ -n "$F_TSAN" -o -n "$F_BREAKPAD" ]; then
-  build_breakpad
+  fetch_prebuilt_or_build breakpad tsan
 fi
 
 if [ -n "$F_TSAN" -o -n "$F_THRIFT" ]; then
-  build_thrift
+  fetch_prebuilt_or_build thrift tsan
 fi
 
 if [ -n "$F_TSAN" -o -n "$F_YAML" ]; then
-  build_yaml
+  fetch_prebuilt_or_build yaml tsan
 fi
 
 if [ -n "$F_TSAN" -o -n "$F_GUMBO_PARSER" ]; then
-  # Although it's a C library its tests are written in C++.
-  build_gumbo_parser
+  fetch_prebuilt_or_build gumbo-parser tsan
 fi
 
 if [ -n "$F_TSAN" -o -n "$F_GUMBO_QUERY" ]; then
-  build_gumbo_query
+  fetch_prebuilt_or_build gumbo-query tsan
 fi
 
 if [ -n "$F_TSAN" -o -n "$F_JWT_CPP" ]; then
-  build_jwt_cpp
+  fetch_prebuilt_or_build jwt-cpp tsan
 fi
 
 if [ -n "$F_TSAN" -o -n "$F_ROCKSDB" ]; then
-  build_rocksdb
+  fetch_prebuilt_or_build rocksdb tsan
 fi
 
 restore_env

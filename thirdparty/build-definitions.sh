@@ -21,15 +21,16 @@
 # These functions do not take positional arguments, but individual builds may
 # be influenced by setting environment variables:
 #
-# * PREFIX - the install destination directory.
+# * PREFIX - location of already-installed dependencies for particular
+#            dependency group
+# * INSTALL_DESTDIR - the directory where 3rd-party components are installed:
+#                     $KUDU_HOME/thirdparty/installed; paths for -I/-L flags
+#                     are built by prepending $INSTALL_DESTDIR to $PREFIX
 # * MODE_SUFFIX - an optional suffix to add to each build directory's name.
 # * EXTRA_CFLAGS - additional flags to pass to the C compiler.
 # * EXTRA_CXXFLAGS - additional flags to pass to the C++ compiler.
 # * EXTRA_LDFLAGS - additional flags to pass to the linker.
 # * EXTRA_LIBS - additional libraries to link.
-# * NINJA - if set, uses this instead of 'make' for cmake-configured libraries.
-#           note that 'EXTRA_CMAKE_FLAGS" should be set to include -GNinja as
-#           well to generate the proper build files.
 # * EXTRA_CMAKE_FLAGS - extra flags to pass to cmake
 #
 # build-definitions.sh is meant to be sourced from build-thirdparty.sh, and
@@ -38,6 +39,7 @@
 # Save the current build environment.
 save_env() {
   _PREFIX=${PREFIX}
+  _INSTALL_DESTDIR=${INSTALL_DESTDIR}
   _MODE_SUFFIX=${MODE_SUFFIX}
   _EXTRA_CFLAGS=${EXTRA_CFLAGS}
   _EXTRA_CXXFLAGS=${EXTRA_CXXFLAGS}
@@ -48,6 +50,7 @@ save_env() {
 # Restore the most recently saved build environment.
 restore_env() {
   PREFIX=${_PREFIX}
+  INSTALL_DESTDIR=${_INSTALL_DESTDIR}
   MODE_SUFFIX=${_MODE_SUFFIX}
   EXTRA_CFLAGS=${_EXTRA_CFLAGS}
   EXTRA_CXXFLAGS=${_EXTRA_CXXFLAGS}
@@ -104,7 +107,8 @@ build_cmake() {
   #  use_system_curl="--system-curl"
   #fi
 
-  CMAKE_BDIR=$TP_BUILD_DIR/$CMAKE_NAME$MODE_SUFFIX
+  local comp_name=$CMAKE_NAME$MODE_SUFFIX
+  CMAKE_BDIR=$TP_BUILD_DIR/$comp_name
   mkdir -p $CMAKE_BDIR
   pushd $CMAKE_BDIR
   $CMAKE_SOURCE/bootstrap \
@@ -112,9 +116,8 @@ build_cmake() {
     $use_system_curl \
     --parallel=$PARALLEL -- \
     -DBUILD_TESTING=OFF
-  # Unfortunately, cmake's bootstrap always uses Makefiles
-  # and can't be configured to build with ninja.
-  make -j$PARALLEL $EXTRA_MAKEFLAGS install
+  make -j$PARALLEL $EXTRA_MAKEFLAGS
+  make DESTDIR=$INSTALL_DESTDIR $EXTRA_MAKEFLAGS install
   popd
 }
 
@@ -131,7 +134,8 @@ build_libcxxabi() {
     -DLLVM_PATH=$LLVM_SOURCE \
     $EXTRA_CMAKE_FLAGS \
     $LLVM_SOURCE/projects/libcxxabi
-  ${NINJA:-make} -j$PARALLEL $EXTRA_MAKEFLAGS install
+  make -j$PARALLEL $EXTRA_MAKEFLAGS
+  make DESTDIR=$INSTALL_DESTDIR $EXTRA_MAKEFLAGS install
   popd
 }
 
@@ -168,7 +172,8 @@ build_libcxx() {
     $SANITIZER_ARG \
     $EXTRA_CMAKE_FLAGS \
     $LLVM_SOURCE/projects/libcxx
-  ${NINJA:-make} -j$PARALLEL $EXTRA_MAKEFLAGS install
+  make -j$PARALLEL $EXTRA_MAKEFLAGS
+  make DESTDIR=$INSTALL_DESTDIR $EXTRA_MAKEFLAGS install
   popd
 }
 
@@ -362,7 +367,7 @@ build_llvm() {
   attempt_number=1
   max_attempts=3
   while true; do
-    ${NINJA:-make} -j$PARALLEL $EXTRA_MAKEFLAGS install
+    make -j$PARALLEL $EXTRA_MAKEFLAGS
     exit_status=$?
     if [[ $exit_status -eq 0 ]]; then
       break
@@ -375,15 +380,7 @@ build_llvm() {
     fi
   done
   set -e
-
-  if [[ "$BUILD_TYPE" == "normal" ]]; then
-    # Create a link from Clang to thirdparty/clang-toolchain. This path is used
-    # for all Clang invocations. The link can't point to the Clang installed in
-    # the prefix directory, since this confuses CMake into believing the
-    # thirdparty prefix directory is the system-wide prefix, and it omits the
-    # thirdparty prefix directory from the rpath of built binaries.
-    ln -sfn $LLVM_BDIR $TP_DIR/clang-toolchain
-  fi
+  make DESTDIR=$INSTALL_DESTDIR $EXTRA_MAKEFLAGS install
   popd
 }
 
@@ -405,22 +402,25 @@ build_gflags() {
     -DREGISTER_INSTALL_PREFIX=Off \
     $EXTRA_CMAKE_FLAGS \
     $GFLAGS_SOURCE
-  ${NINJA:-make} -j$PARALLEL $EXTRA_MAKEFLAGS install
+  make -j$PARALLEL $EXTRA_MAKEFLAGS
+  make DESTDIR=$INSTALL_DESTDIR $EXTRA_MAKEFLAGS install
   popd
 }
 
 build_libunwind() {
-  LIBUNWIND_BDIR=$TP_BUILD_DIR/$LIBUNWIND_NAME$MODE_SUFFIX
+  local comp_name=$LIBUNWIND_NAME$MODE_SUFFIX
+  LIBUNWIND_BDIR=$TP_BUILD_DIR/$comp_name
   mkdir -p $LIBUNWIND_BDIR
   pushd $LIBUNWIND_BDIR
   # Disable minidebuginfo, which depends on liblzma, until/unless we decide to
   # add liblzma to thirdparty.
-  CFLAGS="$EXTRA_CFLAGS" \
+  CFLAGS="$EXTRA_CFLAGS -I$PREFIX/include" \
     $LIBUNWIND_SOURCE/configure \
     --disable-minidebuginfo \
     --with-pic \
     --prefix=$PREFIX
-  make -j$PARALLEL $EXTRA_MAKEFLAGS install
+  make -j$PARALLEL $EXTRA_MAKEFLAGS
+  make DESTDIR=$INSTALL_DESTDIR $EXTRA_MAKEFLAGS install
   popd
 }
 
@@ -461,7 +461,8 @@ build_glog() {
       -DWITH_TLS=OFF \
       $EXTRA_CMAKE_FLAGS \
       $GLOG_SOURCE
-    ${NINJA:-make} -j$PARALLEL $EXTRA_MAKEFLAGS install
+    make -j$PARALLEL $EXTRA_MAKEFLAGS
+    make DESTDIR=$INSTALL_DESTDIR $EXTRA_MAKEFLAGS install
     popd
   done
 }
@@ -509,15 +510,15 @@ build_gperftools() {
   #            the recommended way of compiling the package per instructions
   #            in the top-level 'INSTALL' file, section 'Basic Installation'.
   make -j$PARALLEL $EXTRA_MAKEFLAGS
-  make install
+  make DESTDIR=$INSTALL_DESTDIR $EXTRA_MAKEFLAGS install
   # Add tcmalloc_guard.h because TCMallocGuard is useful for fine-grained
   # control over the initialization of libtcmalloc internals, and that's
   # helpful in the context of addressing KUDU-2439 and KUDU-3635.
-  install -m 0444 $GPERFTOOLS_SOURCE/src/tcmalloc_guard.h $PREFIX/include/gperftools
+  install -m 0444 $GPERFTOOLS_SOURCE/src/tcmalloc_guard.h $INSTALL_DESTDIR$PREFIX/include/gperftools
   popd
 }
 
-build_gmock_gtest() {
+build_gmock() {
   # Build both gmock and gtest
   GMOCK_SHARED_BDIR=$TP_BUILD_DIR/$GMOCK_NAME.shared$MODE_SUFFIX
   GMOCK_STATIC_BDIR=$TP_BUILD_DIR/$GMOCK_NAME.static$MODE_SUFFIX
@@ -539,7 +540,7 @@ build_gmock_gtest() {
       -DBUILD_SHARED_LIBS=$SHARED \
       $EXTRA_CMAKE_FLAGS \
       $GMOCK_SOURCE
-    ${NINJA:-make} -j$PARALLEL $EXTRA_MAKEFLAGS
+    make -j$PARALLEL $EXTRA_MAKEFLAGS
     popd
   done
 
@@ -553,14 +554,15 @@ build_gmock_gtest() {
     local ver_suffix=${GMOCK_VERSION}.${DYLIB_SUFFIX}
   fi
   echo Installing gmock and gtest...
-  cp -a $GMOCK_SHARED_BDIR/lib/libgmock.$ver_suffix $PREFIX/lib/
-  cp -a $GMOCK_SHARED_BDIR/lib/libgmock.$DYLIB_SUFFIX $PREFIX/lib/
-  cp -a $GMOCK_STATIC_BDIR/lib/libgmock.a $PREFIX/lib/
-  cp -a $GMOCK_SHARED_BDIR/lib/libgtest.$ver_suffix $PREFIX/lib/
-  cp -a $GMOCK_SHARED_BDIR/lib/libgtest.$DYLIB_SUFFIX $PREFIX/lib/
-  cp -a $GMOCK_STATIC_BDIR/lib/libgtest.a $PREFIX/lib/
-  rsync -av $GMOCK_SOURCE/googlemock/include/ $PREFIX/include/
-  rsync -av $GMOCK_SOURCE/googletest/include/ $PREFIX/include/
+  mkdir -p $INSTALL_DESTDIR$PREFIX/lib $INSTALL_DESTDIR$PREFIX/include
+  cp -a $GMOCK_SHARED_BDIR/lib/libgmock.$ver_suffix $INSTALL_DESTDIR$PREFIX/lib/
+  cp -a $GMOCK_SHARED_BDIR/lib/libgmock.$DYLIB_SUFFIX $INSTALL_DESTDIR$PREFIX/lib/
+  cp -a $GMOCK_STATIC_BDIR/lib/libgmock.a $INSTALL_DESTDIR$PREFIX/lib/
+  cp -a $GMOCK_SHARED_BDIR/lib/libgtest.$ver_suffix $INSTALL_DESTDIR$PREFIX/lib/
+  cp -a $GMOCK_SHARED_BDIR/lib/libgtest.$DYLIB_SUFFIX $INSTALL_DESTDIR$PREFIX/lib/
+  cp -a $GMOCK_STATIC_BDIR/lib/libgtest.a $INSTALL_DESTDIR$PREFIX/lib/
+  rsync -av $GMOCK_SOURCE/googlemock/include/ $INSTALL_DESTDIR$PREFIX/include/
+  rsync -av $GMOCK_SOURCE/googletest/include/ $INSTALL_DESTDIR$PREFIX/include/
 }
 
 build_flatbuffers() {
@@ -581,12 +583,14 @@ build_flatbuffers() {
     -DFLATBUFFERS_CPP_STD=17 \
     $EXTRA_CMAKE_FLAGS \
     $FLATBUFFERS_SOURCE
-  ${NINJA:-make} -j$PARALLEL $EXTRA_MAKEFLAGS install
+  make -j$PARALLEL $EXTRA_MAKEFLAGS
+  make DESTDIR=$INSTALL_DESTDIR $EXTRA_MAKEFLAGS install
   popd
 }
 
 build_protobuf() {
-  PROTOBUF_BDIR=$TP_BUILD_DIR/$PROTOBUF_NAME$MODE_SUFFIX
+  local comp_name=$PROTOBUF_NAME$MODE_SUFFIX
+  PROTOBUF_BDIR=$TP_BUILD_DIR/$comp_name
   mkdir -p $PROTOBUF_BDIR
   pushd $PROTOBUF_BDIR
   CFLAGS="$EXTRA_CFLAGS" \
@@ -599,7 +603,8 @@ build_protobuf() {
     --enable-static \
     --prefix=$PREFIX
   fixup_libtool
-  make -j$PARALLEL $EXTRA_MAKEFLAGS install
+  make -j$PARALLEL $EXTRA_MAKEFLAGS
+  make DESTDIR=$INSTALL_DESTDIR $EXTRA_MAKEFLAGS install
   popd
 }
 
@@ -625,7 +630,8 @@ build_snappy() {
       -DSNAPPY_BUILD_TESTS=OFF \
       $EXTRA_CMAKE_FLAGS \
       $SNAPPY_SOURCE
-    ${NINJA:-make} -j$PARALLEL $EXTRA_MAKEFLAGS install
+    make -j$PARALLEL $EXTRA_MAKEFLAGS
+    make DESTDIR=$INSTALL_DESTDIR $EXTRA_MAKEFLAGS install
     popd
   done
 }
@@ -642,7 +648,8 @@ build_zlib() {
   CFLAGS="$EXTRA_CFLAGS -fPIC" \
     ./configure \
     --prefix=$PREFIX
-  make -j$PARALLEL $EXTRA_MAKEFLAGS install
+  make -j$PARALLEL $EXTRA_MAKEFLAGS
+  make DESTDIR=$INSTALL_DESTDIR $EXTRA_MAKEFLAGS install
   popd
 }
 
@@ -658,10 +665,12 @@ build_lz4() {
     -DCMAKE_INSTALL_PREFIX:PATH=$PREFIX \
     $EXTRA_CMAKE_FLAGS \
     $LZ4_SOURCE/build/cmake
-  ${NINJA:-make} -j$PARALLEL $EXTRA_MAKEFLAGS install
+  make -j$PARALLEL $EXTRA_MAKEFLAGS
+  make DESTDIR=$INSTALL_DESTDIR $EXTRA_MAKEFLAGS install
   popd
 }
 
+# TODO(aserbin): introduce features as AVX2 into the name of pre-built tarballs
 build_bitshuffle() {
   BITSHUFFLE_BDIR=$TP_BUILD_DIR/$BITSHUFFLE_NAME$MODE_SUFFIX
   mkdir -p $BITSHUFFLE_BDIR
@@ -710,9 +719,10 @@ build_bitshuffle() {
 
   rm -f bitshuffle.a
   ar rs bitshuffle.a $to_link
-  cp bitshuffle.a $PREFIX/lib/
-  cp $BITSHUFFLE_SOURCE/src/bitshuffle.h $PREFIX/include/bitshuffle.h
-  cp $BITSHUFFLE_SOURCE/src/bitshuffle_core.h $PREFIX/include/bitshuffle_core.h
+  mkdir -p $INSTALL_DESTDIR$PREFIX/lib $INSTALL_DESTDIR$PREFIX/include
+  cp bitshuffle.a $INSTALL_DESTDIR$PREFIX/lib/
+  cp $BITSHUFFLE_SOURCE/src/bitshuffle.h $INSTALL_DESTDIR$PREFIX/include/bitshuffle.h
+  cp $BITSHUFFLE_SOURCE/src/bitshuffle_core.h $INSTALL_DESTDIR$PREFIX/include/bitshuffle_core.h
   popd
 }
 
@@ -725,14 +735,16 @@ build_libev() {
     $LIBEV_SOURCE/configure \
     --with-pic \
     --prefix=$PREFIX
-  make -j$PARALLEL $EXTRA_MAKEFLAGS install
+  make -j$PARALLEL $EXTRA_MAKEFLAGS
+  make DESTDIR=$INSTALL_DESTDIR $EXTRA_MAKEFLAGS install
   popd
 }
 
 build_rapidjson() {
   # just installing it into our prefix
   pushd $RAPIDJSON_SOURCE
-  rsync -av --delete $RAPIDJSON_SOURCE/include/rapidjson/ $PREFIX/include/rapidjson/
+  mkdir -p $INSTALL_DESTDIR$PREFIX/include/rapidjson
+  rsync -av --delete $RAPIDJSON_SOURCE/include/rapidjson/ $INSTALL_DESTDIR$PREFIX/include/rapidjson/
   popd
 }
 
@@ -747,8 +759,9 @@ build_squeasel() {
     -DUSE_IPV6"
   ${CC:-gcc} $CFLAGS $OPENSSL_CFLAGS $OPENSSL_LDFLAGS -std=c99 -O3 -DNDEBUG -fPIC -c "$SQUEASEL_SOURCE/squeasel.c"
   ar rs libsqueasel.a squeasel.o
-  cp libsqueasel.a $PREFIX/lib/
-  cp $SQUEASEL_SOURCE/squeasel.h $PREFIX/include/
+  mkdir -p $INSTALL_DESTDIR$PREFIX/lib $INSTALL_DESTDIR$PREFIX/include
+  cp libsqueasel.a $INSTALL_DESTDIR$PREFIX/lib/
+  cp $SQUEASEL_SOURCE/squeasel.h $INSTALL_DESTDIR$PREFIX/include/
   popd
 }
 
@@ -757,10 +770,14 @@ build_mustache() {
   mkdir -p $MUSTACHE_BDIR
   pushd $MUSTACHE_BDIR
   # We add $PREFIX/include for boost and $PREFIX_COMMON/include for rapidjson.
-  ${CXX:-g++} -std=c++17 $EXTRA_CXXFLAGS -I$PREFIX/include -I$PREFIX_COMMON/include -O3 -DNDEBUG -fPIC -c "$MUSTACHE_SOURCE/mustache.cc"
+  ${CXX:-g++} \
+    -std=c++17 $EXTRA_CXXFLAGS \
+    -I$PREFIX/include -I$PREFIX_COMMON/include \
+    -O3 -DNDEBUG -fPIC -c "$MUSTACHE_SOURCE/mustache.cc"
   ar rs libmustache.a mustache.o
-  cp libmustache.a $PREFIX/lib/
-  cp $MUSTACHE_SOURCE/mustache.h $PREFIX/include/
+  mkdir -p $INSTALL_DESTDIR$PREFIX/lib $INSTALL_DESTDIR$PREFIX/include
+  cp libmustache.a $INSTALL_DESTDIR$PREFIX/lib/
+  cp $MUSTACHE_SOURCE/mustache.h $INSTALL_DESTDIR$PREFIX/include/
   popd
 }
 
@@ -862,7 +879,8 @@ build_curl() {
     --with-gssapi \
     --with-openssl
   unset KRB5CONFIG
-  make -j$PARALLEL $EXTRA_MAKEFLAGS install
+  make -j$PARALLEL $EXTRA_MAKEFLAGS
+  make DESTDIR=$INSTALL_DESTDIR $EXTRA_MAKEFLAGS install
   popd
 }
 
@@ -883,7 +901,8 @@ build_crcutil() {
     ./configure \
     --prefix=$PREFIX
   fixup_libtool
-  make -j$PARALLEL $EXTRA_MAKEFLAGS install
+  make -j$PARALLEL $EXTRA_MAKEFLAGS
+  make DESTDIR=$INSTALL_DESTDIR $EXTRA_MAKEFLAGS install
   popd
 }
 
@@ -897,15 +916,16 @@ build_breakpad() {
     LDFLAGS="$EXTRA_LDFLAGS" \
     LIBS="$EXTRA_LIBS" \
     $BREAKPAD_SOURCE/configure --prefix=$PREFIX
-  make -j$PARALLEL $EXTRA_MAKEFLAGS install
+  make -j$PARALLEL $EXTRA_MAKEFLAGS
+  make DESTDIR=$INSTALL_DESTDIR $EXTRA_MAKEFLAGS install
 
   # Here we run a script to munge breakpad #include statements in-place. Sadly,
   # breakpad does not prefix its header file paths. Until we can solve that
   # issue upstream we use this "hack" to add breakpad/ as a prefix for all the
   # breakpad-related includes in the breakpad header files ourselves. See also
   # https://bugs.chromium.org/p/google-breakpad/issues/detail?id=721
-  local BREAKPAD_INCLUDE_DIR=$PREFIX/include/breakpad
-  pushd "$BREAKPAD_INCLUDE_DIR"
+  local breakpad_include_dir=${INSTALL_DESTDIR}${PREFIX}/include/breakpad
+  pushd "$breakpad_include_dir"
   find . -type f | xargs grep -l "#include" | \
     xargs perl -p -i -e '@pre = qw(client common google_breakpad processor third_party); for $p (@pre) { s{#include "$p/}{#include "breakpad/$p/}; }'
   popd
@@ -915,14 +935,19 @@ build_breakpad() {
 
 build_cpplint() {
   # Copy cpplint tool into bin directory
-  cp $CPPLINT_SOURCE/cpplint.py $PREFIX/bin/cpplint.py
+  local dst_dir=$INSTALL_DESTDIR$PREFIX/bin
+  mkdir -p $dst_dir
+  cp $CPPLINT_SOURCE/cpplint.py $dst_dir
 }
 
 build_gcovr() {
   # Copy gcovr tool into bin directory
-  cp -a $GCOVR_SOURCE/scripts/gcovr $PREFIX/bin/gcovr
+  local dst_dir=$INSTALL_DESTDIR$PREFIX/bin
+  mkdir -p $dst_dir
+  cp -a $GCOVR_SOURCE/scripts/gcovr $dst_dir
 }
 
+# The trace viewer naturally comes as pre-built in its source tarball.
 build_trace_viewer() {
   echo Installing trace-viewer into the www directory
   mkdir -p $TP_DIR/../www/
@@ -980,21 +1005,24 @@ build_boost() {
     $EXTRA_CMAKE_FLAGS \
     $BOOST_SOURCE
 
-  ${NINJA:-make} -j$PARALLEL $EXTRA_MAKEFLAGS install
+  make -j$PARALLEL $EXTRA_MAKEFLAGS
+  make DESTDIR=$INSTALL_DESTDIR $EXTRA_MAKEFLAGS install
   popd
 }
 
 build_sparsehash() {
   # This library is header-only, so we just copy the headers
   pushd $SPARSEHASH_SOURCE
-  rsync -av --delete sparsehash/ $PREFIX/include/sparsehash/
+  mkdir -p $INSTALL_DESTDIR$PREFIX/include/sparsehash
+  rsync -av --delete sparsehash/ $INSTALL_DESTDIR$PREFIX/include/sparsehash/
   popd
 }
 
 build_sparsepp() {
   # This library is header-only, so we just copy the headers
   pushd $SPARSEPP_SOURCE
-  rsync -av --delete sparsepp/ $PREFIX/include/sparsepp/
+  mkdir -p $INSTALL_DESTDIR$PREFIX/include/sparsepp
+  rsync -av --delete sparsepp/ $INSTALL_DESTDIR$PREFIX/include/sparsepp/
   popd
 }
 
@@ -1039,12 +1067,14 @@ build_thrift() {
     $EXTRA_CMAKE_FLAGS \
     $THRIFT_SOURCE
 
-  ${NINJA:-make} -j$PARALLEL $EXTRA_MAKEFLAGS install
+  make -j$PARALLEL $EXTRA_MAKEFLAGS
+  make DESTDIR=$INSTALL_DESTDIR $EXTRA_MAKEFLAGS install
   popd
 
   # Install fb303.thrift into the share directory.
-  mkdir -p $PREFIX/share/fb303/if
-  cp $THRIFT_SOURCE/contrib/fb303/if/fb303.thrift $PREFIX/share/fb303/if
+  local fb303_dir="$INSTALL_DESTDIR$PREFIX/share/fb303/if"
+  mkdir -p $fb303_dir
+  cp $THRIFT_SOURCE/contrib/fb303/if/fb303.thrift $fb303_dir
 }
 
 build_bison() {
@@ -1057,7 +1087,8 @@ build_bison() {
     LIBS="$EXTRA_LIBS" \
     $BISON_SOURCE/configure \
     --prefix=$PREFIX
-  make -j$PARALLEL $EXTRA_MAKEFLAGS install
+  make -j$PARALLEL $EXTRA_MAKEFLAGS
+  make DESTDIR=$INSTALL_DESTDIR $EXTRA_MAKEFLAGS install
   popd
 }
 
@@ -1085,13 +1116,15 @@ build_yaml() {
       -DCMAKE_INSTALL_PREFIX=$PREFIX \
       $EXTRA_CMAKE_FLAGS \
       $YAML_SOURCE
-    ${NINJA:-make} -j$PARALLEL $EXTRA_MAKEFLAGS install
+    make -j$PARALLEL $EXTRA_MAKEFLAGS
+    make DESTDIR=$INSTALL_DESTDIR $EXTRA_MAKEFLAGS install
     popd
   done
 }
 
 build_chrony() {
-  CHRONY_BDIR=$TP_BUILD_DIR/$CHRONY_NAME$MODE_SUFFIX
+  local comp_name=$CHRONY_NAME$MODE_SUFFIX
+  CHRONY_BDIR=$TP_BUILD_DIR/$comp_name
   mkdir -p $CHRONY_BDIR
   pushd $CHRONY_BDIR
 
@@ -1126,12 +1159,15 @@ build_chrony() {
     --disable-forcednsretry \
     --disable-sechash
 
-  make -j$PARALLEL $EXTRA_MAKEFLAGS install
+  make -j$PARALLEL $EXTRA_MAKEFLAGS
+  make DESTDIR=$INSTALL_DESTDIR $EXTRA_MAKEFLAGS install
   popd
 }
 
 build_gumbo_parser() {
-  GUMBO_PARSER_BDIR=$TP_BUILD_DIR/$GUMBO_PARSER_NAME$MODE_SUFFIX
+  # Although it's a C library its tests are written in C++.
+  local comp_name=$GUMBO_PARSER_NAME$MODE_SUFFIX
+  GUMBO_PARSER_BDIR=$TP_BUILD_DIR/$comp_name
   mkdir -p $GUMBO_PARSER_BDIR
   pushd $GUMBO_PARSER_BDIR
   CFLAGS="$EXTRA_CFLAGS" \
@@ -1140,12 +1176,14 @@ build_gumbo_parser() {
     LIBS="$EXTRA_LIBS" \
     $GUMBO_PARSER_SOURCE/configure \
     --prefix=$PREFIX
-  make -j$PARALLEL $EXTRA_MAKEFLAGS install
+  make -j$PARALLEL $EXTRA_MAKEFLAGS
+  make DESTDIR=$INSTALL_DESTDIR $EXTRA_MAKEFLAGS install
   popd
 }
 
 build_gumbo_query() {
-  GUMBO_QUERY_BDIR=$TP_BUILD_DIR/$GUMBO_QUERY_NAME$MODE_SUFFIX
+  local comp_name=$GUMBO_QUERY_NAME$MODE_SUFFIX
+  GUMBO_QUERY_BDIR=$TP_BUILD_DIR/$comp_name
   mkdir -p $GUMBO_QUERY_BDIR
   pushd $GUMBO_QUERY_BDIR
   rm -Rf CMakeCache.txt CMakeFiles/
@@ -1158,7 +1196,8 @@ build_gumbo_query() {
     -DCMAKE_SHARED_LINKER_FLAGS="$EXTRA_LDFLAGS $EXTRA_LIBS -L$PREFIX/lib -Wl,-rpath,$PREFIX/lib" \
     $EXTRA_CMAKE_FLAGS \
     $GUMBO_QUERY_SOURCE
-  ${NINJA:-make} -j$PARALLEL $EXTRA_MAKEFLAGS install
+  make -j$PARALLEL $EXTRA_MAKEFLAGS
+  make DESTDIR=$INSTALL_DESTDIR $EXTRA_MAKEFLAGS install
   popd
 }
 
@@ -1167,19 +1206,93 @@ build_postgres() {
   mkdir -p $POSTGRES_BDIR
   pushd $POSTGRES_BDIR
 
-  # We don't need readline, zlib and icu, so let's simplify build.
+  # We don't need readline, zlib and icu, so let's simplify build. Also, do not
+  # embed the hint for the linker based on the absolute prefix-based path,
+  # switching to relative paths instead (see [1] and [2] for details). The
+  # latter allows for more flexibility when deploying Postgres and its utility
+  # binaries, so there isn't a need to override the compiled-in linker hints
+  # using LD_LIBRARY_PATH -- that's useful for dist-test and alike.
+  #
+  # [1] https://stackoverflow.com/questions/70931415/
+  # [2] https://stackoverflow.com/questions/38058041/
   CFLAGS="$EXTRA_CFLAGS" \
     LDFLAGS="$EXTRA_LDFLAGS" \
     $POSTGRES_SOURCE/configure \
     --prefix=$PREFIX \
     --without-icu \
     --without-readline \
-    --without-zlib
+    --without-zlib \
+    --disable-rpath
 
-  make -j$PARALLEL $EXTRA_MAKEFLAGS install
+  LD_RUN_PATH='$ORIGIN/../lib' make -j$PARALLEL $EXTRA_MAKEFLAGS
+  LD_RUN_PATH='$ORIGIN/../lib' make DESTDIR=$INSTALL_DESTDIR $EXTRA_MAKEFLAGS install
+  # Remove the extensions (pgxs) sub-directory since it's not needed
+  # but it's confusing to dist-test in certain directory layouts.
+  rm -rf $INSTALL_DESTDIR$PREFIX/lib/postgresql/pgxs
   popd
 }
 
+build_postgres_jdbc() {
+  local dest_dir=$INSTALL_DESTDIR$PREFIX/opt/jdbc
+  mkdir -p $dest_dir
+  cp -a $POSTGRES_JDBC_SOURCE/$POSTGRES_JDBC_NAME.jar $dest_dir/postgresql.jar
+}
+
+build_hadoop() {
+  local dest_dir=$INSTALL_DESTDIR$PREFIX/opt/hadoop
+  mkdir -p $dest_dir
+  pushd $HADOOP_SOURCE
+  tar cf - . | tar xf - -C $dest_dir
+  popd
+}
+
+build_hive() {
+  local dest_dir=$INSTALL_DESTDIR$PREFIX/opt/hive
+  mkdir -p $dest_dir
+  pushd $HIVE_SOURCE
+  tar cf - . | tar xf - -C $dest_dir
+  popd
+}
+
+build_ranger() {
+  local dest_dir=$INSTALL_DESTDIR$PREFIX/opt/ranger
+  mkdir -p $dest_dir
+
+  pushd $RANGER_SOURCE
+  tar cf - . | tar xf - -C $dest_dir
+  popd
+
+  pushd $dest_dir
+  # Remove any hadoop jars included in the Ranger package to avoid unexpected
+  # runtime behavior due to different versions of hadoop jars.
+  rm -f lib/hadoop-[a-z-]*.jar
+  popd
+
+  # Symlink conf.dist directory to conf.
+  pushd $dest_dir/ews/webapp/WEB-INF/classes
+  ln -nsf conf.dist conf
+  popd
+}
+
+build_ranger_kms() {
+  local dest_dir=$INSTALL_DESTDIR$PREFIX/opt/ranger-kms
+  mkdir -p $dest_dir
+
+  pushd $RANGER_KMS_SOURCE
+  tar cf - . | tar xf - -C $dest_dir
+  popd
+
+  pushd $dest_dir
+  # Remove any hadoop jars included in the Ranger package to avoid unexpected
+  # runtime behavior due to different versions of hadoop jars.
+  rm -f lib/hadoop-[a-z-]*.jar
+  popd
+
+  # Symlink conf.dist directory to conf.
+  pushd $dest_dir/ews/webapp/WEB-INF/classes
+  ln -nsf conf.dist conf
+  popd
+}
 
 build_jwt_cpp() {
   JWT_CPP_BUILD_DIR=$TP_BUILD_DIR/$JWT_CPP_NAME$MODE_SUFFIX
@@ -1193,7 +1306,18 @@ build_jwt_cpp() {
     -DCMAKE_INSTALL_PREFIX=$PREFIX \
     -DJWT_BUILD_EXAMPLES=OFF \
     $JWT_CPP_SOURCE
-  make -j$PARALLEL install
+  make -j$PARALLEL $EXTRA_MAKEFLAGS
+  make DESTDIR=$INSTALL_DESTDIR $EXTRA_MAKEFLAGS install
+  popd
+}
+
+build_prometheus() {
+  local dest_dir=$INSTALL_DESTDIR$PREFIX/opt/prometheus
+  mkdir -p $dest_dir
+
+  # Prometheus is a Go binary and does not require compilation.
+  pushd $PROMETHEUS_SOURCE
+  tar cf - . | tar xf - -C $dest_dir
   popd
 }
 
@@ -1226,6 +1350,9 @@ build_rocksdb() {
     -DCMAKE_INSTALL_PREFIX=$PREFIX \
     -DCMAKE_SHARED_LINKER_FLAGS="$EXTRA_LDFLAGS $EXTRA_LIBS -Wl,-rpath,$PREFIX/lib" \
     $ROCKSDB_SOURCE
-  make -j$PARALLEL install
+  make -j$PARALLEL $EXTRA_MAKEFLAGS
+  make DESTDIR=$INSTALL_DESTDIR $EXTRA_MAKEFLAGS install
   popd
 }
+
+source $TP_DIR/prebuilt-utils.sh
