@@ -32,6 +32,8 @@
 #include "kudu/tablet/rowset.h"
 #include "kudu/util/status.h"
 
+// IWYU pragma: no_include "kudu/common/common.pb.h"
+
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
@@ -107,7 +109,10 @@ Status DeltaApplier::FinishBatch() {
 
 Status DeltaApplier::InitializeSelectionVector(SelectionVector* sel_vec) {
   DCHECK(!first_prepare_) << "PrepareBatch() must be called at least once";
-
+  DCHECK(opts_.row_visibility != INCLUDE_UNOBSERVABLE ||
+         (opts_.snap_to_exclude && opts_.include_deleted_rows))
+      << "row_visibility=INCLUDE_UNOBSERVABLE requires a diff scan "
+         "(snap_to_exclude set) with include_deleted_rows=true";
   // A diff scan will set both 'snap_to_exclude' and 'include_deleted_rows'.
   // The result: it'll initialize the selection vector using any delta that
   // meets the select criteria rather than just using a DELETE that meets the
@@ -118,7 +123,8 @@ Status DeltaApplier::InitializeSelectionVector(SelectionVector* sel_vec) {
     SelectedDeltas deltas(sel_vec->nrows());
     RETURN_NOT_OK(delta_iter_->SelectDeltas(&deltas));
     VLOG(4) << "Final deltas:\n" << deltas.ToString();
-    deltas.ToSelectionVector(sel_vec);
+    deltas.ToSelectionVector(sel_vec,
+        opts_.row_visibility == INCLUDE_UNOBSERVABLE);
   } else {
     RETURN_NOT_OK(base_iter_->InitializeSelectionVector(sel_vec));
   }

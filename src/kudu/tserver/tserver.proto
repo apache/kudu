@@ -357,6 +357,22 @@ message NewScanRequestPB {
 
   // An authorization token with which to authorize this request.
   optional security.SignedTokenPB authz_token = 15;
+
+  // Controls whether a diff scan additionally returns rows whose entire
+  // lifecycle (INSERT -> eventual DELETE) is contained inside the diff
+  // scan's (snap_start_timestamp, snap_timestamp] range. Such rows are
+  // surfaced with the IS_DELETED virtual column set to true.
+  //
+  // Only valid on diff scans, and only when set to INCLUDE_UNOBSERVABLE.
+  // The server returns INVALID_SCAN_SPEC if this is set to
+  // INCLUDE_UNOBSERVABLE without snap_start_timestamp, or on a diff scan
+  // whose projection lacks an IS_DELETED virtual column.
+  //
+  // Clients that set this to INCLUDE_UNOBSERVABLE must also require the
+  // DIFF_SCAN_ROW_VISIBILITY tserver feature so old servers reject the
+  // scan rather than silently returning results inconsistent with the
+  // requested mode.
+  optional RowVisibility row_visibility = 17 [default = OBSERVABLE_ONLY];
 }
 
 // A scan request. Initially, it should specify a scan. Later on, you
@@ -544,4 +560,8 @@ enum TabletServerFeatures {
   // Whether the server supports working with tables having one-dimensional
   // array type columns.
   ARRAY_1D_COLUMN_TYPE = 7;
+  // Whether the server supports the RowVisibility knob on diff scans,
+  // controlling whether rows whose entire lifecycle is contained inside
+  // the diff scan's timestamp range are returned.
+  DIFF_SCAN_ROW_VISIBILITY = 8;
 }

@@ -137,6 +137,8 @@
 #include "kudu/util/test_util.h"
 #include "kudu/util/thread_restrictions.h"
 
+// IWYU pragma: no_include <boost/move/detail/type_traits.hpp>
+
 namespace kudu {
 class PartitionKey;
 }  // namespace kudu
@@ -9563,6 +9565,201 @@ TEST_F(ClientTest, TestProjectionPredicatesFuzz) {
   ASSERT_OK(ScanToStrings(scanner.get(), &rows));
   ASSERT_EQ(unordered_set<string>(expected_rows.begin(), expected_rows.end()),
             unordered_set<string>(rows.begin(), rows.end())) << rows;
+}
+
+namespace {
+// Records the outcome of a diff scan for a single key. 'count' is the
+// number of times the key appeared in the diff-scan output (should be
+// exactly 1 for a well-formed result); 'is_deleted' is only meaningful
+// when count > 0.
+struct DiffScanRowStatus {
+  int count = 0;
+  bool is_deleted = false;
+};
+// Runs 'mutations' bracketed by two READ_AT_SNAPSHOT reads that produce
+// (start_ts, end_ts]. Then runs a diff scan over that range with the
+// given 'visibility' and writes the status of 'key' to '*out'.
+void RunDiffScanOverMutations(
+    const KuduClient* client,
+    const shared_ptr<KuduTable>& table,
+    int32_t key,
+    KuduScanner::DiffScanRowVisibility visibility,
+    const std::function<void()>& mutations,
+    DiffScanRowStatus* out) {
+  // Anchor start_ts.
+  {
+    KuduScanner anchor_start(table.get());
+    ASSERT_OK(anchor_start.SetReadMode(KuduScanner::READ_AT_SNAPSHOT));
+    ASSERT_OK(anchor_start.Open());
+  }
+  const uint64_t start_ts = client->GetLatestObservedTimestamp();
+  ASSERT_NE(0, start_ts);
+  mutations();
+  // Anchor end_ts.
+  {
+    KuduScanner anchor_end(table.get());
+    ASSERT_OK(anchor_end.SetReadMode(KuduScanner::READ_AT_SNAPSHOT));
+    ASSERT_OK(anchor_end.Open());
+  }
+  const uint64_t end_ts = client->GetLatestObservedTimestamp();
+  ASSERT_GT(end_ts, start_ts);
+  KuduScanner diff(table.get());
+  ASSERT_OK(diff.SetDiffScan(start_ts, end_ts, visibility));
+  ASSERT_OK(diff.Open());
+  DiffScanRowStatus result;
+  KuduScanBatch batch;
+  while (diff.HasMoreRows()) {
+    ASSERT_OK(diff.NextBatch(&batch));
+    for (const auto& row : batch) {
+      int32_t k;
+      bool is_deleted;
+      ASSERT_OK(row.GetInt32("key", &k));
+      ASSERT_OK(row.IsDeleted(&is_deleted));
+      if (k == key) {
+        result.count++;
+        result.is_deleted = is_deleted;
+      }
+    }
+  }
+  *out = result;
+}
+// Small helpers for readability in the scenarios below.
+Status DoInsert(const shared_ptr<KuduSession>& session,
+                const shared_ptr<KuduTable>& table, int32_t key) {
+  unique_ptr<KuduInsert> ins(table->NewInsert());
+  RETURN_NOT_OK(ins->mutable_row()->SetInt32("key", key));
+  RETURN_NOT_OK(ins->mutable_row()->SetInt32("int_val", 100));
+  RETURN_NOT_OK(ins->mutable_row()->SetStringCopy("string_val", "foo"));
+  return session->Apply(ins.release());
+}
+Status DoUpsert(const shared_ptr<KuduSession>& session,
+                const shared_ptr<KuduTable>& table, int32_t key) {
+  unique_ptr<KuduUpsert> up(table->NewUpsert());
+  RETURN_NOT_OK(up->mutable_row()->SetInt32("key", key));
+  RETURN_NOT_OK(up->mutable_row()->SetInt32("int_val", 100));
+  RETURN_NOT_OK(up->mutable_row()->SetStringCopy("string_val", "foo"));
+  return session->Apply(up.release());
+}
+Status DoDelete(const shared_ptr<KuduSession>& session,
+                const shared_ptr<KuduTable>& table, int32_t key) {
+  unique_ptr<KuduDelete> del(table->NewDelete());
+  RETURN_NOT_OK(del->mutable_row()->SetInt32("key", key));
+  return session->Apply(del.release());
+}
+
+} // namespace
+
+TEST_F(ClientTest, DiffScanReinsertReportedLive) {
+  shared_ptr<KuduSession> session = client_->NewSession();
+  ASSERT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_SYNC));
+
+  DiffScanRowStatus status;
+  NO_FATALS(RunDiffScanOverMutations(
+      client_.get(), client_table_, /*key=*/42,
+      KuduScanner::INCLUDE_UNOBSERVABLE,
+      [&]() {
+        ASSERT_OK(DoInsert(session, client_table_, 42));
+        ASSERT_OK(DoDelete(session, client_table_, 42));
+        ASSERT_OK(DoInsert(session, client_table_, 42));
+      },
+      &status));
+
+  ASSERT_EQ(1, status.count);
+  ASSERT_FALSE(status.is_deleted);
+}
+
+TEST_F(ClientTest, DiffScanReinsertThenDeleteReportedDeleted) {
+  shared_ptr<KuduSession> session = client_->NewSession();
+  ASSERT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_SYNC));
+
+  DiffScanRowStatus status;
+  NO_FATALS(RunDiffScanOverMutations(
+      client_.get(), client_table_, /*key=*/42,
+      KuduScanner::INCLUDE_UNOBSERVABLE,
+      [&]() {
+        ASSERT_OK(DoInsert(session, client_table_, 42));
+        ASSERT_OK(DoDelete(session, client_table_, 42));
+        ASSERT_OK(DoInsert(session, client_table_, 42));
+        ASSERT_OK(DoDelete(session, client_table_, 42));
+      },
+      &status));
+
+  ASSERT_EQ(1, status.count);
+  ASSERT_TRUE(status.is_deleted);
+}
+
+TEST_F(ClientTest, DiffScanReinsertViaUpsertReportedLive) {
+  shared_ptr<KuduSession> session = client_->NewSession();
+  ASSERT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_SYNC));
+
+  DiffScanRowStatus status;
+  NO_FATALS(RunDiffScanOverMutations(
+      client_.get(), client_table_, /*key=*/42,
+      KuduScanner::INCLUDE_UNOBSERVABLE,
+      [&]() {
+        ASSERT_OK(DoUpsert(session, client_table_, 42));
+        ASSERT_OK(DoDelete(session, client_table_, 42));
+        ASSERT_OK(DoUpsert(session, client_table_, 42));
+      },
+      &status));
+
+  ASSERT_EQ(1, status.count);
+  ASSERT_FALSE(status.is_deleted);
+}
+
+TEST_F(ClientTest, DiffScanReinsertViaUpsertThenDeleteReportedDeleted) {
+  shared_ptr<KuduSession> session = client_->NewSession();
+  ASSERT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_SYNC));
+
+  DiffScanRowStatus status;
+  NO_FATALS(RunDiffScanOverMutations(
+      client_.get(), client_table_, /*key=*/42,
+      KuduScanner::INCLUDE_UNOBSERVABLE,
+      [&]() {
+        ASSERT_OK(DoUpsert(session, client_table_, 42));
+        ASSERT_OK(DoDelete(session, client_table_, 42));
+        ASSERT_OK(DoUpsert(session, client_table_, 42));
+        ASSERT_OK(DoDelete(session, client_table_, 42));
+      },
+      &status));
+
+  ASSERT_EQ(1, status.count);
+  ASSERT_TRUE(status.is_deleted);
+}
+
+TEST_F(ClientTest, DiffScanIncludeUnobservableRows) {
+  shared_ptr<KuduSession> session = client_->NewSession();
+  ASSERT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_SYNC));
+
+  // Insert then delete a row inside the diff-scan window. The row's full
+  // lifecycle is contained in the window, so it is "unobservable". Hence it
+  // surfaces iff include_unobservable_rows is set.
+  auto insert_and_delete = [&]() {
+    ASSERT_OK(DoInsert(session, client_table_, 42));
+    ASSERT_OK(DoDelete(session, client_table_, 42));
+  };
+
+  // With OBSERVABLE_ONLY, the unobservable row must NOT appear.
+  {
+    DiffScanRowStatus status;
+    NO_FATALS(RunDiffScanOverMutations(
+        client_.get(), client_table_, /*key=*/42,
+        KuduScanner::DiffScanRowVisibility::OBSERVABLE_ONLY,
+        insert_and_delete, &status));
+    EXPECT_EQ(0, status.count);
+  }
+
+  // With INCLUDE_UNOBSERVABLE, the row must appear exactly once with
+  // IsDeleted()=true.
+  {
+    DiffScanRowStatus status;
+    NO_FATALS(RunDiffScanOverMutations(
+        client_.get(), client_table_, /*key=*/42,
+        KuduScanner::DiffScanRowVisibility::INCLUDE_UNOBSERVABLE,
+        insert_and_delete, &status));
+    ASSERT_EQ(1, status.count);
+    EXPECT_TRUE(status.is_deleted);
+  }
 }
 
 class ClientTestImmutableColumn : public ClientTest,

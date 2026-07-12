@@ -102,6 +102,18 @@ struct RowIteratorOptions {
   //
   // Defaults to false.
   bool include_deleted_rows;
+
+  // How a diff scan treats unobservable rows: rows whose entire lifespan lies
+  // inside the (snap_to_exclude, snap_to_include] time range, i.e. rows that
+  // were inserted and then deleted within the range and would otherwise be
+  // unobservable to a diff scan. When set to INCLUDE_UNOBSERVABLE, such rows
+  // are surfaced with the IS_DELETED virtual column set to true.
+  //
+  // Only meaningful when 'snap_to_exclude' is set (diff scan) and
+  // 'include_deleted_rows' is true; ignored otherwise.
+  //
+  // Defaults to OBSERVABLE_ONLY.
+  RowVisibility row_visibility;
 };
 
 class RowSet {

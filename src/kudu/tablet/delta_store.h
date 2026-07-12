@@ -73,7 +73,7 @@ class SelectedDeltas {
   explicit SelectedDeltas(size_t nrows);
 
   // Converts the selected deltas into a simpler SelectionVector.
-  void ToSelectionVector(SelectionVector* sel_vec) const;
+  void ToSelectionVector(SelectionVector* sel_vec, bool include_unobservable_rows = false) const;
 
   // Returns a textual representation suitable for debugging.
   std::string ToString() const;

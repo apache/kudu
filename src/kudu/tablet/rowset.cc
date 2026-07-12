@@ -47,7 +47,8 @@ RowIteratorOptions::RowIteratorOptions()
     : projection(nullptr),
       snap_to_include(MvccSnapshot::CreateSnapshotIncludingAllOps()),
       order(OrderMode::UNORDERED),
-      include_deleted_rows(false) {}
+      include_deleted_rows(false),
+      row_visibility(OBSERVABLE_ONLY) {}
 
 Status RowSet::DebugDump(std::vector<std::string>* lines) {
   return DebugDumpImpl(nullptr /* rows_left */, lines);

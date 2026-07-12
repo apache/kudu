@@ -30,7 +30,6 @@
 #include "kudu/client/schema.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
-#include "kudu/gutil/port.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/slice.h"
@@ -91,7 +90,9 @@ class ScanConfiguration {
   // It is only used in READ_YOUR_WRITES scan mode.
   void SetScanLowerBoundTimestampRaw(uint64_t propagation_timestamp);
 
-  Status SetDiffScan(uint64_t start_timestamp, uint64_t end_timestamp);
+  Status SetDiffScan(uint64_t start_timestamp, uint64_t end_timestamp,
+      KuduScanner::DiffScanRowVisibility visibility =
+          KuduScanner::OBSERVABLE_ONLY);
 
   void SetTimeoutMillis(int millis);
 
@@ -167,6 +168,16 @@ class ScanConfiguration {
     return snapshot_timestamp_;
   }
 
+  KuduScanner::DiffScanRowVisibility row_visibility() const {
+    return row_visibility_;
+  }
+
+  // Convenience accessor: true iff the caller asked to include rows whose
+  // full lifecycle lies inside the diff scan's timestamp range.
+  bool include_unobservable_rows() const {
+    return row_visibility_ == KuduScanner::INCLUDE_UNOBSERVABLE;
+  }
+
   bool has_lower_bound_propagation_timestamp() const {
     return lower_bound_propagation_timestamp_ != kNoTimestamp;
   }
@@ -223,6 +234,9 @@ class ScanConfiguration {
   // If just a regular snapshot scan, start_timestamp_ is ignored.
   uint64_t start_timestamp_;
   uint64_t snapshot_timestamp_;
+  // Diff-scan ephemeral-row visibility. Meaningful only when
+  // start_timestamp_ is set (i.e. this is actually a diff scan).
+  KuduScanner::DiffScanRowVisibility row_visibility_;
 
   uint64_t lower_bound_propagation_timestamp_;
 

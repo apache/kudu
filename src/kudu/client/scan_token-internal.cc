@@ -298,8 +298,11 @@ Status KuduScanToken::Data::PBIntoScanner(KuduClient* client,
   }
 
   if (message.has_snap_start_timestamp() && message.has_snap_timestamp()) {
-    RETURN_NOT_OK(scan_builder->SetDiffScan(message.snap_start_timestamp(),
-                                            message.snap_timestamp()));
+    const auto visibility = message.row_visibility() == kudu::INCLUDE_UNOBSERVABLE
+        ? KuduScanner::INCLUDE_UNOBSERVABLE
+        : KuduScanner::OBSERVABLE_ONLY;
+    RETURN_NOT_OK(scan_builder->SetDiffScan(
+        message.snap_start_timestamp(), message.snap_timestamp(), visibility));
   } else if (message.has_snap_timestamp()) {
     RETURN_NOT_OK(scan_builder->SetSnapshotRaw(message.snap_timestamp()));
   }
@@ -445,6 +448,22 @@ Status KuduScanTokenBuilder::Data::Build(vector<KuduScanToken*>* tokens) {
       }
       if (configuration_.has_snapshot_timestamp()) {
         pb.set_snap_timestamp(configuration_.snapshot_timestamp());
+      }
+      if (configuration_.include_unobservable_rows()) {
+        // row_visibility=INCLUDE_UNOBSERVABLE is only meaningful for diff
+        // scans, which require both a start timestamp and an end (snapshot)
+        // timestamp. SetDiffScan() enforces this, so any caller reaching
+        // here with the mode set but the timestamps missing has bypassed
+        // the public API.
+        CHECK(configuration_.has_start_timestamp() &&
+              configuration_.has_snapshot_timestamp())
+            << "row_visibility=INCLUDE_UNOBSERVABLE requires a diff scan "
+               "(both start and snapshot timestamps must be set)";
+        pb.set_row_visibility(kudu::INCLUDE_UNOBSERVABLE);
+        // Signal the feature to deserializing clients: older clients that
+        // don't recognize the flag will reject the token with NotSupported
+        // rather than silently rehydrating it without the requested mode.
+        pb.add_feature_flags(ScanTokenPB::RowVisibility);
       }
       break;
     case KuduScanner::READ_YOUR_WRITES:

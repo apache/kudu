@@ -48,6 +48,21 @@ const uint64_t ScanConfiguration::kNoTimestamp = KuduClient::kNoTimestamp;
 const int ScanConfiguration::kHtTimestampBitsToShift = 12;
 const char* ScanConfiguration::kDefaultIsDeletedColName = "is_deleted";
 
+  // Keep KuduScanner::DiffScanRowVisibility in lock-step with the wire enum
+  // kudu::RowVisibility.
+  static_assert(
+      static_cast<int>(KuduScanner::UNKNOWN_ROW_VISIBILITY) ==
+          static_cast<int>(::kudu::UNKNOWN_ROW_VISIBILITY),
+      "KuduScanner::UNKNOWN_ROW_VISIBILITY must match kudu::UNKNOWN_ROW_VISIBILITY");
+  static_assert(
+      static_cast<int>(KuduScanner::OBSERVABLE_ONLY) ==
+          static_cast<int>(::kudu::OBSERVABLE_ONLY),
+      "KuduScanner::OBSERVABLE_ONLY must match kudu::OBSERVABLE_ONLY");
+  static_assert(
+      static_cast<int>(KuduScanner::INCLUDE_UNOBSERVABLE) ==
+          static_cast<int>(::kudu::INCLUDE_UNOBSERVABLE),
+      "KuduScanner::INCLUDE_UNOBSERVABLE must match kudu::INCLUDE_UNOBSERVABLE");
+
 ScanConfiguration::ScanConfiguration(KuduTable* table)
     : table_(table),
       projection_(table->schema().schema_),
@@ -59,6 +74,7 @@ ScanConfiguration::ScanConfiguration(KuduTable* table)
       is_fault_tolerant_(false),
       start_timestamp_(kNoTimestamp),
       snapshot_timestamp_(kNoTimestamp),
+      row_visibility_(KuduScanner::OBSERVABLE_ONLY),
       lower_bound_propagation_timestamp_(kNoTimestamp),
       timeout_(MonoDelta::FromMilliseconds(KuduScanner::kScanTimeoutMillis)),
       arena_(256),
@@ -186,7 +202,8 @@ void ScanConfiguration::SetSnapshotRaw(uint64_t snapshot_timestamp) {
   snapshot_timestamp_ = snapshot_timestamp;
 }
 
-Status ScanConfiguration::SetDiffScan(uint64_t start_timestamp, uint64_t end_timestamp) {
+Status ScanConfiguration::SetDiffScan(uint64_t start_timestamp, uint64_t end_timestamp,
+    KuduScanner::DiffScanRowVisibility visibility) {
   if (start_timestamp == kNoTimestamp) {
     return Status::IllegalState("Start timestamp must be set bigger than 0");
   }
@@ -194,10 +211,17 @@ Status ScanConfiguration::SetDiffScan(uint64_t start_timestamp, uint64_t end_tim
     return Status::IllegalState("Start timestamp must be less than or equal to "
                                 "end timestamp");
   }
+  // UNKNOWN_ROW_VISIBILITY indicates the field is unset. Callers must pick a valid mode.
+  if (visibility != KuduScanner::OBSERVABLE_ONLY &&
+      visibility != KuduScanner::INCLUDE_UNOBSERVABLE) {
+    return Status::InvalidArgument(
+        "row visibility must be OBSERVABLE_ONLY or INCLUDE_UNOBSERVABLE");
+  }
   RETURN_NOT_OK(SetFaultTolerant(true));
   RETURN_NOT_OK(SetReadMode(KuduScanner::READ_AT_SNAPSHOT));
   start_timestamp_ = start_timestamp;
   snapshot_timestamp_ = end_timestamp;
+  row_visibility_ = visibility;
   return Status::OK();
 }
 

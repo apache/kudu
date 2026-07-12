@@ -425,6 +425,12 @@ ScanRpcStatus KuduScanner::Data::SendScanRpc(const MonoTime& overall_deadline,
   if (configuration().row_format_flags() & KuduScanner::COLUMNAR_LAYOUT) {
     controller_.RequireServerFeature(TabletServerFeatures::COLUMNAR_LAYOUT_FEATURE);
   }
+  // Requiring the feature guarantees that a server that does not know about
+  // the diff-scan row_visibility field rejects the scan rather than silently
+  // returning results inconsistent with the requested mode.
+  if (configuration().include_unobservable_rows()) {
+    controller_.RequireServerFeature(TabletServerFeatures::DIFF_SCAN_ROW_VISIBILITY);
+  }
 
   if (next_req_.has_new_scan_request()) {
     // Only new scan requests require authz tokens. Scan continuations rely on
@@ -477,6 +483,9 @@ Status KuduScanner::Data::OpenTablet(const PartitionKey& partition_key,
       }
       if (configuration_.has_snapshot_timestamp()) {
         scan->set_snap_timestamp(configuration_.snapshot_timestamp());
+      }
+      if (configuration_.include_unobservable_rows()) {
+        scan->set_row_visibility(kudu::INCLUDE_UNOBSERVABLE);
       }
       break;
     case KuduScanner::READ_YOUR_WRITES:

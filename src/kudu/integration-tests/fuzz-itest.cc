@@ -627,7 +627,8 @@ class FuzzTest : public KuduTest {
   // the result to the saved values.
   void CheckDiffScan(int start_timestamp, int end_timestamp) {
     KuduScanner s(table_.get());
-    ASSERT_OK(s.SetDiffScan(start_timestamp, end_timestamp));
+    ASSERT_OK(s.SetDiffScan(start_timestamp, end_timestamp,
+                            KuduScanner::OBSERVABLE_ONLY));
     ASSERT_OK(s.Open());
 
     vector<ExpectedKeyValueRow> found;

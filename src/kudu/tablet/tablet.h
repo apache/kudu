@@ -534,8 +534,10 @@ class Tablet {
   friend class TestHighMemCompaction;
   template<typename T> friend class MultiThreadedTabletTest;
   template<typename T> friend class TestTablet;
-  FRIEND_TEST(DiffScanTest, TestDiffScan);
-  FRIEND_TEST(OrderedDiffScanWithDeletesTest, TestDiffScanAfterDeltaFlushRacesWithBatchUpdate);
+  FRIEND_TEST(DiffScanTest, DiffScan);
+  FRIEND_TEST(OrderedDiffScanWithDeletesTest, DiffScanAfterDeltaFlushRacesWithBatchUpdate);
+  FRIEND_TEST(OrderedDiffScanWithDeletesTest, UnobservableRowsDiskRowSet);
+  FRIEND_TEST(OrderedDiffScanWithDeletesTest, UnobservableRowsMultipleTransitions);
   FRIEND_TEST(TabletDeletedRowsetGcTest, TestGCDeletedRowsetsAfterMajorCompaction);
   FRIEND_TEST(TabletDeletedRowsetGcTest, TestGCDeletedRowsetsAfterMinorCompaction);
   FRIEND_TEST(TabletDeletedRowsetGcTest, TestGCDeletedRowsetsWithRedoFiles);

@@ -2673,6 +2673,7 @@ bool TabletServiceImpl::SupportsFeature(uint32_t feature) const {
     case TabletServerFeatures::QUIESCING:
     case TabletServerFeatures::BLOOM_FILTER_PREDICATE_V2:
     case TabletServerFeatures::COLUMNAR_LAYOUT_FEATURE:
+    case TabletServerFeatures::DIFF_SCAN_ROW_VISIBILITY:
       return true;
     case TabletServerFeatures::ARRAY_1D_COLUMN_TYPE:
       return PREDICT_TRUE(FLAGS_tserver_support_1d_array_columns);
@@ -3029,7 +3030,16 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
   {
     TRACE("Creating iterator");
     TRACE_EVENT0("tserver", "Create iterator");
-
+    // Reject row_visibility=INCLUDE_UNOBSERVABLE unless this is a diff scan
+    // (i.e. snap_start_timestamp is set). Enforcing this uniformly here
+    // covers every read mode and avoids any silent-ignore path further down.
+    if (PREDICT_FALSE(scan_pb.row_visibility() == INCLUDE_UNOBSERVABLE &&
+                      !scan_pb.has_snap_start_timestamp())) {
+      *error_code = TabletServerErrorPB::INVALID_SCAN_SPEC;
+      return Status::InvalidArgument(
+          "row_visibility=INCLUDE_UNOBSERVABLE may only be set on a diff scan "
+          "(requires snap_start_timestamp)");
+    }
     switch (scan_pb.read_mode()) {
       case UNKNOWN_READ_MODE: {
         *error_code = TabletServerErrorPB::INVALID_SCAN_SPEC;
@@ -3377,6 +3387,13 @@ Status TabletServiceImpl::HandleScanAtSnapshot(const NewScanRequestPB& scan_pb,
       return Status::InvalidArgument("scan start timestamp is only supported "
                                      "in ORDERED order mode");
     }
+    if (scan_pb.row_visibility() == INCLUDE_UNOBSERVABLE &&
+        projection.first_is_deleted_virtual_column_idx() == Schema::kColumnNotFound) {
+      *error_code = TabletServerErrorPB::INVALID_SCAN_SPEC;
+      return Status::InvalidArgument(
+          "row_visibility=INCLUDE_UNOBSERVABLE requires an IS_DELETED virtual column "
+          "in the projection");
+    }
   }
 
   // Based on the read mode, pick a timestamp and verify it.
@@ -3440,6 +3457,7 @@ Status TabletServiceImpl::HandleScanAtSnapshot(const NewScanRequestPB& scan_pb,
     tmp_snap_start_timestamp = Timestamp(scan_pb.snap_start_timestamp());
     opts.snap_to_exclude = MvccSnapshot(*tmp_snap_start_timestamp);
     opts.include_deleted_rows = true;
+    opts.row_visibility = scan_pb.row_visibility();
   }
 
   // Before we open / wait on anything check that the timestamp(s) are after

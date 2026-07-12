@@ -87,7 +87,8 @@ void SelectedDeltas::MergeFrom(const SelectedDeltas& other) {
   }
 }
 
-void SelectedDeltas::ToSelectionVector(SelectionVector* sel_vec) const {
+void SelectedDeltas::ToSelectionVector(SelectionVector* sel_vec,
+                                       bool include_unobservable_rows) const {
   DCHECK_EQ(rows_.size(), sel_vec->nrows());
 
   for (rowid_t idx = 0; idx < rows_.size(); idx++) {
@@ -121,10 +122,12 @@ void SelectedDeltas::ToSelectionVector(SelectionVector* sel_vec) const {
     // UNDO REINSERT | L      | D
     const auto& oldest = row->oldest;
     const auto& newest = row->newest;
-    if (((oldest.dtype == REDO && oldest.ctype == RowChangeList::kReinsert) ||
+    const bool unobservable =
+        ((oldest.dtype == REDO && oldest.ctype == RowChangeList::kReinsert) ||
          (oldest.dtype == UNDO && oldest.ctype == RowChangeList::kDelete)) &&
         ((newest.dtype == REDO && newest.ctype == RowChangeList::kDelete) ||
-         (newest.dtype == UNDO && newest.ctype == RowChangeList::kReinsert))) {
+         (newest.dtype == UNDO && newest.ctype == RowChangeList::kReinsert));
+    if (unobservable && !include_unobservable_rows) {
       sel_vec->SetRowUnselected(idx);
     } else {
       sel_vec->SetRowSelected(idx);

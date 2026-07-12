@@ -1909,11 +1909,13 @@ Status KuduScanner::SetSnapshotRaw(uint64_t snapshot_timestamp) {
   return Status::OK();
 }
 
-Status KuduScanner::SetDiffScan(uint64_t start_timestamp, uint64_t end_timestamp) {
+Status KuduScanner::SetDiffScan(uint64_t start_timestamp, uint64_t end_timestamp,
+    DiffScanRowVisibility visibility) {
   if (data_->open_) {
     return Status::IllegalState("Diff scan must be set before Open()");
   }
-  return data_->mutable_configuration()->SetDiffScan(start_timestamp, end_timestamp);
+  return data_->mutable_configuration()->SetDiffScan(
+      start_timestamp, end_timestamp, visibility);
 }
 
 Status KuduScanner::SetSelection(KuduClient::ReplicaSelection selection) {
@@ -2362,8 +2364,10 @@ Status KuduScanTokenBuilder::SetSnapshotMicros(uint64_t snapshot_timestamp_micro
   return Status::OK();
 }
 
-Status KuduScanTokenBuilder::SetDiffScan(uint64_t start_timestamp, uint64_t end_timestamp) {
-  return data_->mutable_configuration()->SetDiffScan(start_timestamp, end_timestamp);
+Status KuduScanTokenBuilder::SetDiffScan(uint64_t start_timestamp, uint64_t end_timestamp,
+    KuduScanner::DiffScanRowVisibility visibility) {
+  return data_->mutable_configuration()->SetDiffScan(
+      start_timestamp, end_timestamp, visibility);
 }
 
 Status KuduScanTokenBuilder::SetSnapshotRaw(uint64_t snapshot_timestamp) {

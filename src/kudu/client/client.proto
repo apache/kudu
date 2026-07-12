@@ -99,6 +99,10 @@ message ScanTokenPB {
   // that uses unknown features.
   enum Feature {
     Unknown = 0;
+    // The scan token sets the row_visibility field to control whether a
+    // diff scan returns rows whose entire lifecycle lies inside the diff
+    // scan's timestamp range. See RowVisibility in common.proto.
+    RowVisibility = 1;
   }
 
   // The feature set used by this scan token.
@@ -164,6 +168,12 @@ message ScanTokenPB {
   // Setting this indicates the scan should be a diff scan, the
   // snap_timestamp will be used as the snapshot end timestamp.
   optional fixed64 snap_start_timestamp = 19;
+
+  // See kudu.tserver.NewScanRequestPB.row_visibility. When set to
+  // INCLUDE_UNOBSERVABLE, the emitting client must also add
+  // ScanTokenPB.Feature::RowVisibility to feature_flags so that a
+  // deserializing client without this field's semantics fails cleanly.
+  optional RowVisibility row_visibility = 26 [default = OBSERVABLE_ONLY];
 
   // Sent by clients which previously executed CLIENT_PROPAGATED writes.
   // This updates the server's time so that no op will be assigned

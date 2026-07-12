@@ -49,6 +49,8 @@
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/memory/memory.h"
 
+// IWYU pragma: no_include "kudu/common/common.pb.h"
+
 DEFINE_bool(mrs_use_codegen, true, "whether the memrowset should use code "
             "generation for iteration");
 TAG_FLAG(mrs_use_codegen, hidden);
@@ -709,13 +711,21 @@ Status MemRowSet::Iterator::ApplyMutationsToProjectedRow(
   }
 
   if (opts_.snap_to_exclude && is_deleted_start && is_deleted_end) {
+    DCHECK(opts_.row_visibility != INCLUDE_UNOBSERVABLE || opts_.include_deleted_rows)
+        << "row_visibility=INCLUDE_UNOBSERVABLE requires a diff scan with "
+           "include_deleted_rows=true";
     // The row's lifespan was a subset of the time range. It can't be observed,
-    // so it should definitely not show up in the results.
+    // so it should definitely not show up in the results, unless the caller
+    // explicitly asked for unobservable rows via a diff scan, in which case
+    // we surface it as APPLIED_AND_DELETED so the IS_DELETED virtual column
+    // is set to true.
     //
     // Note: we condition on 'snap_to_exclude' because although insert_excluded
     // is false on some closed time range scans, it's also false in all open
     // time range scans, and we don't want this heuristic to fire in the latter case.
-    local_apply_status = APPLIED_AND_UNOBSERVABLE;
+    local_apply_status = opts_.row_visibility == INCLUDE_UNOBSERVABLE
+        ? APPLIED_AND_DELETED
+        : APPLIED_AND_UNOBSERVABLE;
   } else if (is_deleted_end && local_apply_status == APPLIED_AND_PRESENT) {
     // The row was selected and deleted. It may be omitted from the results,
     // depending on whether the results should include deleted rows or not.

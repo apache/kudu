@@ -3666,6 +3666,26 @@ TEST_F(ScannerScansTest, TestDiffScanErrors) {
   new_scan->set_snap_timestamp(before_insert.ToUint64());
   NO_FATALS(req_assert_invalid_argument(TabletServerErrorPB::INVALID_SNAPSHOT,
       "must be less than or equal to end timestamp"));
+
+  // Restore valid timestamps for the remaining subcases.
+  new_scan->set_snap_start_timestamp(before_insert.ToUint64());
+  new_scan->set_snap_timestamp(after_insert.ToUint64());
+
+  // row_visibility=INCLUDE_UNOBSERVABLE without snap_start_timestamp
+  // must be rejected regardless of read mode.
+  new_scan->clear_snap_start_timestamp();
+  new_scan->set_row_visibility(INCLUDE_UNOBSERVABLE);
+  NO_FATALS(req_assert_invalid_argument(TabletServerErrorPB::INVALID_SCAN_SPEC,
+      "row_visibility=INCLUDE_UNOBSERVABLE may only be set on a diff scan"));
+  new_scan->set_snap_start_timestamp(before_insert.ToUint64());
+
+  // row_visibility=INCLUDE_UNOBSERVABLE on a diff scan whose projection
+  // has no IS_DELETED virtual column must be rejected.
+  new_scan->clear_projected_columns();
+  ASSERT_OK(SchemaToColumnPBs(schema_, new_scan->mutable_projected_columns()));
+  NO_FATALS(req_assert_invalid_argument(TabletServerErrorPB::INVALID_SCAN_SPEC,
+      "row_visibility=INCLUDE_UNOBSERVABLE requires an IS_DELETED virtual "
+      "column in the projection"));
 }
 
 // Test requesting more rows from a scanner which doesn't exist

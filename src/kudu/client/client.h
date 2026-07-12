@@ -3133,8 +3133,30 @@ class KUDU_EXPORT KuduScanner {
 
   /// @cond PRIVATE_API
 
-  /// Set the start and end timestamp for a diff scan. The timestamps should be
-  /// encoded HT timestamps.
+  /// Controls which rows a diff scan returns. The values are kept in sync
+  /// with the wire enum kudu::RowVisibility so the same integer values
+  /// mean the same thing on both sides.
+  enum DiffScanRowVisibility {
+    /// Callers MUST pass either OBSERVABLE_ONLY or INCLUDE_UNOBSERVABLE
+    /// explicitly.
+    UNKNOWN_ROW_VISIBILITY = 0,
+
+    /// Return only rows observable at end_timestamp.
+    OBSERVABLE_ONLY = 1,
+
+    /// Also return rows whose full lifecycle (insert -> eventual delete) is
+    /// contained inside (start_timestamp, end_timestamp]. Such rows are
+    /// surfaced with the IS_DELETED virtual column set to true, so the
+    /// projection MUST include an IS_DELETED column.
+    INCLUDE_UNOBSERVABLE = 2,
+  };
+
+  /// Set the start and end timestamp for a diff scan. Optionally, request
+  /// that unobservable rows i.e. the rows whose full lifecycle (insert, then
+  /// eventual delete) is contained inside (start_timestamp, end_timestamp]
+  /// range also be returned. Such rows are surfaced with the IS_DELETED virtual
+  /// column set to true, so the caller MUST include an IS_DELETED column in
+  /// the projection to distinguish them from live rows.
   ///
   /// Additionally sets any other scan properties required by diff scans.
   ///
@@ -3146,9 +3168,11 @@ class KUDU_EXPORT KuduScanner {
   /// @param [in] end_timestamp
   ///   End timestamp to set in raw encoded form
   ///   (i.e. as returned by a previous call to a server).
+  /// @param [in] visibility
+  ///   Whether to include or exclude rows whose lifespan is fully contained in the range.
   /// @return Operation result status.
-  Status SetDiffScan(uint64_t start_timestamp, uint64_t end_timestamp)
-      WARN_UNUSED_RESULT KUDU_NO_EXPORT;
+  Status SetDiffScan(uint64_t start_timestamp, uint64_t end_timestamp,
+      DiffScanRowVisibility visibility) WARN_UNUSED_RESULT;
 
   /// @endcond
 
@@ -3424,9 +3448,10 @@ class KUDU_EXPORT KuduScanTokenBuilder {
 
   /// @cond PRIVATE_API
 
-  /// @copydoc KuduScanner::SetDiffScan
-  Status SetDiffScan(uint64_t start_timestamp, uint64_t end_timestamp)
-      WARN_UNUSED_RESULT KUDU_NO_EXPORT;
+  /// @copydoc KuduScanner::SetDiffScan(uint64_t,uint64_t,KuduScanner::DiffScanRowVisibility)
+  Status SetDiffScan(uint64_t start_timestamp, uint64_t end_timestamp,
+      KuduScanner::DiffScanRowVisibility visibility)
+      WARN_UNUSED_RESULT;
   /// @endcond
 
   /// @copydoc KuduScanner::SetTimeoutMillis

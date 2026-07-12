@@ -15,11 +15,14 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <algorithm>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <initializer_list>
 #include <map>
+#include <ostream>
 #include <memory>
 #include <string>
 #include <thread>
@@ -107,6 +110,21 @@ namespace client {
 
 static constexpr const int32_t kRecordCount = 1000;
 static constexpr const int32_t kBucketNum = 10;
+
+// Map the client-facing diff-scan row-visibility enum to its wire-level
+// counterpart.
+static kudu::RowVisibility ToWireRowVisibility(
+    KuduScanner::DiffScanRowVisibility v) {
+  switch (v) {
+    case KuduScanner::OBSERVABLE_ONLY:
+      return kudu::OBSERVABLE_ONLY;
+    case KuduScanner::INCLUDE_UNOBSERVABLE:
+      return kudu::INCLUDE_UNOBSERVABLE;
+    default:
+      LOG(FATAL) << "unexpected DiffScanRowVisibility: " << v;
+  }
+  return kudu::UNKNOWN_ROW_VISIBILITY;
+}
 
 class ScanTokenTest : public KuduTest {
  protected:
@@ -638,6 +656,63 @@ TEST_F(ScanTokenTest, TestScanTokens) {
     ASSERT_GE(8, tokens.size());
     ASSERT_EQ(200, CountRows(tokens));
     NO_FATALS(VerifyTabletInfo(tokens));
+  }
+
+  { // Diff-scan row_visibility survives serialize/deserialize, and the
+    // RowVisibility feature flag is present iff the caller opted into
+    // INCLUDE_UNOBSERVABLE.
+    //
+    // Anchor two HT timestamps that bracket a valid (start, end] window.
+    // The scan itself doesn't need any writes to happen inside the window
+    // for this to be a well-formed diff scan as we only care about the
+    // configuration round-trip through the token, not the row output.
+    KuduScanner anchor_start(table.get());
+    ASSERT_OK(anchor_start.SetReadMode(KuduScanner::READ_AT_SNAPSHOT));
+    ASSERT_OK(anchor_start.Open());
+    const uint64_t start_ts = client_->GetLatestObservedTimestamp();
+    ASSERT_NE(0, start_ts);
+    KuduScanner anchor_end(table.get());
+    ASSERT_OK(anchor_end.SetReadMode(KuduScanner::READ_AT_SNAPSHOT));
+    ASSERT_OK(anchor_end.Open());
+    const uint64_t end_ts = client_->GetLatestObservedTimestamp();
+    ASSERT_GT(end_ts, start_ts);
+
+    for (KuduScanner::DiffScanRowVisibility visibility :
+         {KuduScanner::OBSERVABLE_ONLY, KuduScanner::INCLUDE_UNOBSERVABLE}) {
+      SCOPED_TRACE(kudu::RowVisibility_Name(ToWireRowVisibility(visibility)));
+      vector<KuduScanToken*> tokens;
+      ElementDeleter deleter(&tokens);
+      KuduScanTokenBuilder builder(table.get());
+      ASSERT_OK(builder.SetDiffScan(start_ts, end_ts, visibility));
+      ASSERT_OK(builder.Build(&tokens));
+      ASSERT_FALSE(tokens.empty());
+
+      for (const auto* token : tokens) {
+        string buf;
+        ASSERT_OK(token->Serialize(&buf));
+
+        // Parse the raw serialized token and inspect the wire level fields
+        // directly. Both the row_visibility field and the feature_flags list
+        // must reflect what the caller requested.
+        ScanTokenPB pb;
+        ASSERT_TRUE(pb.ParseFromString(buf));
+        ASSERT_EQ(ToWireRowVisibility(visibility), pb.row_visibility());
+        const bool has_rv_flag = std::any_of(
+            pb.feature_flags().begin(), pb.feature_flags().end(),
+            [](int f) { return f == ScanTokenPB::RowVisibility; });
+        // Only INCLUDE_UNOBSERVABLE requires the RowVisibility feature flag and
+        // OBSERVABLE_ONLY is the default and does not need the flag.
+        ASSERT_EQ(visibility == KuduScanner::INCLUDE_UNOBSERVABLE, has_rv_flag);
+
+        // Deserialize into a scanner and confirm the configuration matches.
+        KuduScanner* scanner_raw;
+        ASSERT_OK(KuduScanToken::DeserializeIntoScanner(
+            client_.get(), buf, &scanner_raw));
+        unique_ptr<KuduScanner> scanner(scanner_raw);
+        ASSERT_EQ(visibility,
+                  scanner->data_->configuration().row_visibility());
+      }
+    }
   }
 }
 
