@@ -39,7 +39,6 @@
 #include "kudu/client/client.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus.proxy.h"// IWYU pragma: keep
-#include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/test_workload.h"
@@ -52,7 +51,6 @@
 #include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/tserver/mini_tablet_server.h"
-#include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_service.proxy.h" // IWYU pragma: keep
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
@@ -68,7 +66,6 @@ class AutoRebalancerTask;
 using kudu::client::KuduTable;
 using kudu::cluster::InternalMiniCluster;
 using kudu::cluster::InternalMiniClusterOptions;
-using kudu::tserver::ListTabletsResponsePB;
 using kudu::tserver::MiniTabletServer;
 using kudu::consensus::LeaderStepDownRequestPB;
 using kudu::consensus::LeaderStepDownResponsePB;
@@ -81,6 +78,7 @@ using std::vector;
 DECLARE_bool(auto_leader_rebalancing_enabled);
 DECLARE_bool(auto_rebalancing_enabled);
 DECLARE_bool(leader_rebalancing_ignore_soft_deleted_tables);
+DECLARE_double(leader_failure_max_missed_heartbeat_periods);
 DECLARE_int32(heartbeat_interval_ms);
 DECLARE_uint32(auto_leader_rebalancing_interval_seconds);
 DECLARE_uint32(auto_rebalancing_interval_seconds);
@@ -373,7 +371,29 @@ class LeaderRebalancerTest : public KuduTest {
     }
   }
 
+  // Repeatedly run leader rebalancing until the current workload table's
+  // leaders are balanced. The cluster churns under TSAN (natural elections plus
+  // any in flight replica moves), so a fixed retry count is racy; retry over a
+  // generous, TSAN aware time budget instead.
+  void RunUntilLeaderBalanced() {
+    master::AutoLeaderRebalancerTask* leader_rebalancer =
+        cluster_->mini_master()->master()->catalog_manager()->auto_leader_rebalancer();
+    AssertEventually([&] {
+      ASSERT_OK(leader_rebalancer->RunLeaderRebalancer());
+      SleepFor(MonoDelta::FromMilliseconds(FLAGS_heartbeat_interval_ms));
+      ASSERT_OK(CheckLeaderBalance());
+    }, MonoDelta::FromSeconds(kLeaderBalanceTimeoutSeconds));
+    NO_PENDING_FATALS();
+  }
+
  protected:
+  static constexpr int kLeaderBalanceTimeoutSeconds =
+#ifdef THREAD_SANITIZER
+      180;
+#else
+      60;
+#endif
+
   unique_ptr<InternalMiniCluster> cluster_;
   InternalMiniClusterOptions cluster_opts_;
   unique_ptr<TestWorkload> workload_;
@@ -404,55 +424,16 @@ TEST_F(LeaderRebalancerTest, FunctionalTestForDivided) {
     std::cout << leader.first << "  " << leader.second << '\n';
   }
 
-  // Try to do rebalance 10 times.
-  master::Master* master = cluster_->mini_master()->master();
-  int32_t retries = 10;
-  master::AutoLeaderRebalancerTask* leader_rebalancer =
-      master->catalog_manager()->auto_leader_rebalancer();
-  for (int i = 0; i < retries; i++) {
-    ASSERT_OK(leader_rebalancer->RunLeaderRebalancer());
-    SleepFor(MonoDelta::FromMilliseconds(FLAGS_heartbeat_interval_ms));
-  }
+  // Rebalance until the leaders are evenly distributed. CheckLeaderBalance
+  // (used inside the helper) enforces the same floor(avg)/ceil(avg) invariant,
+  // where avg is (tablet num) / (tablet server num).
+  RunUntilLeaderBalanced();
 
-  // Check the leader numbers of each tablet server. It should always be floor(avg)
-  // or ceil(avg), where the parameter avg is (tablet num) / (tablet server num).
-  double expected_leader_num = static_cast<double>(kNumTablets) / 3;
-  ASSERT_OK(GetLeaderDistribution(&leader_map, table_name()));
-  LOG(INFO) << "The leader distribution is " << '\n';
-  for (const auto& leader : leader_map) {
-    std::cout << leader.first << "  " << leader.second << '\n';
-  }
-  for (const auto& leader: leader_map) {
-    ASSERT_GE(leader.second, std::floor(expected_leader_num));
-    ASSERT_LE(leader.second, std::ceil(expected_leader_num));
-  }
-
-  // Try different leader distribution.
+  // Try a different starting leader distribution and rebalance again.
   std::vector<int32_t> leader_distribution2 = {0, 8, 1};
   ASSERT_OK(MakeLeaderDistribution(leader_distribution2, table_name()));
-
   SleepFor(MonoDelta::FromMilliseconds(3000));
-  ASSERT_OK(GetLeaderDistribution(&leader_map, table_name()));
-  LOG(INFO) << "The leader distribution is " << '\n';
-  for (const auto& leader : leader_map) {
-    std::cout << leader.first << "  " << leader.second << '\n';
-  }
-
-  for (int i = 0; i < retries; i++) {
-    SCOPED_TRACE(strings::Substitute("try $0", i));
-    ASSERT_OK(leader_rebalancer->RunLeaderRebalancer());
-    SleepFor(MonoDelta::FromMilliseconds(FLAGS_heartbeat_interval_ms));
-  }
-
-  ASSERT_OK(GetLeaderDistribution(&leader_map, table_name()));
-  LOG(INFO) << "The leader distribution is " << '\n';
-  for (const auto& leader : leader_map) {
-    std::cout << leader.first << "  " << leader.second << '\n';
-  }
-  for (const auto& leader: leader_map) {
-    ASSERT_GE(leader.second, std::floor(expected_leader_num));
-    ASSERT_LE(leader.second, std::ceil(expected_leader_num));
-  }
+  RunUntilLeaderBalanced();
 }
 
 TEST_F(LeaderRebalancerTest, FunctionalTestForNotDivided) {
@@ -475,54 +456,16 @@ TEST_F(LeaderRebalancerTest, FunctionalTestForNotDivided) {
     std::cout << leader.first << "  " << leader.second << '\n';
   }
 
-  // Try to do rebalance 10 times.
-  master::Master* master = cluster_->mini_master()->master();
-  int32_t retries = 10;
-  master::AutoLeaderRebalancerTask* leader_rebalancer =
-    master->catalog_manager()->auto_leader_rebalancer();
-  for (int i = 0; i < retries; i++) {
-    ASSERT_OK(leader_rebalancer->RunLeaderRebalancer());
-    SleepFor(MonoDelta::FromMilliseconds(FLAGS_heartbeat_interval_ms));
-  }
+  // Rebalance until the leaders are evenly distributed. CheckLeaderBalance
+  // (used inside the helper) enforces the same floor(avg)/ceil(avg) invariant,
+  // where avg is (tablet num) / (tablet server num).
+  RunUntilLeaderBalanced();
 
-  // Check the leader numbers of each tablet server. It should always be floor(avg)
-  // or ceil(avg), where the parameter avg is (tablet num) / (tablet server num).
-  double expected_leader_num = static_cast<double>(kNumTablets) / 3;
-  ASSERT_OK(GetLeaderDistribution(&leader_map, table_name()));
-  LOG(INFO) << "The leader distribution is " << '\n';
-  for (const auto& leader : leader_map) {
-    std::cout << leader.first << "  " << leader.second << '\n';
-  }
-  for (const auto& leader: leader_map) {
-    ASSERT_GE(leader.second, std::floor(expected_leader_num));
-    ASSERT_LE(leader.second, std::ceil(expected_leader_num));
-  }
-
-  // Try different leader distribution.
+  // Try a different starting leader distribution and rebalance again.
   std::vector<int32_t> leader_distribution2 = {8, 1, 1};
   ASSERT_OK(MakeLeaderDistribution(leader_distribution2, table_name()));
-
   SleepFor(MonoDelta::FromMilliseconds(3000));
-  ASSERT_OK(GetLeaderDistribution(&leader_map, table_name()));
-  LOG(INFO) << "The leader distribution is " << '\n';
-  for (const auto& leader : leader_map) {
-    std::cout << leader.first << "  " << leader.second << '\n';
-  }
-
-  for (int i = 0; i < retries; i++) {
-    ASSERT_OK(leader_rebalancer->RunLeaderRebalancer());
-    SleepFor(MonoDelta::FromMilliseconds(FLAGS_heartbeat_interval_ms));
-  }
-
-  ASSERT_OK(GetLeaderDistribution(&leader_map, table_name()));
-  LOG(INFO) << "The leader distribution is " << '\n';
-  for (const auto& leader : leader_map) {
-    std::cout << leader.first << "  " << leader.second << '\n';
-  }
-  for (const auto& leader: leader_map) {
-    ASSERT_GE(leader.second, std::floor(expected_leader_num));
-    ASSERT_LE(leader.second, std::ceil(expected_leader_num));
-  }
+  RunUntilLeaderBalanced();
 }
 
 // A single failed leader step-down RPC must not abort the whole rebalancing
@@ -566,7 +509,17 @@ TEST_F(LeaderRebalancerTest, TestStepDownFailureDoesNotAbortPass) {
 // since the cluster is no longer balanced.
 TEST_F(LeaderRebalancerTest, AddTserver) {
   const int kNumTServers = 3;
+  // Under sanitizer builds each raft group churns leadership via natural
+  // elections, and with many groups that churn perpetually creates a small
+  // leader imbalance that keeps the cluster from ever reaching an exactly
+  // balanced snapshot. Use a modest, divisible-by-4 count there for a clean
+  // balance target. In non-sanitizer builds, keep the original 59 to exercise a
+  // 'non-clean' balance target where floor(avg)/ceil(avg) differ.
+#if defined(THREAD_SANITIZER) || defined(ADDRESS_SANITIZER)
+  const int kNumTablets = 24;
+#else
   const int kNumTablets = 59;
+#endif
 
   cluster_opts_.num_tablet_servers = kNumTServers;
   FLAGS_leader_rebalancing_max_moves_per_round = 5;
@@ -589,23 +542,25 @@ TEST_F(LeaderRebalancerTest, AddTserver) {
   ASSERT_NE(replica_rebalancer, nullptr);
   ASSERT_NE(leader_rebalancer, nullptr);
 
-  // To wait replica_rebalancer execute some runs and reach balanced.
+  // To wait replica_rebalancer execute some runs and reach balanced. Until the
+  // replicas settle onto the new tserver it can't host its share of leaders, so
+  // leader balance would be unreachable.
   SleepFor(MonoDelta::FromSeconds(20 * FLAGS_auto_rebalancing_interval_seconds));
-  constexpr const int32_t retries = 40;
-  for (int i = 0; i < retries; i++) {
-    ASSERT_OK(leader_rebalancer->RunLeaderRebalancer());
-    if (CheckLeaderBalance().ok()) {
-      break;
-    }
-    SleepFor(MonoDelta::FromMilliseconds(FLAGS_heartbeat_interval_ms));
-  }
-
-  ASSERT_OK(CheckLeaderBalance());
+  RunUntilLeaderBalanced();
 }
 
 TEST_F(LeaderRebalancerTest, RestartTserver) {
   const int kNumTServers = 4;
+  // Under sanitizer builds keep the tablet count modest so natural-election
+  // churn doesn't perpetually prevent an exactly balanced leader snapshot;
+  // divisible by the tserver count for a clean balance target. In non-sanitizer
+  // builds keep the original 59 to exercise a 'non-clean' balance target where
+  // floor(avg)/ceil(avg) differ.
+#if defined(THREAD_SANITIZER) || defined(ADDRESS_SANITIZER)
+  const int kNumTablets = 24;
+#else
   const int kNumTablets = 59;
+#endif
   cluster_opts_.num_tablet_servers = kNumTServers;
   FLAGS_leader_rebalancing_max_moves_per_round = 5;
   ASSERT_OK(CreateAndStartCluster());
@@ -624,15 +579,7 @@ TEST_F(LeaderRebalancerTest, RestartTserver) {
   ASSERT_OK(cluster_->mini_tablet_server(0)->Restart());
   // To wait replica_rebalancer execute some runs and reach balanced.
   SleepFor(MonoDelta::FromSeconds(10 * FLAGS_auto_rebalancing_interval_seconds));
-  constexpr const int32_t retries = 20;
-  for (int i = 0; i < retries; i++) {
-    ASSERT_OK(leader_rebalancer->RunLeaderRebalancer());
-    if (CheckLeaderBalance().ok()) {
-      break;
-    }
-    SleepFor(MonoDelta::FromMilliseconds(FLAGS_heartbeat_interval_ms));
-  }
-  ASSERT_OK(CheckLeaderBalance());
+  RunUntilLeaderBalanced();
 }
 
 TEST_F(LeaderRebalancerTest, TestMaintenanceMode) {
@@ -641,6 +588,15 @@ TEST_F(LeaderRebalancerTest, TestMaintenanceMode) {
   constexpr const int kNumTablets = 10;
   cluster_opts_.num_tablet_servers = kNumTServers;
   FLAGS_leader_rebalancing_max_moves_per_round = 5;
+  // No tserver is shut down here, so keep leadership stable (see the note on the
+  // other placement-sensitive tests). We arrange the imbalance ourselves and
+  // then check that the rebalancer never moves a leader onto the maintenance
+  // mode tserver; a spurious election under TSAN could otherwise put one there
+  // on its own and make the check racy. Only relax the failure timeout under
+  // TSAN; other builds should exercise the default (~1.5s) failover behavior.
+#ifdef THREAD_SANITIZER
+  FLAGS_leader_failure_max_missed_heartbeat_periods = 15.0;
+#endif
   ASSERT_OK(CreateAndStartCluster());
 
   CreateWorkloadTable(kNumTablets, /*num_replicas*/ 3);
@@ -652,52 +608,45 @@ TEST_F(LeaderRebalancerTest, TestMaintenanceMode) {
       master->catalog_manager()->auto_leader_rebalancer();
   ASSERT_NE(leader_rebalancer, nullptr);
 
-  constexpr const int kCurrentTserverIndex = 0;
-  tserver::MiniTabletServer* mini_tserver = cluster_->mini_tablet_server(kCurrentTserverIndex);
-  // Sets the tserver state for a tserver to 'MAINTENANCE_MODE'.
+  constexpr const int kMmTserverIndex = 0;
+  const string mm_uuid = cluster_->mini_tablet_server(kMmTserverIndex)->uuid();
+  // Put the tserver into maintenance mode.
   ASSERT_OK(
-      master->ts_manager()->SetTServerState(mini_tserver->uuid(),
+      master->ts_manager()->SetTServerState(mm_uuid,
                                             TServerStatePB::MAINTENANCE_MODE,
                                             ChangeTServerStateRequestPB::ALLOW_MISSING_TSERVER,
                                             master->catalog_manager()->sys_catalog()));
   ASSERT_EQ(TServerStatePB::MAINTENANCE_MODE,
-            master->ts_manager()->GetTServerState(mini_tserver->uuid()));
-  // Restart the tserver to force transferring all leaders on it to make leaders not balanced.
-  mini_tserver->Shutdown();
-  SleepFor(MonoDelta::FromMilliseconds(5 * FLAGS_heartbeat_interval_ms));
-  ASSERT_OK(mini_tserver->Start());
+            master->ts_manager()->GetTServerState(mm_uuid));
 
-  // Try to run some 'leader rebalance' iterations. If mini_tserver is not in MAINTENANCE_MODE,
-  // it's enough to reach leader balanced, more tries is not necessary and less tries
-  // may not reach leader rebalanced.
-  constexpr const int32_t retries = std::max(kNumTablets / 2, 3);
-  for (int i = 0; i < retries; i++) {
+  // Move all leaders onto the other two tservers, leaving the maintenance mode
+  // tserver with none. A rebalancer that ignored maintenance mode would then
+  // want to move some leaders back onto it to even things out.
+  ASSERT_OK(MakeLeaderDistribution(
+      {0, kNumTablets / 2, kNumTablets - kNumTablets / 2}, table_name()));
+  std::map<string, int32_t> leader_map;
+  AssertEventually([&] {
+    ASSERT_OK(GetLeaderDistribution(&leader_map, table_name()));
+    ASSERT_EQ(0, leader_map[mm_uuid]);
+  }, MonoDelta::FromSeconds(kLeaderBalanceTimeoutSeconds));
+  NO_PENDING_FATALS();
+
+  // Run several rounds of leader rebalancing. Because the maintenance mode
+  // tserver is excluded as a transfer destination, the rebalancer can never
+  // even out the leaders: it must not move any onto the maintenance mode tserver.
+  constexpr const int32_t kRounds = std::max(kNumTablets / 2, 3);
+  for (int i = 0; i < kRounds; i++) {
     ASSERT_OK(leader_rebalancer->RunLeaderRebalancer());
-    if (CheckLeaderBalance().ok()) {
-      break;
-    }
     SleepFor(MonoDelta::FromMilliseconds(FLAGS_heartbeat_interval_ms));
   }
-  // This cluster cannot reach the state of rebalanced leadership distribution since 1 of the 3
-  // tservers is in maintenance mode.
-  Status status = CheckLeaderBalance();
-  ASSERT_TRUE(status.IsIllegalState()) << status.ToString();
 
-  {
-    // The tserver in maintenance mode should have no leaders.
-    std::shared_ptr<tserver::TabletServerServiceProxy> proxy =
-        cluster_->tserver_proxy(kCurrentTserverIndex);
-    tserver::ListTabletsRequestPB req;
-    ListTabletsResponsePB resp;
-    rpc::RpcController rpc;
-    rpc.set_timeout(MonoDelta::FromMilliseconds(1000));
-    ASSERT_OK(proxy->ListTablets(req, &resp, &rpc));
-    ASSERT_FALSE(resp.has_error());
-    ASSERT_FALSE(resp.status_and_schema().empty());
-    for (const auto& replica : resp.status_and_schema()) {
-      ASSERT_NE(consensus::RaftPeerPB::LEADER, replica.role());
-    }
-  }
+  // The maintenance mode tserver still holds no leaders (the rebalancer left it
+  // alone), and the cluster cannot reach a balanced distribution while it is
+  // excluded as a destination.
+  ASSERT_OK(GetLeaderDistribution(&leader_map, table_name()));
+  ASSERT_EQ(0, leader_map[mm_uuid]);
+  const Status status = CheckLeaderBalance();
+  ASSERT_TRUE(status.IsIllegalState()) << status.ToString();
 }
 
 // Check that the global tie breaker in RunLeaderRebalanceForTable prefers a
@@ -728,6 +677,17 @@ TEST_F(LeaderRebalancerTest, TestMaintenanceMode) {
 TEST_F(LeaderRebalancerTest, MultiTableLeaderBalance) {
   const int kNumTServers = 3;
   const int kNumTablets = 2;
+
+  // This test arranges and then verifies exact leader placements. Under TSAN,
+  // CPU starvation can exceed the default ~1.5s leader failure timeout and cause
+  // spurious elections that move leaders out from under the test, so make leader
+  // failure detection far more tolerant to keep leadership stable. This test
+  // does not shut any tserver down, so slower failover is harmless. Only relax
+  // the timeout under TSAN; other builds should exercise the default failover
+  // behavior, where a few re-elections during rebalancing are expected.
+#ifdef THREAD_SANITIZER
+  FLAGS_leader_failure_max_missed_heartbeat_periods = 15.0;
+#endif
 
   cluster_opts_.num_tablet_servers = kNumTServers;
   ASSERT_OK(CreateAndStartCluster());
@@ -771,8 +731,10 @@ TEST_F(LeaderRebalancerTest, MultiTableLeaderBalance) {
 
   using LeaderMap = std::map<string, int32_t>;
 
-  // Wait for the leadership moves from MakeLeaderDistribution to settle.
-  ASSERT_EVENTUALLY([&] {
+  // Wait for the leadership moves from MakeLeaderDistribution to settle. Under
+  // TSAN natural elections keep nudging leadership, so give this a generous,
+  // TSAN aware budget rather than the 30s default.
+  AssertEventually([&] {
     LeaderMap dist1;
     LeaderMap dist2;
     ASSERT_OK(GetLeaderDistribution(&dist1, kTable1Name));
@@ -781,7 +743,8 @@ TEST_F(LeaderRebalancerTest, MultiTableLeaderBalance) {
     ASSERT_EQ(1, dist1.at(lo_uuid));
     ASSERT_EQ(0, dist1.at(hi_uuid));
     ASSERT_EQ(kNumTablets, dist2.at(ts0_uuid));
-  });
+  }, MonoDelta::FromSeconds(kLeaderBalanceTimeoutSeconds));
+  NO_PENDING_FATALS();
 
   master::Master* master = cluster_->mini_master()->master();
 
@@ -1110,6 +1073,17 @@ TEST_P(FilterSoftDeletedTableTest, TestFilterSofteDeletedTable) {
   constexpr const int kNumReplicas = 3;
   constexpr const char* const soft_deleted_table = "soft_deleted_table";
 
+  // Keep leadership stable so the soft deleted table's distribution reflects the
+  // rebalancer's decisions rather than TSAN induced spurious elections: with the
+  // default ~1.5s failure timeout, random elections drift a small table toward a
+  // balanced distribution, which would defeat the "not rebalanced" check. This
+  // test does not shut any tserver down, so slower failover is harmless. Only
+  // relax the timeout under TSAN; other builds should exercise the default
+  // failover behavior.
+#ifdef THREAD_SANITIZER
+  FLAGS_leader_failure_max_missed_heartbeat_periods = 15.0;
+#endif
+
   cluster_opts_.num_tablet_servers = kNumTServers;
   ASSERT_OK(CreateAndStartCluster());
 
@@ -1136,33 +1110,50 @@ TEST_P(FilterSoftDeletedTableTest, TestFilterSofteDeletedTable) {
   // Delete the table 'soft_deleted_table'.
   ASSERT_OK(workload_->client()->SoftDeleteTable(soft_deleted_table, 3600));
 
-  // Try to run leader rebalance for 10 times.
-  int32_t retries = 10;
   master::Master* master = cluster_->mini_master()->master();
   master::AutoLeaderRebalancerTask* leader_rebalancer =
       master->catalog_manager()->auto_leader_rebalancer();
-  for (int i = 0; i < retries; i++) {
+
+  // The first (non-deleted) table always gets balanced: 3 leaders per tserver.
+  // Retry over a TSAN aware budget since the cluster churns under load.
+  AssertEventually([&] {
     ASSERT_OK(leader_rebalancer->RunLeaderRebalancer());
     SleepFor(MonoDelta::FromMilliseconds(FLAGS_heartbeat_interval_ms));
-  }
+    std::map<string, int32_t> leader_map;
+    ASSERT_OK(GetLeaderDistribution(&leader_map, first_table));
+    for (const auto& leader : leader_map) {
+      ASSERT_EQ(3, leader.second);
+    }
+  }, MonoDelta::FromSeconds(kLeaderBalanceTimeoutSeconds));
+  NO_PENDING_FATALS();
 
   std::map<string, int32_t> leader_map;
-  // The first table is leader rebalanced.
-  ASSERT_OK(GetLeaderDistribution(&leader_map, first_table));
-  for (const auto& leader: leader_map) {
-    ASSERT_EQ(leader.second, 3);
-  }
-
   ASSERT_OK(GetLeaderDistribution(&leader_map, soft_deleted_table));
-  // The soft deleted table is not leader rebalanced.
   if (FLAGS_leader_rebalancing_ignore_soft_deleted_tables) {
-    for (const auto& leader: leader_map) {
-      ASSERT_NE(leader.second, 3);
+    // The soft deleted table is skipped by the rebalancer, so it must not reach
+    // the balanced distribution (3 leaders on every tserver). Individual leader
+    // counts can still drift via natural elections, so only assert it is not
+    // fully balanced rather than that every count differs from 3.
+    bool fully_balanced = true;
+    for (const auto& leader : leader_map) {
+      if (leader.second != 3) {
+        fully_balanced = false;
+        break;
+      }
     }
+    ASSERT_FALSE(fully_balanced);
   } else {
-    for (const auto& leader: leader_map) {
-      ASSERT_EQ(leader.second, 3);
-    }
+    // The soft deleted table is rebalanced along with the rest.
+    AssertEventually([&] {
+      ASSERT_OK(leader_rebalancer->RunLeaderRebalancer());
+      SleepFor(MonoDelta::FromMilliseconds(FLAGS_heartbeat_interval_ms));
+      std::map<string, int32_t> m;
+      ASSERT_OK(GetLeaderDistribution(&m, soft_deleted_table));
+      for (const auto& leader : m) {
+        ASSERT_EQ(3, leader.second);
+      }
+    }, MonoDelta::FromSeconds(kLeaderBalanceTimeoutSeconds));
+    NO_PENDING_FATALS();
   }
 }
 
