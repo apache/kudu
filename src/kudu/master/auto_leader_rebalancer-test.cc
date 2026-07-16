@@ -87,6 +87,7 @@ DECLARE_uint32(auto_rebalancing_interval_seconds);
 DECLARE_uint32(auto_rebalancing_max_moves_per_server);
 DECLARE_uint32(auto_rebalancing_wait_for_replica_moves_seconds);
 DECLARE_uint32(leader_rebalancing_max_moves_per_round);
+DECLARE_bool(auto_leader_rebalancing_fail_moves_for_test);
 
 namespace kudu {
 namespace master {
@@ -117,10 +118,18 @@ class LeaderRebalancerTest : public KuduTest {
     if (cluster_) {
       cluster_->Shutdown();
     }
+    FLAGS_auto_leader_rebalancing_fail_moves_for_test = false;
     KuduTest::TearDown();
   }
 
   std::string table_name() { return workload_->table_name(); }
+
+  // Exposes the task's private test counter (the fixture is a friend of the
+  // task, individual TEST_F bodies are not).
+  int MovesScheduledThisRoundForTest() {
+    return cluster_->mini_master()->master()->catalog_manager()
+        ->auto_leader_rebalancer()->moves_scheduled_this_round_for_test_;
+  }
 
   Status RunLeaderRebalanceForTable(
       const scoped_refptr<TableInfo>& table_info,
@@ -514,6 +523,40 @@ TEST_F(LeaderRebalancerTest, FunctionalTestForNotDivided) {
     ASSERT_GE(leader.second, std::floor(expected_leader_num));
     ASSERT_LE(leader.second, std::ceil(expected_leader_num));
   }
+}
+
+// A single failed leader step-down RPC must not abort the whole rebalancing
+// pass. With every step-down forced to fail, the rebalancer should still
+// schedule the moves and return OK (before it was best-effort it returned the
+// RPC error and skipped the rest of the round).
+TEST_F(LeaderRebalancerTest, TestStepDownFailureDoesNotAbortPass) {
+  const int kNumTServers = 3;
+  const int kNumTablets = 6;
+  cluster_opts_.num_tablet_servers = kNumTServers;
+  ASSERT_OK(CreateAndStartCluster());
+  CreateWorkloadTable(kNumTablets, /*num_replicas*/ 3);
+
+  // Pile every leader onto ts0 so the rebalancer has transfers to schedule.
+  const string ts0_uuid = cluster_->mini_tablet_server(0)->uuid();
+  ASSERT_OK(MakeLeaderDistribution({kNumTablets, 0, 0}, table_name()));
+  std::map<string, int32_t> leader_map;
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(GetLeaderDistribution(&leader_map, table_name()));
+    // Over the per-tserver target, so moves will be scheduled.
+    ASSERT_GT(leader_map[ts0_uuid], kNumTablets / kNumTServers);
+  });
+
+  master::AutoLeaderRebalancerTask* leader_rebalancer =
+      cluster_->mini_master()->master()->catalog_manager()->auto_leader_rebalancer();
+
+  // Force every step-down RPC to fail. The pass must treat each failure as
+  // best-effort and still return OK instead of aborting the round.
+  FLAGS_auto_leader_rebalancing_fail_moves_for_test = true;
+  ASSERT_OK(leader_rebalancer->RunLeaderRebalancer());
+
+  // The failure path was actually exercised: moves were scheduled (and all
+  // failed), yet the pass still succeeded.
+  ASSERT_GT(MovesScheduledThisRoundForTest(), 0);
 }
 
 // Create a cluster, and create a table,

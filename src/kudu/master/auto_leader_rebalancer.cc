@@ -96,6 +96,13 @@ DEFINE_bool(leader_rebalancing_ignore_soft_deleted_tables, false,
 TAG_FLAG(leader_rebalancing_ignore_soft_deleted_tables, advanced);
 TAG_FLAG(leader_rebalancing_ignore_soft_deleted_tables, runtime);
 
+DEFINE_bool(auto_leader_rebalancing_fail_moves_for_test, false,
+            "Force every leader step-down RPC issued by the per-table pass of "
+            "the leader rebalancer (RunLeaderRebalanceForTable) to fail. This "
+            "is only used for testing.");
+TAG_FLAG(auto_leader_rebalancing_fail_moves_for_test, unsafe);
+TAG_FLAG(auto_leader_rebalancing_fail_moves_for_test, hidden);
+
 DECLARE_bool(auto_leader_rebalancing_enabled);
 
 namespace kudu {
@@ -431,16 +438,35 @@ Status AutoLeaderRebalancerTask::RunLeaderRebalanceForTable(
     }
 
     vector<Sockaddr> resolved;
-    RETURN_NOT_OK(host_port->ResolveAddresses(&resolved));
+    if (Status s = host_port->ResolveAddresses(&resolved); !s.ok()) {
+      WARN_NOT_OK(s, Substitute("leader transfer for tablet $0: could not resolve $1",
+                                task.first, host_port->ToString()));
+      continue;
+    }
     ConsensusServiceProxy proxy(messenger_, resolved[0], host_port->host());
-    RETURN_NOT_OK(proxy.LeaderStepDown(request, &response, &rpc));
-    leader_transfer_count++;
+    // A single leader transfer is best effort. A transient failure (an RPC
+    // timeout, the target briefly unavailable, or an election in flight) should
+    // not abort the whole rebalancing pass and skip the remaining tablets and
+    // tables; the next round recomputes and retries.
+    Status s = PREDICT_FALSE(FLAGS_auto_leader_rebalancing_fail_moves_for_test)
+        ? Status::ServiceUnavailable("TEST: forced leader step-down failure")
+        : proxy.LeaderStepDown(request, &response, &rpc);
+    if (!s.ok()) {
+      WARN_NOT_OK(s, Substitute("leader transfer for tablet $0 from $1 to $2 failed",
+                                task.first, leader_uuid, task.second.second));
+      continue;
+    }
     if (!response.has_error()) {
+      leader_transfer_count++;
       VLOG(1) << Substitute("leader transfer table: $0, tablet_id: $1, from: $2 to: $3",
                             table_data.name(),
                             task.first,
                             leader_uuid,
                             task.second.second);
+    } else {
+      LOG(WARNING) << Substitute(
+          "leader transfer for tablet $0 (from $1 to $2) failed: $3",
+          task.first, leader_uuid, task.second.second, response.error().ShortDebugString());
     }
   }
   // @TODO(duyuqi)
