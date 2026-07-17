@@ -38,9 +38,11 @@
 #include <utility>
 #include <vector>
 
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 
 #include "kudu/gutil/basictypes.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/join.h"
@@ -56,6 +58,7 @@
 #include "kudu/tools/ksck_results.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/tools/tool_replica_util.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
@@ -99,6 +102,15 @@ using std::unordered_map;
 using std::unordered_set;
 using std::vector;
 using strings::Substitute;
+
+DEFINE_bool(prefer_follower_replica_moves, true,
+            "When true, among equally imbalanced table/move candidates the "
+            "rebalancer prefers replica moves whose source tablet server "
+            "hosts a non-leader replica for that table, when that information is "
+            "available from the cluster health report. When false, no such "
+            "preference is applied. Moving a leader replica may still be chosen "
+            "when necessary or when follower availability is unknown.");
+TAG_FLAG(prefer_follower_replica_moves, advanced);
 
 namespace kudu {
 namespace tools {
@@ -1331,8 +1343,10 @@ RebalancerTool::IntraLocationRunner::IntraLocationRunner(
     : AlgoBasedRunner(rebalancer,
                       std::move(ignored_tservers),
                       max_moves_per_server,
-                      std::move(deadline)),
-      location_(std::move(location)) {
+                      deadline),
+      location_(std::move(location)),
+      algorithm_(rebalance::TwoDimensionalGreedyAlgo::EqualSkewOption::PICK_RANDOM,
+                 FLAGS_prefer_follower_replica_moves) {
 }
 
 RebalancerTool::CrossLocationRunner::CrossLocationRunner(

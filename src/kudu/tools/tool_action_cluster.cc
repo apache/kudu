@@ -450,6 +450,7 @@ unique_ptr<Mode> BuildClusterMode() {
         .AddOptionalParameter("move_replicas_from_ignored_tservers")
         .AddOptionalParameter("move_single_replicas")
         .AddOptionalParameter("output_replica_distribution_details")
+        .AddOptionalParameter("prefer_follower_replica_moves")
         .AddOptionalParameter("enable_range_rebalancing")
         .AddOptionalParameter("report_only")
         .AddOptionalParameter("tables")

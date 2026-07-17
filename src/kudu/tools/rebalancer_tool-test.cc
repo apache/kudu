@@ -730,6 +730,75 @@ TEST_P(RebalanceParamTest, Rebalance) {
   NO_FATALS(ClusterVerifier(cluster_.get()).CheckCluster());
 }
 
+// Verify that '--prefer_follower_replica_moves' is accepted by the
+// CLI (an unregistered flag would abort the tool) and that the cluster still
+// ends up balanced regardless of its value. This is a wiring/regression guard
+// that the flag is registered and reaches the rebalance code path -- it does
+// not verify that the leader-vs-follower preference is honored, since both
+// values must yield a balanced cluster. The leader-vs-follower behavior itself
+// is covered by rebalance_algo-test.cc.
+class RebalancePreferFollowerTest :
+    public AdminCliTest,
+    public ::testing::WithParamInterface<bool> {
+};
+INSTANTIATE_TEST_SUITE_P(, RebalancePreferFollowerTest, ::testing::Bool());
+TEST_P(RebalancePreferFollowerTest, Rebalance) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+  const bool prefer_follower_moves = GetParam();
+  constexpr auto kNumTservers = 7;
+  constexpr auto kNumTables = 5;
+  constexpr auto kRepFactor = 3;
+  const string table_name_pattern = "prefer_follower_test_table_$0";
+  constexpr auto kTserverUnresponsiveMs = 3000;
+  constexpr auto kNumTableHashPartitions = 3;
+  constexpr auto kNumTableRangePartitions = 0;
+  const vector<string> kMasterFlags = {
+    Substitute("--tserver_unresponsive_timeout_ms=$0", kTserverUnresponsiveMs),
+  };
+
+  FLAGS_num_tablet_servers = kNumTservers;
+  FLAGS_num_replicas = kRepFactor;
+  NO_FATALS(BuildAndStart({}, kMasterFlags));
+
+  ASSERT_OK(CreateUnbalancedTables(
+      cluster_.get(), client_.get(), schema_, table_name_pattern, kNumTables,
+      kRepFactor, kRepFactor + 1, kNumTservers, kTserverUnresponsiveMs,
+      kNumTableHashPartitions, kNumTableRangePartitions));
+
+  const vector<string> tool_args = {
+    "cluster",
+    "rebalance",
+    cluster_->master()->bound_rpc_addr().ToString(),
+    "--move_single_replicas=enabled",
+    Substitute("--prefer_follower_replica_moves=$0",
+               prefer_follower_moves),
+  };
+
+  {
+    string out;
+    string err;
+    const Status s = RunKuduTool(tool_args, &out, &err);
+    ASSERT_TRUE(s.ok()) << ToolRunInfo(s, out, err);
+    ASSERT_STR_CONTAINS(out, "rebalancing is complete: cluster is balanced")
+        << "stderr: " << err;
+  }
+
+  // A second run should find nothing left to do.
+  {
+    string out;
+    string err;
+    const Status s = RunKuduTool(tool_args, &out, &err);
+    ASSERT_TRUE(s.ok()) << ToolRunInfo(s, out, err);
+    ASSERT_STR_CONTAINS(out,
+        "rebalancing is complete: cluster is balanced (moved 0 replicas)")
+        << "stderr: " << err;
+  }
+
+  NO_FATALS(cluster_->AssertNoCrashes());
+  NO_FATALS(ClusterVerifier(cluster_.get()).CheckCluster());
+}
+
 // Working around limitations of older libstdc++.
 static const unordered_set<string> kEmptySet = unordered_set<string>();
 
