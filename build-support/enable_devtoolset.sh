@@ -43,21 +43,29 @@ custom_run_at_rhel() {
 custom_run_at_sles() {
   # On SLES12 and SLES15, Kudu can be built both by gcc-8 and gcc-7 since
   # either one supports the C++17 standard. Prefer gcc-8 over gcc-7 if both
-  # compilers are present.
+  # compilers are present. On SLES15SP6, it's possible to build Kudu
+  # with gcc-13.
+  #
+  # NOTE: with GCC13, make sure libgcc_s1 is 13.3.0+git8781-150000.1.12.1
+  #       and later versions; see KUDU-3545 for details [1]
+  #
+  # [1] https://issues.apache.org/jira/browse/KUDU-3545
   local GCC_MAJOR_VERSION=
-  if /usr/bin/gcc-8 -v > /dev/null 2>&1 && /usr/bin/g++-8 -v > /dev/null 2>&1; then
+  if /usr/bin/gcc-13 -v > /dev/null 2>&1 && /usr/bin/g++-13 -v > /dev/null 2>&1; then
+    GCC_MAJOR_VERSION=13
+  elif /usr/bin/gcc-8 -v > /dev/null 2>&1 && /usr/bin/g++-8 -v > /dev/null 2>&1; then
     GCC_MAJOR_VERSION=8
   elif /usr/bin/gcc-7 -v > /dev/null 2>&1 && /usr/bin/g++-7 -v > /dev/null 2>&1; then
     GCC_MAJOR_VERSION=7
   fi
 
   if [ -z "$GCC_MAJOR_VERSION" ]; then
-    echo "ERROR: found neither gcc/g++-8 nor gcc/g++-7 in /usr/bin"
+    echo "ERROR: didn't find any of gcc/g++-{7,8,13} in /usr/bin"
     exit 2
   fi
 
   # If ccache was on the PATH and CC/CXX have not already been set,
-  # set them to gcc-[7,8] specific ccache helper scripts, enabling ccache.
+  # set them to gcc-<version> specific ccache helper scripts, enabling ccache.
   if which ccache > /dev/null 2>&1 && [ ! "$CC" -a ! "$CXX" ]; then
     export CC="$ROOT/ccache-gcc-$GCC_MAJOR_VERSION/cc"
     export CXX="$ROOT/ccache-gcc-$GCC_MAJOR_VERSION/c++"
