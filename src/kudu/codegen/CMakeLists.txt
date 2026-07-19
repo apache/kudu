@@ -118,6 +118,17 @@ set(IR_FLAGS
   ${PREFIXED_IR_PP_DEFS}
   ${PREFIXED_IR_INCLUDES})
 
+if (APPLE AND "${ARCH_NAME}" MATCHES "x86_64")
+  if ("${COMPILER_FAMILY}" STREQUAL "clang" AND
+      "${COMPILER_VERSION}" VERSION_GREATER_EQUAL "17.0.0")
+    # Add mapping of Float16 into regular 'full-size' float on x86_64
+    # since 16-bit float doesn't seem to be available at least when
+    # compiling with CLANG from Xcode 26.x. Without this mapping, compilation
+    # on macOS Tahoe (26.x) fails with Xcode 26.x on x86_64 machines.
+    set(IR_FLAGS ${IR_FLAGS} -D_Float16=float)
+  endif ()
+endif ()
+
 # Provide clang with any explicitly defined system prefix path. If there isn't
 # one, clang will search for it on its own.
 if(COMPILER_SYSTEM_PREFIX_PATH)
