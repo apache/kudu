@@ -24,6 +24,7 @@
 #include <memory>
 #include <optional>
 #include <ostream>
+#include <random>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -48,8 +49,8 @@
 #include "kudu/fs/block_manager.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
-#include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/join.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/delta_key.h"
 #include "kudu/tablet/delta_stats.h"
 #include "kudu/tablet/deltafile.h"
@@ -59,6 +60,7 @@
 #include "kudu/tablet/rowset.h"
 #include "kudu/tablet/rowset_metadata.h"
 #include "kudu/tablet/rowset_tree.h" // IWYU pragma: keep
+#include "kudu/tablet/tablet-harness.h"
 #include "kudu/tablet/tablet-test-base.h"
 #include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tablet/tablet.pb.h"
@@ -1731,6 +1733,200 @@ TYPED_TEST(TestTablet, TestDiffScanUnobservableOperations) {
 
   ASSERT_OK(this->tablet()->Flush());
   NO_FATALS(diff_scan_no_rows());
+}
+
+// Regression coverage for the "skip stable_sort for already sorted batch"
+// optimization in Tablet::BulkCheckPresence. Its correctness rests on the fact
+// that a non-decreasing input is already a valid stable-sorted output, so a
+// pre-sorted batch and any permutation of it must resolve to identical presence
+// results. These tests lock that in and also assert that the pre_sorted /
+// needed_sort bookkeeping counters move as expected.
+//
+// The schema uses a non-negative INT32 key: a non-negative INT32 encodes into a
+// byte string whose ordering matches its numeric ordering, so a batch presented
+// in ascending key order is guaranteed to reach BulkCheckPresence already sorted
+// (fast path), while a descending/shuffled batch is guaranteed to require the
+// stable_sort (slow path). This lets the tests assert exactly which path was taken.
+class BulkCheckPresenceTest : public KuduTabletTest {
+ public:
+  BulkCheckPresenceTest()
+      : KuduTabletTest(Schema({ ColumnSchema("key", INT32),
+                                ColumnSchema("val", INT32) },
+                              /*key_columns=*/1)) {}
+
+ protected:
+  // A single row operation described independently of its position in a batch,
+  // so the same logical batch can be replayed in different orders.
+  struct RowSpec {
+    RowOperationsPB::Type type;
+    int32_t key;
+    int32_t val;
+  };
+
+  // Applies 'specs' as a single write batch (in the given vector order) against
+  // the current tablet. The backing KuduPartialRow objects are kept alive for
+  // the duration of the WriteBatch() call, matching LocalTabletWriter's
+  // pointer-into-caller semantics.
+  Status WriteBatchInOrder(const vector<RowSpec>& specs) {
+    LocalTabletWriter writer(tablet().get(), &client_schema_);
+    vector<KuduPartialRow> rows;
+    rows.reserve(specs.size());
+    for (const auto& spec : specs) {
+      KuduPartialRow row(&client_schema_);
+      RETURN_NOT_OK(row.SetInt32(0, spec.key));
+      RETURN_NOT_OK(row.SetInt32(1, spec.val));
+      rows.emplace_back(std::move(row));
+    }
+    vector<LocalTabletWriter::RowOp> ops;
+    ops.reserve(specs.size());
+    for (size_t i = 0; i < specs.size(); i++) {
+      ops.emplace_back(specs[i].type, &rows[i]);
+    }
+    return writer.WriteBatch(ops);
+  }
+
+  // Dumps the full tablet contents in primary-key order, using an ordered
+  // (merge) iterator — the same scan mode that production queries use when
+  // key order matters. Two independently-populated tablets that hold the same
+  // logical rows will produce identical output regardless of how they were
+  // written.
+  vector<string> DumpSortedRows() {
+    unique_ptr<RowwiseIterator> iter;
+    CHECK_OK(tablet()->NewOrderedRowIterator(client_schema_, &iter));
+    CHECK_OK(iter->Init(nullptr));
+    vector<string> lines;
+    CHECK_OK(IterateToStringList(iter.get(), &lines));
+    return lines;
+  }
+
+  int64_t PreSortedCount() {
+    return tablet()->metrics()->bulk_check_batches_pre_sorted->value();
+  }
+  int64_t NeededSortCount() {
+    return tablet()->metrics()->bulk_check_batches_needed_sort->value();
+  }
+};
+
+// A batch whose keys arrive already in ascending order must skip the
+// stable_sort (fast path), and the std::unique dedup that follows must
+// still retain the first op for a repeated key.
+TEST_F(BulkCheckPresenceTest, TestSortSkippedForAscendingBatch) {
+  const int kNumKeys = 200;
+
+  const int64_t pre_sorted_before = PreSortedCount();
+  const int64_t needed_sort_before = NeededSortCount();
+
+  // Ascending batch. Key 0 appears twice back-to-back: an INSERT followed by an
+  // INSERT_IGNORE with a different value. Equal adjacent keys keep the batch
+  // non-decreasing (so it stays on the fast path), and the first op (val 0)
+  // must win over the ignored second op (val 999).
+  vector<RowSpec> specs;
+  specs.push_back({ RowOperationsPB::INSERT, 0, 0 });
+  specs.push_back({ RowOperationsPB::INSERT_IGNORE, 0, 999 });
+  for (int k = 1; k < kNumKeys; k++) {
+    specs.push_back({ RowOperationsPB::INSERT, k, k * 10 });
+  }
+  ASSERT_OK(WriteBatchInOrder(specs));
+
+  // The sort was skipped: only the pre-sorted counter advanced.
+  ASSERT_EQ(pre_sorted_before + 1, PreSortedCount());
+  ASSERT_EQ(needed_sort_before, NeededSortCount());
+
+  // All distinct keys are present, and the first op for the repeated key won.
+  vector<string> rows = DumpSortedRows();
+  ASSERT_EQ(kNumKeys, rows.size());
+  ASSERT_EQ(R"((int32 key=0, int32 val=0))", rows[0]);
+}
+
+// A batch whose keys arrive out of order must take the stable_sort (slow path)
+// yet resolve to exactly the same presence results / tablet contents as the
+// equivalent pre-sorted batch. This is the core correctness invariant behind
+// the sort-skip optimization.
+TEST_F(BulkCheckPresenceTest, TestShuffledBatchMatchesSortedBatch) {
+  const int kNumKeys = 200;
+
+  // The canonical set of distinct rows, in ascending key order.
+  vector<RowSpec> sorted_specs;
+  sorted_specs.reserve(kNumKeys);
+  for (int k = 0; k < kNumKeys; k++) {
+    sorted_specs.push_back({ RowOperationsPB::INSERT, k, k * 10 });
+  }
+
+  // Apply the sorted batch to the fixture's tablet; it should take the fast
+  // path, and we record the resulting contents to compare against.
+  const int64_t pre_sorted_before = PreSortedCount();
+  const int64_t needed_sort_before = NeededSortCount();
+  ASSERT_OK(WriteBatchInOrder(sorted_specs));
+  ASSERT_EQ(pre_sorted_before + 1, PreSortedCount());
+  ASSERT_EQ(needed_sort_before, NeededSortCount());
+  const vector<string> sorted_rows = DumpSortedRows();
+  ASSERT_EQ(kNumKeys, sorted_rows.size());
+
+  // Build a shuffled permutation of the same set. A fixed seed keeps the test
+  // deterministic, and a 200-key shuffle is never already ascending, so the
+  // slow path is guaranteed.
+  vector<RowSpec> shuffled_specs = sorted_specs;
+  std::mt19937 rng(12345);
+  std::shuffle(shuffled_specs.begin(), shuffled_specs.end(), rng);
+
+  // Apply the shuffled batch to a brand-new, empty tablet so the same keys can
+  // be re-inserted without colliding with the first tablet's rows. Resetting
+  // 'harness_' forces a fresh filesystem layout to be formatted for the new
+  // root directory (rather than reopening the existing one).
+  harness_.reset();
+  SetUpTestTablet(GetTestPath("fs_root_shuffled"));
+  ASSERT_OK(WriteBatchInOrder(shuffled_specs));
+  ASSERT_EQ(1, NeededSortCount());
+  ASSERT_EQ(0, PreSortedCount());
+  const vector<string> shuffled_rows = DumpSortedRows();
+
+  // Same presence results regardless of input ordering.
+  ASSERT_EQ(sorted_rows, shuffled_rows);
+}
+
+// Regression test for the case where every op in a batch already has a result
+// (e.g. per-row decode validation failures) before BulkCheckPresence runs.
+// In that scenario the build loop that populates keys_and_indexes skips every
+// op, leaving the vector empty. The is_sorted flag retains its default value
+// of 'true', which must NOT cause bulk_check_batches_pre_sorted to be
+// incremented — there was no sorted batch; there was simply nothing to do.
+//
+// Trigger: UPDATE ops that specify only the primary-key column and omit all
+// value columns produce an empty row-changelist. The decoder records a per-row
+// InvalidArgument("No fields updated") failure on each such op, setting
+// has_result()=true before BulkCheckPresence is reached.
+TEST_F(BulkCheckPresenceTest, TestAllOpsPreFilledDoesNotIncrementSortCounter) {
+  const int64_t pre_before = PreSortedCount();
+  const int64_t needed_before = NeededSortCount();
+
+  // Build UPDATE ops that each omit the non-key column so the decoder marks
+  // every op failed ("No fields updated") before BulkCheckPresence runs.
+  LocalTabletWriter writer(tablet().get(), &client_schema_);
+  const int kNumOps = 10;
+  vector<KuduPartialRow> rows;
+  rows.reserve(kNumOps);
+  for (int k = 0; k < kNumOps; k++) {
+    KuduPartialRow row(&client_schema_);
+    ASSERT_OK(row.SetInt32(0, k));
+    rows.emplace_back(std::move(row));
+  }
+  vector<LocalTabletWriter::RowOp> ops;
+  ops.reserve(kNumOps);
+  for (int i = 0; i < kNumOps; i++) {
+    ops.emplace_back(RowOperationsPB::UPDATE, &rows[i]);
+  }
+
+  // Per-row decode failures do not abort the batch (DecodeWriteOperations still
+  // returns OK), so ApplyRowOperations — and therefore BulkCheckPresence — runs.
+  // WriteBatch surfaces the first per-row error as its own return status.
+  Status s = writer.WriteBatch(ops);
+  ASSERT_TRUE(s.IsInvalidArgument()) << "expected per-row decode error, got: "
+                                     << s.ToString();
+
+  // Neither counter must have moved: an all-skipped batch is not a "pre-sorted
+  // batch" and must not be counted as one.
+  ASSERT_EQ(pre_before, PreSortedCount());
+  ASSERT_EQ(needed_before, NeededSortCount());
 }
 
 } // namespace tablet

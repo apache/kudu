@@ -1155,34 +1155,61 @@ Status Tablet::BulkCheckPresence(const IOContext* io_context, WriteOpState* op_s
   // so load it up top.
   RowOp* const * row_ops_base = op_state->row_ops().data();
 
-  // Run all of the ops through the RowSetTree.
+  // Run all of the ops through the RowSetTree. While building the vector,
+  // also detect whether the incoming batch of keys is already in ascending
+  // order so we can skip the stable_sort below on the common bulk-ingest
+  // case where the client already presents keys in sorted order.
   vector<pair<Slice, int>> keys_and_indexes;
   keys_and_indexes.reserve(num_ops);
+  bool is_sorted = true;
   for (int i = 0; i < num_ops; i++) {
     RowOp* op = row_ops_base[i];
     // If the op already failed in validation, or if we've got the original result
     // filled in already during replay, then we don't need to consult the RowSetTree.
     if (op->has_result() || op->orig_result_from_log) continue;
-    keys_and_indexes.emplace_back(op->key_probe->encoded_key_slice(), i);
+    const Slice& key = op->key_probe->encoded_key_slice();
+    // Once 'is_sorted' has flipped, short-circuit the compare: a well-predicted
+    // branch is cheaper than a Slice::compare (memcmp) per op on the slow path.
+    if (is_sorted && !keys_and_indexes.empty() &&
+        key < keys_and_indexes.back().first) {
+      is_sorted = false;
+    }
+    keys_and_indexes.emplace_back(key, i);
   }
+
+  // Every op in the batch either failed validation or already has a result
+  // from WAL replay, so there are no keys to look up in the RowSetTree.
+  // Treat this the same as the num_ops == 0 early return above: skip the
+  // sort, dedup, and metrics entirely rather than falsely incrementing
+  // bulk_check_batches_pre_sorted just because is_sorted was never flipped.
+  if (PREDICT_FALSE(keys_and_indexes.empty())) return Status::OK();
 
   // Sort the query points by their probe keys, retaining the equivalent indexes.
   //
   // It's important to do a stable-sort here so that the 'unique' call
   // below retains only the _first_ op the user specified, instead of
-  // an arbitrary one.
+  // an arbitrary one. When the batch was already in ascending order
+  // (detected above), the input is already a valid stable-sorted output
+  // (since ops with equal keys remain in their original relative order),
+  // so we can skip the sort entirely.
   //
   // TODO(todd): benchmark stable_sort vs using sort() and falling back to
   // comparing 'a.second' when a.first == b.first. Some microbenchmarks
   // seem to indicate stable_sort is actually faster.
-  // TODO(todd): could also consider weaving in a check in the loop above to
-  // see if the incoming batch is already totally-ordered and in that case
-  // skip this sort and std::unique call.
-  std::stable_sort(keys_and_indexes.begin(), keys_and_indexes.end(),
-                   [](const pair<Slice, int>& a,
-                      const pair<Slice, int>& b) {
-                     return a.first < b.first;
-                   });
+  if (!is_sorted) {
+    std::stable_sort(keys_and_indexes.begin(), keys_and_indexes.end(),
+                     [](const pair<Slice, int>& a,
+                        const pair<Slice, int>& b) {
+                       return a.first < b.first;
+                     });
+  }
+  if (metrics_) {
+    if (is_sorted) {
+      metrics_->bulk_check_batches_pre_sorted->Increment();
+    } else {
+      metrics_->bulk_check_batches_needed_sort->Increment();
+    }
+  }
   // If the batch has more than one operation for the same row, then we can't
   // use the up-front presence optimization on those operations, since the
   // first operation may change the result of the later presence-checks.

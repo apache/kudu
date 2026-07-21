@@ -174,6 +174,23 @@ METRIC_DEFINE_histogram(tablet, scan_duration_user_time,
                         kudu::MetricLevel::kDebug,
                         60000LU, 1);
 
+// These counters track the fast-path / slow-path split of the sort-skip
+// optimisation in Tablet::BulkCheckPresence.
+METRIC_DEFINE_counter(tablet, bulk_check_batches_pre_sorted,
+                      "BulkCheckPresence Pre-Sorted Batches",
+                      kudu::MetricUnit::kRequests,
+                      "Number of write batches whose keys arrived already in "
+                      "increasing order, allowing the stable_sort in "
+                      "Tablet::BulkCheckPresence to be skipped.",
+                      kudu::MetricLevel::kDebug);
+METRIC_DEFINE_counter(tablet, bulk_check_batches_needed_sort,
+                      "BulkCheckPresence Sorted Batches",
+                      kudu::MetricUnit::kRequests,
+                      "Number of write batches whose keys arrived out of "
+                      "order, requiring a stable_sort inside "
+                      "Tablet::BulkCheckPresence.",
+                      kudu::MetricLevel::kDebug);
+
 METRIC_DEFINE_counter(tablet, bloom_lookups, "Bloom Filter Lookups",
                       kudu::MetricUnit::kProbes,
                       "Number of times a bloom filter was consulted",
@@ -484,6 +501,8 @@ TabletMetrics::TabletMetrics(const scoped_refptr<MetricEntity>& entity)
     MINIT(key_file_lookups),
     MINIT(delta_file_lookups),
     MINIT(mrs_lookups),
+    MINIT(bulk_check_batches_pre_sorted),
+    MINIT(bulk_check_batches_needed_sort),
     MINIT(bytes_flushed),
     MINIT(deleted_rowset_gc_bytes_deleted),
     MINIT(undo_delta_block_gc_bytes_deleted),

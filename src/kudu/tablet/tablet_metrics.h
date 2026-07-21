@@ -75,6 +75,11 @@ struct TabletMetrics {
   scoped_refptr<Counter> delta_file_lookups;
   scoped_refptr<Counter> mrs_lookups;
 
+  // Fast-path / slow-path split for the sort-skip optimisation in
+  // Tablet::BulkCheckPresence.
+  scoped_refptr<Counter> bulk_check_batches_pre_sorted;
+  scoped_refptr<Counter> bulk_check_batches_needed_sort;
+
   // Operation stats.
   scoped_refptr<Counter> bytes_flushed;
   scoped_refptr<Counter> deleted_rowset_gc_bytes_deleted;
