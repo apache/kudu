@@ -54,7 +54,9 @@ using std::unordered_map;
 using std::vector;
 using strings::Substitute;
 
+DECLARE_bool(rowset_deltas_size_include_undo);
 DECLARE_double(compaction_minimum_improvement);
+DECLARE_double(rowset_undo_deltas_budget_weight);
 DECLARE_int64(budgeted_compaction_target_rowset_size);
 
 DEFINE_bool(compaction_force_small_rowset_tradeoff, false,
@@ -472,9 +474,23 @@ RowSetInfo::RowSetInfo(RowSet* rs, double init_cdf)
   extra_->base_and_deltas_size_bytes = rs->OnDiskBaseDataSizeWithDeltas();
   extra_->size_bytes = rs->OnDiskSize();
   extra_->has_bounds = rs->GetBounds(&extra_->min_key, &extra_->max_key).ok();
+  // Compute the budget-weighted size for compaction knapsack accounting.
+  // OnDiskBaseDataSizeWithDeltas() returns the exact physical footprint
+  // (base + redo + undo). We apply --rowset_deltas_size_include_undo and
+  // --rowset_undo_deltas_budget_weight here so that the low-level accessor
+  // stays free of policy concerns.
+  uint64_t undo_bytes = rs->OnDiskUndoDeltasSize();
+  uint64_t budget_bytes;
+  if (FLAGS_rowset_deltas_size_include_undo) {
+    uint64_t base_and_redo_bytes = extra_->base_and_deltas_size_bytes - undo_bytes;
+    budget_bytes = base_and_redo_bytes +
+        static_cast<uint64_t>(FLAGS_rowset_undo_deltas_budget_weight *
+                               static_cast<double>(undo_bytes));
+  } else {
+    budget_bytes = extra_->base_and_deltas_size_bytes - undo_bytes;
+  }
   base_and_deltas_size_mb_ =
-      std::max(implicit_cast<int>(extra_->base_and_deltas_size_bytes / 1024 / 1024),
-                                  kMinSizeMb);
+      std::max(implicit_cast<int>(budget_bytes / 1024 / 1024), kMinSizeMb);
 }
 
 uint64_t RowSetInfo::size_bytes(const ColumnId& col_id) const {

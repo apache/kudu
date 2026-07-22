@@ -291,6 +291,14 @@ uint64_t DuplicatingRowSet::OnDiskBaseDataSizeWithDeltas() const {
   return size;
 }
 
+uint64_t DuplicatingRowSet::OnDiskUndoDeltasSize() const {
+  uint64_t size = 0;
+  for (const shared_ptr<RowSet> &rs : new_rowsets_) {
+    size += rs->OnDiskUndoDeltasSize();
+  }
+  return size;
+}
+
 shared_ptr<RowSetMetadata> DuplicatingRowSet::metadata() {
   return shared_ptr<RowSetMetadata>(reinterpret_cast<RowSetMetadata *>(NULL));
 }

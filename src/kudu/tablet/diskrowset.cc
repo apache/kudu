@@ -88,6 +88,27 @@ DEFINE_bool(rowset_deltas_size_include_undo, true,
             "data and redo delta size will be taken into account during "
             "computation of upper and lower bounds for a set of rowsets");
 TAG_FLAG(rowset_deltas_size_include_undo, advanced);
+TAG_FLAG(rowset_deltas_size_include_undo, runtime);
+
+DEFINE_double(rowset_undo_deltas_budget_weight, 1.0,
+              "The fractional weight applied to UNDO delta sizes when computing "
+              "the disk budget for rowset selection during merge compaction, "
+              "when --rowset_deltas_size_include_undo is enabled. A value of "
+              "1.0 (default) means UNDO deltas count at their full on-disk size "
+              "towards the budget. Lowering this allows rowsets with large UNDO "
+              "deltas to be selected for compaction more readily, at the cost of "
+              "reduced protection against OOM. Must be in [0.0, 1.0].");
+TAG_FLAG(rowset_undo_deltas_budget_weight, experimental);
+TAG_FLAG(rowset_undo_deltas_budget_weight, runtime);
+
+static bool ValidateUndoDeltasBudgetWeight(const char* flagname, double value) {
+  if (value < 0.0 || value > 1.0) {
+    LOG(ERROR) << flagname << ": value must be in [0.0, 1.0], got " << value;
+    return false;
+  }
+  return true;
+}
+DEFINE_validator(rowset_undo_deltas_budget_weight, &ValidateUndoDeltasBudgetWeight);
 
 using kudu::cfile::BloomFileWriter;
 using kudu::fs::BlockCreationTransaction;
@@ -822,10 +843,13 @@ uint64_t DiskRowSet::OnDiskBaseDataColumnSize(const ColumnId& col_id) const {
 uint64_t DiskRowSet::OnDiskBaseDataSizeWithDeltas() const {
   DiskRowSetSpace drss;
   GetDiskRowSetSpaceUsage(&drss);
-  if (FLAGS_rowset_deltas_size_include_undo) {
-    return drss.base_data_size + drss.redo_deltas_size + drss.undo_deltas_size;
-  }
-  return drss.base_data_size + drss.redo_deltas_size;
+  return drss.base_data_size + drss.redo_deltas_size + drss.undo_deltas_size;
+}
+
+uint64_t DiskRowSet::OnDiskUndoDeltasSize() const {
+  DiskRowSetSpace drss;
+  GetDiskRowSetSpaceUsage(&drss);
+  return drss.undo_deltas_size;
 }
 
 size_t DiskRowSet::DeltaMemStoreSize() const {

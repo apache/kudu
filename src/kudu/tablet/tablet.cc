@@ -2589,6 +2589,17 @@ Status Tablet::CaptureConsistentIterators(
                                        rs->ToString()));
       ret.emplace_back(std::move(iwb));
     }
+    // Record the number of DiskRowSet iterators opened for this scan.
+    // Excludes the MRS iterator (always 1) and any txn_memrowset iterators.
+    // A rising P99 in this metric indicates growing tablet height.
+    if (metrics_) {
+      // ret always contains 1 main-MRS entry plus txn_memrowsets.size() txn-MRS
+      // entries added unconditionally above; underflow is impossible by construction.
+      DCHECK_GE(ret.size(), 1 + components_->txn_memrowsets.size());
+      const size_t num_rs_iters =
+          ret.size() - 1 - components_->txn_memrowsets.size();
+      metrics_->rowsets_per_scan->Increment(num_rs_iters);
+    }
     *iters = std::move(ret);
     return Status::OK();
   }
@@ -2601,6 +2612,16 @@ Status Tablet::CaptureConsistentIterators(
                           Substitute("Could not create iterator for rowset $0",
                                      rs->ToString()));
     ret.emplace_back(std::move(iwb));
+  }
+
+  // Record the number of DiskRowSet iterators opened for this scan.
+  if (metrics_) {
+    // ret always contains 1 main-MRS entry plus txn_memrowsets.size() txn-MRS
+    // entries added unconditionally above; underflow is impossible by construction.
+    DCHECK_GE(ret.size(), 1 + components_->txn_memrowsets.size());
+    const size_t num_rs_iters =
+        ret.size() - 1 - components_->txn_memrowsets.size();
+    metrics_->rowsets_per_scan->Increment(num_rs_iters);
   }
 
   // Swap results into the parameters.

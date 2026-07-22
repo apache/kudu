@@ -38,12 +38,14 @@
 
 #include "kudu/clock/logical_clock.h"
 #include "kudu/common/common.pb.h"
+#include "kudu/common/iterator.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row.h"
 #include "kudu/common/row_changelist.h"
 #include "kudu/common/rowblock.h"
 #include "kudu/common/rowblock_memory.h"
 #include "kudu/common/rowid.h"
+#include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/timestamp.h"
 #include "kudu/consensus/log_anchor_registry.h"
@@ -69,15 +71,18 @@
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/tablet_mem_trackers.h"
 #include "kudu/tablet/tablet_metadata.h"
+#include "kudu/tablet/tablet_metrics.h"
 #include "kudu/util/env.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/hdr_histogram.h"
 #include "kudu/util/memory/arena.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/random.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
-#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
@@ -1526,6 +1531,104 @@ TEST_F(TestCompaction, TestRowsPerBlockValidator) {
       "rowset_compaction_rows_per_block_enable_validation", "false"));
   ASSERT_NE("", google::SetCommandLineOption("rowset_compaction_rows_per_block", "0"));
   ASSERT_NE("", google::SetCommandLineOption("rowset_compaction_rows_per_block", "101"));
+}
+
+// 'rowsets_per_scan' histogram tests.
+// Uses a full tablet with real DiskRowSets. CaptureConsistentIterators()
+// records the number of DiskRowSet iterators opened per scan into the
+// rowsets_per_scan histogram; a rising P99 indicates growing tablet height.
+class TestRowsetsPerScan : public KuduRowSetTest {
+ public:
+  TestRowsetsPerScan()
+      : KuduRowSetTest(CreateSchema()) {}
+
+  static Schema CreateSchema() {
+    SchemaBuilder b;
+    CHECK_OK(b.AddKeyColumn("key", STRING));
+    CHECK_OK(b.AddColumn("val", INT32));
+    return b.BuildWithoutIds();
+  }
+
+  // Insert rows and flush, creating one DiskRowSet.
+  void InsertRowsAndFlush(int first_row, int count) {
+    LocalTabletWriter writer(tablet().get(), &client_schema());
+    KuduPartialRow row(&client_schema());
+    for (int i = first_row; i < first_row + count; i++) {
+      ASSERT_OK(row.SetStringCopy("key", Substitute("key-$0", i)));
+      ASSERT_OK(row.SetInt32("val", i));
+      ASSERT_OK(writer.Insert(row));
+    }
+    ASSERT_OK(tablet()->Flush());
+  }
+
+  // Run a full scan and return the row count.
+  // As a side effect, CaptureConsistentIterators() fires and records into
+  // the rowsets_per_scan histogram.
+  Status RunFullScanAndCountRows(int* count = nullptr) {
+    unique_ptr<RowwiseIterator> iter;
+    RETURN_NOT_OK(tablet()->NewOrderedRowIterator(client_schema(), &iter));
+    ScanSpec spec;
+    RETURN_NOT_OK(iter->Init(&spec));
+    int fetched = 0;
+    RETURN_NOT_OK(SilentIterateToStringList(iter.get(), &fetched));
+    if (count) {
+      *count = fetched;
+    }
+    return Status::OK();
+  }
+};
+
+// After creating N DiskRowSets, a full scan opens exactly N rowset iterators.
+// The metric must record TotalCount() == number of scans and P100 == N.
+TEST_F(TestRowsetsPerScan, TestRowsetsPerScanFullScan) {
+  constexpr int kNumRowsets = 3;
+  constexpr int kRowsPerRowset = 5;
+
+  for (int rs = 0; rs < kNumRowsets; rs++) {
+    NO_FATALS(InsertRowsAndFlush(rs * kRowsPerRowset, kRowsPerRowset));
+  }
+  ASSERT_EQ(kNumRowsets, tablet()->num_rowsets());
+
+  auto* metrics = tablet()->metrics();
+  ASSERT_NE(nullptr, metrics);
+
+  // Sanity: no scans yet.
+  ASSERT_EQ(0, metrics->rowsets_per_scan->TotalCount());
+
+  int rows_read = 0;
+  ASSERT_OK(RunFullScanAndCountRows(&rows_read));
+  ASSERT_EQ(kNumRowsets * kRowsPerRowset, rows_read);
+
+  ASSERT_EQ(1, metrics->rowsets_per_scan->TotalCount())
+      << "One scan should produce one histogram entry";
+  ASSERT_EQ(static_cast<uint64_t>(kNumRowsets),
+            metrics->rowsets_per_scan->histogram()->ValueAtPercentile(100.0))
+      << "Full scan should have opened exactly kNumRowsets DiskRowSet iterators";
+
+  // Second scan: total count must increase.
+  ASSERT_OK(RunFullScanAndCountRows());
+  ASSERT_EQ(2, metrics->rowsets_per_scan->TotalCount());
+}
+
+// rowsets_per_scan P100 grows as new DiskRowSets are flushed.
+TEST_F(TestRowsetsPerScan, TestRowsetsPerScanGrowsWithRowsetCount) {
+  constexpr int kMaxRowsets = 4;
+  auto* metrics = tablet()->metrics();
+  ASSERT_NE(nullptr, metrics);
+
+  for (int n = 1; n <= kMaxRowsets; n++) {
+    SCOPED_TRACE(Substitute("n=$0 rowsets", n));
+    NO_FATALS(InsertRowsAndFlush((n - 1) * 3, 3));
+    ASSERT_EQ(n, tablet()->num_rowsets());
+
+    const uint64_t scans_before = metrics->rowsets_per_scan->TotalCount();
+    ASSERT_OK(RunFullScanAndCountRows());
+    ASSERT_EQ(scans_before + 1, metrics->rowsets_per_scan->TotalCount());
+
+    ASSERT_GE(metrics->rowsets_per_scan->histogram()->ValueAtPercentile(100.0),
+              static_cast<uint64_t>(n))
+        << "rowsets_per_scan P100 should grow as more DiskRowSets are added";
+  }
 }
 
 } // namespace tablet

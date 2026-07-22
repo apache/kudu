@@ -43,6 +43,7 @@
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/hdr_histogram.h"
 #include "kudu/util/knapsack_solver.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/process_memory.h"
 #include "kudu/util/status.h"
@@ -539,8 +540,50 @@ Status BudgetedCompactionPolicy::PickRowSets(
     if (log) {
       LOG_STRING(INFO, log) << "No rowsets to compact";
     }
+    // No compactable candidates means no oversized rowsets exist; reset health
+    // to 0 so a previously-set degraded state doesn't linger after oversized
+    // rowsets are GC'd, the budget is raised, or the tablet settles to a single
+    // DiskRowSet.
+    if (metrics_) {
+      metrics_->compaction_budget_skip_health->set_value(0);
+    }
     *quality = 0.0;
     return Status::OK();
+  }
+
+  // Check for rowsets individually exceeding the budget, which means they can
+  // never be selected for compaction under the current settings. Report via
+  // the health gauge and a throttled WARNING so operators can take action.
+  if (metrics_) {
+    int oversized_count = 0;
+    // Use int64_t to avoid overflow when accumulating multiple int-typed
+    // base_and_deltas_size_mb() values.
+    int64_t total_oversized_mb = 0;
+    for (const RowSetInfo& cand : asc_min_key) {
+      if (cand.base_and_deltas_size_mb() > static_cast<int>(size_budget_mb_)) {
+        ++oversized_count;
+        total_oversized_mb += cand.base_and_deltas_size_mb();
+      }
+    }
+    metrics_->compaction_budget_skip_health->set_value(oversized_count > 0 ? 1 : 0);
+    if (oversized_count > 0) {
+      KLOG_EVERY_N_SECS(WARNING, 300) << Substitute(
+          "$0 rowset(s) individually exceed the compaction budget ($1 MB) "
+          "and will never be selected for merge compaction under the current "
+          "settings. Affected rowsets will accumulate indefinitely and may "
+          "cause slow scans. Combined budget-accounting size of oversized "
+          "rowsets: $2 MB (base + REDO deltas; UNDO deltas included or "
+          "weighted per --rowset_deltas_size_include_undo and "
+          "--rowset_undo_deltas_budget_weight). Note: actual memory usage "
+          "during compaction will be higher due to decompression. "
+          "Use the rowset count and combined size as a reference when choosing "
+          "a remedy, keeping available physical memory in mind to avoid OOM: "
+          "(1) gradually increase --tablet_compaction_budget_mb, or "
+          "(2) if --rowset_deltas_size_include_undo is enabled, lower "
+          "--rowset_undo_deltas_budget_weight to reduce the per-rowset "
+          "budget contribution of UNDO deltas.",
+          oversized_count, size_budget_mb_, total_oversized_mb);
+    }
   }
 
   // The best set of rowsets chosen so far, and the value attained by that choice.
@@ -642,6 +685,7 @@ Status BudgetedCompactionPolicy::PickRowSets(
   }
 
   picked->swap(best_solution.rowsets);
+
   DumpCompactionSVGToFile(asc_min_key, *picked);
 
   return Status::OK();

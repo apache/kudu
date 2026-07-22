@@ -18,6 +18,7 @@
 #include "kudu/tablet/compaction_policy.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <initializer_list>
 #include <limits>
 #include <memory>
@@ -29,7 +30,7 @@
 #include <utility>
 #include <vector>
 
-#include <gflags/gflags_declare.h>
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
@@ -37,7 +38,9 @@
 #include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/schema.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stringprintf.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -49,22 +52,33 @@
 #include "kudu/tablet/rowset_tree.h"
 #include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tablet/tablet.h"
+#include "kudu/tablet/tablet_metrics.h"
 #include "kudu/util/env.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/logging_test_util.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+using std::make_shared;
 using std::nullopt;
 using std::string;
+using std::unique_ptr;
 using std::vector;
+using strings::Substitute;
 
+DECLARE_bool(rowset_deltas_size_include_undo);
 DECLARE_double(compaction_minimum_improvement);
 DECLARE_double(compaction_small_rowset_tradeoff);
+DECLARE_double(rowset_undo_deltas_budget_weight);
 DECLARE_uint32(tablet_compaction_budget_mb);
 DECLARE_int64(budgeted_compaction_target_rowset_size);
+
+// Forward-declare the tablet metric entity prototype (defined in tablet.cc).
+METRIC_DECLARE_entity(tablet);
 
 namespace kudu {
 namespace tablet {
@@ -98,9 +112,9 @@ TEST_F(TestCompactionPolicy, TestBudgetedSelection) {
    * [A ------- b]
    */
   const RowSetVector rowsets = {
-    std::make_shared<MockDiskRowSet>("C", "c"),
-    std::make_shared<MockDiskRowSet>("B", "a"),
-    std::make_shared<MockDiskRowSet>("A", "b")
+    make_shared<MockDiskRowSet>("C", "c"),
+    make_shared<MockDiskRowSet>("B", "a"),
+    make_shared<MockDiskRowSet>("A", "b")
   };
 
   constexpr auto kBudgetMb = 1000; // Enough to select all rowsets.
@@ -230,9 +244,9 @@ TEST_F(TestCompactionPolicy, TestSupportAdjust) {
   // overlap.
   const auto big_rowset_size = FLAGS_budgeted_compaction_target_rowset_size * 0.9;
   const RowSetVector big_rowsets = {
-    std::make_shared<MockDiskRowSet>("A", "B", big_rowset_size),
-    std::make_shared<MockDiskRowSet>("A", "B", big_rowset_size),
-    std::make_shared<MockDiskRowSet>("B", "C", big_rowset_size),
+    make_shared<MockDiskRowSet>("A", "B", big_rowset_size),
+    make_shared<MockDiskRowSet>("A", "B", big_rowset_size),
+    make_shared<MockDiskRowSet>("B", "C", big_rowset_size),
   };
   NO_FATALS(RunTestCase(big_rowsets, kBudgetMb, &picked, &quality));
   ASSERT_EQ(2, picked.size());
@@ -243,9 +257,9 @@ TEST_F(TestCompactionPolicy, TestSupportAdjust) {
   // For small rowsets, compaction should favor compacting all three.
   const auto small_rowset_size = FLAGS_budgeted_compaction_target_rowset_size * 0.3;
   const RowSetVector small_rowsets = {
-    std::make_shared<MockDiskRowSet>("A", "B", small_rowset_size),
-    std::make_shared<MockDiskRowSet>("A", "B", small_rowset_size),
-    std::make_shared<MockDiskRowSet>("B", "C", small_rowset_size),
+    make_shared<MockDiskRowSet>("A", "B", small_rowset_size),
+    make_shared<MockDiskRowSet>("A", "B", small_rowset_size),
+    make_shared<MockDiskRowSet>("B", "C", small_rowset_size),
   };
   picked.clear();
   NO_FATALS(RunTestCase(small_rowsets, kBudgetMb, &picked, &quality));
@@ -258,7 +272,7 @@ static RowSetVector LoadFile(const string& name) {
   const string path = JoinPathSegments(GetTestExecutableDirectory(), name);
   faststring data;
   CHECK_OK_PREPEND(ReadFileToString(Env::Default(), path, &data),
-                   strings::Substitute("unable to load test data file $0", path));
+                   Substitute("unable to load test data file $0", path));
   const vector<string> lines = strings::Split(data.ToString(), "\n");
   for (const auto& line : lines) {
     if (line.empty() || line[0] == '#') continue;
@@ -289,8 +303,8 @@ TEST_F(TestCompactionPolicy, TestYcsbCompaction) {
 
     CompactionSelection picked;
     double quality = 0.0;
-    LOG_TIMING(INFO, strings::Substitute("computing compaction with $0MB budget",
-                                         budget_mb)) {
+    LOG_TIMING(INFO, Substitute("computing compaction with $0MB budget",
+                                budget_mb)) {
       ASSERT_OK(policy.PickRowSets(tree, &picked, &quality, /*log=*/nullptr));
     }
     LOG(INFO) << "quality=" << quality;
@@ -317,9 +331,9 @@ TEST_F(TestCompactionPolicy, KUDU2251) {
 
   // Same arrangement as in TestBudgetedSelection.
   const RowSetVector rowsets = {
-    std::make_shared<MockDiskRowSet>("C", "c", 1L << 31),
-    std::make_shared<MockDiskRowSet>("B", "a", 1L << 32),
-    std::make_shared<MockDiskRowSet>("A", "b", 1L << 33)
+    make_shared<MockDiskRowSet>("C", "c", 1L << 31),
+    make_shared<MockDiskRowSet>("B", "a", 1L << 32),
+    make_shared<MockDiskRowSet>("A", "b", 1L << 33)
   };
 
   constexpr auto kBudgetMb = 1L << 30; // Enough to select all rowsets.
@@ -347,7 +361,7 @@ TEST_F(TestCompactionPolicy, TestSmallRowsetCompactionReducesRowsetCount) {
     picked.clear();
 
     // [0 - 1][1 - 2] ... [98 - 99][99 - 100] built up over time.
-    rowsets.push_back(std::make_shared<MockDiskRowSet>(
+    rowsets.push_back(make_shared<MockDiskRowSet>(
         StringPrintf("%010d", i),
         StringPrintf("%010d", i + 1),
         rowset_size));
@@ -373,15 +387,15 @@ TEST_F(TestCompactionPolicy, TestSmallRowsetTradeoffFactor) {
   const double target_size_bytes =
       FLAGS_budgeted_compaction_target_rowset_size;
   for (const auto divisor : { 32, 16, 8, 4, 2, 1 }) {
-    SCOPED_TRACE(strings::Substitute("divisor = $0", divisor));
+    SCOPED_TRACE(Substitute("divisor = $0", divisor));
     picked.clear();
     const auto size_bytes = target_size_bytes / divisor;
     /*
      * [A -- B][B -- C]
      */
     const RowSetVector rowsets = {
-      std::make_shared<MockDiskRowSet>("A", "B", size_bytes),
-      std::make_shared<MockDiskRowSet>("B", "C", size_bytes),
+      make_shared<MockDiskRowSet>("A", "B", size_bytes),
+      make_shared<MockDiskRowSet>("B", "C", size_bytes),
     };
     NO_FATALS(RunTestCase(rowsets, kBudgetMb, &picked, &quality));
 
@@ -406,9 +420,9 @@ TEST_F(TestCompactionPolicy, TestSmallRowsetTradeoffFactor) {
    * [A -- B][B -- C][C -- D]
    */
   const RowSetVector rowsets = {
-    std::make_shared<MockDiskRowSet>("A", "B", size_bytes),
-    std::make_shared<MockDiskRowSet>("B", "C", size_bytes),
-    std::make_shared<MockDiskRowSet>("C", "D", size_bytes),
+    make_shared<MockDiskRowSet>("A", "B", size_bytes),
+    make_shared<MockDiskRowSet>("B", "C", size_bytes),
+    make_shared<MockDiskRowSet>("C", "D", size_bytes),
   };
   NO_FATALS(RunTestCase(rowsets, kBudgetMb, &picked, &quality));
   ASSERT_EQ(rowsets.size(), picked.size());
@@ -430,12 +444,12 @@ TEST_F(TestCompactionPolicy, TestHeightBasedDominatesSizeBased) {
   constexpr auto kSmallRowSetSizeBytes = 8 * 1024 * 1024;
   constexpr auto kBudgetMb = 64;
   const RowSetVector rowsets = {
-    std::make_shared<MockDiskRowSet>("A", "B", kBigRowSetSizeBytes),
-    std::make_shared<MockDiskRowSet>("A", "B", kBigRowSetSizeBytes),
-    std::make_shared<MockDiskRowSet>("C", "D", kSmallRowSetSizeBytes),
-    std::make_shared<MockDiskRowSet>("D", "E", kSmallRowSetSizeBytes),
-    std::make_shared<MockDiskRowSet>("E", "F", kSmallRowSetSizeBytes),
-    std::make_shared<MockDiskRowSet>("F", "G", kSmallRowSetSizeBytes),
+    make_shared<MockDiskRowSet>("A", "B", kBigRowSetSizeBytes),
+    make_shared<MockDiskRowSet>("A", "B", kBigRowSetSizeBytes),
+    make_shared<MockDiskRowSet>("C", "D", kSmallRowSetSizeBytes),
+    make_shared<MockDiskRowSet>("D", "E", kSmallRowSetSizeBytes),
+    make_shared<MockDiskRowSet>("E", "F", kSmallRowSetSizeBytes),
+    make_shared<MockDiskRowSet>("F", "G", kSmallRowSetSizeBytes),
   };
 
   CompactionSelection picked;
@@ -452,8 +466,8 @@ double ComputeAverageRowsetHeight(
     const vector<std::pair<string, string>>& intervals) {
   RowSetVector rowsets;
   for (const auto& interval : intervals) {
-    rowsets.push_back(std::make_shared<MockDiskRowSet>(interval.first,
-                                                       interval.second));
+    rowsets.push_back(make_shared<MockDiskRowSet>(interval.first,
+                                                  interval.second));
   }
   RowSetTree tree;
   CHECK_OK(tree.Reset(rowsets));
@@ -718,6 +732,296 @@ TEST_F(TestCompactionBudgetRuntimeFlag, TestFlagDrivesPickRowSets) {
     ASSERT_EQ(3, input.num_rowsets())
         << "Expected all 3 rowsets with budget=4 MB, got "
         << input.num_rowsets();
+  }
+}
+
+// MockDiskRowSet variant that exposes a separate UNDO delta size so that
+// 'rowset_undo_deltas_budget_weight' and 'rowset_deltas_size_include_undo'
+// affect base_and_deltas_size_mb() the same way they affect a real DiskRowSet.
+class MockDiskRowSetWithUndos : public MockDiskRowSet {
+ public:
+  MockDiskRowSetWithUndos(string first_key, string last_key,
+                          uint64_t base_and_redo_size,
+                          uint64_t undo_size)
+      : MockDiskRowSet(std::move(first_key), std::move(last_key),
+                       base_and_redo_size),
+        base_and_redo_size_(base_and_redo_size),
+        undo_size_(undo_size) {}
+
+  uint64_t OnDiskBaseDataSizeWithDeltas() const override {
+    return base_and_redo_size_ + undo_size_;
+  }
+  uint64_t OnDiskUndoDeltasSize() const override {
+    return undo_size_;
+  }
+
+ private:
+  const uint64_t base_and_redo_size_;
+  const uint64_t undo_size_;
+};
+
+// Policy-level metric tests.
+// Creates a real TabletMetrics object tied to a synthetic MetricEntity so
+// that BudgetedCompactionPolicy can populate gauges, then verifies the
+// metric values directly.
+class TestCompactionPolicyMetrics : public KuduTest {
+ protected:
+  void SetUp() override {
+    KuduTest::SetUp();
+    // Restore flag defaults before each test so tests don't affect each other.
+    FLAGS_tablet_compaction_budget_mb = 256;
+    FLAGS_rowset_deltas_size_include_undo = true;
+    FLAGS_rowset_undo_deltas_budget_weight = 1.0;
+
+    entity_ = METRIC_ENTITY_tablet.Instantiate(&registry_, "test-tablet");
+    metrics_ = std::make_unique<TabletMetrics>(entity_);
+  }
+
+  void RunPolicy(const RowSetVector& rowsets,
+                 int budget_mb,
+                 CompactionSelection* picked,
+                 double* quality) {
+    FLAGS_tablet_compaction_budget_mb = budget_mb;
+    RowSetTree tree;
+    ASSERT_OK(tree.Reset(rowsets));
+    BudgetedCompactionPolicy policy(metrics_.get());
+    ASSERT_OK(policy.PickRowSets(tree, picked, quality, /*log=*/nullptr));
+  }
+
+  MetricRegistry registry_;
+  scoped_refptr<MetricEntity> entity_;
+  unique_ptr<TabletMetrics> metrics_;
+};
+
+// A throttled WARNING log is emitted when an oversized rowset is detected.
+// This test must be declared first within TestCompactionPolicyMetrics
+// so that it runs before any other test in this fixture reaches the same
+// KLOG_EVERY_N_SECS call site in PickRowSets().
+TEST_F(TestCompactionPolicyMetrics, TestThrottledWarningLogOversizedRowset) {
+  constexpr int kBudgetMb = 128;
+
+  const RowSetVector rowsets = {
+    make_shared<MockDiskRowSet>("A", "Z", 10 * 1024 * 1024),
+    make_shared<MockDiskRowSet>("A", "Z", 400 * 1024 * 1024),
+  };
+
+  StringVectorSink sink;
+  ScopedRegisterSink reg(&sink);
+
+  CompactionSelection picked;
+  double quality = 0.0;
+  NO_FATALS(RunPolicy(rowsets, kBudgetMb, &picked, &quality));
+
+  const string all_logs = JoinStrings(sink.logged_msgs(), "\n");
+  ASSERT_STR_CONTAINS(all_logs,
+      Substitute("1 rowset(s) individually exceed the compaction budget ($0 MB)",
+                 kBudgetMb));
+}
+
+// Validator for 'rowset_undo_deltas_budget_weight' rejects out-of-range values.
+// Direct FLAGS_* assignment bypasses validators; gflags::SetCommandLineOption()
+// exercises ValidateUndoDeltasBudgetWeight() defined in diskrowset.cc.
+TEST_F(TestCompactionPolicyMetrics, TestFlagValidatorUndoDeltasBudgetWeight) {
+  for (const char* v : {"0.0", "0.5", "1.0"}) {
+    SCOPED_TRACE(Substitute("value=$0", v));
+    ASSERT_NE("", gflags::SetCommandLineOption("rowset_undo_deltas_budget_weight", v))
+        << "Validator should accept " << v;
+  }
+  ASSERT_DOUBLE_EQ(1.0, FLAGS_rowset_undo_deltas_budget_weight);
+
+  ASSERT_NE("", gflags::SetCommandLineOption("rowset_undo_deltas_budget_weight", "0.5"));
+  ASSERT_DOUBLE_EQ(0.5, FLAGS_rowset_undo_deltas_budget_weight);
+
+  for (const char* v : {"-0.001", "-1.0", "1.001", "2.0"}) {
+    SCOPED_TRACE(Substitute("value=$0", v));
+    ASSERT_EQ("", gflags::SetCommandLineOption("rowset_undo_deltas_budget_weight", v))
+        << "Validator should reject " << v;
+    ASSERT_DOUBLE_EQ(0.5, FLAGS_rowset_undo_deltas_budget_weight)
+        << "Flag should retain its value after a rejected SetCommandLineOption";
+  }
+}
+
+// Health gauge transitions 0 -> 1 -> 0 as the oversized rowset disappears.
+//
+// Run 1 (0 -> 1): layout (all fully overlapping):
+//   [A - Z]  rs_small_1 :  10 MB
+//   [A - Z]  rs_small_2 :  10 MB
+//   [A - Z]  rs_large   : 400 MB  (> 256 MB budget - permanently stuck)
+// Run 2 (1 -> 0): replace rs_large with a third small rowset (simulates GC
+//   or budget-weight adjustment); all rowsets fit - gauge resets to 0.
+TEST_F(TestCompactionPolicyMetrics, TestHealthGaugeOversizedRowset) {
+  constexpr int kBudgetMb = 256;
+
+  ASSERT_EQ(0, metrics_->compaction_budget_skip_health->value())
+      << "Precondition: gauge must start at 0";
+
+  // Run 1: oversized rowset -> gauge goes to 1.
+  {
+    const RowSetVector rowsets = {
+      make_shared<MockDiskRowSet>("A", "Z", 10 * 1024 * 1024),
+      make_shared<MockDiskRowSet>("A", "Z", 10 * 1024 * 1024),
+      make_shared<MockDiskRowSet>("A", "Z", 400 * 1024 * 1024),
+    };
+    CompactionSelection picked;
+    double quality = 0.0;
+    NO_FATALS(RunPolicy(rowsets, kBudgetMb, &picked, &quality));
+    ASSERT_EQ(2, picked.size());
+    ASSERT_EQ(1, metrics_->compaction_budget_skip_health->value())
+        << "Health gauge should be 1: rs_large (400 MB) individually exceeds budget";
+  }
+
+  // Run 2: all rowsets fit -> gauge resets to 0.
+  {
+    const RowSetVector rowsets = {
+      make_shared<MockDiskRowSet>("A", "Z", 10 * 1024 * 1024),
+      make_shared<MockDiskRowSet>("A", "Z", 10 * 1024 * 1024),
+      make_shared<MockDiskRowSet>("A", "Z", 10 * 1024 * 1024),
+    };
+    CompactionSelection picked;
+    double quality = 0.0;
+    NO_FATALS(RunPolicy(rowsets, kBudgetMb, &picked, &quality));
+    ASSERT_EQ(0, metrics_->compaction_budget_skip_health->value())
+        << "Health gauge should reset to 0 when all rowsets fit within budget";
+  }
+}
+
+// Health gauge transitions 1 -> 0 when the budget is raised above the
+// oversized rowset. Verifies the gauge reflects current state on every call.
+TEST_F(TestCompactionPolicyMetrics, TestHealthGaugeTransitionsOnBudgetChange) {
+  const RowSetVector rowsets = {
+    make_shared<MockDiskRowSet>("A", "Z", 10 * 1024 * 1024),
+    make_shared<MockDiskRowSet>("A", "Z", 300 * 1024 * 1024),
+  };
+
+  // budget (128 MB) < rs_large (300 MB) -> degraded.
+  {
+    CompactionSelection picked;
+    double quality = 0.0;
+    NO_FATALS(RunPolicy(rowsets, /*budget_mb=*/128, &picked, &quality));
+    ASSERT_EQ(1, metrics_->compaction_budget_skip_health->value());
+  }
+
+  // budget (512 MB) > rs_large (300 MB) -> healthy.
+  {
+    CompactionSelection picked;
+    double quality = 0.0;
+    NO_FATALS(RunPolicy(rowsets, /*budget_mb=*/512, &picked, &quality));
+    ASSERT_EQ(0, metrics_->compaction_budget_skip_health->value());
+  }
+}
+
+// Health gauge resets to 0 when PickRowSets finds no compactable candidates.
+// Simulates oversized rowsets being GC'd (the asc_max_key.empty() early-return
+// path that sets the gauge to 0 must not leave stale degraded state).
+TEST_F(TestCompactionPolicyMetrics, TestHealthGaugeResetsWhenNoCandidates) {
+  constexpr int kBudgetMb = 256;
+
+  // Prime gauge to degraded.
+  {
+    const RowSetVector rowsets = {
+      make_shared<MockDiskRowSet>("A", "Z", 10 * 1024 * 1024),
+      make_shared<MockDiskRowSet>("A", "Z", 10 * 1024 * 1024),
+      make_shared<MockDiskRowSet>("A", "Z", 400 * 1024 * 1024),
+    };
+    CompactionSelection picked;
+    double quality = 0.0;
+    NO_FATALS(RunPolicy(rowsets, kBudgetMb, &picked, &quality));
+    ASSERT_EQ(1, metrics_->compaction_budget_skip_health->value())
+        << "Precondition: gauge must be 1 after first run";
+  }
+
+  // Empty rowset tree (all candidates GC'd) -> gauge must reset to 0.
+  {
+    const RowSetVector empty_rowsets;
+    CompactionSelection picked;
+    double quality = 0.0;
+    NO_FATALS(RunPolicy(empty_rowsets, kBudgetMb, &picked, &quality));
+    ASSERT_EQ(0, metrics_->compaction_budget_skip_health->value())
+        << "Health gauge must reset to 0 when there are no compactable candidates";
+  }
+}
+
+// 'rowset_undo_deltas_budget_weight' scales the effective budget size.
+// Uses MockDiskRowSetWithUndos (base+redo = 50 MB, undo = 300 MB):
+//   weight=1.0: 50 + 300 = 350 MB > 256 MB -> health = 1
+//   weight=0.5: 50 + 150 = 200 MB <= 256 MB -> health = 0
+//   weight=0.0: 50 +   0 =  50 MB <= 256 MB -> health = 0
+TEST_F(TestCompactionPolicyMetrics, TestUndoWeightAffectsEffectiveBudgetSize) {
+  constexpr int kBudgetMb = 256;
+
+  const RowSetVector rowsets = {
+    make_shared<MockDiskRowSet>("A", "Z", 5 * 1024 * 1024),
+    make_shared<MockDiskRowSetWithUndos>("A", "Z",
+                                         50 * 1024 * 1024,
+                                         300 * 1024 * 1024),
+  };
+
+  FLAGS_rowset_undo_deltas_budget_weight = 1.0;
+  {
+    CompactionSelection picked;
+    double quality = 0.0;
+    NO_FATALS(RunPolicy(rowsets, kBudgetMb, &picked, &quality));
+    ASSERT_EQ(1, metrics_->compaction_budget_skip_health->value())
+        << "At weight=1.0, UNDO-heavy rowset exceeds budget -> degraded";
+  }
+
+  FLAGS_rowset_undo_deltas_budget_weight = 0.5;
+  {
+    CompactionSelection picked;
+    double quality = 0.0;
+    NO_FATALS(RunPolicy(rowsets, kBudgetMb, &picked, &quality));
+    ASSERT_EQ(0, metrics_->compaction_budget_skip_health->value())
+        << "At weight=0.5, effective size (200 MB) fits in budget -> healthy";
+  }
+
+  FLAGS_rowset_undo_deltas_budget_weight = 0.0;
+  {
+    CompactionSelection picked;
+    double quality = 0.0;
+    NO_FATALS(RunPolicy(rowsets, kBudgetMb, &picked, &quality));
+    ASSERT_EQ(0, metrics_->compaction_budget_skip_health->value())
+        << "At weight=0.0, UNDO excluded; 50 MB base+redo fits -> healthy";
+  }
+}
+
+// 'rowset_deltas_size_include_undo' is runtime-changeable.
+// When disabled, UNDO deltas are excluded from the budget regardless of weight.
+TEST_F(TestCompactionPolicyMetrics, TestRuntimeToggleDisablingUndoExcludesUndoFromBudget) {
+  constexpr int kBudgetMb = 256;
+
+  const RowSetVector rowsets = {
+    make_shared<MockDiskRowSet>("A", "Z", 5 * 1024 * 1024),
+    make_shared<MockDiskRowSetWithUndos>("A", "Z",
+                                         50 * 1024 * 1024,
+                                         300 * 1024 * 1024),
+  };
+
+  // UNDO included (default): 50 + 300 = 350 MB -> degraded.
+  FLAGS_rowset_deltas_size_include_undo = true;
+  FLAGS_rowset_undo_deltas_budget_weight = 1.0;
+  {
+    CompactionSelection picked;
+    double quality = 0.0;
+    NO_FATALS(RunPolicy(rowsets, kBudgetMb, &picked, &quality));
+    ASSERT_EQ(1, metrics_->compaction_budget_skip_health->value());
+  }
+
+  // Disable UNDO at runtime: effective size = base+redo = 50 MB -> healthy.
+  FLAGS_rowset_deltas_size_include_undo = false;
+  {
+    CompactionSelection picked;
+    double quality = 0.0;
+    NO_FATALS(RunPolicy(rowsets, kBudgetMb, &picked, &quality));
+    ASSERT_EQ(0, metrics_->compaction_budget_skip_health->value());
+  }
+
+  // Re-enable: back to degraded.
+  FLAGS_rowset_deltas_size_include_undo = true;
+  {
+    CompactionSelection picked;
+    double quality = 0.0;
+    NO_FATALS(RunPolicy(rowsets, kBudgetMb, &picked, &quality));
+    ASSERT_EQ(1, metrics_->compaction_budget_skip_health->value());
   }
 }
 

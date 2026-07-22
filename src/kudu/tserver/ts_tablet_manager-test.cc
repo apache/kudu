@@ -24,6 +24,7 @@
 #include <ostream>
 #include <string>
 #include <type_traits>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -38,6 +39,7 @@
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/raft_consensus.h"
+#include "kudu/gutil/casts.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.pb.h"
@@ -46,6 +48,7 @@
 #include "kudu/tablet/tablet-harness.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_metadata.h"
+#include "kudu/tablet/tablet_metrics.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/heartbeater.h"
 #include "kudu/tserver/mini_tablet_server.h"
@@ -69,6 +72,7 @@ DECLARE_bool(tablet_bootstrap_skip_opening_tablet_for_testing);
 DECLARE_int32(tablet_metadata_load_inject_latency_ms);
 DECLARE_int32(update_tablet_metrics_interval_ms);
 
+METRIC_DECLARE_gauge_int32(tablets_num_compaction_budget_degraded);
 METRIC_DECLARE_histogram(create_tablet_run_time);
 METRIC_DECLARE_histogram(delete_tablet_run_time);
 
@@ -456,6 +460,53 @@ TEST_F(TsTabletManagerTest, TestTabletStatsReports) {
   ASSERT_EQ(kCount, report.updated_tablets(0).stats().live_row_count());
   ASSERT_REPORT_HAS_UPDATED_TABLET(report, "tablet-1");
   MarkTabletReportAcknowledged(report);
+}
+
+// Tests that tablets_num_compaction_budget_degraded counts only RUNNING replicas
+// whose compaction_budget_skip_health gauge is 1. Non-RUNNING replicas (e.g.,
+// tombstoned) must not be counted even if their per-tablet gauge is stale at 1,
+// since PickRowSets() never fires again after a replica stops and the gauge
+// cannot be cleared automatically.
+TEST_F(TsTabletManagerTest, TestTabletNumCompactionBudgetDegradedMetric) {
+  // Create two tablets and wait for them to be fully elected as leaders (RUNNING).
+  scoped_refptr<TabletReplica> replica1;
+  scoped_refptr<TabletReplica> replica2;
+  ASSERT_OK(CreateNewTablet("test-tablet-1", schema_, true, nullopt, nullopt, &replica1));
+  ASSERT_OK(CreateNewTablet("test-tablet-2", schema_, true, nullopt, nullopt, &replica2));
+
+  // Retrieve the FunctionGauge registered by TSTabletManager at construction.
+  // UnsafeMetricsMapForTests() gives direct map access without acquiring the
+  // entity lock; safe here because no concurrent metric registration occurs.
+  const auto& metric_map =
+      mini_server_->server()->metric_entity()->UnsafeMetricsMapForTests();
+  auto it = metric_map.find(&METRIC_tablets_num_compaction_budget_degraded);
+  ASSERT_NE(metric_map.end(), it);
+  auto* degraded_count = down_cast<FunctionGauge<int32_t>*>(it->second.get());
+
+  // Both per-tablet health gauges start at 0 -> server count must be 0.
+  ASSERT_EQ(0, degraded_count->value());
+
+  // Simulate PickRowSets() detecting an oversized rowset on tablet-1.
+  replica1->tablet()->metrics()->compaction_budget_skip_health->set_value(1);
+  ASSERT_EQ(1, degraded_count->value());
+
+  // Both tablets degraded -> server count must be 2.
+  replica2->tablet()->metrics()->compaction_budget_skip_health->set_value(1);
+  ASSERT_EQ(2, degraded_count->value());
+
+  // Tombstone tablet-1 so its replica transitions out of RUNNING.
+  // Its per-tablet compaction_budget_skip_health gauge intentionally remains
+  // stale at 1 to validate the RUNNING-only filter in the function gauge callback.
+  ASSERT_OK(tablet_manager_->DeleteTablet(
+      "test-tablet-1", TabletDataState::TABLET_DATA_TOMBSTONED, nullopt));
+
+  // The tombstoned replica is not RUNNING; only tablet-2 must be counted.
+  // Count must be 1, not 2, proving stale gauges on stopped replicas are ignored.
+  ASSERT_EQ(1, degraded_count->value());
+
+  // Clearing the gauge on the remaining RUNNING replica brings the count to 0.
+  replica2->tablet()->metrics()->compaction_budget_skip_health->set_value(0);
+  ASSERT_EQ(0, degraded_count->value());
 }
 
 TEST_F(TsTabletManagerTest, StartupBenchmark) {

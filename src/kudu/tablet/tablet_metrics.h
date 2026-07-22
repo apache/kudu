@@ -68,6 +68,7 @@ struct TabletMetrics {
   scoped_refptr<Histogram> scan_duration_wall_time;
   scoped_refptr<Histogram> scan_duration_system_time;
   scoped_refptr<Histogram> scan_duration_user_time;
+  scoped_refptr<Histogram> rowsets_per_scan;
 
   // Probe stats.
   scoped_refptr<Counter> bloom_lookups;
@@ -126,6 +127,7 @@ struct TabletMetrics {
   // Metrics specific to rowset merge compaction.
   scoped_refptr<Histogram> compact_rs_mem_usage;
   scoped_refptr<Histogram> compact_rs_mem_usage_to_deltas_size_ratio;
+  scoped_refptr<AtomicGauge<uint32_t>> compaction_budget_skip_health;
 
   scoped_refptr<Counter> leader_memory_pressure_rejections;
 

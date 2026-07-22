@@ -57,8 +57,10 @@
 #include "kudu/rpc/result_tracker.h"
 #include "kudu/server/rpc_server.h"
 #include "kudu/tablet/metadata.pb.h"
+#include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_bootstrap.h"
 #include "kudu/tablet/tablet_metadata.h"
+#include "kudu/tablet/tablet_metrics.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tablet/txn_coordinator.h"
 #include "kudu/transactions/txn_status_manager.h"
@@ -78,12 +80,6 @@
 #include "kudu/util/threadpool.h"
 #include "kudu/util/timer.h"
 #include "kudu/util/trace.h"
-
-namespace kudu {
-namespace tablet {
-class Tablet;
-}  // namespace tablet
-}  // namespace kudu
 
 DEFINE_int32(num_tablets_to_copy_simultaneously, 10,
              "Number of threads available to copy tablets from remote servers.");
@@ -250,6 +246,22 @@ METRIC_DEFINE_gauge_int32(server, tablets_num_shutdown,
                           "Number of tablets currently shut down",
                           kudu::MetricLevel::kInfo);
 
+METRIC_DEFINE_gauge_int32(server, tablets_num_compaction_budget_degraded,
+                          "Number of Tablets with Degraded Compaction Budget",
+                          kudu::MetricUnit::kTablets,
+                          "Number of tablet replicas on this server whose "
+                          "compaction_budget_skip_health gauge is 1 (degraded). "
+                          "A non-zero value means one or more tablets have at "
+                          "least one DiskRowSet individually larger than "
+                          "--tablet_compaction_budget_mb and therefore permanently "
+                          "excluded from merge compaction. Such rowsets accumulate "
+                          "indefinitely and may cause slow scans. "
+                          "See the per-tablet compaction_budget_skip_health metric "
+                          "to identify which tablets are affected, then increase "
+                          "--tablet_compaction_budget_mb or lower "
+                          "--rowset_undo_deltas_budget_weight.",
+                          kudu::MetricLevel::kWarn);
+
 METRIC_DEFINE_gauge_uint32(server, tablets_num_total_startup,
                            "Number of Tablets Present During Startup",
                            kudu::MetricUnit::kTablets,
@@ -393,6 +405,40 @@ TSTabletManager::TSTabletManager(TabletServer* server)
   METRIC_tablets_num_shutdown.InstantiateFunctionGauge(
       server->metric_entity(), [this]() {
         return this->RefreshTabletStateCacheAndReturnCount(tablet::SHUTDOWN);
+      })
+      ->AutoDetach(&metric_detacher_);
+
+  METRIC_tablets_num_compaction_budget_degraded.InstantiateFunctionGauge(
+      server->metric_entity(), [this]() {
+        // A full walk over a TTL cache (like RefreshTabletStateCacheAndReturnCount)
+        // was chosen because this is an alert-class metric and operators are
+        // expected to take certain action. So, a stale reading lasting up to the
+        // cache TTL (--tablet_state_walk_min_period_ms, default 1 second or more
+        // if modified by user) is not desirable.
+        // Multiple gauges sharing one walk provides multifold amortisation, but
+        // that gain is not applicable here with just one gauge to work with.
+        int count = 0;
+        shared_lock l(lock_);
+        for (const auto& entry : tablet_map_) {
+          // Count only RUNNING tablet replicas whose compaction budget is
+          // degraded. Non-running replicas (tombstoned, failed, stopped) do not
+          // run compaction and must not be counted; their health gauge may be
+          // stale at 1 because PickRowSets never fires again to clear it.
+          if (entry.second->state() != tablet::RUNNING) continue;
+          // state() and tablet() each acquire the replica's internal lock
+          // separately, so there is a narrow TOCTOU window where Stop() could
+          // complete between the two calls and reset tablet_ to null. Guard
+          // defensively even though the steady-state invariant makes this
+          // unreachable for a genuinely RUNNING replica.
+          auto* t = entry.second->tablet();
+          if (!t) continue;
+          auto* m = t->metrics();
+          if (!m) continue;
+          if (m->compaction_budget_skip_health->value() == 1) {
+            ++count;
+          }
+        }
+        return count;
       })
       ->AutoDetach(&metric_detacher_);
 

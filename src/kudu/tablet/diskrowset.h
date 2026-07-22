@@ -413,6 +413,8 @@ class DiskRowSet :
 
   uint64_t OnDiskBaseDataSizeWithDeltas() const override;
 
+  uint64_t OnDiskUndoDeltasSize() const override;
+
   size_t DeltaMemStoreSize() const override;
 
   bool DeltaMemStoreInfo(size_t* size_bytes, MonoTime* creation_time) const override;

@@ -214,9 +214,17 @@ class RowSet {
   // Excludes bloomfiles and the ad hoc index.
   virtual uint64_t OnDiskBaseDataSize() const = 0;
 
-  // Return the size, in bytes, of this rowset's base data, REDO and UNDO deltas.
-  // Does not include bloomfiles or the ad hoc index.
+  // Return the exact on-disk size, in bytes, of this rowset's base data plus
+  // all delta stores (REDO and UNDO). Does not include bloomfiles or the ad hoc
+  // index. Always reflects the true physical footprint on disk regardless of
+  // any compaction budget flags or weight factors.
   virtual uint64_t OnDiskBaseDataSizeWithDeltas() const = 0;
+
+  // Return the on-disk size, in bytes, of this rowset's UNDO delta stores.
+  // Returns 0 for rowset types that have no UNDO deltas (e.g. MemRowSet).
+  // Used by RowSetInfo to compute the budget-weighted knapsack cost without
+  // embedding policy logic inside the low-level size accessor.
+  virtual uint64_t OnDiskUndoDeltasSize() const { return 0; }
 
   // Return the size of this rowset's column in base data on disk, in bytes.
   virtual uint64_t OnDiskBaseDataColumnSize(const ColumnId& col_id) const = 0;
@@ -460,6 +468,9 @@ class DuplicatingRowSet : public RowSet {
 
   // Return the size, in bytes, of this rowset's base data and deltas.
   uint64_t OnDiskBaseDataSizeWithDeltas() const override;
+
+  // Return the size, in bytes, of this rowset's undo deltas.
+  uint64_t OnDiskUndoDeltasSize() const override;
 
   std::string ToString() const override;
 

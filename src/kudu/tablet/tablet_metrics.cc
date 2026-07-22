@@ -174,6 +174,16 @@ METRIC_DEFINE_histogram(tablet, scan_duration_user_time,
                         kudu::MetricLevel::kDebug,
                         60000LU, 1);
 
+METRIC_DEFINE_histogram(tablet, rowsets_per_scan,
+                        "DiskRowSets Accessed Per Scan",
+                        kudu::MetricUnit::kUnits,
+                        "Distribution of the number of DiskRowSet iterators opened per "
+                        "scan request. A rising 99th percentile may indicate that "
+                        "the tablet has many overlapping, uncompacted rowsets, causing "
+                        "scans to access more data sources and potentially slowing down.",
+                        kudu::MetricLevel::kDebug,
+                        1024, 2);
+
 // These counters track the fast-path / slow-path split of the sort-skip
 // optimisation in Tablet::BulkCheckPresence.
 METRIC_DEFINE_counter(tablet, bulk_check_batches_pre_sorted,
@@ -190,7 +200,6 @@ METRIC_DEFINE_counter(tablet, bulk_check_batches_needed_sort,
                       "order, requiring a stable_sort inside "
                       "Tablet::BulkCheckPresence.",
                       kudu::MetricLevel::kDebug);
-
 METRIC_DEFINE_counter(tablet, bloom_lookups, "Bloom Filter Lookups",
                       kudu::MetricUnit::kProbes,
                       "Number of times a bloom filter was consulted",
@@ -446,6 +455,21 @@ METRIC_DEFINE_histogram(tablet, compact_rs_mem_usage_to_deltas_size_ratio,
   kudu::MetricLevel::kDebug,
   60000LU, 1);
 
+METRIC_DEFINE_gauge_uint32(tablet, compaction_budget_skip_health,
+  "Compaction Budget Health",
+  kudu::MetricUnit::kUnits,
+  "Health indicator for compaction budget adequacy. Set to 1 (degraded) "
+  "when one or more DiskRowSets are individually larger than "
+  "--tablet_compaction_budget_mb and can therefore never be selected for "
+  "merge compaction under the current settings. A degraded state means "
+  "affected rowsets will accumulate indefinitely, which may cause slow scans. "
+  "Set to 0 (healthy) when all candidate rowsets fit within the budget. "
+  "To resolve a degraded state, increase --tablet_compaction_budget_mb or, "
+  "if --rowset_deltas_size_include_undo is enabled, lower "
+  "--rowset_undo_deltas_budget_weight. The WARNING log emitted when health "
+  "is degraded includes the minimum budget (MB) needed.",
+  kudu::MetricLevel::kInfo);
+
 METRIC_DEFINE_histogram(tablet, deleted_rowset_gc_duration,
   "Deleted Rowset GC Duration",
   kudu::MetricUnit::kMilliseconds,
@@ -497,6 +521,7 @@ TabletMetrics::TabletMetrics(const scoped_refptr<MetricEntity>& entity)
     MINIT(scan_duration_wall_time),
     MINIT(scan_duration_system_time),
     MINIT(scan_duration_user_time),
+    MINIT(rowsets_per_scan),
     MINIT(bloom_lookups),
     MINIT(key_file_lookups),
     MINIT(delta_file_lookups),
@@ -538,6 +563,7 @@ TabletMetrics::TabletMetrics(const scoped_refptr<MetricEntity>& entity)
     MINIT(undo_delta_block_gc_perform_duration),
     MINIT(compact_rs_mem_usage),
     MINIT(compact_rs_mem_usage_to_deltas_size_ratio),
+    GINIT(compaction_budget_skip_health),
     MINIT(leader_memory_pressure_rejections),
     MEANINIT(average_diskrowset_height),
     HIDEINIT(merged_entities_count_of_tablet, 1) {
