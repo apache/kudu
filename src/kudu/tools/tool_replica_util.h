@@ -159,6 +159,19 @@ Status ScheduleReplicaMove(
     const std::string& from_ts_uuid,
     const std::string& to_ts_uuid);
 
+// Determine whether a replica move of tablet 'tablet_id' from 'from_ts_uuid' to
+// 'to_ts_uuid' has already been scheduled (i.e. the config change was applied).
+// Used to make 'move_replica' idempotent when a previous invocation was
+// interrupted. Sets the (non-null) 'scheduled' output parameter accordingly:
+//   * 3-4-3: target present and source gone or still marked with 'replace'.
+//   * 3-2-3: both target and source present.
+Status IsReplicaMoveScheduled(
+    const client::sp::shared_ptr<client::KuduClient>& client,
+    const std::string& tablet_id,
+    const std::string& from_ts_uuid,
+    const std::string& to_ts_uuid,
+    bool* scheduled);
+
 // Run ksck for the tablet identified by 'tablet_id'.
 Status DoKsckForTablet(
     const std::vector<std::string>& master_addresses,

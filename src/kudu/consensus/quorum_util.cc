@@ -837,5 +837,40 @@ bool ShouldEvictReplica(const RaftConfigPB& config,
   return should_evict;
 }
 
+bool ShouldStepDownLeaderForReplacement(const RaftConfigPB& config,
+                                        const string& leader_uuid,
+                                        int replication_factor) {
+  if (leader_uuid.empty()) {
+    return false;
+  }
+
+  bool leader_with_replace = false;
+  int num_voters_total = 0;
+  int num_voters_healthy = 0;
+  for (const RaftPeerPB& peer : config.peers()) {
+    if (peer.member_type() != RaftPeerPB::VOTER) {
+      continue;
+    }
+    ++num_voters_total;
+    if (peer.health_report().overall_health() == HealthReportPB::HEALTHY) {
+      ++num_voters_healthy;
+    }
+    if (peer.permanent_uuid() == leader_uuid && peer.attrs().replace()) {
+      leader_with_replace = true;
+    }
+  }
+
+  // Step down only if the leader is marked with 'replace' and there are more
+  // than 'replication_factor' healthy voters. The latter ensures the
+  // replacement was already promoted to voter (so we don't step down early) and
+  // that a healthy majority remains to commit the ensuing eviction.
+  const bool should_step_down = leader_with_replace &&
+      num_voters_healthy > replication_factor &&
+      num_voters_healthy >= MajoritySize(num_voters_total);
+  VLOG(2) << "decision: should" << (should_step_down ? "" : " not")
+          << " step down leader " << leader_uuid << " for replacement";
+  return should_step_down;
+}
+
 }  // namespace consensus
 }  // namespace kudu

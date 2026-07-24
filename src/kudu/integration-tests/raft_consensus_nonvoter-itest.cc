@@ -86,6 +86,7 @@ using kudu::consensus::IsRaftConfigMember;
 using kudu::consensus::IsRaftConfigVoter;
 using kudu::consensus::RaftPeerPB;
 using kudu::itest::AddServer;
+using kudu::itest::BulkChangeConfig;
 using kudu::itest::GetConsensusState;
 using kudu::itest::GetInt64Metric;
 using kudu::itest::GetTableLocations;
@@ -98,6 +99,7 @@ using kudu::itest::TabletServerMap;
 using kudu::itest::WAIT_FOR_LEADER;
 using kudu::itest::WaitForNumTabletsOnTS;
 using kudu::itest::WaitForReplicasReportedToMaster;
+using kudu::itest::WaitUntilCommittedConfigNumVotersIs;
 using kudu::master::ANY_REPLICA;
 using kudu::master::GetTableLocationsResponsePB;
 using kudu::master::GetTabletLocationsResponsePB;
@@ -1243,6 +1245,113 @@ TEST_F(RaftConsensusNonVoterITest, CatalogManagerEvictsExcessNonVoter) {
                                             ANY_REPLICA,
                                             &has_leader,
                                             &tablet_locations));
+  NO_FATALS(cluster_->AssertNoCrashes());
+}
+
+// With a leader marked 'replace' and no client involved (e.g. an interrupted
+// move_replica/rebalance), the master must add+promote a replacement, step the
+// leader down and evict it. With the mechanism disabled the tablet instead
+// stays stuck over-replicated. See ShouldStepDownLeaderForReplacement().
+class LeaderReplacementRecoveryITest :
+    public RaftConsensusNonVoterITest,
+    public ::testing::WithParamInterface<bool> {
+};
+
+INSTANTIATE_TEST_SUITE_P(, LeaderReplacementRecoveryITest, ::testing::Bool());
+
+TEST_P(LeaderReplacementRecoveryITest, StepDownAndEvictMarkedLeader) {
+  const bool enable_step_down = GetParam();
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(60);
+  const int kReplicasNum = 3;
+  FLAGS_num_replicas = kReplicasNum;
+  // One extra tablet server so the master can add a replacement replica.
+  FLAGS_num_tablet_servers = kReplicasNum + 1;
+
+  const vector<string> kTserverFlags = {
+    "--raft_prepare_replacement_before_eviction=true",
+    // Heartbeat to the master often so it reacts within a few heartbeats; this
+    // makes the negative (disabled) case below trustworthy: if the master were
+    // going to evict the marked leader, it would have many chances to do so
+    // within the bounded wait.
+    "--heartbeat_interval_ms=100",
+  };
+  const vector<string> kMasterFlags = {
+    "--raft_prepare_replacement_before_eviction=true",
+    Substitute("--catalog_manager_step_down_leader_for_replacement=$0",
+               enable_step_down),
+  };
+  NO_FATALS(BuildAndStart(kTserverFlags, kMasterFlags));
+
+  // Committed op in the leader's term is required before changing the config.
+  TServerDetails* leader = nullptr;
+  ASSERT_OK(WaitForLeaderWithCommittedOp(tablet_id_, kTimeout, &leader));
+  const string leader_uuid = leader->uuid();
+
+  // A follower that stays in the config, used to observe the outcome.
+  TServerDetails* observer = nullptr;
+  for (const auto& e : tablet_replicas_) {
+    if (e.first == tablet_id_ && e.second->uuid() != leader_uuid) {
+      observer = e.second;
+      break;
+    }
+  }
+  ASSERT_NE(nullptr, observer);
+
+  // Mark the leader 'replace' (what an interrupted move leaves behind) without
+  // adding a replacement: the master must drive everything from here.
+  consensus::ConsensusStatePB cstate;
+  ASSERT_OK(GetConsensusState(leader, tablet_id_, kTimeout,
+                              EXCLUDE_HEALTH_REPORT, &cstate));
+  {
+    vector<consensus::BulkChangeConfigRequestPB::ConfigChangeItemPB> changes;
+    consensus::BulkChangeConfigRequestPB::ConfigChangeItemPB change;
+    change.set_type(consensus::MODIFY_PEER);
+    RaftPeerPB* peer = change.mutable_peer();
+    peer->set_permanent_uuid(leader_uuid);
+    peer->mutable_attrs()->set_replace(true);
+    changes.emplace_back(std::move(change));
+    ASSERT_OK(BulkChangeConfig(leader, tablet_id_, changes, kTimeout,
+                               cstate.committed_config().opid_index()));
+  }
+
+  if (enable_step_down) {
+    // Terminal state: the old leader is evicted and the config is back at RF.
+    ASSERT_EVENTUALLY([&] {
+      consensus::ConsensusStatePB cs;
+      ASSERT_OK(GetConsensusState(observer, tablet_id_, kTimeout,
+                                  EXCLUDE_HEALTH_REPORT, &cs));
+      ASSERT_EQ(kReplicasNum, cs.committed_config().peers_size());
+      for (const auto& peer : cs.committed_config().peers()) {
+        ASSERT_NE(leader_uuid, peer.permanent_uuid())
+            << "the 'replace'-marked leader was not evicted";
+      }
+    });
+  } else {
+    // The replacement is still added and promoted (RF+1 voters), but the marked
+    // leader can never be evicted, so the tablet stays stuck over-replicated.
+    ASSERT_OK(WaitUntilCommittedConfigNumVotersIs(kReplicasNum + 1, observer,
+                                                  tablet_id_, kTimeout));
+    if (AllowSlowTests()) {
+      // With frequent heartbeats the master gets dozens of chances to act over
+      // this window; confirm it never evicts the marked leader, which stays
+      // present and keeps leading.
+      SleepFor(MonoDelta::FromSeconds(5));
+      consensus::ConsensusStatePB cs;
+      ASSERT_OK(GetConsensusState(observer, tablet_id_, kTimeout,
+                                  EXCLUDE_HEALTH_REPORT, &cs));
+      ASSERT_EQ(kReplicasNum + 1, cs.committed_config().peers_size());
+      ASSERT_EQ(leader_uuid, cs.leader_uuid());
+      bool leader_still_present = false;
+      for (const auto& peer : cs.committed_config().peers()) {
+        if (peer.permanent_uuid() == leader_uuid) {
+          leader_still_present = true;
+          break;
+        }
+      }
+      ASSERT_TRUE(leader_still_present);
+    }
+  }
+
   NO_FATALS(cluster_->AssertNoCrashes());
 }
 
