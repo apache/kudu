@@ -124,6 +124,20 @@ bool ShouldEvictReplica(const RaftConfigPB& config,
                         int replication_factor,
                         std::string* uuid_to_evict = nullptr);
 
+// Whether the leader replica should be made to step down so that it can be
+// evicted afterwards. Kudu's Raft implementation cannot evict the leader
+// replica (see ShouldEvictReplica()), so a leader marked with the 'replace'
+// attribute must first step down. This lets the master recover when the
+// client-driven step-down (CLI or auto-rebalancer) was interrupted.
+//
+// Returns 'true' when the leader is marked with 'replace' and there are more
+// than 'replication_factor' healthy voters. The latter both keeps a healthy
+// majority for the ensuing eviction and ensures the replacement replica has
+// already been promoted to voter before the leader steps down.
+bool ShouldStepDownLeaderForReplacement(const RaftConfigPB& config,
+                                        const std::string& leader_uuid,
+                                        int replication_factor);
+
 }  // namespace consensus
 }  // namespace kudu
 
