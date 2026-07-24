@@ -1909,5 +1909,68 @@ TEST(QuorumUtilTest, ReplaceAllTabletReplicas) {
   EXPECT_FALSE(ShouldAddReplica(config, kReplicationFactor));
 }
 
+// Verify ShouldStepDownLeaderForReplacement(): step down a leader marked with
+// 'replace' only once its replacement has been promoted to voter.
+TEST(QuorumUtilTest, ShouldStepDownLeaderForReplacement) {
+  constexpr auto kReplicationFactor = 3;
+
+  {
+    // No leader: nobody to step down.
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '+', {{"REPLACE", true}});
+    AddPeer(&config, "B", V, '+');
+    AddPeer(&config, "C", V, '+');
+    EXPECT_FALSE(ShouldStepDownLeaderForReplacement(config, "", kReplicationFactor));
+  }
+  {
+    // Leader marked, but no replacement added yet (only RF voters): don't step
+    // down early.
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '+', {{"REPLACE", true}});
+    AddPeer(&config, "B", V, '+');
+    AddPeer(&config, "C", V, '+');
+    EXPECT_FALSE(ShouldStepDownLeaderForReplacement(config, "A", kReplicationFactor));
+  }
+  {
+    // Replacement present but not yet promoted (still a NON_VOTER): don't step
+    // down.
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '+', {{"REPLACE", true}});
+    AddPeer(&config, "B", V, '+');
+    AddPeer(&config, "C", V, '+');
+    AddPeer(&config, "D", N, '+', {{"PROMOTE", true}});
+    EXPECT_FALSE(ShouldStepDownLeaderForReplacement(config, "A", kReplicationFactor));
+  }
+  {
+    // Replacement promoted to voter (RF+1 healthy voters): step down.
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '+', {{"REPLACE", true}});
+    AddPeer(&config, "B", V, '+');
+    AddPeer(&config, "C", V, '+');
+    AddPeer(&config, "D", V, '+');
+    EXPECT_TRUE(ShouldStepDownLeaderForReplacement(config, "A", kReplicationFactor));
+  }
+  {
+    // A non-leader is marked (RF+1 voters): don't step down; it is evicted
+    // directly instead.
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '+');
+    AddPeer(&config, "B", V, '+', {{"REPLACE", true}});
+    AddPeer(&config, "C", V, '+');
+    AddPeer(&config, "D", V, '+');
+    EXPECT_FALSE(ShouldStepDownLeaderForReplacement(config, "A", kReplicationFactor));
+    EXPECT_TRUE(ShouldEvictReplica(config, "A", kReplicationFactor));
+  }
+  {
+    // Fewer than RF healthy voters: don't step down (eviction couldn't commit).
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '+', {{"REPLACE", true}});
+    AddPeer(&config, "B", V, '+');
+    AddPeer(&config, "C", V, '-');
+    AddPeer(&config, "D", V, '-');
+    EXPECT_FALSE(ShouldStepDownLeaderForReplacement(config, "A", kReplicationFactor));
+  }
+}
+
 } // namespace consensus
 } // namespace kudu

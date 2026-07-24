@@ -628,6 +628,52 @@ Status ScheduleReplicaMove(const vector<string>& master_addresses,
   return Status::OK();
 }
 
+Status IsReplicaMoveScheduled(const client::sp::shared_ptr<client::KuduClient>& client,
+                              const string& tablet_id,
+                              const string& from_ts_uuid,
+                              const string& to_ts_uuid,
+                              bool* scheduled) {
+  DCHECK(scheduled);
+  *scheduled = false;
+
+  string leader_uuid;
+  HostPort leader_hp;
+  RETURN_NOT_OK(GetTabletLeader(client, tablet_id, &leader_uuid, &leader_hp));
+  unique_ptr<ConsensusServiceProxy> proxy;
+  RETURN_NOT_OK(BuildProxy(leader_hp.host(), leader_hp.port(), &proxy));
+
+  bool is_343_scheme;
+  ConsensusStatePB cstate;
+  RETURN_NOT_OK(GetConsensusState(proxy, tablet_id, leader_uuid,
+                                  client->default_admin_operation_timeout(),
+                                  &cstate, &is_343_scheme));
+
+  bool to_ts_uuid_in_config = false;
+  bool from_ts_uuid_in_config = false;
+  bool from_ts_uuid_has_replace = false;
+  for (const auto& peer : cstate.committed_config().peers()) {
+    if (peer.permanent_uuid() == to_ts_uuid) {
+      to_ts_uuid_in_config = true;
+    }
+    if (peer.permanent_uuid() == from_ts_uuid) {
+      from_ts_uuid_in_config = true;
+      from_ts_uuid_has_replace = peer.attrs().replace();
+    }
+  }
+
+  if (is_343_scheme) {
+    // 3-4-3: the target was added and the source marked with 'replace'. Already
+    // scheduled if the target is present and the source is gone or still marked.
+    *scheduled = to_ts_uuid_in_config &&
+        (!from_ts_uuid_in_config || from_ts_uuid_has_replace);
+  } else {
+    // 3-2-3: the target is added first, the source removed later. Already
+    // scheduled if both are present.
+    *scheduled = to_ts_uuid_in_config && from_ts_uuid_in_config;
+  }
+  return Status::OK();
+}
+
 Status DoKsckForTablet(const vector<string>& master_addresses,
                        const string& tablet_id) {
   shared_ptr<KsckCluster> cluster;

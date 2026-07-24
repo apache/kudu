@@ -302,6 +302,15 @@ DEFINE_bool(catalog_manager_evict_excess_replicas, true,
 TAG_FLAG(catalog_manager_evict_excess_replicas, hidden);
 TAG_FLAG(catalog_manager_evict_excess_replicas, runtime);
 
+DEFINE_bool(catalog_manager_step_down_leader_for_replacement, true,
+            "Whether the catalog manager makes a leader replica marked with the "
+            "'replace' attribute step down so it can be evicted. This lets the "
+            "master complete a move of a leader replica even if the client that "
+            "initiated it was interrupted. Only effective with the 3-4-3 replica "
+            "management scheme (--raft_prepare_replacement_before_eviction).");
+TAG_FLAG(catalog_manager_step_down_leader_for_replacement, advanced);
+TAG_FLAG(catalog_manager_step_down_leader_for_replacement, runtime);
+
 DEFINE_int32(catalog_manager_inject_latency_list_authz_ms, 0,
              "Injects a sleep in milliseconds while authorizing a ListTables "
              "request. This is a test-only flag.");
@@ -474,9 +483,13 @@ using kudu::cfile::TypeEncodingInfo;
 using kudu::consensus::ConsensusServiceProxy;
 using kudu::consensus::ConsensusStatePB;
 using kudu::consensus::IsRaftConfigMember;
+using kudu::consensus::LeaderStepDownMode;
+using kudu::consensus::LeaderStepDownRequestPB;
+using kudu::consensus::LeaderStepDownResponsePB;
 using kudu::consensus::RaftConfigPB;
 using kudu::consensus::RaftConsensus;
 using kudu::consensus::RaftPeerPB;
+using kudu::consensus::ShouldStepDownLeaderForReplacement;
 using kudu::consensus::StartTabletCopyRequestPB;
 using kudu::consensus::kMinimumTerm;
 using kudu::hms::HmsClientVerifyKuduSyncConfig;
@@ -5474,6 +5487,112 @@ bool AsyncEvictReplicaTask::SendRequest(int attempt) {
   return true;
 }
 
+// Task to make a leader replica marked with the 'replace' attribute step down
+// so that the catalog manager can evict it (Raft cannot evict a leader). See
+// ShouldStepDownLeaderForReplacement().
+//
+// The task targets the specific replica captured at creation time; if that
+// replica is no longer the leader when the RPC is sent, the task completes
+// without doing anything, so it never steps down an unrelated, healthy leader.
+class AsyncLeaderStepDownForReplacementTask : public RetryingTSRpcTask {
+ public:
+  AsyncLeaderStepDownForReplacementTask(Master* master,
+                                        scoped_refptr<TabletInfo> tablet,
+                                        string leader_uuid);
+
+  string type_name() const override;
+  string description() const override;
+
+ protected:
+  bool SendRequest(int attempt) override;
+  void HandleResponse(int attempt) override;
+
+ private:
+  const string& tablet_id() const override { return tablet_->id(); }
+
+  const scoped_refptr<TabletInfo> tablet_;
+  const string leader_uuid_;
+
+  LeaderStepDownResponsePB resp_;
+};
+
+AsyncLeaderStepDownForReplacementTask::AsyncLeaderStepDownForReplacementTask(
+    Master* master,
+    scoped_refptr<TabletInfo> tablet,
+    string leader_uuid)
+    : RetryingTSRpcTask(master,
+                        unique_ptr<TSPicker>(new PickSpecificUUID(leader_uuid)),
+                        tablet->table().get()),
+      tablet_(std::move(tablet)),
+      leader_uuid_(std::move(leader_uuid)) {
+}
+
+string AsyncLeaderStepDownForReplacementTask::type_name() const {
+  return "LeaderStepDownForReplacement";
+}
+
+string AsyncLeaderStepDownForReplacementTask::description() const {
+  return Substitute("$0 RPC for tablet $1 (leader $2)",
+                    type_name(), tablet_->id(), leader_uuid_);
+}
+
+bool AsyncLeaderStepDownForReplacementTask::SendRequest(int attempt) {
+  // If the targeted replica is no longer the leader, bail out to avoid asking a
+  // different, possibly healthy, leader to step down.
+  {
+    TabletMetadataLock l(tablet_.get(), LockMode::READ);
+    const auto& current_leader =
+        l.data().pb.consensus_state().leader_uuid();
+    if (current_leader != leader_uuid_) {
+      LOG_WITH_PREFIX(INFO) << Substitute(
+          "replica $0 is no longer the leader (current leader: '$1'); "
+          "no leader step-down needed", leader_uuid_, current_leader);
+      MarkComplete();
+      return false;
+    }
+  }
+
+  LeaderStepDownRequestPB req;
+  req.set_dest_uuid(leader_uuid_);
+  req.set_tablet_id(tablet_->id());
+  req.set_mode(LeaderStepDownMode::GRACEFUL);
+  VLOG(1) << Substitute("Sending $0 request to $1 (attempt $2): $3",
+                        type_name(), target_ts_desc_->ToString(), attempt,
+                        SecureDebugString(req));
+  consensus_proxy_->LeaderStepDownAsync(req, &resp_, &rpc_,
+                                        [this]() { this->RpcCallback(); });
+  return true;
+}
+
+void AsyncLeaderStepDownForReplacementTask::HandleResponse(int attempt) {
+  if (!resp_.has_error()) {
+    MarkComplete();
+    LOG_WITH_PREFIX(INFO) << Substitute(
+        "$0 succeeded (attempt $1)", type_name(), attempt);
+    return;
+  }
+
+  const Status status = StatusFromPB(resp_.error().status());
+  switch (resp_.error().code()) {
+    case TabletServerErrorPB::NOT_THE_LEADER:
+      // Not the leader anymore: goal achieved (it can now be evicted), so stop.
+      LOG_WITH_PREFIX(INFO) << Substitute(
+          "target replica $0 is no longer the leader; no further retry: $1",
+          leader_uuid_, status.ToString());
+      MarkComplete();
+      break;
+    default:
+      // Transient errors (e.g. ServiceUnavailable while a transfer is already
+      // in progress); leave the task running so it is retried until its deadline.
+      KLOG_EVERY_N_SECS(WARNING, 1) << LogPrefix() << Substitute(
+          "$0 failed with leader $1 due to error $2; will retry: $3",
+          type_name(), target_ts_desc_->ToString(),
+          TabletServerErrorPB::Code_Name(resp_.error().code()),
+          status.ToString());
+      break;
+  }
+}
+
 Status CatalogManager::ProcessTabletReport(
     TSDescriptor* ts_desc,
     const TabletReportPB& full_report,
@@ -5794,6 +5913,14 @@ Status CatalogManager::ProcessTabletReport(
                                     uuids_ignored_for_underreplication)) {
           rpcs.emplace_back(new AsyncAddReplicaTask(
               master_, tablet, cstate, RaftPeerPB::NON_VOTER, &rng_));
+        } else if (FLAGS_catalog_manager_step_down_leader_for_replacement &&
+                   ShouldStepDownLeaderForReplacement(
+                       config, cstate.leader_uuid(), replication_factor)) {
+          // The leader is marked with 'replace' and can't be evicted while it
+          // remains the leader; make it step down so a later report can evict
+          // it. Recovers moves whose client-driven step-down was interrupted.
+          rpcs.emplace_back(new AsyncLeaderStepDownForReplacementTask(
+              master_, tablet, cstate.leader_uuid()));
         }
       }
     }

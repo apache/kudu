@@ -73,6 +73,7 @@
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet_replica.h"
+#include "kudu/tools/tool_replica_util.h"
 #include "kudu/tools/tool_test_util.h"
 #include "kudu/tserver/tablet_server-test-base.h"
 #include "kudu/util/cow_object.h"
@@ -490,6 +491,97 @@ INSTANTIATE_TEST_SUITE_P(EnableKudu1097AndDownTS, MoveTabletParamTest,
                                             ::testing::Values(DownTS::None,
                                                               DownTS::TabletPeer,
                                                               DownTS::UninvolvedTS)));
+
+// Verify 'move_replica' is idempotent: if a previous invocation scheduled the
+// move but was interrupted before it completed (e.g. the CLI was killed),
+// re-running it resumes and completes the move instead of failing. See
+// IsReplicaMoveScheduled().
+TEST_F(AdminCliTest, TestMoveReplicaIdempotent) {
+  const auto kTimeout = MonoDelta::FromSeconds(60);
+
+  FLAGS_num_tablet_servers = 4;
+  FLAGS_num_replicas = 3;
+
+  // The recovery path is specific to the 3-4-3 replica management scheme.
+  const vector<string> kFlags = { "--raft_prepare_replacement_before_eviction=true" };
+  NO_FATALS(BuildAndStart(kFlags, kFlags));
+
+  const string master_addr = cluster_->master()->bound_rpc_addr().ToString();
+  const vector<string> master_addresses = { master_addr };
+
+  // Pick a follower as the move source and an unused tablet server as the target.
+  TServerDetails* leader = nullptr;
+  ASSERT_OK(FindTabletLeader(tablet_servers_, tablet_id_, kTimeout, &leader));
+  // Wait for the leader to commit an op in its term so that config changes
+  // (the scheduled move below) are not rejected as premature.
+  ASSERT_OK(WaitForOpFromCurrentTerm(leader, tablet_id_, COMMITTED_OPID, kTimeout));
+
+  vector<string> active_tservers;
+  for (auto it = tablet_replicas_.find(tablet_id_);
+       it != tablet_replicas_.cend() && it->first == tablet_id_; ++it) {
+    active_tservers.push_back(it->second->uuid());
+  }
+  ASSERT_EQ(FLAGS_num_replicas, active_tservers.size());
+
+  string from_ts_uuid;
+  for (const auto& uuid : active_tservers) {
+    if (uuid != leader->uuid()) {
+      from_ts_uuid = uuid;
+      break;
+    }
+  }
+  ASSERT_FALSE(from_ts_uuid.empty());
+
+  string to_ts_uuid;
+  for (const auto& entry : tablet_servers_) {
+    if (std::find(active_tservers.begin(), active_tservers.end(), entry.first) ==
+        active_tservers.end()) {
+      to_ts_uuid = entry.first;
+      break;
+    }
+  }
+  ASSERT_FALSE(to_ts_uuid.empty());
+
+  shared_ptr<KuduClient> client;
+  ASSERT_OK(KuduClientBuilder()
+            .add_master_server_addr(master_addr)
+            .Build(&client));
+
+  // Simulate an interrupted move: schedule the config change but don't wait for
+  // it to complete, mimicking a CLI process that was killed mid-move.
+  ASSERT_OK(ScheduleReplicaMove(master_addresses, client,
+                                tablet_id_, from_ts_uuid, to_ts_uuid));
+
+  // The in-progress move is now detectable.
+  bool scheduled = false;
+  ASSERT_OK(IsReplicaMoveScheduled(client, tablet_id_,
+                                   from_ts_uuid, to_ts_uuid, &scheduled));
+  ASSERT_TRUE(scheduled);
+
+  // Re-running the same move must succeed by resuming the in-progress move.
+  // Before the idempotency fix this failed because the target replica was
+  // already present and the tablet was transiently over-replicated.
+  ASSERT_TOOL_OK(
+    "tablet",
+    "change_config",
+    "move_replica",
+    master_addr,
+    tablet_id_,
+    from_ts_uuid,
+    to_ts_uuid
+  );
+
+  // The move completed: the target hosts a voter and the source was evicted, so
+  // the config is back to the replication factor.
+  TServerDetails* to_ts = FindOrDie(tablet_servers_, to_ts_uuid);
+  ASSERT_OK(WaitUntilCommittedConfigNumVotersIs(FLAGS_num_replicas, to_ts,
+                                                tablet_id_, kTimeout));
+  NO_FATALS(WaitUntilCommittedConfigNumMembersIs(FLAGS_num_replicas, to_ts,
+                                                 tablet_id_, kTimeout));
+
+  ClusterVerifier v(cluster_.get());
+  NO_FATALS(v.CheckCluster());
+}
 
 Status RunUnsafeChangeConfig(const string& tablet_id,
                              const string& dst_host,

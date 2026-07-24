@@ -284,17 +284,31 @@ Status MoveReplica(const RunnerContext& context) {
   const string& from_ts_uuid = FindOrDie(context.required_args, kFromTsUuidArg);
   const string& to_ts_uuid = FindOrDie(context.required_args, kToTsUuidArg);
 
-  // Check the tablet is in perfect health first.
-  // We retry since occasionally ksck returns bad status because of transient
-  // issues like leader elections.
-  RETURN_NOT_OK_PREPEND(WaitForCleanKsck(master_addresses,
-                                         tablet_id,
-                                         MonoDelta::FromSeconds(5)),
-                        "ksck pre-move health check failed");
   client::sp::shared_ptr<KuduClient> client;
   RETURN_NOT_OK(CreateKuduClient(master_addresses, &client));
-  RETURN_NOT_OK(ScheduleReplicaMove(master_addresses, client,
-                                    tablet_id, from_ts_uuid, to_ts_uuid));
+
+  // Make the command idempotent: if a previous (interrupted) invocation already
+  // scheduled this move, the tablet is transiently over-replicated, so skip the
+  // pre-move health check and re-scheduling and just wait for it to complete.
+  bool already_scheduled = false;
+  RETURN_NOT_OK(IsReplicaMoveScheduled(client, tablet_id,
+                                       from_ts_uuid, to_ts_uuid,
+                                       &already_scheduled));
+  if (already_scheduled) {
+    cout << Substitute("Replica move of tablet $0 from $1 to $2 is already in "
+                       "progress; resuming and waiting for it to complete",
+                       tablet_id, from_ts_uuid, to_ts_uuid) << endl;
+  } else {
+    // Check the tablet is in perfect health first.
+    // We retry since occasionally ksck returns bad status because of transient
+    // issues like leader elections.
+    RETURN_NOT_OK_PREPEND(WaitForCleanKsck(master_addresses,
+                                           tablet_id,
+                                           MonoDelta::FromSeconds(5)),
+                          "ksck pre-move health check failed");
+    RETURN_NOT_OK(ScheduleReplicaMove(master_addresses, client,
+                                      tablet_id, from_ts_uuid, to_ts_uuid));
+  }
   const auto copy_timeout = MonoDelta::FromSeconds(FLAGS_move_copy_timeout_sec);
   return WaitForMoveToComplete(master_addresses, client, tablet_id,
                                from_ts_uuid, to_ts_uuid, copy_timeout);
