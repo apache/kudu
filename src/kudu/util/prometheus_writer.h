@@ -75,9 +75,10 @@ std::string BuildServerPrometheusLabels(
     const std::string& entity_id,
     const std::unordered_map<std::string, std::string>& attrs);
 
-// Build Prometheus label string for table/tablet entities.
+// Build Prometheus label string for any entity type other than "server"
+// (e.g. "table", "tablet", or a synthetic/test entity type).
 // Returns labels of the form: type="<entity_type>",id="<entity_id>"[,table_id=...,table_name=...]
-std::string BuildTableTabletPrometheusLabels(
+std::string BuildGenericPrometheusLabels(
     const std::string& entity_type,
     const std::string& entity_id,
     const std::unordered_map<std::string, std::string>& attrs);

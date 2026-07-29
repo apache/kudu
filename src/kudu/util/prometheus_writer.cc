@@ -58,18 +58,18 @@ string BuildPrometheusLabels(
     const string& entity_type,
     const string& entity_id,
     const unordered_map<string, string>& attrs) {
-  // TODO(KUDU-3775): relax this to handle arbitrary entity types gracefully
-  // so that synthetic test entities (e.g. "test_entity") and any future
-  // entity types can use the new label-based Prometheus format without
-  // hitting this assertion.
-  DCHECK(entity_type == "server" ||
-         entity_type == "table" ||
-         entity_type == "tablet")
-      << "unexpected entity type: " << entity_type;
+  // "server" is the only entity type with special-cased handling: its
+  // entity_id is mapped to a fixed "master"/"tserver" label value (see
+  // BuildServerPrometheusLabels()). All other entity types -- including
+  // "table", "tablet", and any other type (e.g. synthetic test entities)
+  // -- are passed through as-is to BuildGenericPrometheusLabels(), which
+  // emits entity_type and entity_id directly along with any recognized
+  // attributes in 'attrs'.
+
   if (entity_type == "server") {
     return BuildServerPrometheusLabels(entity_id, attrs);
   }
-  return BuildTableTabletPrometheusLabels(entity_type, entity_id, attrs);
+  return BuildGenericPrometheusLabels(entity_type, entity_id, attrs);
 }
 
 string BuildServerPrometheusLabels(
@@ -95,12 +95,10 @@ string BuildServerPrometheusLabels(
   return labels;
 }
 
-string BuildTableTabletPrometheusLabels(
+string BuildGenericPrometheusLabels(
     const string& entity_type,
     const string& entity_id,
     const unordered_map<string, string>& attrs) {
-  DCHECK(entity_type == "table" || entity_type == "tablet")
-      << "unexpected entity type: " << entity_type;
   DCHECK(entity_id.find_first_of("\\\"\n") == string::npos)
       << "entity_id needs escaping: " << entity_id;
 

@@ -1622,19 +1622,18 @@ TEST_F(MetricsTest, PrometheusEmptyHostnameLabel) {
 }
 
 // Tests for Prometheus-format filtering via MetricPrometheusOptions::filters.
-// Tests that use real entity types (tablet, table, server) enable the new
-// entity-labels format for readable assertions. PrometheusFilterByEntityLevel
-// is the exception: it uses test_entity (not a known type) and therefore
-// stays in legacy format.
-// TODO(KUDU-3775): once BuildPrometheusLabels() handles arbitrary entity types,
-// switch PrometheusFilterByEntityLevel to entity-labels format too.
+// All filtering tests below, including PrometheusFilterByEntityLevel, use the
+// entity-labels format. PrometheusFilterByEntityLevel uses test_entity -- not
+// one of the "server"/"table"/"tablet" entity types -- which is safe now that
+// BuildPrometheusLabels() handles arbitrary entity types (KUDU-3775). See
+// PrometheusEntityLabelsArbitraryEntityType below for a dedicated test of the
+// label-format output itself
 
 TEST_F(MetricsTest, PrometheusFilterByEntityLevel) {
-  // test_entity is not a known Prometheus entity type, so BuildPrometheusLabels()
-  // would DCHECK with the entity-labels format. Pin legacy format explicitly so
-  // this test is not sensitive to the default value of the flag.
+  // Explicitly pin the flag (rather than relying on its default) so this
+  // test's behavior doesn't silently change if the default changes later.
   google::FlagSaver saver;
-  FLAGS_metrics_prometheus_use_entity_labels = false;
+  FLAGS_metrics_prometheus_use_entity_labels = true;
 
   MetricRegistry registry;
   auto entity  = METRIC_ENTITY_test_entity.Instantiate(&registry, "level-test");
@@ -1675,6 +1674,29 @@ TEST_F(MetricsTest, PrometheusFilterByEntityLevel) {
     ASSERT_STR_CONTAINS(out.str(), "info_counter");
     ASSERT_STR_CONTAINS(out.str(), "debug_counter");
   }
+}
+
+// Regression test for KUDU-3775: BuildPrometheusLabels() must handle entity
+// types other than "server"/"table"/"tablet" -- e.g. test_entity -- instead
+// of DCHECKing on them. This isolates label-format correctness from filter
+// behavior, which PrometheusFilterByEntityLevel covers separately.
+TEST_F(MetricsTest, PrometheusEntityLabelsArbitraryEntityType) {
+  // Explicitly pin the flag (rather than relying on its default) so this
+  // test's behavior doesn't silently change if the default changes later.
+  google::FlagSaver saver;
+  FLAGS_metrics_prometheus_use_entity_labels = true;
+
+  MetricRegistry registry;
+  auto entity = METRIC_ENTITY_test_entity.Instantiate(&registry, "level-test");
+  auto warn_m = METRIC_warn_counter.Instantiate(entity);
+  warn_m->Increment();
+
+  ostringstream out;
+  PrometheusWriter writer(&out);
+  MetricPrometheusOptions opts;
+  ASSERT_OK(registry.WriteAsPrometheus(&writer, opts));
+  ASSERT_STR_CONTAINS(out.str(),
+      "kudu_warn_counter{type=\"test_entity\",id=\"level-test\",unit_type=\"requests\"} 1\n");
 }
 
 TEST_F(MetricsTest, PrometheusFilterByEntityType) {
