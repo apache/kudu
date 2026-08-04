@@ -202,8 +202,20 @@ TEST_F(MiniPrometheusTest, StartStopNoTargets) {
   ASSERT_OK(prom.Start());
   ASSERT_GT(prom.port(), 0);
 
+  // There are several initialization processes that are run by Prometheus
+  // upon its start up. Getting HTTP 200 for '/-/ready' URL as documented
+  // doesn't guarantee that '/api/v1/targets' wouldn't return HTTP 503:
+  // '/-/ready' returns HTTP 200 once replaying of the WAL is complete,
+  // but it seems the Scrape/Target Manager initialization routine starts
+  // asynchronously after the TSDB storage layer is initialized and it can take
+  // some time before it reports "all is well" even with an empty target list.
+  // So, it might be a short period of time when /api/v1/targets would return
+  // HTTP 503, even if the server is running and returns HTTP 200 for
+  // 'GET /-/ready' or 'HEAD /-/ready' requests.
   rapidjson::Document doc;
-  ASSERT_OK(prom.GetTargets(&doc));
+  ASSERT_EVENTUALLY([&]() {
+    ASSERT_OK(prom.GetTargets(&doc));
+  });
 
   ASSERT_TRUE(doc.IsObject());
   ASSERT_TRUE(doc.HasMember("status"));
