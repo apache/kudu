@@ -95,9 +95,15 @@ class HeavyUpdateCompactionITest : public KuduTest {
   HeavyUpdateCompactionITest()
       : rand_(SeedRandom()) {
 
-#ifdef THREAD_SANITIZER
-    // The test is very slow with TSAN enabled due to the amount of data
-    // written and compacted, so turn down the volume a bit.
+#if defined(THREAD_SANITIZER) || defined(ADDRESS_SANITIZER)
+    // TSAN and ASAN instrument every memory access and allocation, making each
+    // test iteration slower than a normal build. This means more instances are
+    // simultaneously active on dist-test slaves at any given time, sharing the
+    // same tmp dir capacity. With the default 500 rows, each instance can peak
+    // to several hundred MB of storage usage that could exhaust the tmpfs and
+    // trigger ENOSPC under high concurrency, which causes a fatal crash in the
+    // server's flush path. Reducing the row count to 20 keeps peak disk usage
+    // under safe limit.
     if (gflags::GetCommandLineFlagInfoOrDie("rows").is_default) {
       FLAGS_rows = 20;
     }
