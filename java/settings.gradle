@@ -18,6 +18,11 @@
 // This file contains the configuration of the project hierarchy.
 // Mainly we just define what subprojects are in the build.
 
+plugins {
+    id 'com.gradle.develocity' version '3.17.4'
+    id 'com.gradle.common-custom-user-data-gradle-plugin' version '2.0.1'
+}
+
 rootProject.name = "kudu-parent"
 include "kudu-backup"
 include "kudu-backup-common"
@@ -32,3 +37,29 @@ include "kudu-spark"
 include "kudu-spark-tools"
 include "kudu-subprocess"
 include "kudu-test-utils"
+
+def isCI = System.getenv('CI') != null // adjust to your CI provider
+
+develocity {
+    server = 'https://ge.apache.org'
+    allowUntrustedServer = false
+
+    buildScan {
+        uploadInBackground = !isCI
+        publishing.onlyIf { it.isAuthenticated() }
+        obfuscation {
+            ipAddresses { addresses -> addresses.collect { address -> "0.0.0.0"} }
+        }
+    }
+}
+
+buildCache {
+    local {
+        enabled = true
+    }
+
+    remote(develocity.buildCache) {
+        enabled = false
+        push = isCI
+    }
+}
