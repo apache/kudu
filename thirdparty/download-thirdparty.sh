@@ -35,314 +35,235 @@ mkdir -p $TP_SOURCE_DIR
 cd $TP_SOURCE_DIR
 
 fetch_and_patch \
- glog-${GLOG_VERSION}.tar.gz \
+ $GLOG_ARCHIVE \
  $GLOG_SOURCE \
  $GLOG_PATCHLEVEL \
- "patch -p1 < $TP_DIR/patches/glog-make-internals-visible.patch" \
- "patch -p1 < $TP_DIR/patches/glog-support-stacktrace-for-aarch64.patch"
+ "${GLOG_PATCHES[@]}"
 
 fetch_and_patch \
- googletest-release-${GMOCK_VERSION}.tar.gz \
+ $GMOCK_ARCHIVE \
  $GMOCK_SOURCE \
  $GMOCK_PATCHLEVEL \
- "patch -p0 < $TP_DIR/patches/gmock-update-iwyu-pragma.patch"
+ "${GMOCK_PATCHES[@]}"
 
 fetch_and_patch \
- gflags-${GFLAGS_VERSION}.tar.gz \
+ $GFLAGS_ARCHIVE \
  $GFLAGS_SOURCE \
  $GFLAGS_PATCHLEVEL
 
 fetch_and_patch \
- gperftools-${GPERFTOOLS_VERSION}.tar.gz \
+ $GPERFTOOLS_ARCHIVE \
  $GPERFTOOLS_SOURCE \
  $GPERFTOOLS_PATCHLEVEL \
- "patch -p1 < $TP_DIR/patches/gperftools-Replace-namespace-base-with-namespace-tcmalloc.patch" \
- "autoreconf -fvi"
+ "${GPERFTOOLS_PATCHES[@]}" \
+ "${GPERFTOOLS_EXTRA_COMMANDS[@]}"
 
 fetch_and_patch \
- flatbuffers-${FLATBUFFERS_VERSION}.tar.gz \
+ $FLATBUFFERS_ARCHIVE \
  $FLATBUFFERS_SOURCE \
  $FLATBUFFERS_PATCHLEVEL \
- "patch -p1 < $TP_DIR/patches/flatbuffers-length-to-size-uint8-ptr.patch"
+ "${FLATBUFFERS_PATCHES[@]}"
 
-# NOTE: creating an empty 'third_party/googletest/m4' subdir is a recipe from
-# the $PROTOBUF_SOURCE/autogen.sh file:
-#
-#   The absence of a m4 directory in googletest causes autoreconf to fail when
-#   building under the CentOS docker image. It's a warning in regular build on
-#   Ubuntu/gLinux as well.
-#
 fetch_and_patch \
- protobuf-cpp-${PROTOBUF_VERSION}.tar.gz \
+ $PROTOBUF_ARCHIVE \
  $PROTOBUF_SOURCE \
  $PROTOBUF_PATCHLEVEL \
- "patch -p1 < $TP_DIR/patches/protobuf-inlined_string_field.patch" \
- "mkdir -p third_party/googletest/m4" \
- "autoreconf -fvi"
+ "${PROTOBUF_PATCHES[@]}" \
+ "${PROTOBUF_EXTRA_COMMANDS[@]}"
 
-# Returns 0 if cmake should be patched to work around this bug [1].
-#
-# Currently only SLES 12 SP0 is known to be vulnerable, and since the workaround
-# hurts cmake performance, we apply it only if absolutely necessary.
-#
-# 1. https://gitlab.kitware.com/cmake/cmake/issues/15873.
-needs_patched_cmake() {
-  if [ ! -e /etc/SuSE-release ]; then
-    # Not a SUSE distro.
-    return 1
-  fi
-  if ! grep -q "SUSE Linux Enterprise Server 12" /etc/SuSE-release; then
-    # Not SLES 12.
-    return 1
-  fi
-  if ! grep -q "PATCHLEVEL = 0" /etc/SuSE-release; then
-    # Not SLES 12 SP0.
-    return 1
-  fi
-  return 0
-}
-CMAKE_PATCHES=""
-if needs_patched_cmake; then \
- CMAKE_PATCHES="patch -p1 < $TP_DIR/patches/cmake-issue-15873-dont-use-select.patch"
-fi
-
-# cmake-fix-macos-compilation should be removed once cmake is upgraded to version 3.30 or later
 fetch_and_patch \
- cmake-${CMAKE_VERSION}.tar.gz \
+ $CMAKE_ARCHIVE \
  $CMAKE_SOURCE \
  $CMAKE_PATCHLEVEL \
- "$CMAKE_PATCHES" \
- "patch -p1 < $TP_DIR/patches/cmake-fix-macos-compilation.patch"
+ "${CMAKE_PATCHES[@]}"
 
 fetch_and_patch \
- snappy-${SNAPPY_VERSION}.tar.gz \
+ $SNAPPY_ARCHIVE \
  $SNAPPY_SOURCE \
  $SNAPPY_PATCHLEVEL
 
 fetch_and_patch \
- zlib-${ZLIB_VERSION}.tar.gz \
+ $ZLIB_ARCHIVE \
  $ZLIB_SOURCE \
  $ZLIB_PATCHLEVEL
 
 fetch_and_patch \
- libev-${LIBEV_VERSION}.tar.gz \
+ $LIBEV_ARCHIVE \
  $LIBEV_SOURCE \
  $LIBEV_PATCHLEVEL
 
 fetch_and_patch \
- rapidjson-${RAPIDJSON_VERSION}.zip \
+ $RAPIDJSON_ARCHIVE \
  $RAPIDJSON_SOURCE \
  $RAPIDJSON_PATCHLEVEL \
- "patch -p1 < $TP_DIR/patches/rapidjson-fix-signed-unsigned-conversion-error.patch" \
- "patch -p1 < $TP_DIR/patches/rapidjson-assertions-for-clang-warnings.patch" \
- "patch -p1 < $TP_DIR/patches/rapidjson-avoid-pointer-arithmetic-on-null-pointer.patch" \
- "patch -p1 < $TP_DIR/patches/rapidjson-document-assignment-operator-00.patch" \
- "patch -p1 < $TP_DIR/patches/rapidjson-document-assignment-operator-01.patch"
+ "${RAPIDJSON_PATCHES[@]}"
 
 fetch_and_patch \
- squeasel-${SQUEASEL_VERSION}.tar.gz \
+ $SQUEASEL_ARCHIVE \
  $SQUEASEL_SOURCE \
  $SQUEASEL_PATCHLEVEL \
- "patch -p1 < $TP_DIR/patches/squeasel-handle-openssl-errors.patch" \
- "patch -p1 < $TP_DIR/patches/squeasel-tls-min-version.patch" \
- "patch -p1 < $TP_DIR/patches/squeasel-support-get-bound-addresses-for-ipv6.patch" \
- "patch -p1 < $TP_DIR/patches/squeasel-tls-openssl10x.patch" \
- "patch -p1 < $TP_DIR/patches/squeasel-ipv6-only-socket-option.patch"
+ "${SQUEASEL_PATCHES[@]}"
 
 fetch_and_patch \
- mustache-${MUSTACHE_VERSION}.tar.gz \
+ $MUSTACHE_ARCHIVE \
  $MUSTACHE_SOURCE \
  $MUSTACHE_PATCHLEVEL
 
 fetch_and_patch \
- cpplint-${CPPLINT_VERSION}.tar.gz \
+ $CPPLINT_ARCHIVE \
  $CPPLINT_SOURCE \
  $CPPLINT_PATCHLEVEL \
- "patch -p1 < $TP_DIR/patches/cpplint-libstdcpp-regex.patch"
+ "${CPPLINT_PATCHES[@]}"
 
 fetch_and_patch \
- gcovr-${GCOVR_VERSION}.tar.gz \
+ $GCOVR_ARCHIVE \
  $GCOVR_SOURCE \
  $GCOVR_PATCHLEVEL
 
 fetch_and_patch \
- curl-${CURL_VERSION}.tar.gz \
+ $CURL_ARCHIVE \
  $CURL_SOURCE \
  $CURL_PATCHLEVEL \
- "patch -p1 < $TP_DIR/patches/curl-custom-openssl-library.patch" \
- "patch -p1 < $TP_DIR/patches/curl-handle-openssl-errors.patch" \
- "patch -p1 < $TP_DIR/patches/curl-eventfd-double-close.patch" \
- "autoreconf -fvi"
+ "${CURL_PATCHES[@]}" \
+ "${CURL_EXTRA_COMMANDS[@]}"
 
 fetch_and_patch \
- crcutil-${CRCUTIL_VERSION}.tar.gz \
+ $CRCUTIL_ARCHIVE \
  $CRCUTIL_SOURCE \
  $CRCUTIL_PATCHLEVEL \
- "patch -p1 < $TP_DIR/patches/crcutil-fix-macos-arm64-flags.patch"
+ "${CRCUTIL_PATCHES[@]}"
 
 fetch_and_patch \
- libunwind-${LIBUNWIND_VERSION}.tar.gz \
+ $LIBUNWIND_ARCHIVE \
  $LIBUNWIND_SOURCE \
  $LIBUNWIND_PATCHLEVEL \
- "patch -p1 < $TP_DIR/patches/libunwind-trace-cache-destructor.patch"
+ "${LIBUNWIND_PATCHES[@]}"
 
 fetch_and_patch \
- llvm-${LLVM_VERSION}-iwyu-${IWYU_VERSION}.src.tar.gz \
+ $LLVM_ARCHIVE \
  $LLVM_SOURCE \
  $LLVM_PATCHLEVEL \
- "patch -p1 < $TP_DIR/patches/llvm-add-iwyu.patch" \
- "patch -p1 < $TP_DIR/patches/llvm-iwyu-718e69875.patch" \
- "patch -p1 < $TP_DIR/patches/llvm-iwyu-0de60d8a2.patch" \
- "patch -d projects -p1 < $TP_DIR/patches/llvm-remove-cyclades-inclusion-in-sanitizer.patch" \
- "patch -p2 < $TP_DIR/patches/llvm-fix-missing-include.patch" \
- "patch -d projects -p1 < $TP_DIR/patches/llvm-Sanitizer-built-against-glibc-2_34-doesnt-work.patch" \
- "patch -d tools -p1 < $TP_DIR/patches/llvm-ignore-flto-values.patch" \
- "patch -p1 < $TP_DIR/patches/llvm-nostdinc-nostdlib-00.patch" \
- "patch -p1 < $TP_DIR/patches/llvm-nostdinc-nostdlib-01.patch" \
- "patch -p1 < $TP_DIR/patches/llvm-nostdinc-nostdlib-02.patch" \
- "patch -p1 < $TP_DIR/patches/llvm-include-llvm-support-signals.patch" \
- "patch -p1 < $TP_DIR/patches/llvm-is-convertible-00.patch" \
- "patch -p1 < $TP_DIR/patches/llvm-is-convertible-01.patch" \
- "patch -p1 < $TP_DIR/patches/llvm-chrono-duration-00.patch" \
- "patch -p1 < $TP_DIR/patches/llvm-chrono-duration-01.patch" \
- "patch -p1 < $TP_DIR/patches/llvm-section-mm-memory-mapper.patch" \
- "patch -p1 < $TP_DIR/patches/llvm-section-mm-extra-methods.patch"
+ "${LLVM_PATCHES[@]}"
 
 fetch_and_patch \
- lz4-$LZ4_VERSION.tar.gz \
+ $LZ4_ARCHIVE \
  $LZ4_SOURCE \
  $LZ4_PATCHLEVEL
 
 fetch_and_patch \
- bitshuffle-${BITSHUFFLE_VERSION}.tar.gz \
+ $BITSHUFFLE_ARCHIVE \
  $BITSHUFFLE_SOURCE \
  $BITSHUFFLE_PATCHLEVEL
 
 fetch_and_patch \
- kudu-trace-viewer-${TRACE_VIEWER_VERSION}.tar.gz \
+ $TRACE_VIEWER_ARCHIVE \
  $TRACE_VIEWER_SOURCE \
  $TRACE_VIEWER_PATCHLEVEL
 
 fetch_and_patch \
- boost-${BOOST_VERSION}-cmake.tar.gz \
+ $BOOST_ARCHIVE \
  $BOOST_SOURCE \
  $BOOST_PATCHLEVEL
 
 fetch_and_patch \
- breakpad-${BREAKPAD_VERSION}.tar.gz \
+ $BREAKPAD_ARCHIVE \
  $BREAKPAD_SOURCE \
  $BREAKPAD_PATCHLEVEL \
- "patch -p1 < $TP_DIR/patches/breakpad-add-basic-support-for-dwz-dwarf-extension.patch" \
- "patch -p1 < $TP_DIR/patches/breakpad-syscall-rsp-clobber-fix.patch" \
- "patch -p1 < $TP_DIR/patches/breakpad-SIGSTKSZ-error.patch" \
- "patch -p1 < $TP_DIR/patches/breakpad-fclose.patch" \
- "patch -p1 < $TP_DIR/patches/breakpad-fread.patch" \
- "patch -p1 < $TP_DIR/patches/breakpad-minidump-descriptor.patch" \
- "patch -p1 < $TP_DIR/patches/breakpad-guid-creator.patch" \
- "patch -p1 < $TP_DIR/patches/breakpad-64k-pages-stack-collection.patch"
+ "${BREAKPAD_PATCHES[@]}"
 
 fetch_and_patch \
- sparsehash-c11-${SPARSEHASH_VERSION}.tar.gz \
+ $SPARSEHASH_ARCHIVE \
  $SPARSEHASH_SOURCE \
  $SPARSEHASH_PATCHLEVEL \
- "patch -p1 < $TP_DIR/patches/sparsehash-0001-Add-compatibily-for-gcc-4.x-in-traits.patch" \
- "patch -p1 < $TP_DIR/patches/sparsehash-0002-Add-workaround-for-dense_hashtable-move-constructor-.patch"
+ "${SPARSEHASH_PATCHES[@]}"
 
 fetch_and_patch \
- sparsepp-${SPARSEPP_VERSION}.tar.gz \
+ $SPARSEPP_ARCHIVE \
  $SPARSEPP_SOURCE \
  $SPARSEPP_PATCHLEVEL
 
 fetch_and_patch \
- $THRIFT_NAME.tar.gz \
+ $THRIFT_ARCHIVE \
  $THRIFT_SOURCE \
  $THRIFT_PATCHLEVEL \
- "patch -p1 < $TP_DIR/patches/thrift-e96bc4015.patch" \
- "patch -p1 < $TP_DIR/patches/thrift-c1457c69f.patch" \
- "patch -p1 < $TP_DIR/patches/thrift-5748bbb6b.patch" \
- "patch -p1 < $TP_DIR/patches/thrift-e3c8c534c.patch"
+ "${THRIFT_PATCHES[@]}"
 
 fetch_and_patch \
- $BISON_NAME.tar.gz \
+ $BISON_ARCHIVE \
  $BISON_SOURCE \
  $BISON_PATCHLEVEL
- # This would normally call autoreconf, but it does not succeed with
- # autoreconf 2.69-11 (RHEL 7): "autoreconf: 'configure.ac' or 'configure.in' is required".
 
 fetch_and_patch \
- $HIVE_NAME-stripped.tar.gz \
+ $HIVE_ARCHIVE \
  $HIVE_SOURCE \
  $HIVE_PATCHLEVEL
 
 fetch_and_patch \
- $HADOOP_NAME-stripped.tar.gz \
+ $HADOOP_ARCHIVE \
  $HADOOP_SOURCE \
  $HADOOP_PATCHLEVEL
 
 fetch_and_patch \
- $YAML_NAME.tar.gz \
+ $YAML_ARCHIVE \
  $YAML_SOURCE \
  $YAML_PATCHLEVEL
 
 fetch_and_patch \
- $CHRONY_NAME.tar.gz \
+ $CHRONY_ARCHIVE \
  $CHRONY_SOURCE \
  $CHRONY_PATCHLEVEL \
- "patch -p1 < $TP_DIR/patches/chrony-reuseport.patch"
+ "${CHRONY_PATCHES[@]}"
 
 fetch_and_patch \
- $GUMBO_PARSER_NAME.tar.gz \
+ $GUMBO_PARSER_ARCHIVE \
  $GUMBO_PARSER_SOURCE \
  $GUMBO_PARSER_PATCHLEVEL \
- "patch -p1 < $TP_DIR/patches/gumbo-parser-autoconf-263.patch" \
- "autoreconf -fvi"
+ "${GUMBO_PARSER_PATCHES[@]}" \
+ "${GUMBO_PARSER_EXTRA_COMMANDS[@]}"
 
 fetch_and_patch \
- $GUMBO_QUERY_NAME.tar.gz \
+ $GUMBO_QUERY_ARCHIVE \
  $GUMBO_QUERY_SOURCE \
  $GUMBO_QUERY_PATCHLEVEL \
- "patch -p1 < $TP_DIR/patches/gumbo-query-namespace.patch"
+ "${GUMBO_QUERY_PATCHES[@]}"
 
 fetch_and_patch \
- $POSTGRES_NAME.tar.gz \
+ $POSTGRES_ARCHIVE \
  $POSTGRES_SOURCE \
  $POSTGRES_PATCHLEVEL \
- "patch -p0 < $TP_DIR/patches/postgres-root-can-run-initdb.patch" \
- "patch -p0 < $TP_DIR/patches/postgres-no-check-root.patch" \
- "patch -p1 < $TP_DIR/patches/postgres-fix-strchrnul-macos-check.patch"
+ "${POSTGRES_PATCHES[@]}"
 
 fetch_and_patch \
- $POSTGRES_JDBC_NAME.jar \
+ $POSTGRES_JDBC_ARCHIVE \
  $POSTGRES_JDBC_SOURCE \
  $POSTGRES_JDBC_PATCHLEVEL
 
 fetch_and_patch \
- $RANGER_NAME.tar.gz \
+ $RANGER_ARCHIVE \
  $RANGER_SOURCE \
  $RANGER_PATCHLEVEL \
- "patch -p0 < $TP_DIR/patches/ranger-fixscripts.patch"
+ "${RANGER_PATCHES[@]}"
 
 fetch_and_patch \
- $JWT_CPP_NAME.tar.gz \
+ $JWT_CPP_ARCHIVE \
  $JWT_CPP_SOURCE \
  $JWT_CPP_PATCHLEVEL
 
 fetch_and_patch \
- $RANGER_KMS_NAME.tar.gz \
+ $RANGER_KMS_ARCHIVE \
  $RANGER_KMS_SOURCE \
  $RANGER_KMS_PATCHLEVEL
 
 fetch_and_patch \
- $ROCKSDB_NAME.tar.gz \
+ $ROCKSDB_ARCHIVE \
  $ROCKSDB_SOURCE \
  $ROCKSDB_PATCHLEVEL \
- "patch -p1 < $TP_DIR/patches/rocksdb-gcc13.patch"
+ "${ROCKSDB_PATCHES[@]}"
 
 fetch_and_patch \
- ${PROMETHEUS_NAME}.tar.gz \
- ${PROMETHEUS_SOURCE} \
- ${PROMETHEUS_PATCHLEVEL}
+ $PROMETHEUS_ARCHIVE \
+ $PROMETHEUS_SOURCE \
+ $PROMETHEUS_PATCHLEVEL
 
 echo "---------------"
 echo "Thirdparty dependencies downloaded successfully"
-
