@@ -1637,7 +1637,8 @@ Status GetTableStatistics(const RunnerContext& context) {
                      "live row count: $1\n"
                      "on disk size limit: $2\n"
                      "live row count limit: $3\n",
-                     resp.has_on_disk_size() ? std::to_string(resp.on_disk_size()) : "N/A",
+                     resp.has_on_disk_size() ?
+                         HumanReadableNumBytes::ToString(resp.on_disk_size()) : "N/A",
                      resp.has_live_row_count() ? std::to_string(resp.live_row_count()) : "N/A",
                      resp.has_disk_size_limit() ? std::to_string(resp.disk_size_limit()) : "N/A",
                      resp.has_row_count_limit() ? std::to_string(resp.row_count_limit()) : "N/A")
