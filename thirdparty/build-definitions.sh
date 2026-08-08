@@ -947,7 +947,6 @@ build_gcovr() {
   cp -a $GCOVR_SOURCE/scripts/gcovr $dst_dir
 }
 
-# The trace viewer naturally comes as pre-built in its source tarball.
 build_trace_viewer() {
   local dst_dir=$INSTALL_DESTDIR$PREFIX/share/trace-viewer
   mkdir -p $dst_dir

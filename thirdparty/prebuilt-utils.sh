@@ -363,6 +363,7 @@ fetch_prebuilt_or_build() {
 
   if [ "${USE_PREBUILT_THIRDPARTY:-1}" = "0" ]; then
     create_lib_symlink "$PREFIX"
+    fetch_and_patch "$component"
     invoke_component_build "$component" "$install_subdir"
     apply_post_install "$component" "$install_subdir"
     return
@@ -402,6 +403,7 @@ fetch_prebuilt_or_build() {
   rm -rf "$staging_root"
 
   create_lib_symlink "$staging_root$PREFIX"
+  fetch_and_patch "$component"
   invoke_component_build "$component" "$install_subdir"
   create_prebuilt_tarball "$staging_root" "$tarball_name"
   extract_prebuilt_tarball "$tarball_name" "$install_subdir"

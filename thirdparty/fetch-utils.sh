@@ -140,6 +140,12 @@ fetch_with_url_and_patch() {
   local URL_PREFIX=$4
   # Remaining args are expected to be a list of patch commands
 
+  if [ -z "$TP_SOURCE_DIR" ]; then
+    echo "TP_SOURCE_DIR is not defined"
+    exit 1
+  fi
+  mkdir -p $TP_SOURCE_DIR
+  pushd $TP_SOURCE_DIR
   delete_if_wrong_patchlevel $SOURCE $PATCH_LEVEL
   if [ ! -d $SOURCE ]; then
     fetch_and_expand $FILENAME $SOURCE $URL_PREFIX
@@ -153,19 +159,66 @@ fetch_with_url_and_patch() {
     popd
     echo
   fi
+  popd
 }
 
 # Call fetch_with_url_and_patch with the default dependency URL source.
-fetch_and_patch() {
+fetch_and_patch_src() {
   local FILENAME=$1
   local SOURCE=$2
   local PATCH_LEVEL=$3
-
   shift 3
+
   fetch_with_url_and_patch \
     $FILENAME \
     $SOURCE \
     $PATCH_LEVEL \
     $DEPENDENCY_URL \
     "$@"
+}
+
+# Deduce all the necessary arguments for 'fetch_and_patch_src' function
+# given the name of a 3rd-party component, and invoke the function.
+fetch_and_patch() {
+  local component=$1
+  if [ -z "$component" ]; then
+    echo "ERROR: first argument (component name) must not be empty" >&2
+    exit 1
+  fi
+  component=$(echo $component | tr '[:lower:]' '[:upper:]' | tr '-' '_')
+
+  # Building variables in the xxx_{NAME,SOURCE,PATCHLEVEL,PATCHES} form
+  # using information provided in vars.sh.
+  local name_var="${component}_NAME"
+  local name="${!name_var}"
+  if [ -z "$name" ]; then
+    echo "ERROR: $name_var isn't defined or empty: check vars.sh" >&2
+    exit 1
+  fi
+
+  local src_var="${component}_NAME"
+  local src="${!src_var}"
+  if [ -z "$src" ]; then
+    echo "ERROR: $src_var isn't defined or empty: check vars.sh" >&2
+    exit 1
+  fi
+
+  local plevel_var="${component}_PATCHLEVEL"
+  local plevel="${!plevel_var}"
+  if [ -z "$plevel" ]; then
+    echo "ERROR: $plevel_var isn't defined or empty: check vars.sh" >&2
+    exit 1
+  fi
+
+  # Namerefs (declare -n ...) aren't available in bash versions prior to 4.3,
+  # so using eval to reconstruct the array locally for wider portability
+  # across bash versions.
+
+  # xxx_PATCHES may be empty if there isn't any patches to apply
+  eval "local patches=(\"\${${component}_PATCHES[@]}\")"
+
+  # xxx_EXTRA_COMMANDS may be empty if there isn't any extra commands to run
+  eval "local extra_commands=(\"\${${component}_EXTRA_COMMANDS[@]}\")"
+
+  fetch_and_patch_src $name.tar.gz $src $plevel "${patches[@]}" "${extra_commands[@]}"
 }
