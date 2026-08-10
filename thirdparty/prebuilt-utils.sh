@@ -254,6 +254,15 @@ apply_post_install() {
   if [ "$component" = "llvm" -a "$install_subdir" = "uninstrumented" ]; then
     ln -sfn "$TP_INSTALL_DIR/uninstrumented" "$TP_DIR/clang-toolchain"
   fi
+
+  if [ "$component" = "trace-viewer" ]; then
+    echo Installing trace-viewer into the www directory
+    mkdir -p $TP_DIR/../www/
+    for i in $PREFIX/share/trace-viewer/*; do
+      local fname="$(basename $i)"
+      ln -nsf "$i" "$TP_DIR/../www/$fname"
+    done
+  fi
 }
 
 # Convert a component identifier into the name of its build_* function.

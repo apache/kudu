@@ -286,7 +286,7 @@ if [ -n "$F_COMMON" -o -n "$F_GCOVR" ]; then
 fi
 
 if [ -n "$F_COMMON" -o -n "$F_TRACE_VIEWER" ]; then
-  build_trace_viewer
+  fetch_prebuilt_or_build trace-viewer common
 fi
 
 if [ -n "$F_COMMON" -o -n "$F_CLIENT_ONLY" -o -n "$F_SPARSEHASH" ]; then
