@@ -64,6 +64,48 @@ else
   PREFIX_DEPS_TSAN=/opt/kudu/thirdparty/tsan
 fi
 
+#
+# The following variables are mandatory for every 3rd-party component:
+#
+# * <comp>_VERSION
+#   Upstream version of the component: usually it's a sequence of numbers
+#   composed by semantic versioning rules, but it can be a git hash
+#   if no explicit upstream releases exist.
+#
+# * <comp>_PATCHLEVEL
+#   Kudu-specific patch level, a number (in decimal representation).
+#   By convention, it usually starts with 0 for a new upstream version
+#   of a component, and then it should not decrease while staying with that
+#   upstream version. It should be incremented by one every time a new patch
+#   or a set of patches is added, or when corresponding build_<comp> function
+#   in build-definitions.sh is updated.
+#
+# * <comp>_NAME
+#   Name of the component that includes upstream version but doesn't include
+#   Kudu patch level.
+#
+# * <comp>_SOURCE
+#   Full path to the sub-directory in $TP_SOURCE_DIR when the component's
+#   source archive is expanded to.  Usually, it's $TP_SOURCE_DIR/$<comp>_NAME
+#
+# * <comp>_ARCHIVE
+#   Name of the source archive downloadable from the dedicated S3 bucket.
+#   Usually, it's something similar $<comp>_NAME.tar.gz, where supported
+#   archive types now are tar with different compressors (gzip, bzip2, xz)
+#   and ZIP.
+#
+# The following variables are optional for a 3rd-party component:
+#
+# * <comp>_PATCHES
+#   Bash array: a set of patch/update commands to amend the upstream source
+#   archive with custom patches maintained by the Kudu project.
+#
+# * <comp>_EXTRA_COMMANDS
+#   Bash array: a set of commands to run after expanding and patching the
+#   source archive. In most cases, it's an invocation of the autoreconf utility.
+#   Calling autoreconf sometimes is necessary to fix hard-coded aclocal
+#   versions in 'configure' scripts that ship with upstream source archives.
+#
 GFLAGS_VERSION=2.2.2
 GFLAGS_PATCHLEVEL=0
 GFLAGS_NAME=gflags-$GFLAGS_VERSION

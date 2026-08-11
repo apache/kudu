@@ -17,9 +17,6 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# autoreconf calls are necessary to fix hard-coded aclocal versions in the
-# configure scripts that ship with the projects.
-
 set -e
 
 TP_DIR=$(cd "$(dirname "$BASH_SOURCE")"; pwd)
@@ -27,10 +24,10 @@ TP_DIR=$(cd "$(dirname "$BASH_SOURCE")"; pwd)
 source $TP_DIR/vars.sh
 source $TP_DIR/prebuilt-utils.sh
 
-if [[ "$OSTYPE" =~ ^linux ]]; then
-  OS_LINUX=1
+if [ -z "$TP_SOURCE_DIR" ]; then
+  echo "ERROR: TP_SOURCE_DIR variable is not set, check your scripts" >&2
+  exit 1
 fi
-
 mkdir -p $TP_SOURCE_DIR
 cd $TP_SOURCE_DIR
 
@@ -78,15 +75,13 @@ TP_COMPONENTS="
  prometheus
 "
 
-
-# If not using pre-built thirdparty artifacts, fetch all the source archives
-# unconditionally: this simplifies the logic. It is aligned with the most
-# common use case: building everything from scratch (if not built yet).
-if [ "${USE_PREBUILT_THIRDPARTY:-1}" = "0" ]; then
-  for comp in $TP_COMPONENTS; do
-    fetch_and_patch $comp
-  done
-fi
+# Fetch source/distro archives for all the 3rd-party components, apply custom
+# patches, run autoreconf for some, and then run configure or cmake for each
+# of them.  Calling autoreconf is necessary to fix hard-coded aclocal versions
+# in the configure scripts that ship with a few source archives.
+for comp in $TP_COMPONENTS; do
+  fetch_and_patch "$comp"
+done
 
 echo "---------------"
-echo "Thirdparty dependencies downloaded successfully"
+echo "Thirdparty source code downloaded and configured successfully"

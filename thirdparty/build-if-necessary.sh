@@ -17,8 +17,10 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# Script which downloads and builds the thirdparty dependencies
-# only if necessary.
+# This script fetches and installs the thirdparty dependencies only if
+# necessary. In pre-build mode (which is enabled by default), if pre-built
+# artifacts of thirdparty components aren't available, the script builds
+# them from source.
 #
 # In a git repo, this uses git checksum information on the thirdparty
 # tree. Otherwise, it uses a 'stamp file' approach.
@@ -47,8 +49,8 @@ case $1 in
 esac
 
 
-TP_DIR=$(dirname $BASH_SOURCE)
-cd $TP_DIR
+TP_DIR=$(cd "$(dirname "$BASH_SOURCE")"; pwd)
+cd "$TP_DIR"
 
 NEEDS_BUILD=
 NEEDS_REHASH=
@@ -113,8 +115,10 @@ for GROUP in $NEEDS_BUILD; do
   rm -f .build-hash.$GROUP .build-stamp.$GROUP
 done
 
-# Download and build the necessary dependency groups.
-./download-thirdparty.sh
+source $TP_DIR/vars.sh
+source $TP_DIR/prebuilt-utils.sh
+
+# Download and/or build the necessary dependency groups.
 ./build-thirdparty.sh $NEEDS_BUILD
 
 # The build succeeded. Update the appropriate hashes/stamps.

@@ -87,7 +87,6 @@ The build requires `flatc` from Kudu's thirdparty. A full thirdparty build is
 not necessary — only download and build the flatbuffers component:
 
 ```bash
-./thirdparty/download-thirdparty.sh
 ./thirdparty/build-thirdparty.sh flatbuffers
 ```
 

@@ -18,7 +18,7 @@
 # under the License.
 
 # Shared helpers for downloading and unpacking thirdparty source archives.
-# Sourced by download-thirdparty.sh and prebuilt-utils.sh.
+# Sourced by prebuilt-utils.sh.
 
 if [ -z "$TP_DIR" ]; then
   echo "TP_DIR variable not set, check your scripts"
