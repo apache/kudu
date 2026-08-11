@@ -309,13 +309,12 @@ LIBUNWIND_PATCHES=(
 )
 
 # See package-llvm.sh for details on the LLVM tarball.
+# The include-what-you-use is built along with LLVM in its source tree.
+IWYU_VERSION=0.15
 LLVM_VERSION=11.0.0
 LLVM_PATCHLEVEL=10
 LLVM_NAME=llvm-$LLVM_VERSION.src
 LLVM_SOURCE=$TP_SOURCE_DIR/$LLVM_NAME
-
-# The include-what-you-use is built along with LLVM in its source tree.
-IWYU_VERSION=0.15
 LLVM_ARCHIVE=llvm-$LLVM_VERSION-iwyu-$IWYU_VERSION.src.tar.gz
 LLVM_PATCHES=(
  "patch -p1 < $TP_DIR/patches/llvm-add-iwyu.patch"
@@ -336,6 +335,20 @@ LLVM_PATCHES=(
  "patch -p1 < $TP_DIR/patches/llvm-section-mm-memory-mapper.patch"
  "patch -p1 < $TP_DIR/patches/llvm-section-mm-extra-methods.patch"
 )
+
+# All libcxxabi's variables are pointing to LLVM's: libcxxabi is built
+# from the same LLVM sources, but in a different build directory.
+LIBCXXABI_PATCHLEVEL=$LLVM_PATCHLEVEL
+LIBCXXABI_ARCHIVE=$LLVM_ARCHIVE
+LIBCXXABI_NAME=$LLVM_NAME
+LIBCXXABI_SOURCE=$LLVM_SOURCE
+
+# All libcxx's variables are pointing to LLVM's: libcxxabi is built
+# from the same LLVM sources, but in a different build directory.
+LIBCXX_PATCHLEVEL=$LLVM_PATCHLEVEL
+LIBCXX_ARCHIVE=$LLVM_ARCHIVE
+LIBCXX_NAME=$LLVM_NAME
+LIBCXX_SOURCE=$LLVM_SOURCE
 
 # Our trace-viewer repository is separate since it's quite large and
 # shouldn't change frequently. We upload the built artifacts (HTML/JS)

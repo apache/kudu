@@ -46,18 +46,6 @@ delete_if_wrong_patchlevel() {
   fi
 }
 
-unzip_to_source() {
-  local FILENAME=$1
-  local SOURCE=$2
-  unzip -q "$FILENAME"
-  # Parse out the unzipped top directory
-  DIR_NAME=`unzip -qql "$FILENAME" | awk 'NR==1 {print $4}' | sed -e 's|^[/]*\([^/]*\).*|\1|'`
-  # If the unzipped directory is the wrong name, move it.
-  if [ "$SOURCE" != "$TP_SOURCE_DIR/$DIR_NAME" ]; then
-    mv "$TP_SOURCE_DIR/$DIR_NAME" "$SOURCE"
-  fi
-}
-
 fetch_and_expand() {
   local FILENAME=$1
   local SOURCE=$2
@@ -84,7 +72,7 @@ fetch_and_expand() {
       echo "Archive $FILENAME already exists. Not re-downloading archive."
     else
       echo "Fetching $FILENAME from $FULL_URL"
-      if ! curl --retry 3 -L -O "$FULL_URL"; then
+      if ! curl --retry 3 -fL -O "$FULL_URL"; then
         echo "Error downloading $FILENAME"
         rm -f "$FILENAME"
 
@@ -96,10 +84,23 @@ fetch_and_expand() {
 
     echo "Unpacking $FILENAME to $SOURCE"
     if [[ "$FILENAME" =~ \.zip$ ]]; then
-      if ! unzip_to_source "$FILENAME" "$SOURCE"; then
+      # Unzip the archive, replacing files if they already present,
+      # overwriting them with the files from the archive.
+      if ! unzip -qo "$FILENAME"; then
         echo "Error unzipping $FILENAME, removing file"
-        rm "$FILENAME"
+        rm -f "$FILENAME"
         continue
+      fi
+      # Parse out the unzipped top directory
+      local DIR_NAME=`unzip -qql "$FILENAME" | awk 'NR==1 {print $4}' | sed -e 's|^[/]*\([^/]*\).*|\1|'`
+      if [ -z "$DIR_NAME" ]; then
+        echo "Unexpected behavior from unzip on $FILENAME, removing file"
+        rm -f "$FILENAME"
+        continue
+      fi
+      # If the unzipped directory has the wrong name, rename/move it.
+      if [ "$SOURCE" != "$DIR_NAME" ]; then
+        mv -f "$DIR_NAME" "$SOURCE"
       fi
     elif [[ "$FILENAME" =~ \.(tar\.gz|tgz)$ ]]; then
       if ! $TAR_CMD xf "$FILENAME"; then
@@ -189,10 +190,10 @@ fetch_and_patch() {
 
   # Building variables in the xxx_{NAME,SOURCE,PATCHLEVEL,PATCHES} form
   # using information provided in vars.sh.
-  local name_var="${component}_NAME"
-  local name="${!name_var}"
-  if [ -z "$name" ]; then
-    echo "ERROR: $name_var isn't defined or empty: check vars.sh" >&2
+  local archive_var="${component}_ARCHIVE"
+  local archive="${!archive_var}"
+  if [ -z "$archive" ]; then
+    echo "ERROR: $archive_var isn't defined or empty: check vars.sh" >&2
     exit 1
   fi
 
@@ -220,5 +221,5 @@ fetch_and_patch() {
   # xxx_EXTRA_COMMANDS may be empty if there isn't any extra commands to run
   eval "local extra_commands=(\"\${${component}_EXTRA_COMMANDS[@]}\")"
 
-  fetch_and_patch_src $name.tar.gz $src $plevel "${patches[@]}" "${extra_commands[@]}"
+  fetch_and_patch_src $archive $src $plevel "${patches[@]}" "${extra_commands[@]}"
 }
