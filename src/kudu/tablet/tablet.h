@@ -531,6 +531,7 @@ class Tablet {
   friend class TabletHistoryGcTest;
   friend class TabletReplicaTest;
   friend class TabletReplicaTestBase;
+  friend class CompactionHighMemBenchmark;
   friend class TestHighMemCompaction;
   template<typename T> friend class MultiThreadedTabletTest;
   template<typename T> friend class TestTablet;

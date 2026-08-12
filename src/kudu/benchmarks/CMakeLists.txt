@@ -63,6 +63,21 @@ if(NOT APPLE)
     kudu_util)
 endif()
 
+# compaction_highmem_benchmark: standalone benchmark for high-memory rowset
+# compaction. Not registered with ADD_KUDU_TEST; run manually on a machine with
+# >= 32 GB RAM and sufficient free disk.
+if(NOT NO_TESTS)
+  add_executable(compaction_highmem_benchmark compaction_highmem_benchmark.cc)
+  target_link_libraries(compaction_highmem_benchmark
+    ${KUDU_MIN_TEST_LIBS}
+    tablet
+    tablet_test_util)
+  if(NOT NO_ROCKSDB)
+    target_link_libraries(compaction_highmem_benchmark
+      rocksdb)
+  endif()
+endif()
+
 #######################################
 # Unit tests
 #######################################
