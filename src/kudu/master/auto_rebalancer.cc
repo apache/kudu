@@ -397,7 +397,9 @@ Status AutoRebalancerTask::GetMoves(
   // If no placement policy violations were found, perform load rebalancing.
   // Perform cross-location rebalancing.
   if (config_.run_cross_location_rebalancing) {
-    rebalance::LocationBalancingAlgo algo(FLAGS_auto_rebalancing_load_imbalance_threshold);
+    rebalance::LocationBalancingAlgo algo(
+        FLAGS_auto_rebalancing_load_imbalance_threshold,
+        FLAGS_auto_rebalancing_prefer_follower_replica_moves);
     RETURN_NOT_OK(GetMovesUsingRebalancingAlgo(
         raw_info, &algo, CrossLocations::YES, &rep_moves));
   }

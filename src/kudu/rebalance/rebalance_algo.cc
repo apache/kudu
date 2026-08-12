@@ -481,8 +481,10 @@ Status TwoDimensionalGreedyAlgo::GetMinMaxLoadedServers(
   return Status::OK();
 }
 
-LocationBalancingAlgo::LocationBalancingAlgo(double load_imbalance_threshold)
-    : load_imbalance_threshold_(load_imbalance_threshold) {
+LocationBalancingAlgo::LocationBalancingAlgo(double load_imbalance_threshold,
+                                             bool prefer_follower_moves)
+    : load_imbalance_threshold_(load_imbalance_threshold),
+      prefer_follower_moves_(prefer_follower_moves) {
 }
 
 Status LocationBalancingAlgo::GetNextMove(
@@ -578,7 +580,7 @@ Status LocationBalancingAlgo::GetNextMove(
   }
 
   return FindBestMove(imbalanced_table_info, loc_loaded_least, loc_loaded_most,
-                      cluster_info, move);
+                      cluster_info, prefer_follower_moves_, move);
 }
 
 bool LocationBalancingAlgo::IsBalancingNeeded(
@@ -626,6 +628,7 @@ Status LocationBalancingAlgo::FindBestMove(
     const vector<string>& loc_loaded_least,
     const vector<string>& loc_loaded_most,
     const ClusterInfo& cluster_info,
+    bool prefer_follower_moves,
     optional<TableReplicaMove>* move) {
   // Among the available candidate locations, prefer those having the most and
   // least loaded tablet servers in terms of total number of hosted replicas.
@@ -684,14 +687,35 @@ Status LocationBalancingAlgo::FindBestMove(
   }
   const auto max_load = ts_id_by_load_most.cbegin()->first;
   const auto max_range = ts_id_by_load_most.equal_range(max_load);
-  auto it_max = max_range.first;
 #if 0
   // TODO(aserbin): add randomness
   const auto distance_max = distance(max_range.first, max_range.second);
+  auto it_max = max_range.first;
   std::advance(it_max, Uniform(distance_max));
   CHECK_NE(max_range.second, it_max);
 #endif
-  const auto& src_ts_id = it_max->second;
+
+  // Among the equally most-loaded sources, prefer one that hosts a non-leader
+  // replica of the target table+tag when 'prefer_follower_moves' is set:
+  // moving a leader triggers a leadership transfer and can disrupt clients.
+  // Fall back to any equally most-loaded source when no such candidate exists
+  // (matches the pre-flag behavior of taking the first entry in the range).
+  string src_ts_id = max_range.first->second;
+  if (prefer_follower_moves) {
+    const auto& followers_by_table_and_tag =
+        cluster_info.ts_with_followers_by_table_and_tag;
+    const auto it_followers = followers_by_table_and_tag.find(
+        TableIdAndTag{ table_info.table_id, table_info.tag });
+    if (it_followers != followers_by_table_and_tag.end()) {
+      for (auto it = max_range.first; it != max_range.second; ++it) {
+        const auto& ts_id = it->second;
+        if (ContainsKey(it_followers->second, ts_id)) {
+          src_ts_id = ts_id;
+          break;
+        }
+      }
+    }
+  }
   CHECK_NE(src_ts_id, dst_ts_id);
 
   *move = TableReplicaMove{ table_info.table_id, table_info.tag, src_ts_id, dst_ts_id };

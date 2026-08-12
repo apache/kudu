@@ -229,7 +229,7 @@ void VerifyLocationRebalancingMoves(const TestClusterConfig& cfg) {
   {
     ClusterInfo ci;
     ClusterConfigToClusterInfo(cfg, &ci);
-    LocationBalancingAlgo algo(1.0);
+    LocationBalancingAlgo algo(1.0, /*prefer_follower_moves=*/true);
     ASSERT_OK(algo.GetNextMoves(ci, 0, &moves));
   }
   switch (cfg.ref_comparison_options.moves_ordering) {
@@ -1679,6 +1679,117 @@ TEST(RebalanceAlgoUnitTest, LocationBalancingSimpleMT) {
     },
   };
   VERIFY_LOCATION_BALANCING_MOVES(kConfigs);
+}
+
+// LocationBalancingAlgo must prefer a source that hosts a non-leader replica
+// of the target table+tag when 'prefer_follower_moves' is enabled and multiple
+// equally most-loaded sources exist in the source location(s). When the flag
+// is disabled, the algorithm falls back to its original deterministic choice
+// (the first candidate in the internal multimap order).
+TEST(RebalanceAlgoUnitTest, LocationBalancingPrefersFollowerSource) {
+  // Location L0 has two servers ("0", "1") equally loaded (2 replicas each).
+  // Location L1 has two servers ("2", "3") with no replicas. So L0 is the most
+  // loaded location and both "0" and "1" tie for the max total load; only "1"
+  // is registered as hosting a follower replica of the target table+tag.
+  const TestClusterConfig kConfig = {
+    {
+      { "L0", { "0", "1", }, },
+      { "L1", { "2", "3", }, },
+    },
+    { "0", "1", "2", "3", },
+    { { "A", "", { 2, 2, 0, 0, } }, },
+    {}
+  };
+
+  {
+    // prefer_follower_moves = true: source must be "1".
+    ClusterInfo ci;
+    ClusterConfigToClusterInfo(kConfig, &ci);
+    ci.ts_with_followers_by_table_and_tag[TableIdAndTag{ "A", "" }].insert("1");
+
+    vector<TableReplicaMove> moves;
+    LocationBalancingAlgo algo(1.0, /*prefer_follower_moves=*/true);
+    ASSERT_OK(algo.GetNextMoves(ci, 1, &moves));
+    ASSERT_EQ(1, moves.size());
+    EXPECT_EQ("A", moves[0].table_id);
+    EXPECT_EQ("", moves[0].tag);
+    EXPECT_EQ("1", moves[0].from);
+    // Destination must be one of the least-loaded servers in L1.
+    EXPECT_TRUE(moves[0].to == "2" || moves[0].to == "3") << moves[0].to;
+  }
+
+  {
+    // prefer_follower_moves = false: preserves the original tie-breaking, which
+    // picks the first entry (server "0") in the max-load multimap range.
+    ClusterInfo ci;
+    ClusterConfigToClusterInfo(kConfig, &ci);
+    ci.ts_with_followers_by_table_and_tag[TableIdAndTag{ "A", "" }].insert("1");
+
+    vector<TableReplicaMove> moves;
+    LocationBalancingAlgo algo(1.0, /*prefer_follower_moves=*/false);
+    ASSERT_OK(algo.GetNextMoves(ci, 1, &moves));
+    ASSERT_EQ(1, moves.size());
+    EXPECT_EQ("0", moves[0].from);
+    EXPECT_TRUE(moves[0].to == "2" || moves[0].to == "3") << moves[0].to;
+  }
+}
+
+// When the follower map is empty (e.g. a hand-built ClusterInfo, matching the
+// pre-BuildClusterInfo path), LocationBalancingAlgo must still emit a move via
+// the leader fallback even with 'prefer_follower_moves' enabled. This mirrors
+// the behavior of TwoDimensionalGreedyAlgo covered by
+// PreferFollowerMovesLeaderFallbackWhenFollowerMapEmpty.
+TEST(RebalanceAlgoUnitTest, LocationBalancingLeaderFallbackWhenFollowerMapEmpty) {
+  const TestClusterConfig kConfig = {
+    {
+      { "L0", { "0", "1", }, },
+      { "L1", { "2", "3", }, },
+    },
+    { "0", "1", "2", "3", },
+    { { "A", "", { 2, 2, 0, 0, } }, },
+    {}
+  };
+
+  ClusterInfo ci;
+  ClusterConfigToClusterInfo(kConfig, &ci);
+  ASSERT_TRUE(ci.ts_with_followers_by_table_and_tag.empty());
+
+  vector<TableReplicaMove> moves;
+  LocationBalancingAlgo algo(1.0, /*prefer_follower_moves=*/true);
+  ASSERT_OK(algo.GetNextMoves(ci, 1, &moves));
+  ASSERT_EQ(1, moves.size());
+  // Without any follower information, source falls back to the first entry
+  // in the max-load multimap range (server "0").
+  EXPECT_EQ("0", moves[0].from);
+  EXPECT_TRUE(moves[0].to == "2" || moves[0].to == "3") << moves[0].to;
+}
+
+// If the follower map has an entry for the target table+tag but the set does
+// not contain any of the equally most-loaded sources, LocationBalancingAlgo
+// must still emit a move via the leader fallback.
+TEST(RebalanceAlgoUnitTest, LocationBalancingLeaderFallbackWhenNoSourceHasFollowers) {
+  const TestClusterConfig kConfig = {
+    {
+      { "L0", { "0", "1", }, },
+      { "L1", { "2", "3", }, },
+    },
+    { "0", "1", "2", "3", },
+    { { "A", "", { 2, 2, 0, 0, } }, },
+    {}
+  };
+
+  ClusterInfo ci;
+  ClusterConfigToClusterInfo(kConfig, &ci);
+  // The follower entry exists but names a server that is not a candidate
+  // source (server "2" is in the least-loaded location).
+  ci.ts_with_followers_by_table_and_tag[TableIdAndTag{ "A", "" }].insert("2");
+
+  vector<TableReplicaMove> moves;
+  LocationBalancingAlgo algo(1.0, /*prefer_follower_moves=*/true);
+  ASSERT_OK(algo.GetNextMoves(ci, 1, &moves));
+  ASSERT_EQ(1, moves.size());
+  EXPECT_EQ("0", moves[0].from);
+  EXPECT_TRUE(moves[0].to == "2" || moves[0].to == "3") << moves[0].to;
 }
 
 } // namespace rebalance

@@ -309,7 +309,8 @@ class TwoDimensionalGreedyAlgo : public RebalancingAlgo {
 // 2 movements gives us the 'ideal' location-wise replica placement.
 class LocationBalancingAlgo : public RebalancingAlgo {
  public:
-  explicit LocationBalancingAlgo(double load_imbalance_threshold);
+  explicit LocationBalancingAlgo(double load_imbalance_threshold,
+                                 bool prefer_follower_moves);
 
  protected:
   Status GetNextMove(const ClusterInfo& cluster_info,
@@ -331,14 +332,22 @@ class LocationBalancingAlgo : public RebalancingAlgo {
   // tablet to improve per-table location load balance as much as possible.
   // If no replica can be moved to balance the load, the 'move' output parameter
   // is set to 'std::nullopt'.
+  //
+  // When 'prefer_follower_moves' is true, prefer a source tablet server that
+  // hosts at least one non-leader replica of the target table+tag (as
+  // populated in ClusterInfo::ts_with_followers_by_table_and_tag), falling
+  // back to a leader source when no such candidate exists among the equally
+  // most-loaded sources.
   static Status FindBestMove(
       const TableIdAndTag& table_info,
       const std::vector<std::string>& loc_loaded_least,
       const std::vector<std::string>& loc_loaded_most,
       const ClusterInfo& cluster_info,
+      bool prefer_follower_moves,
       std::optional<TableReplicaMove>* move);
 
   const double load_imbalance_threshold_;
+  const bool prefer_follower_moves_;
 };
 
 } // namespace rebalance

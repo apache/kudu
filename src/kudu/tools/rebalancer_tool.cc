@@ -1359,7 +1359,8 @@ RebalancerTool::CrossLocationRunner::CrossLocationRunner(
                       std::move(ignored_tservers),
                       max_moves_per_server,
                       deadline),
-      algorithm_(load_imbalance_threshold) {
+      algorithm_(load_imbalance_threshold,
+                 FLAGS_prefer_follower_replica_moves) {
 }
 
 RebalancerTool::ReplaceBasedRunner::ReplaceBasedRunner(
