@@ -27,6 +27,7 @@
 # We also 'cat' the test log upon completion so that the test logs are
 # uploaded by the test slave back.
 
+import errno
 import glob
 import logging
 import optparse
@@ -35,6 +36,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 
 ME = os.path.abspath(__file__)
 ROOT = os.path.abspath(os.path.join(os.path.dirname(ME), ".."))
@@ -103,8 +105,65 @@ def fix_rpath(path):
   rpath = re.search("R(?:UN)?PATH=(.+)", stdout.strip()).group(1)
   # Fix it to be relative.
   new_path = ":".join(fix_rpath_component(path, c) for c in rpath.split(":"))
-  # Write the new rpath back into the binary.
-  subprocess.check_call(["chrpath", "-r", new_path, path])
+  # Skip the rewrite if the RPATH is already relativized. The computed value is
+  # independent of where the archive was extracted (the components are relative
+  # to the binary within the tree), so it is stable across tasks. When concurrent
+  # tasks on a slave observe the same underlying inode for a thirdparty binary,
+  # the first task to rewrite it makes this a no-op for the rest and they read the
+  # already-fixed value here and return without opening the inode for writing,
+  # which is what avoids the ETXTBSY failure below in all but the very first
+  # rewrite. It also avoids redundantly rewriting the entire thirdparty tree on
+  # every task. This should take care of longer running binaries like llvm-symbolizer
+  # that are already relativized.
+  if new_path == rpath:
+    logging.debug("rpath already relativized, skipping: %s", path)
+    return
+  # Write the new rpath back into the binary. In the common case we edit the
+  # binary in place, which is cheap (chrpath only rewrites a small header
+  # region) and preserves the inode along with its metadata and any hardlinks.
+  logging.debug("rewriting rpath in place for %s: %r -> %r",
+                path, rpath, new_path)
+  p = subprocess.Popen(["chrpath", "-r", new_path, path],
+                       stderr=subprocess.PIPE)
+  _, chrpath_stderr = p.communicate()
+  if p.returncode == 0:
+    return
+  # The in-place rewrite failed. The one failure we recover from is when the
+  # binary is currently being executed by another concurrent task on the same
+  # slave (e.g. llvm-symbolizer in ASAN/TSAN): the kernel then rejects any
+  # write-capable open (O_RDWR or O_WRONLY) on the inode with ETXTBSY. We
+  # classify the failure by probing the kernel errno directly rather than
+  # matching chrpath's error text, which is locale-dependent (chrpath reports
+  # ETXTBSY as the strerror string "Text file busy", not "ETXTBSY"). Probing
+  # after the failure, rather than before the write, avoids a race window
+  # where the binary becomes busy between the check and the write. Any
+  # non-ETXTBSY failure is a genuine error and is propagated.
+  try:
+    fd = os.open(path, os.O_RDWR)
+    os.close(fd)
+    busy = False
+  except OSError as e:
+    busy = (e.errno == errno.ETXTBSY)
+  if not busy:
+    raise subprocess.CalledProcessError(p.returncode, "chrpath", chrpath_stderr)
+  logging.warning("in-place rpath rewrite hit ETXTBSY (binary busy), falling "
+                  "back to copy and rename for %s", path)
+  # Rewrite a temporary copy and atomically replace the original via os.rename(),
+  # which merely updates the directory entry and leaves the in-flight execution
+  # of the original inode undisturbed. tempfile.mkstemp() creates the temporary
+  # copy in the same directory with an atomically created, unique name.
+  fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(path),
+                                  prefix=os.path.basename(path) + ".chrpath_tmp.")
+  os.close(fd)
+  try:
+    shutil.copy2(path, tmp_path)
+    subprocess.check_call(["chrpath", "-r", new_path, tmp_path])
+    os.rename(tmp_path, path)
+    logging.warning("recovered from ETXTBSY via copy and rename for %s", path)
+  except Exception:
+    if os.path.exists(tmp_path):
+      os.unlink(tmp_path)
+    raise
 
 def fixup_rpaths(root):
   """
