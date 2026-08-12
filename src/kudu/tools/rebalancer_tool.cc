@@ -893,7 +893,7 @@ RebalancerTool::BaseRunner::BaseRunner(RebalancerTool* rebalancer,
     : rebalancer_(rebalancer),
       ignored_tservers_(std::move(ignored_tservers)),
       max_moves_per_server_(max_moves_per_server),
-      deadline_(std::move(deadline)),
+      deadline_(deadline),
       moves_count_(0) {
   CHECK(rebalancer_);
 }
@@ -990,7 +990,7 @@ RebalancerTool::AlgoBasedRunner::AlgoBasedRunner(
     : BaseRunner(rebalancer,
                  std::move(ignored_tservers),
                  max_moves_per_server,
-                 std::move(deadline)),
+                 deadline),
       random_generator_(random_device_()) {
 }
 
@@ -1358,7 +1358,7 @@ RebalancerTool::CrossLocationRunner::CrossLocationRunner(
     : AlgoBasedRunner(rebalancer,
                       std::move(ignored_tservers),
                       max_moves_per_server,
-                      std::move(deadline)),
+                      deadline),
       algorithm_(load_imbalance_threshold) {
 }
 
@@ -1370,7 +1370,7 @@ RebalancerTool::ReplaceBasedRunner::ReplaceBasedRunner(
     : BaseRunner(rebalancer,
                  std::move(ignored_tservers),
                  max_moves_per_server,
-                 std::move(deadline)) {
+                 deadline) {
 }
 
 Status RebalancerTool::ReplaceBasedRunner::Init(vector<string> master_addresses) {
@@ -1555,7 +1555,7 @@ RebalancerTool::PolicyFixer::PolicyFixer(
     : ReplaceBasedRunner(rebalancer,
                          std::move(ignored_tservers),
                          max_moves_per_server,
-                         std::move(deadline)) {
+                         deadline) {
 }
 
 Status RebalancerTool::PolicyFixer::GetReplaceMoves(
@@ -1607,7 +1607,7 @@ RebalancerTool::IgnoredTserversRunner::IgnoredTserversRunner(
     : ReplaceBasedRunner(rebalancer,
                          std::move(ignored_tservers),
                          max_moves_per_server,
-                         std::move(deadline)),
+                         deadline),
       random_generator_(random_device_()) {
 }
 
