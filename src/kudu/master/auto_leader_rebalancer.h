@@ -32,6 +32,8 @@
 
 namespace kudu {
 
+class Counter;
+class MetricEntity;
 class Thread;
 
 namespace rpc {
@@ -54,7 +56,9 @@ class TableInfo;
 // configured poll period. It performs no work when the master is a follower.
 class AutoLeaderRebalancerTask {
  public:
-  AutoLeaderRebalancerTask(CatalogManager* catalog_manager, TSManager* ts_manager);
+  AutoLeaderRebalancerTask(CatalogManager* catalog_manager,
+                           TSManager* ts_manager,
+                           const scoped_refptr<MetricEntity>& metric_entity);
 
   ~AutoLeaderRebalancerTask();
 
@@ -130,6 +134,21 @@ class AutoLeaderRebalancerTask {
   // Random device and generator for selecting among multiple choices.
   std::random_device random_device_;
   std::mt19937 random_generator_;
+
+  // Counters exposing what the auto-leader-rebalancer is doing across rounds.
+  // See the METRIC_DEFINE_counter blocks in auto_leader_rebalancer.cc for the
+  // per-metric descriptions. The three move counters follow the invariant
+  //     moves_scheduled_ = moves_completed_ + moves_failed_
+  // over the set of transfers that made it past the pre-flight applicability
+  // checks in the per-table and global passes.
+  scoped_refptr<Counter> moves_scheduled_;
+  scoped_refptr<Counter> moves_completed_;
+  scoped_refptr<Counter> moves_failed_;
+  scoped_refptr<Counter> rounds_completed_;
+  scoped_refptr<Counter> global_pass_skipped_;
+  // Warn-severity counter, meant as the main signal for alerting. Bumped
+  // once per round that returned an unexpected error.
+  scoped_refptr<Counter> task_errors_;
 
   // Variables for testing.
   std::atomic<int> number_of_loop_iterations_for_test_;

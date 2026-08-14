@@ -52,6 +52,7 @@
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/cow_object.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
@@ -105,15 +106,87 @@ TAG_FLAG(auto_leader_rebalancing_fail_moves_for_test, hidden);
 
 DECLARE_bool(auto_leader_rebalancing_enabled);
 
+METRIC_DEFINE_counter(server, auto_leader_rebalancer_moves_scheduled,
+                      "Auto-Leader-Rebalancer Moves Scheduled",
+                      kudu::MetricUnit::kTablets,
+                      "Number of leader transfers the auto-leader-rebalancer "
+                      "attempted, across the per-table and global passes. "
+                      "'Attempted' means the transfer made it past the "
+                      "pre-flight applicability checks (target still known "
+                      "and not in maintenance mode) and got as far as issuing "
+                      "the LeaderStepDown RPC. Together with the "
+                      "'_moves_completed' and '_moves_failed' counters the "
+                      "invariant 'scheduled = completed + failed' holds.",
+                      kudu::MetricLevel::kInfo);
+
+METRIC_DEFINE_counter(server, auto_leader_rebalancer_moves_completed,
+                      "Auto-Leader-Rebalancer Moves Completed",
+                      kudu::MetricUnit::kTablets,
+                      "Number of leader transfers the auto-leader-rebalancer "
+                      "issued that were accepted by the target tablet server "
+                      "(the LeaderStepDown RPC returned success and the "
+                      "response carried no error).",
+                      kudu::MetricLevel::kInfo);
+
+METRIC_DEFINE_counter(server, auto_leader_rebalancer_moves_failed,
+                      "Auto-Leader-Rebalancer Moves Failed",
+                      kudu::MetricUnit::kTablets,
+                      "Number of leader transfers attempted by the "
+                      "auto-leader-rebalancer that failed at the RPC layer or "
+                      "returned an error from the target tablet server.",
+                      kudu::MetricLevel::kInfo);
+
+METRIC_DEFINE_counter(server, auto_leader_rebalancer_rounds_completed,
+                      "Auto-Leader-Rebalancer Rounds Completed",
+                      kudu::MetricUnit::kUnits,
+                      "Number of full rebalancing cycles completed by the "
+                      "auto-leader-rebalancer (only counts rounds where this "
+                      "master was the catalog manager leader).",
+                      kudu::MetricLevel::kInfo);
+
+METRIC_DEFINE_counter(server, auto_leader_rebalancer_global_pass_skipped,
+                      "Auto-Leader-Rebalancer Global Pass Skipped",
+                      kudu::MetricUnit::kUnits,
+                      "Number of rounds where the global corrective pass was "
+                      "skipped because the per-table pass still had work to do. "
+                      "If this counter grows without ever pausing, per-table "
+                      "balancing is starving the global pass.",
+                      kudu::MetricLevel::kInfo);
+
+METRIC_DEFINE_counter(server, auto_leader_rebalancer_task_errors,
+                      "Auto-Leader-Rebalancer Task Errors",
+                      kudu::MetricUnit::kUnits,
+                      "Number of auto-leader-rebalancer rounds that returned "
+                      "an unexpected error (any non-OK status from "
+                      "RunLeaderRebalancer() other than this master losing "
+                      "catalog-manager leadership mid-round). Suitable as the "
+                      "primary alerting signal for 'the auto-leader-rebalancer "
+                      "task is faltering'.",
+                      kudu::MetricLevel::kWarn);
+
 namespace kudu {
 namespace master {
 
-AutoLeaderRebalancerTask::AutoLeaderRebalancerTask(CatalogManager* catalog_manager,
-                                                   TSManager* ts_manager)
+AutoLeaderRebalancerTask::AutoLeaderRebalancerTask(
+    CatalogManager* catalog_manager,
+    TSManager* ts_manager,
+    const scoped_refptr<MetricEntity>& metric_entity)
     : catalog_manager_(catalog_manager),
       ts_manager_(ts_manager),
       shutdown_(1),
       random_generator_(random_device_()),
+      moves_scheduled_(
+          METRIC_auto_leader_rebalancer_moves_scheduled.Instantiate(metric_entity)),
+      moves_completed_(
+          METRIC_auto_leader_rebalancer_moves_completed.Instantiate(metric_entity)),
+      moves_failed_(
+          METRIC_auto_leader_rebalancer_moves_failed.Instantiate(metric_entity)),
+      rounds_completed_(
+          METRIC_auto_leader_rebalancer_rounds_completed.Instantiate(metric_entity)),
+      global_pass_skipped_(
+          METRIC_auto_leader_rebalancer_global_pass_skipped.Instantiate(metric_entity)),
+      task_errors_(
+          METRIC_auto_leader_rebalancer_task_errors.Instantiate(metric_entity)),
       number_of_loop_iterations_for_test_(0),
       moves_scheduled_this_round_for_test_(0) {}
 
@@ -407,9 +480,12 @@ Status AutoLeaderRebalancerTask::RunLeaderRebalanceForTable(
                         moves_scheduled_this_round_for_test_.load(),
                         leader_transfer_source.size());
   // Step 4. Do Leader transfer tasks.
-  // @TODO(duyuqi), optimal speed
-  // If leader rebalancing tasks is too many, each rpc of the thread wait the response
-  // synchronously, which may be very slow.
+  //
+  // TODO(gabriellalotz): each LeaderStepDown RPC below is issued synchronously,
+  // so a round with many transfers can be slow. If we change this loop to
+  // dispatch RPCs asynchronously in a follow-up, the moves_scheduled /
+  // moves_completed / moves_failed counters let us verify the async version
+  // isn't dropping moves.
 
   int leader_transfer_count = 0;
   for (const auto& task : leader_transfer_tasks) {
@@ -424,6 +500,12 @@ Status AutoLeaderRebalancerTask::RunLeaderRebalanceForTable(
     RpcController rpc;
     rpc.set_timeout(MonoDelta::FromSeconds(FLAGS_auto_leader_rebalancing_rpc_timeout_seconds));
 
+    // Pre-flight checks: if the world has changed since we planned these
+    // moves (the source tserver deregistered, or the destination is now in
+    // maintenance mode), the transfer isn't applicable anymore. Skip it and
+    // let the next round replan. These skips don't touch moves_scheduled or
+    // moves_failed, since they aren't actual attempts. Keeps the invariant
+    // 'scheduled = completed + failed' scoped to moves we actually tried.
     auto* host_port = FindOrNull(host_port_by_leader_ts_uuid, leader_uuid);
     if (!host_port) {
       continue;
@@ -437,10 +519,12 @@ Status AutoLeaderRebalancerTask::RunLeaderRebalanceForTable(
       continue;
     }
 
+    moves_scheduled_->Increment();
     vector<Sockaddr> resolved;
     if (Status s = host_port->ResolveAddresses(&resolved); !s.ok()) {
       WARN_NOT_OK(s, Substitute("leader transfer for tablet $0: could not resolve $1",
                                 task.first, host_port->ToString()));
+      moves_failed_->Increment();
       continue;
     }
     ConsensusServiceProxy proxy(messenger_, resolved[0], host_port->host());
@@ -454,23 +538,24 @@ Status AutoLeaderRebalancerTask::RunLeaderRebalanceForTable(
     if (!s.ok()) {
       WARN_NOT_OK(s, Substitute("leader transfer for tablet $0 from $1 to $2 failed",
                                 task.first, leader_uuid, task.second.second));
+      moves_failed_->Increment();
       continue;
     }
     if (!response.has_error()) {
       leader_transfer_count++;
+      moves_completed_->Increment();
       VLOG(1) << Substitute("leader transfer table: $0, tablet_id: $1, from: $2 to: $3",
                             table_data.name(),
                             task.first,
                             leader_uuid,
                             task.second.second);
     } else {
+      moves_failed_->Increment();
       LOG(WARNING) << Substitute(
           "leader transfer for tablet $0 (from $1 to $2) failed: $3",
           task.first, leader_uuid, task.second.second, response.error().ShortDebugString());
     }
   }
-  // @TODO(duyuqi)
-  // Add metrics to replace the log.
   VLOG(0) << Substitute("table: $0, leader rebalance finish, leader transfer count: $1",
                         table_data.name(),
                         leader_transfer_count);
@@ -693,6 +778,9 @@ Status AutoLeaderRebalancerTask::RunGlobalLeaderRebalance(
       const string& tablet_id = task.first;
       const string& leader_uuid = task.second.first;
       const string& dest_uuid = task.second.second;
+      // Pre-flight applicability checks: see the matching block in
+      // RunLeaderRebalanceForTable() for why these skips don't touch either
+      // the '_moves_scheduled' or '_moves_failed' counter.
       if (PREDICT_FALSE(TServerStatePB::MAINTENANCE_MODE ==
                         ts_manager_->GetTServerState(dest_uuid))) {
         continue;
@@ -716,6 +804,7 @@ Status AutoLeaderRebalancerTask::RunGlobalLeaderRebalance(
       RpcController rpc;
       rpc.set_timeout(MonoDelta::FromSeconds(FLAGS_auto_leader_rebalancing_rpc_timeout_seconds));
 
+      moves_scheduled_->Increment();
       // This pass is best-effort: a transfer may fail transiently (for example
       // "already in progress" if a previous round's move for this tablet has
       // not settled yet). Log and move on rather than aborting the round, since
@@ -724,6 +813,7 @@ Status AutoLeaderRebalancerTask::RunGlobalLeaderRebalance(
       Status s = host_port->ResolveAddresses(&resolved);
       if (!s.ok()) {
         WARN_NOT_OK(s, Substitute("global leader rebalance: cannot resolve $0", leader_uuid));
+        moves_failed_->Increment();
         continue;
       }
       ConsensusServiceProxy proxy(messenger_, resolved[0], host_port->host());
@@ -731,13 +821,16 @@ Status AutoLeaderRebalancerTask::RunGlobalLeaderRebalance(
       if (!s.ok()) {
         WARN_NOT_OK(s, Substitute(
             "global leader rebalance: leader step down for tablet $0 failed", tablet_id));
+        moves_failed_->Increment();
         continue;
       }
       if (!response.has_error()) {
+        moves_completed_->Increment();
         VLOG(1) << Substitute(
             "global leader rebalance transfer table: $0, tablet_id: $1, from: $2 to: $3",
             table_data.name(), tablet_id, leader_uuid, dest_uuid);
       } else {
+        moves_failed_->Increment();
         LOG(WARNING) << Substitute(
             "global leader rebalance: transfer for tablet $0 (from $1 to $2) failed: $3",
             tablet_id, leader_uuid, dest_uuid, response.error().ShortDebugString());
@@ -797,7 +890,16 @@ Status AutoLeaderRebalancerTask::RunLeaderRebalancer() {
   vector<scoped_refptr<TableInfo>> table_infos;
   {
     CatalogManager::ScopedLeaderSharedLock leader_lock(catalog_manager_);
-    RETURN_NOT_OK(leader_lock.first_failed_status());
+    // Mirror the earlier check: losing catalog-manager leadership between the
+    // top-of-round check and here is expected, not an error. Report OK so
+    // callers can distinguish that from real failures (which do increment
+    // 'auto_leader_rebalancer_task_errors').
+    if (!leader_lock.first_failed_status().ok()) {
+      VLOG(1) << "auto-leader-rebalancer: lost catalog-manager leadership "
+                 "mid-round, skipping remainder of this round: "
+              << leader_lock.first_failed_status().ToString();
+      return Status::OK();
+    }
     if (FLAGS_leader_rebalancing_ignore_soft_deleted_tables) {
       catalog_manager_->GetNormalizedTables(&table_infos);
     } else {
@@ -831,16 +933,23 @@ Status AutoLeaderRebalancerTask::RunLeaderRebalancer() {
   // moved (the leadership transfers are asynchronous), and a follow-up round
   // does the global correction with a consistent view instead.
   //
-  // TODO(gabriellalotz): if per-table balancing keeps finding work every round
-  // (e.g. from continuous leader elections), the global pass can be starved.
-  // Emit a metric when it's skipped for this reason so the situation is
-  // diagnosable.
+  // If per-table balancing keeps finding work every round (e.g. from continuous
+  // leader elections), the global pass can be starved: the
+  // 'auto_leader_rebalancer_global_pass_skipped' counter, incremented below,
+  // exposes that so operators can spot the situation.
+  //
+  // Note the gate below counts planned moves, while the
+  // 'auto_leader_rebalancer_moves_scheduled' metric counts only the transfers
+  // that clear the pre-flight checks. In a round where every planned move is
+  // skipped in pre-flight, global_pass_skipped ticks up while moves_scheduled
+  // stays flat: the two are scoped differently, not a lost move.
   if (per_table_moves_scheduled == 0) {
     RETURN_NOT_OK(RunGlobalLeaderRebalance(
         table_infos, tserver_uuids, exclude_dest_uuids, &global_leader_count_by_ts_uuid));
+  } else {
+    global_pass_skipped_->Increment();
   }
-  // @TODO(duyuqi)
-  // Enrich the log and add metrics for leader rebalancer.
+  rounds_completed_->Increment();
   LOG(INFO) << "All tables' leader rebalancing finished this round";
   return Status::OK();
 }
@@ -849,8 +958,15 @@ void AutoLeaderRebalancerTask::RunLoop() {
   while (
       !shutdown_.WaitFor(MonoDelta::FromSeconds(FLAGS_auto_leader_rebalancing_interval_seconds))) {
     if (FLAGS_auto_leader_rebalancing_enabled) {
-      WARN_NOT_OK(RunLeaderRebalancer(),
-                  Substitute("the master instance isn't leader"));
+      // RunLeaderRebalancer() normalises the "we're not the catalog-manager
+      // leader" cases to Status::OK(), so any non-OK reaching here is an
+      // unexpected failure worth surfacing to both the log and the
+      // warning-severity 'auto_leader_rebalancer_task_errors' counter.
+      const Status s = RunLeaderRebalancer();
+      if (PREDICT_FALSE(!s.ok())) {
+        task_errors_->Increment();
+        WARN_NOT_OK(s, "auto-leader-rebalancer round failed");
+      }
     }
   }
 }

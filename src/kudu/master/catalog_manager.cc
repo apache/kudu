@@ -1077,7 +1077,7 @@ Status CatalogManager::Init(bool is_first_run) {
   // every table.
 
   unique_ptr<AutoLeaderRebalancerTask> leader_task(
-      new AutoLeaderRebalancerTask(this, master_->ts_manager()));
+      new AutoLeaderRebalancerTask(this, master_->ts_manager(), master_->metric_entity()));
   RETURN_NOT_OK_PREPEND(leader_task->Init(),
                         "failed thie initialize auto-leader-rebalancing task");
   auto_leader_rebalancer_ = std::move(leader_task);
