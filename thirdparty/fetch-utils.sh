@@ -21,7 +21,7 @@
 # Sourced by prebuilt-utils.sh.
 
 if [ -z "$TP_DIR" ]; then
-  echo "TP_DIR variable not set, check your scripts"
+  echo "ERROR: TP_DIR variable not set, check your scripts" >&2
   exit 1
 fi
 
@@ -52,12 +52,12 @@ fetch_and_expand() {
   local URL_PREFIX=$3
 
   if [ -z "$FILENAME" ]; then
-    echo "Error: Must specify file to fetch"
+    echo "ERROR: must specify file to fetch" >&2
     exit 1
   fi
 
   if [ -z "$URL_PREFIX" ]; then
-    echo "Error: Must specify url prefix to fetch"
+    echo "ERROR: must specify URL prefix to fetch" >&2
     exit 1
   fi
 
@@ -112,7 +112,7 @@ fetch_and_expand() {
       mkdir ${FILENAME%.jar}
       cp $FILENAME ${FILENAME%.jar}/
     else
-      echo "Error: unknown file format: $FILENAME"
+      echo "ERROR: unknown file format: $FILENAME" >&2
       exit 1
     fi
 
@@ -121,7 +121,7 @@ fetch_and_expand() {
   done
 
   if [ $SUCCESS -ne 1 ]; then
-    echo "Error: failed to fetch and unpack $FILENAME"
+    echo "ERROR: failed to fetch and unpack $FILENAME" >&2
     exit 1
   fi
 
@@ -142,7 +142,7 @@ fetch_with_url_and_patch() {
   # Remaining args are expected to be a list of patch commands
 
   if [ -z "$TP_SOURCE_DIR" ]; then
-    echo "TP_SOURCE_DIR is not defined"
+    echo "ERROR: TP_SOURCE_DIR is not defined" >&2
     exit 1
   fi
   mkdir -p $TP_SOURCE_DIR
@@ -163,19 +163,16 @@ fetch_with_url_and_patch() {
   popd
 }
 
-# Call fetch_with_url_and_patch with the default dependency URL source.
+# Call fetch_with_url_and_patch with the specified source URL and the rest
+# of the arguments.
 fetch_and_patch_src() {
   local FILENAME=$1
   local SOURCE=$2
   local PATCH_LEVEL=$3
-  shift 3
+  local SRC_URL=$4
+  shift 4
 
-  fetch_with_url_and_patch \
-    $FILENAME \
-    $SOURCE \
-    $PATCH_LEVEL \
-    $DEPENDENCY_URL \
-    "$@"
+  fetch_with_url_and_patch "$FILENAME" "$SOURCE" "$PATCH_LEVEL" "$SRC_URL" "$@"
 }
 
 # Deduce all the necessary arguments for 'fetch_and_patch_src' function
@@ -188,8 +185,8 @@ fetch_and_patch() {
   fi
   component=$(echo $component | tr '[:lower:]' '[:upper:]' | tr '-' '_')
 
-  # Building variables in the xxx_{NAME,SOURCE,PATCHLEVEL,PATCHES} form
-  # using information provided in vars.sh.
+  # Building/evaluating component-specific xxx_{ARCHIVE,NAME,PATCHLEVEL,...}
+  # variables using the information provided in vars.sh.
   local archive_var="${component}_ARCHIVE"
   local archive="${!archive_var}"
   if [ -z "$archive" ]; then
@@ -211,6 +208,16 @@ fetch_and_patch() {
     exit 1
   fi
 
+  # Check if custom source URL is specified and use it, if so. If no custom
+  # source URL is specified for a component, use $DEPENDENCY_URL.
+  local url_var="${component}_SRC_URL"
+  local url="${!url_var}"
+  if [ -z "$url" ]; then
+    url="$DEPENDENCY_URL"
+  else
+    echo "Using custom source URL $url for $component"
+  fi
+
   # Namerefs (declare -n ...) aren't available in bash versions prior to 4.3,
   # so using eval to reconstruct the array locally for wider portability
   # across bash versions.
@@ -221,5 +228,6 @@ fetch_and_patch() {
   # xxx_EXTRA_COMMANDS may be empty if there isn't any extra commands to run
   eval "local extra_commands=(\"\${${component}_EXTRA_COMMANDS[@]}\")"
 
-  fetch_and_patch_src $archive $src $plevel "${patches[@]}" "${extra_commands[@]}"
+  fetch_and_patch_src \
+    "$archive" "$src" "$plevel" "$url" "${patches[@]}" "${extra_commands[@]}"
 }
