@@ -156,14 +156,7 @@ init_prebuilt_platform() {
 # is assigned by Kudu maintainers.
 component_name_to_tag() {
   local component_name=$1
-
-  local name=$component_name
-  case "$component_name" in
-    # libcxx and libcxxabi are both parts of the LLVM/CLANG.
-    libcxx|libcxxabi) name="llvm" ;;
-    *) ;;
-  esac
-  name=$(echo $name | tr '[:lower:]' '[:upper:]' | tr '-' '_')
+  local name=$(echo $component_name | tr '[:lower:]' '[:upper:]' | tr '-' '_')
 
   # Building a variable in the xxx_NAME form: vars.sh contains corresponding
   # versioned strings for all the 3rd-party components.

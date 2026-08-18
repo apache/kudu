@@ -380,6 +380,7 @@ LLVM_PATCHES=(
 
 # All libcxxabi's variables are pointing to LLVM's: libcxxabi is built
 # from the same LLVM sources, but in a different build directory.
+LIBCXXABI_VERSION=$LLVM_VERSION
 LIBCXXABI_PATCHLEVEL=$LLVM_PATCHLEVEL
 LIBCXXABI_ARCHIVE=$LLVM_ARCHIVE
 LIBCXXABI_NAME=$LLVM_NAME
@@ -387,6 +388,7 @@ LIBCXXABI_SOURCE=$LLVM_SOURCE
 
 # All libcxx's variables are pointing to LLVM's: libcxxabi is built
 # from the same LLVM sources, but in a different build directory.
+LIBCXX_VERSION=$LLVM_VERSION
 LIBCXX_PATCHLEVEL=$LLVM_PATCHLEVEL
 LIBCXX_ARCHIVE=$LLVM_ARCHIVE
 LIBCXX_NAME=$LLVM_NAME
