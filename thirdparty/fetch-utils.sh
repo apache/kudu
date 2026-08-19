@@ -25,6 +25,17 @@ if [ -z "$TP_DIR" ]; then
   exit 1
 fi
 
+# Normalize component name to relate with corresponding variables in vars.sh
+normalize_name() {
+  local name="$1"
+  if [ -z "$name" ]; then
+    echo "ERROR: missing/empty argument" >&2
+    exit 1
+  fi
+  name=$(echo "$name" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
+  echo "$name"
+}
+
 # Select a tar implementation that supports the flags we rely on.
 init_tar_cmd() {
   if [ -n "$TAR_CMD" ]; then
@@ -183,7 +194,7 @@ fetch_and_patch() {
     echo "ERROR: first argument (component name) must not be empty" >&2
     exit 1
   fi
-  component=$(echo $component | tr '[:lower:]' '[:upper:]' | tr '-' '_')
+  component=$(normalize_name "$component")
 
   # Building/evaluating component-specific xxx_{ARCHIVE,NAME,PATCHLEVEL,...}
   # variables using the information provided in vars.sh.

@@ -106,6 +106,25 @@ fi
 #   Calling autoreconf sometimes is necessary to fix hard-coded aclocal
 #   versions in 'configure' scripts that ship with upstream source archives.
 #
+# * <comp>_ANY_ARCH
+#   Set to 1 to indicate that pre-built artifacts for this component fit
+#   any architecture (e.g., x86_64, aarch64, etc.)
+#
+# * <comp>_ANY_OS
+#   Set to 1 to indicate that pre-built artifacts for this component fit
+#   any OS.
+#
+# * <comp>_ANY_OS_VERSION
+#   Set to 1 to indicate that pre-built artifacts for this component fit
+#   any version of the OS that the artifacts are built for. There is no need
+#   to set <comp>_ANY_OS_VERSION if <comp>_ANY_OS is set to 1 already.
+#
+# * <comp>_ANY_TOOLCHAIN
+#   Set to 1 to indicate that pre-built artifacts for this component do not
+#   depend on the toolchain used to build them or build toolchain isn't
+#   relevant to the production of the artifacts.  There is no need to set
+#   <comp>_ANY_TOOLCHAIN if <comp>_ANY_ARCH is set to 1 already.
+#
 GFLAGS_VERSION=2.2.2
 GFLAGS_PATCHLEVEL=0
 GFLAGS_NAME=gflags-$GFLAGS_VERSION
@@ -247,6 +266,8 @@ RAPIDJSON_PATCHLEVEL=5
 RAPIDJSON_NAME=rapidjson-$RAPIDJSON_VERSION
 RAPIDJSON_SOURCE=$TP_SOURCE_DIR/$RAPIDJSON_NAME
 RAPIDJSON_ARCHIVE=$RAPIDJSON_NAME.zip
+RAPIDJSON_ANY_ARCH=1
+RAPIDJSON_ANY_OS=1
 RAPIDJSON_PATCHES=(
  "patch -p1 < $TP_DIR/patches/rapidjson-fix-signed-unsigned-conversion-error.patch"
  "patch -p1 < $TP_DIR/patches/rapidjson-assertions-for-clang-warnings.patch"
@@ -301,6 +322,8 @@ CPPLINT_PATCHLEVEL=1
 CPPLINT_NAME=cpplint-$CPPLINT_VERSION
 CPPLINT_SOURCE=$TP_SOURCE_DIR/$CPPLINT_NAME
 CPPLINT_ARCHIVE=$CPPLINT_NAME.tar.gz
+CPPLINT_ANY_ARCH=1
+CPPLINT_ANY_OS=1
 CPPLINT_PATCHES=(
  "patch -p1 < $TP_DIR/patches/cpplint-libstdcpp-regex.patch"
 )
@@ -310,6 +333,8 @@ GCOVR_PATCHLEVEL=0
 GCOVR_NAME=gcovr-$GCOVR_VERSION
 GCOVR_SOURCE=$TP_SOURCE_DIR/$GCOVR_NAME
 GCOVR_ARCHIVE=$GCOVR_NAME.tar.gz
+GCOVR_ANY_ARCH=1
+GCOVR_ANY_OS=1
 
 CURL_VERSION=8.11.1
 CURL_PATCHLEVEL=3
@@ -405,6 +430,8 @@ TRACE_VIEWER_PATCHLEVEL=0
 TRACE_VIEWER_NAME=kudu-trace-viewer-$TRACE_VIEWER_VERSION
 TRACE_VIEWER_SOURCE=$TP_SOURCE_DIR/$TRACE_VIEWER_NAME
 TRACE_VIEWER_ARCHIVE=$TRACE_VIEWER_NAME.tar.gz
+TRACE_VIEWER_ANY_ARCH=1
+TRACE_VIEWER_ANY_OS=1
 
 # Since 1.91.0 version, the distro file for the Boost library is a git archive,
 # not a regular/legacy source distribution archive which targets b2-based build
@@ -463,6 +490,8 @@ SPARSEHASH_PATCHLEVEL=3
 SPARSEHASH_NAME=sparsehash-c11-$SPARSEHASH_VERSION
 SPARSEHASH_SOURCE=$TP_SOURCE_DIR/$SPARSEHASH_NAME
 SPARSEHASH_ARCHIVE=$SPARSEHASH_NAME.tar.gz
+SPARSEHASH_ANY_ARCH=1
+SPARSEHASH_ANY_OS=1
 SPARSEHASH_PATCHES=(
  "patch -p1 < $TP_DIR/patches/sparsehash-0001-Add-compatibily-for-gcc-4.x-in-traits.patch"
  "patch -p1 < $TP_DIR/patches/sparsehash-0002-Add-workaround-for-dense_hashtable-move-constructor-.patch"
@@ -473,6 +502,8 @@ SPARSEPP_PATCHLEVEL=0
 SPARSEPP_NAME=sparsepp-$SPARSEPP_VERSION
 SPARSEPP_SOURCE=$TP_SOURCE_DIR/$SPARSEPP_NAME
 SPARSEPP_ARCHIVE=$SPARSEPP_NAME.tar.gz
+SPARSEPP_ANY_ARCH=1
+SPARSEPP_ANY_OS=1
 
 THRIFT_VERSION=0.23.0
 THRIFT_PATCHLEVEL=1
@@ -502,6 +533,8 @@ HIVE_PATCHLEVEL=0
 HIVE_NAME=hive-$HIVE_VERSION
 HIVE_SOURCE=$TP_SOURCE_DIR/$HIVE_NAME
 HIVE_ARCHIVE=$HIVE_NAME-stripped.tar.gz
+HIVE_ANY_ARCH=1
+HIVE_ANY_OS=1
 
 # Note: The Hadoop release tarball is stripped of unnecessary jars before being
 # uploaded. See thirdparty/package-hadoop.sh for details.
@@ -510,6 +543,8 @@ HADOOP_PATCHLEVEL=0
 HADOOP_NAME=hadoop-$HADOOP_VERSION
 HADOOP_SOURCE=$TP_SOURCE_DIR/$HADOOP_NAME
 HADOOP_ARCHIVE=$HADOOP_NAME-stripped.tar.gz
+HADOOP_ANY_ARCH=1
+HADOOP_ANY_OS=1
 
 YAML_VERSION=0.8.0
 YAML_PATCHLEVEL=0
@@ -577,6 +612,8 @@ POSTGRES_JDBC_PATCHLEVEL=0
 POSTGRES_JDBC_NAME=postgresql-$POSTGRES_JDBC_VERSION
 POSTGRES_JDBC_SOURCE=$TP_SOURCE_DIR/$POSTGRES_JDBC_NAME
 POSTGRES_JDBC_ARCHIVE=$POSTGRES_JDBC_NAME.jar
+POSTGRES_JDBC_ANY_ARCH=1
+POSTGRES_JDBC_ANY_OS=1
 
 # If you need to rebuild the tarball for a specific hash instead of a release,
 # run the following commands:
@@ -588,6 +625,8 @@ RANGER_PATCHLEVEL=2
 RANGER_NAME=ranger-$RANGER_VERSION-admin
 RANGER_SOURCE=$TP_SOURCE_DIR/$RANGER_NAME
 RANGER_ARCHIVE=$RANGER_NAME.tar.gz
+RANGER_ANY_ARCH=1
+RANGER_ANY_OS=1
 RANGER_PATCHES=(
  "patch -p0 < $TP_DIR/patches/ranger-fixscripts.patch"
 )
@@ -597,12 +636,16 @@ RANGER_KMS_PATCHLEVEL=0
 RANGER_KMS_NAME=ranger-$RANGER_KMS_VERSION-kms
 RANGER_KMS_SOURCE=$TP_SOURCE_DIR/$RANGER_KMS_NAME
 RANGER_KMS_ARCHIVE=$RANGER_KMS_NAME.tar.gz
+RANGER_KMS_ANY_ARCH=1
+RANGER_KMS_ANY_OS=1
 
 JWT_CPP_VERSION=3bd600762a70faccc7ec1c2dacb999cba6c6ef5e
 JWT_CPP_PATCHLEVEL=0
 JWT_CPP_NAME=jwt-cpp-$JWT_CPP_VERSION
 JWT_CPP_SOURCE=$TP_SOURCE_DIR/$JWT_CPP_NAME
 JWT_CPP_ARCHIVE=$JWT_CPP_NAME.tar.gz
+JWT_CPP_ANY_ARCH=1
+JWT_CPP_ANY_OS=1
 
 ROCKSDB_VERSION=7.7.3
 ROCKSDB_PATCHLEVEL=1
@@ -631,3 +674,5 @@ PROMETHEUS_ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
 PROMETHEUS_NAME=prometheus-$PROMETHEUS_VERSION.$PROMETHEUS_OS-$PROMETHEUS_ARCH
 PROMETHEUS_SOURCE=$TP_SOURCE_DIR/$PROMETHEUS_NAME
 PROMETHEUS_ARCHIVE=$PROMETHEUS_NAME.tar.gz
+PROMETHEUS_ANY_OS_VERSION=1
+PROMETHEUS_ANY_TOOLCHAIN=1

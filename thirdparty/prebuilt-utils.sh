@@ -156,7 +156,7 @@ init_prebuilt_platform() {
 # is assigned by Kudu maintainers.
 component_name_to_tag() {
   local component_name=$1
-  local name=$(echo $component_name | tr '[:lower:]' '[:upper:]' | tr '-' '_')
+  local name=$(normalize_name "$component_name")
 
   # Building a variable in the xxx_NAME form: vars.sh contains corresponding
   # versioned strings for all the 3rd-party components.
@@ -182,7 +182,46 @@ prebuilt_tarball_name() {
 
   init_prebuilt_platform
   local comp_string=$(component_name_to_tag $component)
-  echo "${comp_string}.${_TP_PREBUILT_OS_NAME}-${_TP_PREBUILT_OS_VERSION}.${_TP_PREBUILT_ARCH}.${_TP_PREBUILT_TOOLCHAIN}${MODE_SUFFIX}.tar.xz"
+  local name=$(normalize_name "$component")
+
+  local os_name=${_TP_PREBUILT_OS_NAME}
+  local os_ver=${_TP_PREBUILT_OS_VERSION}
+
+  local any_os_var="${name}_ANY_OS"
+  local any_os="${!any_os_var}"
+  if [ ! -z "$any_os" -a "x$any_os" != "x0" ]; then
+    # setting <comp>_ANY_OS=1 implicitly sets <comp>_ANY_OS_VERSION=1
+    os_name="any"
+    os_ver="any"
+  else
+    local any_os_ver_var="${name}_ANY_OS_VERSION"
+    local any_os_ver="${!any_os_ver_var}"
+    if [ ! -z "$any_os_ver" -a "x$any_os_ver" != "x0" ]; then
+      os_ver="any"
+    fi
+  fi
+
+  local arch=${_TP_PREBUILT_ARCH}
+  local toolchain=${_TP_PREBUILT_TOOLCHAIN}
+
+  local any_arch_var="${name}_ANY_ARCH"
+  local any_arch="${!any_arch_var}"
+  if [ ! -z "$any_arch" -a "x$any_arch" != "x0" ]; then
+    # setting <comp>_ANY_ARCH=1 implicitly sets <comp>_ANY_TOOLCHAIN=1
+    arch="any"
+    toolchain="any"
+  else
+    local any_toolchain_var="${name}_ANY_TOOLCHAIN"
+    local any_toolchain="${!any_toolchain_var}"
+    if [ ! -z "$any_toolchain" -a "x$any_toolchain" != "x0" ]; then
+      toolchain="any"
+    fi
+  fi
+
+  # MODE_SUFFIX reflects on whether the bits are compiled with sanitizers;
+  # currently TSAN ('.tsan' suffix) or regular ('', i.e. empty, suffix).
+  local suffix=${MODE_SUFFIX}
+  echo "${comp_string}.${os_name}-${os_ver}.${arch}.${toolchain}${suffix}.tar.xz"
 }
 
 # Extract a pre-built tarball into $TP_INSTALL_DIR and create symlinks
