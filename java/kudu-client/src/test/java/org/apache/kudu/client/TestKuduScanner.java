@@ -19,7 +19,10 @@ package org.apache.kudu.client;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.kudu.client.AsyncKuduScanner.DEFAULT_IS_DELETED_COL_NAME;
+import static org.apache.kudu.client.AsyncKuduScanner.DiffScanRowVisibility.INCLUDE_UNOBSERVABLE;
+import static org.apache.kudu.client.AsyncKuduScanner.DiffScanRowVisibility.OBSERVABLE_ONLY;
 import static org.apache.kudu.test.ClientTestUtil.createManyStringsSchema;
+import static org.apache.kudu.test.ClientTestUtil.diffScanToStrings;
 import static org.apache.kudu.test.ClientTestUtil.getBasicCreateTableOptions;
 import static org.apache.kudu.test.ClientTestUtil.getBasicSchema;
 import static org.apache.kudu.test.ClientTestUtil.loadDefaultTable;
@@ -59,6 +62,7 @@ import org.apache.kudu.test.KuduTestHarness;
 import org.apache.kudu.test.RandomUtils;
 import org.apache.kudu.test.cluster.KuduBinaryLocator;
 import org.apache.kudu.test.junit.AssertHelpers;
+import org.apache.kudu.tserver.Tserver;
 import org.apache.kudu.util.DataGenerator;
 import org.apache.kudu.util.Pair;
 
@@ -604,6 +608,283 @@ public class TestKuduScanner {
     assertEquals(0, row.getInt(0));
     assertTrue(row.hasIsDeleted());
     assertTrue(row.isDeleted());
+  }
+
+  @Test(timeout = 100000)
+  public void testDiffScanIncludeUnobservableRows() throws Exception {
+    Schema schema = new Schema(Arrays.asList(
+        new ColumnSchema.ColumnSchemaBuilder("key", Type.INT32).key(true).build()
+    ));
+    KuduTable table = client.createTable(tableName, schema, getBasicCreateTableOptions());
+
+    // Scenario 1: INSERT + DELETE inside the window. The row is unobservable at
+    // both endpoints, so OBSERVABLE_ONLY drops it and INCLUDE_UNOBSERVABLE
+    // returns it marked deleted.
+    {
+      final int key = 1;
+      KuduSession session = client.newSession();
+      final long startHT = anchorTimestamp(table);
+      Insert ins = table.newInsert();
+      ins.getRow().addInt(0, key);
+      session.apply(ins);
+      Delete del = table.newDelete();
+      del.getRow().addInt(0, key);
+      session.apply(del);
+      long endHT = client.getLastPropagatedTimestamp() + 1;
+
+      assertEquals(ImmutableList.of(),
+          diffScanKey(table, schema, startHT, endHT, OBSERVABLE_ONLY, key));
+      assertEquals(ImmutableList.of(deletedRow(key)),
+          diffScanKey(table, schema, startHT, endHT, INCLUDE_UNOBSERVABLE, key));
+    }
+
+    // Scenario 2: INSERT + DELETE + INSERT inside the window. The terminal
+    // state at endHT is live, so the row is observable and both visibility
+    // options report it once, not deleted.
+    {
+      final int key = 2;
+      KuduSession session = client.newSession();
+      final long startHT = anchorTimestamp(table);
+      Insert ins1 = table.newInsert();
+      ins1.getRow().addInt(0, key);
+      session.apply(ins1);
+      Delete del = table.newDelete();
+      del.getRow().addInt(0, key);
+      session.apply(del);
+      Insert ins2 = table.newInsert();
+      ins2.getRow().addInt(0, key);
+      session.apply(ins2);
+      long endHT = client.getLastPropagatedTimestamp() + 1;
+
+      assertEquals(ImmutableList.of(liveRow(key)),
+          diffScanKey(table, schema, startHT, endHT, OBSERVABLE_ONLY, key));
+      assertEquals(ImmutableList.of(liveRow(key)),
+          diffScanKey(table, schema, startHT, endHT, INCLUDE_UNOBSERVABLE, key));
+    }
+
+    // Scenario 3: INSERT + DELETE + INSERT + DELETE inside the window. The
+    // terminal state is deleted and the whole lifecycle is in the window, so
+    // only INCLUDE_UNOBSERVABLE reports the row.
+    {
+      final int key = 3;
+      KuduSession session = client.newSession();
+      final long startHT = anchorTimestamp(table);
+      Insert ins1 = table.newInsert();
+      ins1.getRow().addInt(0, key);
+      session.apply(ins1);
+      Delete del1 = table.newDelete();
+      del1.getRow().addInt(0, key);
+      session.apply(del1);
+      Insert ins2 = table.newInsert();
+      ins2.getRow().addInt(0, key);
+      session.apply(ins2);
+      Delete del2 = table.newDelete();
+      del2.getRow().addInt(0, key);
+      session.apply(del2);
+      long endHT = client.getLastPropagatedTimestamp() + 1;
+
+      assertEquals(ImmutableList.of(),
+          diffScanKey(table, schema, startHT, endHT, OBSERVABLE_ONLY, key));
+      assertEquals(ImmutableList.of(deletedRow(key)),
+          diffScanKey(table, schema, startHT, endHT, INCLUDE_UNOBSERVABLE, key));
+    }
+
+    // Scenario 4: the scenario 2 lifecycle driven by UPSERTs. UPSERT takes a
+    // different tablet side path than INSERT, so the terminal state is worth
+    // pinning separately.
+    {
+      final int key = 4;
+      KuduSession session = client.newSession();
+      final long startHT = anchorTimestamp(table);
+      Upsert ups1 = table.newUpsert();
+      ups1.getRow().addInt(0, key);
+      session.apply(ups1);
+      Delete del = table.newDelete();
+      del.getRow().addInt(0, key);
+      session.apply(del);
+      Upsert ups2 = table.newUpsert();
+      ups2.getRow().addInt(0, key);
+      session.apply(ups2);
+      long endHT = client.getLastPropagatedTimestamp() + 1;
+
+      assertEquals(ImmutableList.of(liveRow(key)),
+          diffScanKey(table, schema, startHT, endHT, OBSERVABLE_ONLY, key));
+      assertEquals(ImmutableList.of(liveRow(key)),
+          diffScanKey(table, schema, startHT, endHT, INCLUDE_UNOBSERVABLE, key));
+    }
+
+    // Scenario 5: the scenario 3 lifecycle driven by UPSERTs.
+    {
+      final int key = 5;
+      KuduSession session = client.newSession();
+      final long startHT = anchorTimestamp(table);
+      Upsert ups1 = table.newUpsert();
+      ups1.getRow().addInt(0, key);
+      session.apply(ups1);
+      Delete del1 = table.newDelete();
+      del1.getRow().addInt(0, key);
+      session.apply(del1);
+      Upsert ups2 = table.newUpsert();
+      ups2.getRow().addInt(0, key);
+      session.apply(ups2);
+      Delete del2 = table.newDelete();
+      del2.getRow().addInt(0, key);
+      session.apply(del2);
+      long endHT = client.getLastPropagatedTimestamp() + 1;
+
+      assertEquals(ImmutableList.of(),
+          diffScanKey(table, schema, startHT, endHT, OBSERVABLE_ONLY, key));
+      assertEquals(ImmutableList.of(deletedRow(key)),
+          diffScanKey(table, schema, startHT, endHT, INCLUDE_UNOBSERVABLE, key));
+    }
+  }
+
+  /**
+   * An inconsistent diff scan request is a programming error and must not be
+   * silently reinterpreted, on the scanner path or on the scan token path:
+   * a null visibility, a missing timestamp, or a row visibility with no diff
+   * scan window.
+   *
+   * diffScan() rejects the first two for both builders. The scan token builder
+   * repeats the diff scan window check, because build() serializes straight from
+   * the fields without running the scanner constructor, and writes row_visibility
+   * only when a start timestamp is set.
+   *
+   * The timestamps here are arbitrary non-zero values. No scan is ever opened,
+   * so they only need to satisfy start &lt;= end.
+   */
+  @Test(timeout = 100000)
+  public void testDiffScanRowVisibilityValidation() throws Exception {
+    Schema schema = new Schema(Arrays.asList(
+        new ColumnSchema.ColumnSchemaBuilder("key", Type.INT32).key(true).build()
+    ));
+    KuduTable table = client.createTable(tableName, schema, getBasicCreateTableOptions());
+    final long startHT = 1L;
+    final long endHT = 2L;
+
+    // A null visibility is rejected up front. This check is shared by both
+    // builders.
+    try {
+      client.newScannerBuilder(table).diffScan(startHT, endHT, null);
+      fail("diffScan() should reject a null visibility");
+    } catch (IllegalArgumentException e) {
+      assertTrue(e.getMessage().contains("visibility must not be null"));
+    }
+    try {
+      client.newScanTokenBuilder(table).diffScan(startHT, endHT, null);
+      fail("diffScan() should reject a null visibility on the token builder too");
+    } catch (IllegalArgumentException e) {
+      assertTrue(e.getMessage().contains("visibility must not be null"));
+    }
+
+    // So is a diff scan missing either endpoint of its window.
+    for (AsyncKuduScanner.DiffScanRowVisibility visibility :
+         AsyncKuduScanner.DiffScanRowVisibility.values()) {
+      try {
+        client.newScannerBuilder(table)
+            .diffScan(AsyncKuduClient.NO_TIMESTAMP, endHT, visibility);
+        fail("diffScan() should reject a missing start timestamp: " + visibility);
+      } catch (IllegalArgumentException e) {
+        assertTrue(e.getMessage().contains("Must have both start and end timestamps"));
+      }
+      try {
+        client.newScannerBuilder(table)
+            .diffScan(startHT, AsyncKuduClient.NO_TIMESTAMP, visibility);
+        fail("diffScan() should reject a missing end timestamp: " + visibility);
+      } catch (IllegalArgumentException e) {
+        assertTrue(e.getMessage().contains("Must have both start and end timestamps"));
+      }
+    }
+
+    // Row visibility applies to diff scans only, so setting one without a diff
+    // scan window must be rejected on both paths, whichever option it is. Only
+    // the field is set here: diffScan() always sets a window alongside it, so
+    // this state is reachable only by a future caller that bypasses it.
+    for (AsyncKuduScanner.DiffScanRowVisibility visibility :
+         AsyncKuduScanner.DiffScanRowVisibility.values()) {
+      KuduScanner.KuduScannerBuilder noWindowScanner = client.newScannerBuilder(table);
+      noWindowScanner.rowVisibility = visibility;
+      try {
+        noWindowScanner.build();
+        fail(visibility + " without a start timestamp should be rejected");
+      } catch (IllegalArgumentException e) {
+        assertTrue(e.getMessage().contains("Row visibility requires a diff scan"));
+      }
+
+      KuduScanToken.KuduScanTokenBuilder noWindowToken = client.newScanTokenBuilder(table);
+      noWindowToken.rowVisibility = visibility;
+      try {
+        noWindowToken.build();
+        fail(visibility + " without a start timestamp should be rejected " +
+             "by the token builder too");
+      } catch (IllegalArgumentException e) {
+        assertTrue(e.getMessage().contains("Row visibility requires a diff scan"));
+      }
+    }
+  }
+
+  /**
+   * INCLUDE_UNOBSERVABLE changes how the server must interpret the scan, so the
+   * scan request has to advertise DIFF_SCAN_ROW_VISIBILITY as a required
+   * feature. Without it an older tablet server would silently ignore the new
+   * field and return the observable rows only.
+   */
+  @Test(timeout = 100000)
+  public void testDiffScanRowVisibilityRequiredFeature() throws Exception {
+    Schema schema = new Schema(Arrays.asList(
+        new ColumnSchema.ColumnSchemaBuilder("key", Type.INT32).key(true).build()
+    ));
+    KuduTable table = client.createTable(tableName, schema, getBasicCreateTableOptions());
+    // Arbitrary non-zero timestamps: the scanners below are built but never
+    // opened, so the values only need to satisfy start <= end.
+    final long startHT = 1L;
+    final long endHT = 2L;
+
+    AsyncKuduClient asyncClient = harness.getAsyncClient();
+    AsyncKuduScanner observableOnly = asyncClient.newScannerBuilder(table)
+        .diffScan(startHT, endHT, AsyncKuduScanner.DiffScanRowVisibility.OBSERVABLE_ONLY)
+        .build();
+    assertFalse(observableOnly.getOpenRequest().getRequiredFeatures().contains(
+        Tserver.TabletServerFeatures.DIFF_SCAN_ROW_VISIBILITY_VALUE));
+
+    AsyncKuduScanner includeUnobservable = asyncClient.newScannerBuilder(table)
+        .diffScan(startHT, endHT, AsyncKuduScanner.DiffScanRowVisibility.INCLUDE_UNOBSERVABLE)
+        .build();
+    assertTrue(includeUnobservable.getOpenRequest().getRequiredFeatures().contains(
+        Tserver.TabletServerFeatures.DIFF_SCAN_ROW_VISIBILITY_VALUE));
+  }
+
+  private long anchorTimestamp(KuduTable table) throws KuduException {
+    KuduScanner anchor = client.newScannerBuilder(table)
+        .readMode(AsyncKuduScanner.ReadMode.READ_AT_SNAPSHOT)
+        .build();
+    anchor.nextRows();
+    anchor.close();
+    long ts = client.getLastPropagatedTimestamp();
+    assertTrue("the scan should have propagated a timestamp", ts > 0);
+    return ts;
+  }
+
+  /**
+   * Runs a diff scan restricted to a single key, so that rows left behind by the
+   * other scenarios in the same table can't affect the result.
+   */
+  private static List<String> diffScanKey(KuduTable table, Schema schema,
+      long startHT, long endHT, AsyncKuduScanner.DiffScanRowVisibility visibility, int key)
+      throws KuduException {
+    return diffScanToStrings(table, startHT, endHT, visibility,
+        KuduPredicate.newComparisonPredicate(schema.getColumnByIndex(0),
+            KuduPredicate.ComparisonOp.EQUAL, key));
+  }
+
+  /** The stringified form a diff scan reports for a live row with this key. */
+  private static String liveRow(int key) {
+    return String.format("INT32 key=%d, BOOL %s=false", key, DEFAULT_IS_DELETED_COL_NAME);
+  }
+
+  /** The stringified form a diff scan reports for a deleted row with this key. */
+  private static String deletedRow(int key) {
+    return String.format("INT32 key=%d, BOOL %s=true", key, DEFAULT_IS_DELETED_COL_NAME);
   }
 
   @Test

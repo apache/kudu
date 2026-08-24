@@ -156,6 +156,47 @@ public final class AsyncKuduScanner {
   }
 
   /**
+   * Controls which rows a diff scan returns.
+   *
+   * A diff scan reports rows whose state changed inside the
+   * [startTimestamp, endTimestamp) range. Rows whose entire lifecycle
+   * (INSERT followed by eventual DELETE) is contained inside that window
+   * are not visible to a snapshot read at either endpoint and are dropped
+   * by default. INCLUDE_UNOBSERVABLE surfaces them anyway, marked deleted
+   * via the IS_DELETED virtual column.
+   *
+   * Each option maps to the {@link Common.RowVisibility} value sent on the
+   * wire, available via {@link #pbVersion()}.
+   */
+  @InterfaceAudience.Private
+  public enum DiffScanRowVisibility {
+    /**
+     * Return only rows observable at the scan's end timestamp. This is the
+     * default and matches diff-scan behavior prior to the introduction of
+     * this option.
+     */
+    OBSERVABLE_ONLY(Common.RowVisibility.OBSERVABLE_ONLY),
+
+    /**
+     * Additionally return rows whose entire lifecycle is contained inside
+     * the diff scan's timestamp range, surfaced with the IS_DELETED virtual
+     * column set to true. The scan's projection must include an IS_DELETED
+     * column when this mode is used. The Kudu client library adds it
+     * automatically for every diff scan.
+     */
+    INCLUDE_UNOBSERVABLE(Common.RowVisibility.INCLUDE_UNOBSERVABLE);
+
+    private final Common.RowVisibility pbVersion;
+    DiffScanRowVisibility(Common.RowVisibility pbVersion) {
+      this.pbVersion = pbVersion;
+    }
+
+    public Common.RowVisibility pbVersion() {
+      return this.pbVersion;
+    }
+  }
+
+  /**
    * Expected row data format in scanner result set.
    *
    * The server may or may not support the expected layout, and the actual layout is internal
@@ -236,6 +277,11 @@ public final class AsyncKuduScanner {
   private final boolean isFaultTolerant;
 
   private final long startTimestamp;
+
+  // Whether a diff scan should also return rows whose entire lifecycle
+  // is contained inside its [startTimestamp, htTimestamp) window. Meaningful
+  // only when startTimestamp != NO_TIMESTAMP.
+  private final DiffScanRowVisibility rowVisibility;
 
   private long htTimestamp;
 
@@ -328,6 +374,7 @@ public final class AsyncKuduScanner {
                    boolean cacheBlocks, boolean prefetching,
                    byte[] startPrimaryKey, byte[] endPrimaryKey,
                    long startTimestamp, long htTimestamp,
+                   DiffScanRowVisibility rowVisibility,
                    int batchSizeBytes, PartitionPruner pruner,
                    ReplicaSelection replicaSelection, long keepAlivePeriodMs) {
     checkArgument(batchSizeBytes >= 0, "Need non-negative number of bytes, " +
@@ -345,6 +392,16 @@ public final class AsyncKuduScanner {
                     "for a diff scan");
       checkArgument(startTimestamp <= htTimestamp, "Start timestamp must be less " +
                     "than or equal to end timestamp");
+    }
+    // Row visibility applies to diff scans only, so it is set iff a diff scan
+    // is configured (i.e. iff startTimestamp is set). The tablet server rejects
+    // INCLUDE_UNOBSERVABLE without a window with INVALID_SCAN_SPEC, but cannot
+    // see an explicit OBSERVABLE_ONLY at all, since it is the wire default. So
+    // reject either one here, surfacing the mistake at build time rather than
+    // letting half of it pass silently.
+    if (rowVisibility != null) {
+      checkArgument(startTimestamp != AsyncKuduClient.NO_TIMESTAMP,
+          "Row visibility requires a diff scan (start timestamp must be set)");
     }
 
     this.isFaultTolerant = isFaultTolerant;
@@ -369,6 +426,7 @@ public final class AsyncKuduScanner {
     this.endPrimaryKey = endPrimaryKey;
     this.startTimestamp = startTimestamp;
     this.htTimestamp = htTimestamp;
+    this.rowVisibility = rowVisibility;
     this.batchSizeBytes = batchSizeBytes;
     this.lastPrimaryKey = AsyncKuduClient.EMPTY_ARRAY;
 
@@ -422,12 +480,13 @@ public final class AsyncKuduScanner {
                    boolean cacheBlocks, boolean prefetching,
                    byte[] startPrimaryKey, byte[] endPrimaryKey,
                    long startTimestamp, long htTimestamp,
+                   DiffScanRowVisibility rowVisibility,
                    int batchSizeBytes, PartitionPruner pruner,
                    ReplicaSelection replicaSelection, long keepAlivePeriodMs, String queryId) {
     this(
         client, table, projectedNames, projectedIndexes, readMode, isFaultTolerant,
         scanRequestTimeout, predicates, limit, cacheBlocks, prefetching, startPrimaryKey,
-        endPrimaryKey, startTimestamp, htTimestamp, batchSizeBytes,
+        endPrimaryKey, startTimestamp, htTimestamp, rowVisibility, batchSizeBytes,
         pruner, replicaSelection, keepAlivePeriodMs);
     if (queryId.isEmpty()) {
       this.queryId = UUID.randomUUID().toString().replace("-", "");
@@ -543,6 +602,14 @@ public final class AsyncKuduScanner {
 
   long getStartSnapshotTimestamp() {
     return this.startTimestamp;
+  }
+
+  DiffScanRowVisibility getRowVisibility() {
+    return this.rowVisibility;
+  }
+
+  boolean includeUnobservableRows() {
+    return this.rowVisibility == DiffScanRowVisibility.INCLUDE_UNOBSERVABLE;
   }
 
   /**
@@ -1196,11 +1263,14 @@ public final class AsyncKuduScanner {
 
     @Override
     Collection<Integer> getRequiredFeatures() {
-      if (predicates.isEmpty()) {
-        return ImmutableList.of();
-      } else {
-        return ImmutableList.of(Tserver.TabletServerFeatures.COLUMN_PREDICATES_VALUE);
+      ImmutableList.Builder<Integer> features = ImmutableList.builder();
+      if (!predicates.isEmpty()) {
+        features.add(Tserver.TabletServerFeatures.COLUMN_PREDICATES_VALUE);
       }
+      if (AsyncKuduScanner.this.includeUnobservableRows()) {
+        features.add(Tserver.TabletServerFeatures.DIFF_SCAN_ROW_VISIBILITY_VALUE);
+      }
+      return features.build();
     }
 
     @Override
@@ -1260,6 +1330,14 @@ public final class AsyncKuduScanner {
             }
             if (AsyncKuduScanner.this.getStartSnapshotTimestamp() != AsyncKuduClient.NO_TIMESTAMP) {
               newBuilder.setSnapStartTimestamp(AsyncKuduScanner.this.getStartSnapshotTimestamp());
+              // Only meaningful on diff scans. The server rejects the flag
+              // otherwise. OBSERVABLE_ONLY matches the field's default and
+              // is omitted to keep the wire representation stable when
+              // interacting with older servers.
+              if (AsyncKuduScanner.this.includeUnobservableRows()) {
+                newBuilder.setRowVisibility(
+                    AsyncKuduScanner.this.getRowVisibility().pbVersion());
+              }
             }
           }
 
@@ -1409,7 +1487,7 @@ public final class AsyncKuduScanner {
       return new AsyncKuduScanner(
           client, table, projectedColumnNames, projectedColumnIndexes, readMode, isFaultTolerant,
           scanRequestTimeout, predicates, limit, cacheBlocks, prefetching, lowerBoundPrimaryKey,
-          upperBoundPrimaryKey, startTimestamp, htTimestamp, batchSizeBytes,
+          upperBoundPrimaryKey, startTimestamp, htTimestamp, rowVisibility, batchSizeBytes,
           PartitionPruner.create(this), replicaSelection, keepAlivePeriodMs, queryId);
     }
   }

@@ -246,6 +246,13 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
   @SuppressWarnings("deprecation")
   private static KuduScanner.KuduScannerBuilder pbIntoScannerBuilder(
       ScanTokenPB message, KuduClient client) throws KuduException {
+    // NOTE: This does not actually reject a token that relies on a feature this
+    // client does not implement. feature_flags is a proto2 repeated enum, and
+    // proto2 enums are closed, so an undeclared value is routed into the unknown
+    // field set at parse time and never appears in getFeatureFlagsList().
+    // Feature.Unknown is therefore only seen if a producer explicitly wrote 0,
+    // which none do. Catching a genuinely unknown feature means inspecting
+    // getUnknownFields() for the feature_flags field number; see KUDU-3810.
     Preconditions.checkArgument(
         !message.getFeatureFlagsList().contains(ScanTokenPB.Feature.Unknown),
         "Scan token requires an unsupported feature. This Kudu client must be updated.");
@@ -310,9 +317,19 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
           if (message.hasSnapTimestamp()) {
             builder.snapshotTimestampRaw(message.getSnapTimestamp());
           }
-          // Set the diff scan timestamps if they are set.
+          // Set the diff scan timestamps if they are set. row_visibility is
+          // an optional field defaulting to OBSERVABLE_ONLY. It is absent on
+          // tokens emitted by clients that don't know about the field
+          // and getRowVisibility() returns the default, which matches
+          // the legacy diff scan behavior.
           if (message.hasSnapStartTimestamp()) {
-            builder.diffScan(message.getSnapStartTimestamp(), message.getSnapTimestamp());
+            AsyncKuduScanner.DiffScanRowVisibility visibility =
+                message.getRowVisibility() == Common.RowVisibility.INCLUDE_UNOBSERVABLE ?
+                    AsyncKuduScanner.DiffScanRowVisibility.INCLUDE_UNOBSERVABLE :
+                    AsyncKuduScanner.DiffScanRowVisibility.OBSERVABLE_ONLY;
+            builder.diffScan(message.getSnapStartTimestamp(),
+                             message.getSnapTimestamp(),
+                             visibility);
           }
           break;
         }
@@ -498,6 +515,13 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
             "Partition key bounds may not be set on KuduScanTokenBuilder");
       }
 
+      // build() serializes straight from the builder fields and never runs the
+      // AsyncKuduScanner constructor's checks.
+      if (rowVisibility != null && startTimestamp == AsyncKuduClient.NO_TIMESTAMP) {
+        throw new IllegalArgumentException(
+            "Row visibility requires a diff scan (start timestamp must be set)");
+      }
+
       // If the scan is short-circuitable, then return no tokens.
       for (KuduPredicate predicate : predicates.values()) {
         if (predicate.getType() == KuduPredicate.PredicateType.NONE) {
@@ -618,6 +642,15 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
         }
         if (startTimestamp != AsyncKuduClient.NO_TIMESTAMP) {
           proto.setSnapStartTimestamp(startTimestamp);
+          if (rowVisibility ==
+              AsyncKuduScanner.DiffScanRowVisibility.INCLUDE_UNOBSERVABLE) {
+            proto.setRowVisibility(rowVisibility.pbVersion());
+            // Record that this token relies on the RowVisibility feature. This
+            // does not by itself make an older client reject the token. Such a
+            // client ignores both this flag and row_visibility, falling back to
+            // OBSERVABLE_ONLY. See the note in pbIntoScannerBuilder().
+            proto.addFeatureFlags(ScanTokenPB.Feature.RowVisibility);
+          }
         }
       }
 

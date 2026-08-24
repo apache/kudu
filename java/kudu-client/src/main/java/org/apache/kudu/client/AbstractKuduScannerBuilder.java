@@ -49,6 +49,9 @@ public abstract class AbstractKuduScannerBuilder
   boolean cacheBlocks = true;
   long startTimestamp = AsyncKuduClient.NO_TIMESTAMP;
   long htTimestamp = AsyncKuduClient.NO_TIMESTAMP;
+  // Null unless a diff scan is configured: row visibility applies to diff scans
+  // only. Set by diffScan(), which also sets 'startTimestamp'.
+  AsyncKuduScanner.DiffScanRowVisibility rowVisibility = null;
   byte[] lowerBoundPrimaryKey = AsyncKuduClient.EMPTY_ARRAY;
   byte[] upperBoundPrimaryKey = AsyncKuduClient.EMPTY_ARRAY;
   byte[] lowerBoundPartitionKey = AsyncKuduClient.EMPTY_ARRAY;
@@ -277,19 +280,58 @@ public abstract class AbstractKuduScannerBuilder
    * Sets the start timestamp and end timestamp for a diff scan.
    * The timestamps should be encoded HT timestamps.
    *
-   * Additionally sets any other scan properties required by diff scans.
+   * Equivalent to {@link #diffScan(long, long,
+   * AsyncKuduScanner.DiffScanRowVisibility)} with
+   * {@link AsyncKuduScanner.DiffScanRowVisibility#OBSERVABLE_ONLY}.
    *
    * @param startTimestamp a long representing a HybridTime-encoded start timestamp
    * @param endTimestamp a long representing a HybridTime-encoded end timestamp
    * @return this instance
    */
   @InterfaceAudience.Private
-  @SuppressWarnings("unchecked")
   public S diffScan(long startTimestamp, long endTimestamp) {
+    return diffScan(startTimestamp, endTimestamp,
+                    AsyncKuduScanner.DiffScanRowVisibility.OBSERVABLE_ONLY);
+  }
+
+  /**
+   * Sets the start timestamp, end timestamp and row visibility mode for a diff
+   * scan. The timestamps should be encoded HT timestamps.
+   *
+   * Additionally sets the rest of the scan properties required by diff scans.
+   *
+   * When {@code visibility} is
+   * {@link AsyncKuduScanner.DiffScanRowVisibility#INCLUDE_UNOBSERVABLE}, rows
+   * whose entire lifecycle is contained inside the [startTimestamp, endTimestamp)
+   * window are also returned, marked deleted via the IS_DELETED virtual column.
+   * The Kudu client library adds an IS_DELETED column to the projection
+   * automatically for every diff scan.
+   *
+   * @param startTimestamp a long representing a HybridTime-encoded start timestamp
+   * @param endTimestamp a long representing a HybridTime-encoded end timestamp
+   * @param visibility whether to include rows whose entire lifecycle lies
+   *                   inside the diff scan window
+   * @return this instance
+   * @throws IllegalArgumentException if either timestamp is unset or the
+   *                                  visibility is null
+   */
+  @InterfaceAudience.Private
+  @SuppressWarnings("unchecked")
+  public S diffScan(long startTimestamp, long endTimestamp,
+                    AsyncKuduScanner.DiffScanRowVisibility visibility) {
+    if (visibility == null) {
+      throw new IllegalArgumentException("visibility must not be null");
+    }
+    if (startTimestamp == AsyncKuduClient.NO_TIMESTAMP ||
+        endTimestamp == AsyncKuduClient.NO_TIMESTAMP) {
+      throw new IllegalArgumentException(
+          "Must have both start and end timestamps for a diff scan");
+    }
     this.startTimestamp = startTimestamp;
     this.htTimestamp = endTimestamp;
     this.isFaultTolerant = true;
     this.readMode = AsyncKuduScanner.ReadMode.READ_AT_SNAPSHOT;
+    this.rowVisibility = visibility;
     return (S) this;
   }
 

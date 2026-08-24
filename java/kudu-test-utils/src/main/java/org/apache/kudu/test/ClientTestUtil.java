@@ -204,6 +204,37 @@ public abstract class ClientTestUtil {
     return rowStrings;
   }
 
+  /**
+   * Runs a diff scan over the [startHT, endHT) window and returns the rows it
+   * reports in their stringified form, sorted. The projection a diff scan uses
+   * includes the IS_DELETED virtual column, so each returned string carries the
+   * row's terminal deleted state.
+   *
+   * @param table the table to scan
+   * @param startHT a long representing a HybridTime-encoded start timestamp
+   * @param endHT a long representing a HybridTime-encoded end timestamp
+   * @param visibility which rows the diff scan should report
+   * @param predicates optional predicates to apply to the scan
+   * @return the stringified rows matching the predicates, sorted
+   */
+  public static List<String> diffScanToStrings(
+      KuduTable table, long startHT, long endHT,
+      AsyncKuduScanner.DiffScanRowVisibility visibility,
+      KuduPredicate... predicates) throws KuduException {
+    KuduScanner.KuduScannerBuilder scanBuilder =
+        table.getAsyncClient().syncClient().newScannerBuilder(table)
+            .diffScan(startHT, endHT, visibility);
+    for (KuduPredicate predicate : predicates) {
+      scanBuilder.addPredicate(predicate);
+    }
+    List<String> rowStrings = Lists.newArrayList();
+    for (RowResult r : scanBuilder.build()) {
+      rowStrings.add(r.rowToString());
+    }
+    Collections.sort(rowStrings);
+    return rowStrings;
+  }
+
   public static Schema getSchemaWithAllTypes() {
     List<ColumnSchema> columns =
         ImmutableList.of(

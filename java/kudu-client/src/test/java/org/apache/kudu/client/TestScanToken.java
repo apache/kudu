@@ -52,6 +52,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.Common;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.test.KuduTestHarness;
@@ -640,6 +641,98 @@ public class TestScanToken {
     assertEquals(1, tokens.size());
 
     checkDiffScanResults(tokens.get(0).intoScanner(client), 3 * numRows / 4, numRows / 4);
+  }
+
+  /**
+   * Test that scan tokens carry the INCLUDE_UNOBSERVABLE row-visibility mode
+   * (KUDU-3800) across serialization/deserialization.
+   */
+  @Test
+  public void testDiffScanTokensIncludeUnobservable() throws Exception {
+    Schema schema = getBasicSchema();
+    CreateTableOptions createOptions = new CreateTableOptions();
+    createOptions.setRangePartitionColumns(ImmutableList.of());
+    createOptions.setNumReplicas(1);
+    KuduTable table = client.createTable(testTableName, schema, createOptions);
+
+    // Anchor the start of the diff-scan window. getLastPropagatedTimestamp() is
+    // NO_TIMESTAMP (-1) until the client observes a timestamp from a tablet
+    // server. A READ_AT_SNAPSHOT scan makes the server pick a snapshot timestamp
+    // and propagate it back.
+    KuduScanner anchor = client.newScannerBuilder(table)
+        .readMode(AsyncKuduScanner.ReadMode.READ_AT_SNAPSHOT)
+        .build();
+    anchor.nextRows();
+    anchor.close();
+    long startHT = client.getLastPropagatedTimestamp();
+    assertTrue(startHT > 0);
+
+    // Insert then delete a row inside the window. Its full lifecycle lies in
+    // [startHT, endHT), so it is considered unobservable.
+    KuduSession session = client.newSession();
+    final int key = 7;
+    session.apply(createBasicSchemaInsert(table, key));
+    Delete delete = table.newDelete();
+    delete.getRow().addInt(0, key);
+    session.apply(delete);
+    long endHT = client.getLastPropagatedTimestamp() + 1;
+
+    // OBSERVABLE_ONLY token: the row is the only change in the window, so the
+    // round-tripped scanner must report nothing at all.
+    {
+      List<KuduScanToken> tokens = client.newScanTokenBuilder(table)
+          .diffScan(startHT, endHT,
+                    AsyncKuduScanner.DiffScanRowVisibility.OBSERVABLE_ONLY)
+          .build();
+      assertEquals(1, tokens.size());
+      byte[] serialized = tokens.get(0).serialize();
+
+      // OBSERVABLE_ONLY is the field's default, so the token must look exactly
+      // like one emitted before the feature existed: no explicit
+      // row_visibility and no RowVisibility feature flag.
+      Client.ScanTokenPB pb =
+          Client.ScanTokenPB.parseFrom(CodedInputStream.newInstance(serialized));
+      assertEquals(Common.RowVisibility.OBSERVABLE_ONLY, pb.getRowVisibility());
+      assertFalse(pb.hasRowVisibility());
+      assertFalse(pb.getFeatureFlagsList()
+          .contains(Client.ScanTokenPB.Feature.RowVisibility));
+
+      KuduScanner scanner = KuduScanToken.deserializeIntoScanner(serialized, client);
+      assertEquals(0, countRowsInScan(scanner));
+    }
+
+    // INCLUDE_UNOBSERVABLE token: The round-trip shows the row and marked deleted.
+    {
+      List<KuduScanToken> tokens = client.newScanTokenBuilder(table)
+          .diffScan(startHT, endHT,
+                    AsyncKuduScanner.DiffScanRowVisibility.INCLUDE_UNOBSERVABLE)
+          .build();
+      assertEquals(1, tokens.size());
+      byte[] serialized = tokens.get(0).serialize();
+
+      // The non-default mode must be encoded explicitly, and the token must
+      // record its dependency on the RowVisibility feature.
+      Client.ScanTokenPB pb =
+          Client.ScanTokenPB.parseFrom(CodedInputStream.newInstance(serialized));
+      assertEquals(Common.RowVisibility.INCLUDE_UNOBSERVABLE, pb.getRowVisibility());
+      assertTrue(pb.getFeatureFlagsList()
+          .contains(Client.ScanTokenPB.Feature.RowVisibility));
+
+      KuduScanner scanner = KuduScanToken.deserializeIntoScanner(serialized, client);
+
+      int matches = 0;
+      boolean seenDeleted = false;
+      while (scanner.hasMoreRows()) {
+        for (RowResult row : scanner.nextRows()) {
+          if (row.getInt(0) == key) {
+            matches++;
+            seenDeleted = row.isDeleted();
+          }
+        }
+      }
+      assertEquals(1, matches);
+      assertTrue(seenDeleted);
+    }
   }
 
   /**
