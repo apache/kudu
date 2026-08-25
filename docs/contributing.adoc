@@ -499,7 +499,7 @@ be a vanilla tarball obtained directly from an upstream project, but sometimes
 either its name or the contents need to be massaged to meet Kudu's expectations.
 
 . Add the new dependency to the third-party build. You'll need to modify
-`vars.sh`, `download-thirdparty.sh`, `build-definitions.sh`, and
+`vars.sh`, `download-src.sh`, `build-definitions.sh`, and
 `build-thirdparty.sh`.
 
 . On your local machine, extract the source tarball into `thirdparty/src`.
