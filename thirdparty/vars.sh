@@ -125,6 +125,13 @@ fi
 #   relevant to the production of the artifacts.  There is no need to set
 #   <comp>_ANY_TOOLCHAIN if <comp>_ANY_ARCH is set to 1 already.
 #
+# * <comp>_SRC_URL
+#   Set to custom URL from where to fetch the component's source tarball
+#   instead of DEPENDENCY_URL (e.g., file:///tmp/3rdparty). This is useful
+#   when introducing a new component, upgrading an existing one, experimenting
+#   with changes in the source archive before publishing the source archive
+#   in the dedicated S3 bucket accessible via $CLOUDFRONT_URL_PREFIX URL.
+#
 GFLAGS_VERSION=2.2.2
 GFLAGS_PATCHLEVEL=0
 GFLAGS_NAME=gflags-$GFLAGS_VERSION
