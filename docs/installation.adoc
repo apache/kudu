@@ -103,6 +103,14 @@ $ sudo yum install autoconf automake cyrus-sasl-devel cyrus-sasl-gssapi \
   pkgconfig rsync unzip vim-common which
 ----
 
+. If building on RHEL 9.0 or newer, and it's necessary to build PostgreSQL
+in `thirdparty` from source (e.g., if not using pre-built 3rd-party artifacts
+or they aren't available for some reason), install the `perl-FindBin` package:
++
+----
+$ sudo yum -y install perl-FindBin
+----
+
 . If building on RHEL or CentOS older than 8.0, install the Red Hat Developer Toolset.
 Below are the steps required for CentOS. If you are on RHEL, follow their documentation
 https://developers.redhat.com/products/developertoolset/hello-world[here].
@@ -249,6 +257,9 @@ sudo yum -y install autoconf automake curl cyrus-sasl-devel cyrus-sasl-gssapi \
   cyrus-sasl-plain flex gcc gcc-c++ gdb git java-1.8.0-openjdk-devel \
   krb5-server krb5-workstation krb5-devel libtool make openssl-devel patch \
   pkgconfig rsync unzip vim-common which
+# If installing on RHEL/CentOS >= 9 and building 3rd-party PostgreSQL from
+# source, uncomment the next line to install perl-FindBin module
+#sudo yum -y install perl-FindBin
 # Uncomment the next line if installing on RHEL/CentOS < 9
 #sudo yum -y install redhat-lsb-core
 # Uncomment the next two lines if installing on RHEL/CentOS < 8
