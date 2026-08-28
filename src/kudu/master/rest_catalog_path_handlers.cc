@@ -70,6 +70,15 @@ DEFINE_int32(rest_catalog_default_request_timeout_ms, 30 * 1000, "Default reques
 TAG_FLAG(rest_catalog_default_request_timeout_ms, advanced);
 TAG_FLAG(rest_catalog_default_request_timeout_ms, runtime);
 
+DEFINE_bool(rest_api_allow_anonymous, false,
+            "Whether the REST catalog API accepts requests that carry no "
+            "authenticated web principal, executing them as the synthetic "
+            "user 'default'. This is unsafe: with anonymous access enabled, "
+            "anyone able to reach the master webserver port can perform DDL "
+            "operations. Only intended for testing.");
+TAG_FLAG(rest_api_allow_anonymous, unsafe);
+TAG_FLAG(rest_api_allow_anonymous, runtime);
+
 using google::protobuf::util::JsonParseOptions;
 using google::protobuf::util::JsonStringToMessage;
 using kudu::consensus::RaftPeerPB;
@@ -97,6 +106,34 @@ static bool CheckIsInitializedAndIsLeader(JsonWriter& jw,  // NOLINT JsonWriter 
   return true;
 }
 
+// Resolves the acting user for a REST catalog request. Returns true and sets
+// 'user' if the request carries an authenticated principal (or anonymous
+// access is explicitly enabled); otherwise writes a JSON 401 error and
+// returns false. Never fabricate an identity for an unauthenticated caller:
+// catalog operations must not execute as the synthetic user "default" unless
+// the operator explicitly opted into --rest_api_allow_anonymous.
+static bool ResolveRequestUser(JsonWriter& jw,  // NOLINT JsonWriter cannot be const
+                               const Webserver::WebRequest& req,
+                               HttpStatusCode& status_code,  // NOLINT
+                               optional<string>* user) {
+  if (!req.username.empty()) {
+    *user = req.username;
+    return true;
+  }
+  if (FLAGS_rest_api_allow_anonymous) {
+    *user = "default";
+    return true;
+  }
+  RETURN_JSON_ERROR_VAL(jw,
+                        "Authentication required: this request carries no "
+                        "authenticated principal. Enable webserver "
+                        "authentication (e.g. --webserver_require_spnego) to "
+                        "use the REST catalog API",
+                        status_code,
+                        HttpStatusCode::AuthenticationRequired,
+                        false);
+}
+
 static HttpStatusCode GetHttpCodeFromStatus(const Status& status) {
   DCHECK(!status.ok());
   // After SPNEGO authentication, the server assumes the caller is known and authenticated.
@@ -122,6 +159,15 @@ void RestCatalogPathHandlers::HandleApiTableEndpoint(const Webserver::WebRequest
                                                      Webserver::PrerenderedWebResponse* resp) {
   ostringstream* output = &resp->output;
   JsonWriter jw(output, JsonWriter::COMPACT);
+
+  // Authenticate before any catalog lookup so unauthenticated callers cannot
+  // distinguish valid table_ids from invalid ones (or leader vs non-leader
+  // masters) via response codes.
+  optional<string> user;
+  if (!ResolveRequestUser(jw, req, resp->status_code, &user)) {
+    return;
+  }
+
   string table_id;
   auto table_id_it = req.path_params.find("table_id");
   if (table_id_it == req.path_params.end()) {
@@ -153,9 +199,9 @@ void RestCatalogPathHandlers::HandleApiTableEndpoint(const Webserver::WebRequest
   if (req.request_method == "GET") {
     HandleGetTable(output, req, &resp->status_code);
   } else if (req.request_method == "PUT") {
-    HandlePutTable(output, req, &resp->status_code);
+    HandlePutTable(output, req, user, &resp->status_code);
   } else if (req.request_method == "DELETE") {
-    HandleDeleteTable(output, req, &resp->status_code);
+    HandleDeleteTable(output, req, user, &resp->status_code);
   } else {
     RETURN_JSON_ERROR(
         jw, "Method not allowed", resp->status_code, HttpStatusCode::MethodNotAllowed);
@@ -166,15 +212,23 @@ void RestCatalogPathHandlers::HandleApiTablesEndpoint(const Webserver::WebReques
                                                       Webserver::PrerenderedWebResponse* resp) {
   ostringstream* output = &resp->output;
   JsonWriter jw(output, JsonWriter::COMPACT);
+
+  // Authenticate before the leader check so unauthenticated callers cannot
+  // probe leader status via response codes.
+  optional<string> user;
+  if (!ResolveRequestUser(jw, req, resp->status_code, &user)) {
+    return;
+  }
+
   CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
   if (!CheckIsInitializedAndIsLeader(jw, l, resp->status_code)) {
     return;
   }
 
   if (req.request_method == "GET") {
-    HandleGetTables(output, req, &resp->status_code);
+    HandleGetTables(output, req, user, &resp->status_code);
   } else if (req.request_method == "POST") {
-    HandlePostTables(output, req, &resp->status_code);
+    HandlePostTables(output, req, user, &resp->status_code);
   } else {
     RETURN_JSON_ERROR(
         jw, "Method not allowed", resp->status_code, HttpStatusCode::MethodNotAllowed);
@@ -259,13 +313,13 @@ void RestCatalogPathHandlers::HandleApiSpecEndpoint(const Webserver::WebRequest&
 }
 
 void RestCatalogPathHandlers::HandleGetTables(std::ostringstream* output,
-                                              const Webserver::WebRequest& req,
+                                              const Webserver::WebRequest& /*req*/,
+                                              const optional<string>& user,
                                               HttpStatusCode* status_code) {
   ListTablesRequestPB request;
   ListTablesResponsePB response;
-  optional<string> user = req.username.empty() ? "default" : req.username;
-  Status status = master_->catalog_manager()->ListTables(&request, &response, user);
   JsonWriter jw(output, JsonWriter::COMPACT);
+  Status status = master_->catalog_manager()->ListTables(&request, &response, user);
 
   if (!status.ok()) {
     RETURN_JSON_ERROR_FROM_STATUS(jw, status, *status_code);
@@ -289,6 +343,7 @@ void RestCatalogPathHandlers::HandleGetTables(std::ostringstream* output,
 
 void RestCatalogPathHandlers::HandlePostTables(ostringstream* output,
                                                const Webserver::WebRequest& req,
+                                               const optional<string>& user,
                                                HttpStatusCode* status_code) {
   CreateTableRequestPB request;
   CreateTableResponsePB response;
@@ -305,7 +360,6 @@ void RestCatalogPathHandlers::HandlePostTables(ostringstream* output,
                       *status_code,
                       HttpStatusCode::BadRequest);
   }
-  optional<string> user = req.username.empty() ? "default" : req.username;
   Status status = master_->catalog_manager()->CreateTableWithUser(&request, &response, user);
 
   if (!status.ok()) {
@@ -333,8 +387,11 @@ void RestCatalogPathHandlers::HandlePostTables(ostringstream* output,
     }
 
     if (check_resp.done()) {
-      PrintTableObject(output, response.table_id(), status_code);
+      // Set the success code before PrintTableObject so a late failure inside
+      // it (e.g. a concurrent delete racing GetTableInfo) can overwrite it
+      // with the real error code rather than being masked by a trailing Ok.
       *status_code = HttpStatusCode::Created;
+      PrintTableObject(output, response.table_id(), status_code);
       return;
     }
     SleepFor(MonoDelta::FromMilliseconds(200));
@@ -349,12 +406,16 @@ void RestCatalogPathHandlers::HandleGetTable(ostringstream* output,
                                              const Webserver::WebRequest& req,
                                              HttpStatusCode* status_code) {
   string table_id = req.path_params.at("table_id");
-  PrintTableObject(output, table_id, status_code);
+  // Set the success code before PrintTableObject so a late failure inside it
+  // (e.g. a concurrent delete racing GetTableInfo) can overwrite it with the
+  // real error code rather than being masked by a trailing Ok.
   *status_code = HttpStatusCode::Ok;
+  PrintTableObject(output, table_id, status_code);
 }
 
 void RestCatalogPathHandlers::HandlePutTable(ostringstream* output,
                                              const Webserver::WebRequest& req,
+                                             const optional<string>& user,
                                              HttpStatusCode* status_code) {
   string table_id = req.path_params.at("table_id");
   AlterTableRequestPB request;
@@ -374,7 +435,6 @@ void RestCatalogPathHandlers::HandlePutTable(ostringstream* output,
                       HttpStatusCode::BadRequest);
   }
 
-  optional<string> user = req.username.empty() ? "default" : req.username;
   Status status = master_->catalog_manager()->AlterTableWithUser(request, &response, user);
 
   if (!status.ok()) {
@@ -402,8 +462,11 @@ void RestCatalogPathHandlers::HandlePutTable(ostringstream* output,
     }
 
     if (check_resp.done()) {
-      PrintTableObject(output, table_id, status_code);
+      // Set the success code before PrintTableObject so a late failure inside
+      // it (e.g. a concurrent delete racing GetTableInfo) can overwrite it
+      // with the real error code rather than being masked by a trailing Ok.
       *status_code = HttpStatusCode::Ok;
+      PrintTableObject(output, table_id, status_code);
       return;
     }
     SleepFor(MonoDelta::FromMilliseconds(200));
@@ -416,13 +479,13 @@ void RestCatalogPathHandlers::HandlePutTable(ostringstream* output,
 
 void RestCatalogPathHandlers::HandleDeleteTable(ostringstream* output,
                                                 const Webserver::WebRequest& req,
+                                                const optional<string>& user,
                                                 HttpStatusCode* status_code) {
   string table_id = req.path_params.at("table_id");
   DeleteTableRequestPB request;
   DeleteTableResponsePB response;
   request.mutable_table()->set_table_id(table_id);
   JsonWriter jw(output, JsonWriter::COMPACT);
-  optional<string> user = req.username.empty() ? "default" : req.username;
   Status status = master_->catalog_manager()->DeleteTableWithUser(request, &response, user);
 
   if (status.ok()) {
@@ -440,6 +503,12 @@ void RestCatalogPathHandlers::PrintTableObject(ostringstream* output,
   JsonWriter jw(output, JsonWriter::COMPACT);
   if (!status.ok()) {
     RETURN_JSON_ERROR_FROM_STATUS(jw, status, *status_code);
+  }
+  // GetTableInfo returns OK with a null table when the id isn't in the
+  // catalog (e.g. a concurrent delete between the dispatcher's lookup and
+  // this second lookup). Report NotFound instead of dereferencing null.
+  if (!table) {
+    RETURN_JSON_ERROR(jw, "Table not found", *status_code, HttpStatusCode::NotFound);
   }
 
   jw.StartObject();

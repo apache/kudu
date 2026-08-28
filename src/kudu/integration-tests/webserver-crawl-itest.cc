@@ -169,6 +169,9 @@ TEST_P(WebserverCrawlITest, TestAllWebPages) {
   opts.extra_master_flags = flags;
   opts.extra_tserver_flags = flags;
   opts.enable_rest_api = true;
+  // The crawler has no SPNEGO credentials, and the REST API refuses to start
+  // without webserver authentication unless anonymous access is allowed.
+  opts.extra_master_flags.emplace_back("--rest_api_allow_anonymous=true");
 
   ExternalMiniCluster cluster(std::move(opts));
   ASSERT_OK(cluster.Start());

@@ -24,7 +24,6 @@
 
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/kserver/kserver.h"
 #include "kudu/master/master_options.h"

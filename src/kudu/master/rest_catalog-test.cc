@@ -39,6 +39,7 @@
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/regex.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -58,10 +59,17 @@ using std::vector;
 using strings::Substitute;
 
 DECLARE_bool(enable_rest_api);
+DECLARE_bool(rest_api_allow_anonymous);
+DECLARE_bool(webserver_enabled);
+DECLARE_bool(webserver_require_spnego);
 DECLARE_string(webserver_doc_root);
 
 namespace kudu {
 namespace master {
+
+// Exposed by master.cc for unit testing (the gflags validator itself only
+// fires once at process init).
+bool ValidateRestApiFlag();
 
 class RestCatalogTest : public RestCatalogTestBase {
  public:
@@ -69,6 +77,9 @@ class RestCatalogTest : public RestCatalogTestBase {
     KuduTest::SetUp();
     // Set REST endpoint flag to true
     FLAGS_enable_rest_api = true;
+    // These tests exercise the REST API without webserver authentication;
+    // explicitly opt into anonymous access.
+    FLAGS_rest_api_allow_anonymous = true;
 
     // Set webserver doc root to enable swagger UI and static file serving
     string bin_path;
@@ -291,6 +302,134 @@ TEST_F(RestCatalogTest, TestDeleteTableEndpoint) {
   ASSERT_STR_CONTAINS(s.ToString(),
                       "Not found: the table does not exist: table_name: \"test_table\"");
   ASSERT_TRUE(table == nullptr);
+}
+
+// Regression test: with anonymous access disabled (the default), a request
+// carrying no authenticated principal must be rejected with 401 rather than
+// executed as the synthetic user "default".
+TEST_F(RestCatalogTest, TestUnauthenticatedRequestsRejected) {
+  ASSERT_OK(CreateTestTable());
+  string table_id;
+  ASSERT_OK(GetTableId(kTableName, &table_id));
+  FLAGS_rest_api_allow_anonymous = false;
+  const string addr = cluster_->mini_master()->bound_http_addr().ToString();
+
+  // GET /api/v1/tables
+  {
+    EasyCurl c;
+    faststring buf;
+    Status s = c.FetchURL(Substitute("http://$0/api/v1/tables", addr), &buf);
+    ASSERT_TRUE(!s.ok());
+    ASSERT_STR_CONTAINS(s.ToString(), "HTTP 401");
+    ASSERT_STR_CONTAINS(buf.ToString(), "Authentication required");
+  }
+
+  // POST /api/v1/tables
+  {
+    EasyCurl c;
+    faststring buf;
+    Status s = c.PostToURL(
+        Substitute("http://$0/api/v1/tables", addr), "{\"name\":\"test_table_2\"}", &buf);
+    ASSERT_TRUE(!s.ok());
+    ASSERT_STR_CONTAINS(s.ToString(), "HTTP 401");
+    ASSERT_STR_CONTAINS(buf.ToString(), "Authentication required");
+  }
+
+  // GET /api/v1/tables/<table_id>
+  {
+    EasyCurl c;
+    faststring buf;
+    Status s = c.FetchURL(Substitute("http://$0/api/v1/tables/$1", addr, table_id), &buf);
+    ASSERT_TRUE(!s.ok());
+    ASSERT_STR_CONTAINS(s.ToString(), "HTTP 401");
+    ASSERT_STR_CONTAINS(buf.ToString(), "Authentication required");
+  }
+
+  // PUT /api/v1/tables/<table_id>
+  {
+    EasyCurl c;
+    faststring buf;
+    c.set_custom_method("PUT");
+    Status s = c.PostToURL(
+        Substitute("http://$0/api/v1/tables/$1", addr, table_id), "{}", &buf);
+    ASSERT_TRUE(!s.ok());
+    ASSERT_STR_CONTAINS(s.ToString(), "HTTP 401");
+    ASSERT_STR_CONTAINS(buf.ToString(), "Authentication required");
+  }
+
+  // DELETE /api/v1/tables/<table_id>
+  {
+    EasyCurl c;
+    faststring buf;
+    c.set_custom_method("DELETE");
+    Status s = c.FetchURL(Substitute("http://$0/api/v1/tables/$1", addr, table_id), &buf);
+    ASSERT_TRUE(!s.ok());
+    ASSERT_STR_CONTAINS(s.ToString(), "HTTP 401");
+    ASSERT_STR_CONTAINS(buf.ToString(), "Authentication required");
+  }
+
+  // Requests for a non-existent (but well-formed) table_id must also fail
+  // with 401, not 404: the auth check runs before the catalog lookup so that
+  // response codes don't distinguish valid table_ids from invalid ones.
+  {
+    const string bogus_id(32, 'a');
+    EasyCurl c;
+    faststring buf;
+    Status s = c.FetchURL(Substitute("http://$0/api/v1/tables/$1", addr, bogus_id), &buf);
+    ASSERT_TRUE(!s.ok());
+    ASSERT_STR_CONTAINS(s.ToString(), "HTTP 401");
+    ASSERT_STR_CONTAINS(buf.ToString(), "Authentication required");
+  }
+
+  // The table must still exist.
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(client_->OpenTable(kTableName, &table));
+}
+
+// Unit-tests the startup flag validator. Only SPNEGO or an explicit
+// anonymous opt-in should be accepted; password-file is deliberately not a
+// sufficient auth mode because it only protects GET/POST in squeasel (see
+// the comment on ValidateRestApiFlag in master.cc).
+TEST(RestApiFlagValidatorTest, RejectsUnsafeCombinations) {
+  const bool orig_enable = FLAGS_enable_rest_api;
+  const bool orig_webserver = FLAGS_webserver_enabled;
+  const bool orig_spnego = FLAGS_webserver_require_spnego;
+  const bool orig_anon = FLAGS_rest_api_allow_anonymous;
+  SCOPED_CLEANUP({
+    FLAGS_enable_rest_api = orig_enable;
+    FLAGS_webserver_enabled = orig_webserver;
+    FLAGS_webserver_require_spnego = orig_spnego;
+    FLAGS_rest_api_allow_anonymous = orig_anon;
+  });
+
+  // REST API off: everything else irrelevant.
+  FLAGS_enable_rest_api = false;
+  FLAGS_webserver_enabled = false;
+  FLAGS_webserver_require_spnego = false;
+  FLAGS_rest_api_allow_anonymous = false;
+  ASSERT_TRUE(ValidateRestApiFlag());
+
+  // REST API on, webserver off: rejected regardless of auth.
+  FLAGS_enable_rest_api = true;
+  FLAGS_webserver_enabled = false;
+  FLAGS_webserver_require_spnego = true;
+  ASSERT_FALSE(ValidateRestApiFlag());
+
+  // REST API on, webserver on, no auth flags: rejected.
+  FLAGS_webserver_enabled = true;
+  FLAGS_webserver_require_spnego = false;
+  FLAGS_rest_api_allow_anonymous = false;
+  ASSERT_FALSE(ValidateRestApiFlag());
+
+  // SPNEGO alone is sufficient.
+  FLAGS_webserver_require_spnego = true;
+  FLAGS_rest_api_allow_anonymous = false;
+  ASSERT_TRUE(ValidateRestApiFlag());
+
+  // Anonymous opt-in alone is sufficient.
+  FLAGS_webserver_require_spnego = false;
+  FLAGS_rest_api_allow_anonymous = true;
+  ASSERT_TRUE(ValidateRestApiFlag());
 }
 
 TEST_F(RestCatalogTest, TestDeleteTableMalformedId) {
@@ -826,6 +965,7 @@ class MultiMasterTest : public RestCatalogTestBase {
   void SetUp() override {
     KuduTest::SetUp();
     FLAGS_enable_rest_api = true;
+    FLAGS_rest_api_allow_anonymous = true;
 
     InternalMiniClusterOptions opts;
     opts.num_masters = 3;

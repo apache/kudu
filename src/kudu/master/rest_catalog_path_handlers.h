@@ -18,6 +18,7 @@
 #pragma once
 
 #include <iosfwd>
+#include <optional>
 #include <string>
 
 #include <glog/logging.h>
@@ -52,21 +53,27 @@ class RestCatalogPathHandlers final {
   void HandleApiSpecEndpoint(const Webserver::WebRequest& req,
                              Webserver::PrerenderedWebResponse* resp);
 
-  // Handles REST API endpoints based on the request method and path.
+  // Handles REST API endpoints based on the request method and path. The
+  // acting user is resolved once at the dispatcher level (see
+  // ResolveRequestUser) and passed through.
   void HandleGetTables(std::ostringstream* output,
                        const Webserver::WebRequest& req,
+                       const std::optional<std::string>& user,
                        HttpStatusCode* status_code);
   void HandlePostTables(std::ostringstream* output,
                         const Webserver::WebRequest& req,
+                        const std::optional<std::string>& user,
                         HttpStatusCode* status_code);
   void HandleGetTable(std::ostringstream* output,
                       const Webserver::WebRequest& req,
                       HttpStatusCode* status_code);
   void HandlePutTable(std::ostringstream* output,
                       const Webserver::WebRequest& req,
+                      const std::optional<std::string>& user,
                       HttpStatusCode* status_code);
   void HandleDeleteTable(std::ostringstream* output,
                          const Webserver::WebRequest& req,
+                         const std::optional<std::string>& user,
                          HttpStatusCode* status_code);
 
   // Print a JSON object representing a table to 'output'.
