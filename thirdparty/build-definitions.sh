@@ -425,9 +425,11 @@ build_libunwind() {
   pushd $LIBUNWIND_BDIR
   # Disable minidebuginfo, which depends on liblzma, until/unless we decide to
   # add liblzma to thirdparty.
+  # Disable building tests since they aren't run here anyway.
   CFLAGS="$EXTRA_CFLAGS -I$PREFIX/include" \
     $LIBUNWIND_SOURCE/configure \
     --disable-minidebuginfo \
+    --disable-tests \
     --with-pic \
     --prefix=$PREFIX
   make -j$PARALLEL $EXTRA_MAKEFLAGS
