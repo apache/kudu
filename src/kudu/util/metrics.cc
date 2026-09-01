@@ -26,6 +26,7 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/singleton.h"
 #include "kudu/gutil/strings/join.h"
+#include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/hdr_histogram.h"
@@ -51,6 +52,43 @@ DEFINE_bool(metrics_prometheus_export_hostname, true,
             "Prometheus metric line. Set to false to omit the hostname label, "
             "e.g. when using Prometheus relabel_configs for custom labeling.");
 TAG_FLAG(metrics_prometheus_export_hostname, runtime);
+
+DEFINE_string(metrics_prometheus_default_merge_rules, "",
+              "The default entity merge rules applied by the '/metrics_prometheus' "
+              "endpoint when the request does not carry a 'merge_rules' query "
+              "parameter. The value is a comma-separated list of rules, each in the "
+              "form '<entity_type>|<merge_to>|<attribute_to_merge_by>'. For example, "
+              "'tablet|table|table_name' merges all tablet entities into table-level "
+              "entities keyed by their 'table_name' attribute, which drastically "
+              "reduces the number of exported time series on clusters with many "
+              "tablets. Empty by default, i.e. no merging is performed unless a "
+              "request asks for it.");
+TAG_FLAG(metrics_prometheus_default_merge_rules, advanced);
+TAG_FLAG(metrics_prometheus_default_merge_rules, runtime);
+TAG_FLAG(metrics_prometheus_default_merge_rules, evolving);
+DEFINE_validator(metrics_prometheus_default_merge_rules,
+                 [](const char* flag_name, const std::string& value) {
+  // An empty value disables default merging and is always valid. Otherwise
+  // warn about (but tolerate) malformed rules so that a typo surfaces in the
+  // logs instead of silently disabling aggregation. Well-formed rules in the
+  // same value are still applied; see GetPrometheusMergeRules().
+  if (value.empty()) {
+    return true;
+  }
+  std::vector<std::string> raw_merge_rules;
+  SplitStringUsing(value, ",", &raw_merge_rules);
+  for (const auto& raw_merge_rule : raw_merge_rules) {
+    std::vector<std::string> parts;
+    SplitStringUsing(raw_merge_rule, "|", &parts);
+    if (parts.size() != 3) {
+      LOG(WARNING) << strings::Substitute(
+          "ignoring malformed rule '$0' in --$1: expected the form "
+          "'<entity_type>|<merge_to>|<attribute_to_merge_by>'",
+          raw_merge_rule, flag_name);
+    }
+  }
+  return true;
+});
 
 // Process/server-wide metrics should go into the 'server' entity.
 // More complex applications will define other entities.
@@ -112,6 +150,61 @@ void WriteToJson(JsonWriter* writer,
     WriteMetricsToJson(writer, entity_metrics.second, opts);
 
     writer->EndObject();
+  }
+}
+
+void WriteToPrometheus(PrometheusWriter* writer,
+                       const MergedEntityMetrics& merged_entity_metrics,
+                       const MetricPrometheusOptions& opts) {
+  // The hostname label, if any, is identical for every merged entity, so
+  // compute it once up front rather than per entity.
+  string hostname_label;
+  if (FLAGS_metrics_prometheus_export_hostname && !opts.hostname.empty()) {
+    hostname_label = ",hostname=\"" + EscapePrometheusLabelValue(opts.hostname) + "\"";
+  }
+  for (const auto& entity_metrics : merged_entity_metrics) {
+    if (entity_metrics.second.empty()) {
+      continue;
+    }
+    // A merged entity is always exported in the label-based format: the
+    // merged-to type and merged-by attribute value become 'type' and 'id'
+    // labels, so that the entity ID is not baked into the metric name.
+    string labels = BuildMergedPrometheusLabels(entity_metrics.first.type_,
+                                                entity_metrics.first.id_);
+    labels += hostname_label;
+    for (const auto& [prototype, metric] : entity_metrics.second) {
+      WARN_NOT_OK(metric->WriteAsPrometheus(writer, "kudu_", labels),
+                  Substitute("unable to write '$0' ($1) in Prometheus format",
+                             prototype->name(), prototype->description()));
+    }
+  }
+}
+
+void ParseMergeRules(const vector<string>& raw_merge_rules,
+                     MetricMergeRules* merge_rules) {
+  for (const auto& raw_merge_rule : raw_merge_rules) {
+    vector<string> values;
+    SplitStringUsing(raw_merge_rule, "|", &values);
+    if (values.size() == 3) {
+      // Index 0: entity type to be merged.
+      // Index 1: 'merge_to' field of MergeAttributes.
+      // Index 2: 'attribute_to_merge_by' field of MergeAttributes.
+      EmplaceIfNotPresent(merge_rules, values[0], MergeAttributes(values[1], values[2]));
+    }
+  }
+}
+
+void GetPrometheusMergeRules(const vector<string>& request_merge_rules,
+                             MetricMergeRules* merge_rules) {
+  // A request's own 'merge_rules' take precedence over the server-side default.
+  if (!request_merge_rules.empty()) {
+    ParseMergeRules(request_merge_rules, merge_rules);
+    return;
+  }
+  if (!FLAGS_metrics_prometheus_default_merge_rules.empty()) {
+    vector<string> default_merge_rules;
+    SplitStringUsing(FLAGS_metrics_prometheus_default_merge_rules, ",", &default_merge_rules);
+    ParseMergeRules(default_merge_rules, merge_rules);
   }
 }
 
@@ -613,9 +706,29 @@ Status MetricRegistry::WriteAsPrometheus(
     std::lock_guard l(lock_);
     entities = entities_;
   }
-  for (const auto& e : entities) {
-    WARN_NOT_OK(e.second->WriteAsPrometheus(writer, opts),
-                Substitute("Failed to write entity $0 as Prometheus", e.second->id()));
+  if (opts.merge_rules.empty()) {
+    for (const auto& e : entities) {
+      WARN_NOT_OK(e.second->WriteAsPrometheus(writer, opts),
+                  Substitute("Failed to write entity $0 as Prometheus", e.second->id()));
+    }
+  } else {
+    MergedEntityMetrics collections;
+    for (const auto& e : entities) {
+      // A merge rule only targets entities whose prototype name is one of its
+      // keys. Entities that are not targeted by any rule (e.g. 'table' or
+      // 'server' entities when only 'tablet' is being merged) are exported
+      // as-is via the regular per-entity path, which preserves their native
+      // attribute labels such as table_name/table_id. Only targeted entities
+      // are aggregated and exported with 'type'/'id' labels.
+      if (!ContainsKey(opts.merge_rules, e.second->prototype_->name())) {
+        WARN_NOT_OK(e.second->WriteAsPrometheus(writer, opts),
+                    Substitute("Failed to write entity $0 as Prometheus", e.second->id()));
+        continue;
+      }
+      WARN_NOT_OK(e.second->CollectTo(&collections, opts.filters, opts.merge_rules),
+                  Substitute("Failed to collect entity $0", e.second->id()));
+    }
+    WriteToPrometheus(writer, collections, opts);
   }
 
   entities.clear(); // necessary to deref metrics we just dumped before doing retirement scan.
@@ -1212,7 +1325,12 @@ Status Histogram::WriteAsPrometheus(PrometheusWriter* writer,
   // the output.
   const HdrHistogram h(*histogram_);
   string out;
-  if (FLAGS_metrics_prometheus_use_entity_labels) {
+  // Use the label-based format when it is enabled globally, or whenever a
+  // non-empty label set is supplied (e.g. for merge_rules-aggregated output,
+  // which is always label-based regardless of the global flag). For all
+  // existing non-merged callers labels are empty whenever the flag is off, so
+  // this preserves the legacy behaviour in those cases.
+  if (FLAGS_metrics_prometheus_use_entity_labels || !labels.empty()) {
     // New format: labels injected, no space after comma, _sum/_count carry unit_type.
     static constexpr const char* const kFmt =
         "$0$1{$2unit_type=\"$3\",quantile=\"$4\"} $5\n";

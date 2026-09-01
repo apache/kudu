@@ -82,3 +82,13 @@ std::string BuildGenericPrometheusLabels(
     const std::string& entity_type,
     const std::string& entity_id,
     const std::unordered_map<std::string, std::string>& attrs);
+
+// Build Prometheus label string for a merged metric entity produced by
+// merge_rules aggregation. Unlike BuildPrometheusLabels(), this does not
+// restrict the entity type, because the merged-to type is user-defined via the
+// 'merge_to' field of a merge rule and need not be one of the well-known entity
+// types. Both values are escaped. Returns labels of the form:
+//   type="<entity_type>",id="<entity_id>"
+std::string BuildMergedPrometheusLabels(
+    const std::string& entity_type,
+    const std::string& entity_id);

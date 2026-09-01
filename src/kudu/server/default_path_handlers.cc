@@ -120,6 +120,10 @@ DECLARE_string(webserver_certificate_file);
 namespace kudu {
 
 namespace {
+// Query parameter selecting the entity merge rules for the '/metrics' and
+// '/metrics_prometheus' endpoints.
+constexpr const char* const kMergeRulesParam = "merge_rules";
+
 // Html/Text formatting tags
 struct Tags {
   string pre_tag, end_pre_tag, line_break, header, end_header;
@@ -517,17 +521,7 @@ static void WriteMetricsAsJson(const MetricRegistry* const metrics,
     return;
   }
 
-  vector<string> merge_rules = ParseArray(req.parsed_args, "merge_rules");
-  for (const auto& merge_rule : merge_rules) {
-    vector<string> values;
-    SplitStringUsing(merge_rule, "|", &values);
-    if (values.size() == 3) {
-      // Index 0: entity type needed to be merged.
-      // Index 1: 'merge_to' field of MergeAttributes.
-      // Index 2: 'attribute_to_merge_by' field of MergeAttributes.
-      EmplaceIfNotPresent(&opts.merge_rules, values[0], MergeAttributes(values[1], values[2]));
-    }
-  }
+  ParseMergeRules(ParseArray(req.parsed_args, kMergeRulesParam), &opts.merge_rules);
 
   JsonWriter::Mode json_mode = ParseBool(req.parsed_args, "compact") ?
       JsonWriter::COMPACT : JsonWriter::PRETTY;
@@ -545,7 +539,14 @@ static void WriteMetricsAsPrometheus(const MetricRegistry* const metrics,
   if (!ParseMetricFilters(req, resp, &opts.filters)) {
     return;
   }
-  if (FLAGS_metrics_prometheus_use_entity_labels) {
+
+  // A 'merge_rules' query parameter takes precedence over the server-side
+  // default configured via --metrics_prometheus_default_merge_rules.
+  GetPrometheusMergeRules(ParseArray(req.parsed_args, kMergeRulesParam), &opts.merge_rules);
+
+  // The hostname label is emitted either in the label-based non-merged format,
+  // or whenever merging is active (merged output is always label-based).
+  if (FLAGS_metrics_prometheus_use_entity_labels || !opts.merge_rules.empty()) {
     opts.hostname = hostname;
   }
 

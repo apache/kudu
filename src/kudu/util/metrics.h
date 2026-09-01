@@ -465,6 +465,23 @@ struct MergeAttributes {
 
 // Entity prototype name -> MergeAttributes.
 typedef std::unordered_map<std::string, MergeAttributes> MetricMergeRules;
+
+// Parse raw merge rules (each of the form
+// "<entity_type>|<merge_to>|<attribute_to_merge_by>") into 'merge_rules',
+// ignoring malformed rules (i.e. not exactly three '|'-separated parts). This
+// mirrors the lenient behaviour of the /metrics and /metrics_prometheus
+// endpoints.
+void ParseMergeRules(const std::vector<std::string>& raw_merge_rules,
+                     MetricMergeRules* merge_rules);
+
+// Resolve the effective merge rules for a /metrics_prometheus request into
+// 'merge_rules'. Rules supplied with the request ('request_merge_rules') take
+// precedence over the server-wide default configured via
+// --metrics_prometheus_default_merge_rules, which is applied only when the
+// request carries none. Malformed rules are ignored.
+void GetPrometheusMergeRules(const std::vector<std::string>& request_merge_rules,
+                             MetricMergeRules* merge_rules);
+
 struct MetricJsonOptions {
   MetricJsonOptions() :
     include_raw_histograms(false),
@@ -526,6 +543,27 @@ struct MetricPrometheusOptions {
   // and --metrics_prometheus_export_hostname are true.
   // Empty when hostname is unavailable.
   std::string hostname;
+
+  // Entities whose prototype name is in merge_rules's key set will be merged
+  // into a new entity before being exported, following the same semantics as
+  // the JSON end-point (see struct MergeAttributes for details). A merged
+  // entity is exported with 'type' and 'id' Prometheus labels identifying the
+  // merged-to type and the value of the merged-by attribute, e.g. merging
+  // 'tablet' entities into 'table' by 'table_name' yields metric lines like
+  // kudu_on_disk_size{type="table",id="my_table",...}.
+  //
+  // Merging is the recommended way to cut down the number of exported time
+  // series on clusters with a large number of tablets. When merge_rules is
+  // empty, every entity is exported as-is.
+  //
+  // NOTE: merged entities are always exported in the label-based format,
+  //       regardless of --metrics_prometheus_use_entity_labels.
+  // NOTE: entities whose prototype name is NOT in merge_rules's key set are
+  //       exported as-is (without merging), preserving their native attribute
+  //       labels such as table_name/table_id. This matters e.g. on the master,
+  //       where 'table' entities must keep their table_name label even when a
+  //       'tablet' merge rule is supplied.
+  MetricMergeRules merge_rules;
 };
 
 class MetricEntityPrototype {

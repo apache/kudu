@@ -117,3 +117,12 @@ string BuildGenericPrometheusLabels(
   }
   return labels;
 }
+
+string BuildMergedPrometheusLabels(
+    const string& entity_type,
+    const string& entity_id) {
+  string labels;
+  labels += "type=\"" + EscapePrometheusLabelValue(entity_type) + "\"";
+  labels += ",id=\"" + EscapePrometheusLabelValue(entity_id) + "\"";
+  return labels;
+}

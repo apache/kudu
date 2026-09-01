@@ -58,6 +58,7 @@ using std::vector;
 DECLARE_int32(metrics_retirement_age_ms);
 DECLARE_bool(metrics_prometheus_use_entity_labels);
 DECLARE_bool(metrics_prometheus_export_hostname);
+DECLARE_string(metrics_prometheus_default_merge_rules);
 
 namespace kudu {
 
@@ -265,6 +266,271 @@ TEST_F(MetricsTest, TableAndTabletLegacyPrometheusTest) {
       "# TYPE kudu_table_table1_table_test_counter counter\n"
       "kudu_table_table1_table_test_counter{unit_type=\"bytes\"} 888\n"
   );
+}
+
+// Merge several tablet entities into table-level entities in the Prometheus
+// output, mimicking the collector's 'merge_rules=tablet|table|table_name'.
+// Counter values are summed per table and the per-tablet time series collapse
+// into a single per-table series, which is the key cardinality win.
+TEST_F(MetricsTest, MergedTabletPrometheusTest) {
+  MetricRegistry registry;
+
+  auto tablet1 = METRIC_ENTITY_tablet.Instantiate(&registry, "tablet-1");
+  tablet1->SetAttribute("table_name", "table_a");
+  METRIC_tablet_test_counter.Instantiate(tablet1)->IncrementBy(11);
+
+  auto tablet2 = METRIC_ENTITY_tablet.Instantiate(&registry, "tablet-2");
+  tablet2->SetAttribute("table_name", "table_a");
+  METRIC_tablet_test_counter.Instantiate(tablet2)->IncrementBy(4);
+
+  auto tablet3 = METRIC_ENTITY_tablet.Instantiate(&registry, "tablet-3");
+  tablet3->SetAttribute("table_name", "table_b");
+  METRIC_tablet_test_counter.Instantiate(tablet3)->IncrementBy(100);
+
+  MetricPrometheusOptions opts;
+  opts.merge_rules.emplace("tablet", MergeAttributes("table", "table_name"));
+
+  ostringstream output;
+  PrometheusWriter writer(&output);
+  ASSERT_OK(registry.WriteAsPrometheus(&writer, opts));
+
+  const auto& out = output.str();
+  // HELP/TYPE is emitted exactly once even though several entities are merged.
+  ASSERT_EQ(1, CountSubstring(out, "# HELP kudu_tablet_test_counter "));
+  ASSERT_EQ(1, CountSubstring(out, "# TYPE kudu_tablet_test_counter "));
+  // table_a aggregates the two tablets: 11 + 4 = 15.
+  ASSERT_STR_CONTAINS(out,
+      "kudu_tablet_test_counter{type=\"table\",id=\"table_a\",unit_type=\"bytes\"} 15\n");
+  // table_b has a single tablet: 100.
+  ASSERT_STR_CONTAINS(out,
+      "kudu_tablet_test_counter{type=\"table\",id=\"table_b\",unit_type=\"bytes\"} 100\n");
+  // The individual tablet IDs must not leak into the merged output.
+  ASSERT_STR_NOT_CONTAINS(out, "id=\"tablet-1\"");
+  ASSERT_STR_NOT_CONTAINS(out, "id=\"tablet-2\"");
+  ASSERT_STR_NOT_CONTAINS(out, "id=\"tablet-3\"");
+  // Only two data lines (one per table) are exported for this metric.
+  ASSERT_EQ(2, CountSubstring(out, "kudu_tablet_test_counter{"));
+}
+
+// The hostname label is attached to merged output when hostname export is on,
+// and omitted otherwise. Merged output is label-based regardless of
+// --metrics_prometheus_use_entity_labels.
+TEST_F(MetricsTest, MergedPrometheusHostnameLabelTest) {
+  google::FlagSaver saver;
+
+  MetricRegistry registry;
+  auto tablet = METRIC_ENTITY_tablet.Instantiate(&registry, "tablet-1");
+  tablet->SetAttribute("table_name", "table_a");
+  METRIC_tablet_test_counter.Instantiate(tablet)->IncrementBy(7);
+
+  MetricPrometheusOptions opts;
+  opts.merge_rules.emplace("tablet", MergeAttributes("table", "table_name"));
+  opts.hostname = "host-a";
+
+  FLAGS_metrics_prometheus_export_hostname = true;
+  {
+    ostringstream output;
+    PrometheusWriter writer(&output);
+    ASSERT_OK(registry.WriteAsPrometheus(&writer, opts));
+    ASSERT_STR_CONTAINS(output.str(),
+        "kudu_tablet_test_counter{type=\"table\",id=\"table_a\","
+        "hostname=\"host-a\",unit_type=\"bytes\"} 7\n");
+  }
+
+  FLAGS_metrics_prometheus_export_hostname = false;
+  {
+    ostringstream output;
+    PrometheusWriter writer(&output);
+    ASSERT_OK(registry.WriteAsPrometheus(&writer, opts));
+    ASSERT_STR_CONTAINS(output.str(),
+        "kudu_tablet_test_counter{type=\"table\",id=\"table_a\",unit_type=\"bytes\"} 7\n");
+    ASSERT_STR_NOT_CONTAINS(output.str(), "hostname=");
+  }
+}
+
+// An entity that lacks the merge-by attribute is skipped (not merged and not
+// exported), consistent with the JSON endpoint, and must not crash.
+TEST_F(MetricsTest, MergedPrometheusMissingAttributeTest) {
+  MetricRegistry registry;
+
+  auto tablet1 = METRIC_ENTITY_tablet.Instantiate(&registry, "tablet-1");
+  tablet1->SetAttribute("table_name", "table_a");
+  METRIC_tablet_test_counter.Instantiate(tablet1)->IncrementBy(9);
+
+  // No 'table_name' attribute set on this tablet.
+  auto tablet2 = METRIC_ENTITY_tablet.Instantiate(&registry, "tablet-2");
+  METRIC_tablet_test_counter.Instantiate(tablet2)->IncrementBy(123);
+
+  MetricPrometheusOptions opts;
+  opts.merge_rules.emplace("tablet", MergeAttributes("table", "table_name"));
+
+  ostringstream output;
+  PrometheusWriter writer(&output);
+  ASSERT_OK(registry.WriteAsPrometheus(&writer, opts));
+
+  const auto& out = output.str();
+  ASSERT_STR_CONTAINS(out,
+      "kudu_tablet_test_counter{type=\"table\",id=\"table_a\",unit_type=\"bytes\"} 9\n");
+  // The value of the tablet without a 'table_name' attribute is dropped.
+  ASSERT_STR_NOT_CONTAINS(out, "123");
+  ASSERT_EQ(1, CountSubstring(out, "kudu_tablet_test_counter{"));
+}
+
+// An entity whose type is not targeted by any merge rule (e.g. a 'table'
+// entity on the master when only 'tablet' is merged) must be exported as-is,
+// preserving its native attribute labels such as table_name -- not collapsed
+// into the bare type/id label set used for merged entities.
+TEST_F(MetricsTest, MergedPrometheusPassThroughKeepsAttributesTest) {
+  google::FlagSaver saver;
+  FLAGS_metrics_prometheus_use_entity_labels = true;
+
+  MetricRegistry registry;
+
+  // A 'table' entity as present on the master, carrying a table_name attribute.
+  auto table = METRIC_ENTITY_table.Instantiate(&registry, "table-id-1");
+  table->SetAttribute("table_name", "my_table");
+  METRIC_table_test_counter.Instantiate(table)->IncrementBy(42);
+
+  // A 'tablet' entity which IS targeted by the rule and gets merged.
+  auto tablet = METRIC_ENTITY_tablet.Instantiate(&registry, "tablet-1");
+  tablet->SetAttribute("table_name", "my_table");
+  METRIC_tablet_test_counter.Instantiate(tablet)->IncrementBy(7);
+
+  MetricPrometheusOptions opts;
+  opts.merge_rules.emplace("tablet", MergeAttributes("table", "table_name"));
+
+  ostringstream output;
+  PrometheusWriter writer(&output);
+  ASSERT_OK(registry.WriteAsPrometheus(&writer, opts));
+
+  const auto& out = output.str();
+  // The pass-through 'table' entity keeps its full native label set (including
+  // table_name), even though a 'tablet' merge rule was supplied.
+  ASSERT_STR_CONTAINS(out,
+      "kudu_table_test_counter{type=\"table\",id=\"table-id-1\","
+      "table_name=\"my_table\",unit_type=\"bytes\"} 42\n");
+  // The targeted 'tablet' entity is still merged into a bare type/id series.
+  ASSERT_STR_CONTAINS(out,
+      "kudu_tablet_test_counter{type=\"table\",id=\"my_table\",unit_type=\"bytes\"} 7\n");
+  // The raw tablet ID must not leak.
+  ASSERT_STR_NOT_CONTAINS(out, "id=\"tablet-1\"");
+}
+
+// Aggregate tablet entities by their 'partition' attribute, as one would do for
+// a hash-partitioned table where each tablet carries a partition description.
+// Tablets sharing a partition value collapse into a single series, and the
+// (space/paren-containing) partition string is used verbatim as the 'id' label.
+TEST_F(MetricsTest, MergedPrometheusByPartitionAttributeTest) {
+  MetricRegistry registry;
+
+  auto tablet1 = METRIC_ENTITY_tablet.Instantiate(&registry, "tablet-1");
+  tablet1->SetAttribute("partition", "HASH (col_x) PARTITION 3");
+  METRIC_tablet_test_counter.Instantiate(tablet1)->IncrementBy(8);
+
+  auto tablet2 = METRIC_ENTITY_tablet.Instantiate(&registry, "tablet-2");
+  tablet2->SetAttribute("partition", "HASH (col_x) PARTITION 3");
+  METRIC_tablet_test_counter.Instantiate(tablet2)->IncrementBy(2);
+
+  auto tablet3 = METRIC_ENTITY_tablet.Instantiate(&registry, "tablet-3");
+  tablet3->SetAttribute("partition", "HASH (col_x) PARTITION 5");
+  METRIC_tablet_test_counter.Instantiate(tablet3)->IncrementBy(1);
+
+  MetricPrometheusOptions opts;
+  opts.merge_rules.emplace("tablet", MergeAttributes("partition", "partition"));
+
+  ostringstream output;
+  PrometheusWriter writer(&output);
+  ASSERT_OK(registry.WriteAsPrometheus(&writer, opts));
+
+  const auto& out = output.str();
+  // The two tablets in 'PARTITION 3' aggregate to 10; the odd one is on its own.
+  ASSERT_STR_CONTAINS(out,
+      "kudu_tablet_test_counter{type=\"partition\","
+      "id=\"HASH (col_x) PARTITION 3\",unit_type=\"bytes\"} 10\n");
+  ASSERT_STR_CONTAINS(out,
+      "kudu_tablet_test_counter{type=\"partition\","
+      "id=\"HASH (col_x) PARTITION 5\",unit_type=\"bytes\"} 1\n");
+  ASSERT_STR_NOT_CONTAINS(out, "id=\"tablet-1\"");
+  ASSERT_EQ(2, CountSubstring(out, "kudu_tablet_test_counter{"));
+}
+
+// The server-wide --metrics_prometheus_default_merge_rules is applied when a
+// request carries no 'merge_rules' of its own.
+TEST_F(MetricsTest, PrometheusDefaultMergeRulesFromFlagTest) {
+  google::FlagSaver saver;
+  FLAGS_metrics_prometheus_default_merge_rules = "tablet|table|table_name";
+
+  MetricRegistry registry;
+  auto tablet1 = METRIC_ENTITY_tablet.Instantiate(&registry, "tablet-1");
+  tablet1->SetAttribute("table_name", "table_a");
+  METRIC_tablet_test_counter.Instantiate(tablet1)->IncrementBy(3);
+  auto tablet2 = METRIC_ENTITY_tablet.Instantiate(&registry, "tablet-2");
+  tablet2->SetAttribute("table_name", "table_a");
+  METRIC_tablet_test_counter.Instantiate(tablet2)->IncrementBy(4);
+
+  // No per-request rules: the flag default drives the aggregation.
+  MetricPrometheusOptions opts;
+  GetPrometheusMergeRules(/*request_merge_rules=*/{}, &opts.merge_rules);
+
+  ostringstream output;
+  PrometheusWriter writer(&output);
+  ASSERT_OK(registry.WriteAsPrometheus(&writer, opts));
+
+  const auto& out = output.str();
+  ASSERT_STR_CONTAINS(out,
+      "kudu_tablet_test_counter{type=\"table\",id=\"table_a\",unit_type=\"bytes\"} 7\n");
+  ASSERT_STR_NOT_CONTAINS(out, "id=\"tablet-1\"");
+}
+
+// Rules supplied with the request take precedence over the flag default.
+TEST_F(MetricsTest, PrometheusRequestMergeRulesOverrideFlagTest) {
+  google::FlagSaver saver;
+  // The flag would merge tablets into 'table' entities by 'table_name'...
+  FLAGS_metrics_prometheus_default_merge_rules = "tablet|table|table_name";
+
+  MetricRegistry registry;
+  auto tablet1 = METRIC_ENTITY_tablet.Instantiate(&registry, "tablet-1");
+  tablet1->SetAttribute("table_name", "table_a");
+  tablet1->SetAttribute("partition", "p0");
+  METRIC_tablet_test_counter.Instantiate(tablet1)->IncrementBy(5);
+  auto tablet2 = METRIC_ENTITY_tablet.Instantiate(&registry, "tablet-2");
+  tablet2->SetAttribute("table_name", "table_a");
+  tablet2->SetAttribute("partition", "p0");
+  METRIC_tablet_test_counter.Instantiate(tablet2)->IncrementBy(6);
+
+  // ...but the request merges into 'partition' entities by 'partition' instead.
+  MetricPrometheusOptions opts;
+  GetPrometheusMergeRules(/*request_merge_rules=*/{"tablet|partition|partition"},
+                          &opts.merge_rules);
+
+  ostringstream output;
+  PrometheusWriter writer(&output);
+  ASSERT_OK(registry.WriteAsPrometheus(&writer, opts));
+
+  const auto& out = output.str();
+  ASSERT_STR_CONTAINS(out,
+      "kudu_tablet_test_counter{type=\"partition\",id=\"p0\",unit_type=\"bytes\"} 11\n");
+  // The flag's 'table' merge target must not appear.
+  ASSERT_STR_NOT_CONTAINS(out, "type=\"table\"");
+}
+
+// A malformed --metrics_prometheus_default_merge_rules yields no rules, so no
+// aggregation is attempted; a well-formed rule sharing the value still applies.
+TEST_F(MetricsTest, PrometheusMalformedDefaultMergeRulesFlagTest) {
+  google::FlagSaver saver;
+
+  // Malformed value (only two '|'-separated parts): no rules are resolved.
+  FLAGS_metrics_prometheus_default_merge_rules = "tablet|table";
+  MetricMergeRules rules;
+  GetPrometheusMergeRules(/*request_merge_rules=*/{}, &rules);
+  ASSERT_TRUE(rules.empty());
+
+  // A malformed rule alongside a valid one: only the valid rule survives.
+  FLAGS_metrics_prometheus_default_merge_rules = "garbage,tablet|table|table_name";
+  rules.clear();
+  GetPrometheusMergeRules(/*request_merge_rules=*/{}, &rules);
+  ASSERT_EQ(1, rules.size());
+  ASSERT_TRUE(ContainsKey(rules, "tablet"));
 }
 
 TEST_F(MetricsTest, CounterPrometheusTest) {
@@ -923,6 +1189,45 @@ TEST_F(MetricsTest, HistogramLegacyPrometheusTest) {
   PrometheusWriter writer(&output);
   ASSERT_OK(hist->WriteAsPrometheus(&writer, "", ""));
   ASSERT_EQ(kExpectedOutput, output.str());
+}
+
+// Histograms are merged by combining the underlying HdrHistogram data, so the
+// aggregated _sum and _count are exact (unlike aggregating pre-computed
+// quantiles on the Prometheus server side).
+TEST_F(MetricsTest, MergedHistogramPrometheusTest) {
+  // entity_ and entity_same_attr_ share attr_for_merge="same_attr";
+  // entity_diff_attr_ has attr_for_merge="diff_attr".
+  scoped_refptr<Histogram> hist1 = METRIC_test_hist.Instantiate(entity_);
+  hist1->IncrementBy(10, 2);  // sum 20, count 2
+  scoped_refptr<Histogram> hist2 = METRIC_test_hist.Instantiate(entity_same_attr_);
+  hist2->IncrementBy(30, 3);  // sum 90, count 3
+  scoped_refptr<Histogram> hist3 = METRIC_test_hist.Instantiate(entity_diff_attr_);
+  hist3->IncrementBy(5, 4);   // sum 20, count 4
+
+  MetricPrometheusOptions opts;
+  opts.merge_rules.emplace("test_entity",
+                           MergeAttributes("merged_entity", "attr_for_merge"));
+
+  ostringstream output;
+  PrometheusWriter writer(&output);
+  ASSERT_OK(registry_.WriteAsPrometheus(&writer, opts));
+
+  const auto& out = output.str();
+  ASSERT_EQ(1, CountSubstring(out, "# TYPE kudu_test_hist summary\n"));
+  // same_attr aggregates entity_ and entity_same_attr_: sum 110, count 5.
+  ASSERT_STR_CONTAINS(out,
+      "kudu_test_hist_sum{type=\"merged_entity\",id=\"same_attr\","
+      "unit_type=\"milliseconds\"} 110\n");
+  ASSERT_STR_CONTAINS(out,
+      "kudu_test_hist_count{type=\"merged_entity\",id=\"same_attr\","
+      "unit_type=\"units\"} 5\n");
+  // diff_attr has a single entity: sum 20, count 4.
+  ASSERT_STR_CONTAINS(out,
+      "kudu_test_hist_sum{type=\"merged_entity\",id=\"diff_attr\","
+      "unit_type=\"milliseconds\"} 20\n");
+  ASSERT_STR_CONTAINS(out,
+      "kudu_test_hist_count{type=\"merged_entity\",id=\"diff_attr\","
+      "unit_type=\"units\"} 4\n");
 }
 
 TEST_F(MetricsTest, JsonPrintTest) {
