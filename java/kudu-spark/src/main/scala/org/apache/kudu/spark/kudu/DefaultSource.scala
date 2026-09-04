@@ -547,7 +547,13 @@ class KuduSink(
     extends Sink {
 
   private val context: KuduContext =
-    new KuduContext(masterAddrs, sqlContext.sparkContext, None, Some(saslProtocolName))
+    new KuduContext(
+      masterAddrs,
+      sqlContext.sparkContext,
+      None,
+      Some(saslProtocolName),
+      requireAuthentication,
+      encryptionPolicy)
 
   override def addBatch(batchId: Long, data: DataFrame): Unit = {
     context.writeRows(data, tableName, operationType, writeOptions)
