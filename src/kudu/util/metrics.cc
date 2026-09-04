@@ -25,6 +25,7 @@
 
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/singleton.h"
+#include "kudu/gutil/strings/ascii_ctype.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -32,7 +33,6 @@
 #include "kudu/util/hdr_histogram.h"
 #include "kudu/util/histogram.pb.h"
 #include "kudu/util/status.h"
-#include "kudu/util/string_case.h"
 
 DEFINE_int32(metrics_retirement_age_ms, 120 * 1000,
              "The minimum number of milliseconds a metric will be kept for after it is "
@@ -345,14 +345,17 @@ scoped_refptr<Metric> MetricEntity::FindOrNull(const MetricPrototype& prototype)
 namespace {
 
 bool MatchName(const string& name, const string& other) {
-  string name_uc;
-  ToUpperCase(name, &name_uc);
-
-  string other_uc;
-  ToUpperCase(other, &other_uc);
-
-  // The parameter is a case-insensitive substring match of the metric name.
-  return name_uc.find(other_uc) != string::npos;
+  // A case-insensitive substring match of 'other' within 'name' that avoids
+  // allocating uppercased copies of either string (this runs once per metric
+  // per filter term, so it is on a hot path when scraping large clusters). An
+  // empty pattern matches everything, mirroring string::find("").
+  if (other.empty()) {
+    return true;
+  }
+  const auto it = std::search(
+      name.begin(), name.end(), other.begin(), other.end(),
+      [](char a, char b) { return ascii_toupper(a) == ascii_toupper(b); });
+  return it != name.end();
 }
 
 bool MatchNameInList(const string& name, const vector<string>& names) {
@@ -422,7 +425,7 @@ Status MetricEntity::GetMetricsAndAttrs(const MetricFilters& filters,
     for (int i = 0; i < filters.entity_attrs.size(); i += 2) {
       // The attr_key can't be found or the attr_val can't be matched.
       AttributeMap::const_iterator it = attrs->find(filters.entity_attrs[i]);
-      if (it == attrs->end() || !MatchNameInList(it->second, { filters.entity_attrs[i+1] })) {
+      if (it == attrs->end() || !MatchName(it->second, filters.entity_attrs[i+1])) {
         continue;
       }
       match_attrs = true;

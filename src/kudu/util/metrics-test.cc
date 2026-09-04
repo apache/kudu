@@ -1792,6 +1792,94 @@ TEST_F(MetricsTest, TestFilter) {
   }
 }
 
+// Exercises the case-insensitive, allocation-free substring matching that backs
+// metric filtering (MatchName), with emphasis on the edge cases relied upon by
+// the zero-allocation implementation: empty patterns, multi-term lists, and
+// attribute-value matching.
+TEST_F(MetricsTest, TestFilterMatchNameSemantics) {
+  scoped_refptr<Counter> test_counter = METRIC_test_counter.Instantiate(entity_);
+  test_counter->Increment();
+  scoped_refptr<AtomicGauge<uint64_t>> test_gauge = METRIC_test_gauge.Instantiate(entity_, 0);
+  test_gauge->IncrementBy(2);
+
+  const string counter_name = METRIC_test_counter.name();
+  const string gauge_name = METRIC_test_gauge.name();
+
+  auto filtered = [&](const MetricJsonOptions& opts) {
+    std::ostringstream out;
+    JsonWriter writer(&out, JsonWriter::PRETTY);
+    CHECK_OK(entity_->WriteAsJson(&writer, opts));
+    return out.str();
+  };
+
+  // Exact metric-name match keeps only that metric.
+  {
+    MetricJsonOptions opts;
+    opts.filters.entity_metrics = { counter_name };
+    const string out = filtered(opts);
+    ASSERT_STR_CONTAINS(out, counter_name);
+    ASSERT_STR_NOT_CONTAINS(out, gauge_name);
+  }
+
+  // A leading substring of the counter name still matches the counter.
+  {
+    MetricJsonOptions opts;
+    opts.filters.entity_metrics = { "test_coun" };
+    const string out = filtered(opts);
+    ASSERT_STR_CONTAINS(out, counter_name);
+    ASSERT_STR_NOT_CONTAINS(out, gauge_name);
+  }
+
+  // Mixed-case substring matches (matching is case-insensitive).
+  {
+    MetricJsonOptions opts;
+    opts.filters.entity_metrics = { "TeSt_GaUgE" };
+    const string out = filtered(opts);
+    ASSERT_STR_CONTAINS(out, gauge_name);
+    ASSERT_STR_NOT_CONTAINS(out, counter_name);
+  }
+
+  // A list with several terms matches if any single term matches.
+  {
+    MetricJsonOptions opts;
+    opts.filters.entity_metrics = { "no_such_metric", "GAUGE" };
+    const string out = filtered(opts);
+    ASSERT_STR_CONTAINS(out, gauge_name);
+    ASSERT_STR_NOT_CONTAINS(out, counter_name);
+  }
+
+  // An empty pattern matches every metric (mirrors string::find("")).
+  {
+    MetricJsonOptions opts;
+    opts.filters.entity_metrics = { "" };
+    const string out = filtered(opts);
+    ASSERT_STR_CONTAINS(out, counter_name);
+    ASSERT_STR_CONTAINS(out, gauge_name);
+  }
+
+  // A non-matching pattern filters the whole entity out.
+  {
+    MetricJsonOptions opts;
+    opts.filters.entity_metrics = { "definitely_not_here" };
+    ASSERT_EQ("", filtered(opts));
+  }
+
+  // Attribute-value matching is a case-insensitive substring match as well.
+  // The fixture sets attr_for_merge="same_attr" on entity_.
+  {
+    MetricJsonOptions opts;
+    opts.filters.entity_attrs = { "attr_for_merge", "SAME" };
+    ASSERT_STR_CONTAINS(filtered(opts), counter_name);
+  }
+
+  // A non-matching attribute value filters the entity out.
+  {
+    MetricJsonOptions opts;
+    opts.filters.entity_attrs = { "attr_for_merge", "no_match" };
+    ASSERT_EQ("", filtered(opts));
+  }
+}
+
 // Test that when --metrics_prometheus_use_entity_labels is true and hostname is
 // set in MetricPrometheusOptions, the hostname label is appended to every
 // metric line for all entity types (tablet, table, server).
