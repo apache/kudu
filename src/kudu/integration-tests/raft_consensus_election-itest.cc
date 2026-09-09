@@ -897,7 +897,7 @@ TEST_F(RaftConsensusElectionITest, DisruptiveServerAndSlowWAL) {
           kHeartbeatIntervalMs * kMaxMissedHeartbeatPeriods;
       ASSERT_OK(cluster_->SetFlag(ts, "log_inject_latency_ms_mean",
                                   std::to_string(latency_ms)));
-      ASSERT_OK(cluster_->SetFlag(ts, "log_inject_latency_ms_stddev", "0"));
+      ASSERT_OK(cluster_->SetFlag(ts, "log_inject_latency_ms_stddev", "1"));
       ASSERT_OK(cluster_->SetFlag(ts, "log_inject_latency", "true"));
     }
 

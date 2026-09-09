@@ -3619,7 +3619,7 @@ TEST_F(ClientTest, TestWriteTimeout) {
     google::FlagSaver saver;
     FLAGS_log_inject_latency = true;
     FLAGS_log_inject_latency_ms_mean = kSessionTimeoutMs + 10;
-    FLAGS_log_inject_latency_ms_stddev = 0;
+    FLAGS_log_inject_latency_ms_stddev = 1;
 
     ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "row"));
     Status s = session->Flush();
@@ -7208,7 +7208,7 @@ TEST_F(ClientTest, TestLastErrorEmbeddedInScanTimeoutStatus) {
   // Restart, but inject latency so that startup is very slow.
   FLAGS_log_inject_latency = true;
   FLAGS_log_inject_latency_ms_mean = 3000;
-  FLAGS_log_inject_latency_ms_stddev = 0;
+  FLAGS_log_inject_latency_ms_stddev = 1;
 
   for (int i = 0; i < cluster_->num_tablet_servers(); ++i) {
     MiniTabletServer* ts = cluster_->mini_tablet_server(i);

@@ -27,6 +27,7 @@
 #include <ostream>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <vector>
 
 #include <gflags/gflags.h>
@@ -278,7 +279,7 @@ TEST_F(SameTabletConcurrentWritesTest, InsertsOnly) {
   // lock contention in RaftConsensus::UpdateReplica() to manifest itself.
   FLAGS_log_inject_latency = true;
   FLAGS_log_inject_latency_ms_mean = 200;
-  FLAGS_log_inject_latency_ms_stddev = 0;
+  FLAGS_log_inject_latency_ms_stddev = 1;
 
   // Another lock contention manifests itself when RPC service threads are
   // trying to obtain a lock already taken by another thread, where the latter
