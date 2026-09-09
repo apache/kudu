@@ -99,7 +99,7 @@ class RefCounted : public subtle::RefCountedBase {
   ~RefCounted() {}
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(RefCounted<T>);
+  DISALLOW_COPY_AND_ASSIGN(RefCounted);
 };
 
 // Forward declaration.

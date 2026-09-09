@@ -43,7 +43,7 @@ class EncoderResolver {
   }
 
  private:
-  EncoderResolver<Buffer>() {
+  EncoderResolver() {
     AddMapping<UINT8>();
     AddMapping<INT8>();
     AddMapping<UINT16>();
