@@ -182,6 +182,46 @@ DEFINE_validator(metrics_prometheus_default_quantiles,
   return true;
 });
 
+DEFINE_string(metrics_prometheus_default_metrics, "",
+              "The default metric name allowlist applied by the "
+              "'/metrics_prometheus' endpoint when the request does not carry a "
+              "'metrics' query parameter. The value is a comma-separated list of "
+              "case-insensitive substrings; a metric is exported when its name "
+              "contains at least one of them, matching the semantics of the "
+              "'metrics' query parameter. For example, "
+              "'connections_accepted,raft_term' restricts the output to metrics "
+              "whose names contain either substring. This applies the allowlist "
+              "to every scrape, including parameter-less ones, rather than "
+              "relying on each consumer to pass 'metrics'. Empty by default, "
+              "i.e. no metric name filtering is performed unless a request asks "
+              "for it.");
+TAG_FLAG(metrics_prometheus_default_metrics, advanced);
+TAG_FLAG(metrics_prometheus_default_metrics, runtime);
+TAG_FLAG(metrics_prometheus_default_metrics, evolving);
+DEFINE_validator(metrics_prometheus_default_metrics,
+                 [](const char* flag_name, const string& value) {
+  // An empty value disables default filtering and is always valid. A metric
+  // name substring has no internal structure to validate, but warn about (but
+  // tolerate) a non-empty value that yields no usable token (e.g. only commas),
+  // which would silently export every metric instead of restricting the
+  // output; see GetPrometheusMetricsFilter(). Only this zero-token case is
+  // guarded: a value that yields a whitespace-only token (e.g. " " or "a, ")
+  // survives SplitStringUsing(), matches no metric name, and produces the
+  // opposite silent failure -- an empty scrape -- which is left unguarded here
+  // to match the 'metrics' query parameter and the sibling default flags.
+  if (value.empty()) {
+    return true;
+  }
+  vector<string> tokens;
+  SplitStringUsing(value, ",", &tokens);
+  if (tokens.empty()) {
+    LOG(WARNING) << Substitute(
+        "--$0 is set to '$1' but contains no usable metric name; no metric "
+        "name filtering will be applied", flag_name, value);
+  }
+  return true;
+});
+
 // Process/server-wide metrics should go into the 'server' entity.
 // More complex applications will define other entities.
 METRIC_DEFINE_entity(server);
@@ -339,6 +379,18 @@ void GetPrometheusQuantiles(const vector<string>& request_quantiles,
     vector<string> default_quantiles;
     SplitStringUsing(FLAGS_metrics_prometheus_default_quantiles, ",", &default_quantiles);
     ParseQuantiles(default_quantiles, quantiles);
+  }
+}
+
+void GetPrometheusMetricsFilter(vector<string>* entity_metrics) {
+  // A request-supplied 'metrics' allowlist (already parsed into
+  // 'entity_metrics') takes precedence over the server-side default. The value
+  // is used verbatim by MatchNameInList(), so no further parsing is needed.
+  if (!entity_metrics->empty()) {
+    return;
+  }
+  if (!FLAGS_metrics_prometheus_default_metrics.empty()) {
+    SplitStringUsing(FLAGS_metrics_prometheus_default_metrics, ",", entity_metrics);
   }
 }
 
@@ -1476,11 +1528,16 @@ Status Histogram::WriteAsPrometheus(PrometheusWriter* writer,
   const char* const unit = MetricUnit::Name(prototype_->unit());
   DCHECK(unit);
 
-  // An all-empty selection exports every quantile (the default). This is
-  // loop-invariant, so evaluate it once here rather than per quantile line.
+  // An all-empty selection exports every quantile (the default). The selection
+  // is filled contiguously from the first slot in canonical order (see
+  // ParseQuantiles()), so an empty first slot means nothing was selected. This
+  // is loop-invariant, so evaluate it once here rather than per quantile line.
   const auto& quantiles = opts.quantiles;
-  const bool export_all = std::all_of(quantiles.begin(), quantiles.end(),
-                                      [](const char* q) { return q == nullptr; });
+  const bool export_all = (quantiles[0] == nullptr);
+  // Guard the contiguous-fill invariant the shortcut above relies on: an empty
+  // first slot must imply an all-empty selection.
+  DCHECK(!export_all || std::all_of(quantiles.begin(), quantiles.end(),
+                                    [](const char* q) { return q == nullptr; }));
 
   // A snapshot is taken to have more consistent statistics while generating
   // the output.

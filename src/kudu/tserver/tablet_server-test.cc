@@ -219,6 +219,7 @@ DECLARE_string(block_manager);
 DECLARE_string(env_inject_eio_globs);
 DECLARE_string(env_inject_full_globs);
 DECLARE_string(metrics_default_level);
+DECLARE_string(metrics_prometheus_default_metrics);
 DECLARE_string(webserver_doc_root);
 DECLARE_uint32(tablet_apply_pool_overload_threshold_ms);
 
@@ -4620,6 +4621,36 @@ TEST_F(TabletServerTest, PrometheusMetricsNameFiltering) {
     const auto& str = buf.ToString();
     NO_FATALS(CheckPrometheusOutput(str));
     NO_FATALS(CheckNoPrometheusValueLines(str));
+  }
+}
+
+// Verify that --metrics_prometheus_default_metrics applies the allowlist to a
+// parameter-less scrape, and that a ?metrics= query parameter overrides it.
+TEST_F(TabletServerTest, PrometheusDefaultMetricsFlag) {
+  google::FlagSaver saver;
+  FLAGS_metrics_prometheus_default_metrics = "raft_term";
+
+  const string base_url = Substitute("http://$0/metrics_prometheus",
+                                     mini_server_->bound_http_addr().ToString());
+  {
+    // No query parameter: the flag default restricts the output to raft_term.
+    EasyCurl c;
+    faststring buf;
+    ASSERT_OK(c.FetchURL(base_url, &buf));
+    const auto& str = buf.ToString();
+    NO_FATALS(CheckPrometheusOutput(str));
+    ASSERT_STR_MATCHES(str, "raft_term ");
+    ASSERT_STR_NOT_MATCHES(str, "threads_running ");
+  }
+  {
+    // ?metrics=threads_running overrides the flag default for this request.
+    EasyCurl c;
+    faststring buf;
+    ASSERT_OK(c.FetchURL(base_url + "?metrics=threads_running", &buf));
+    const auto& str = buf.ToString();
+    NO_FATALS(CheckPrometheusOutput(str));
+    ASSERT_STR_MATCHES(str, "threads_running ");
+    ASSERT_STR_NOT_MATCHES(str, "raft_term ");
   }
 }
 

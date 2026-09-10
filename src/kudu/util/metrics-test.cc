@@ -62,6 +62,7 @@ DECLARE_bool(metrics_prometheus_use_entity_labels);
 DECLARE_bool(metrics_prometheus_export_hostname);
 DECLARE_string(metrics_prometheus_default_merge_rules);
 DECLARE_string(metrics_prometheus_default_quantiles);
+DECLARE_string(metrics_prometheus_default_metrics);
 
 namespace kudu {
 
@@ -548,6 +549,73 @@ TEST_F(MetricsTest, PrometheusMalformedDefaultMergeRulesFlagTest) {
   GetPrometheusMergeRules(/*request_merge_rules=*/{}, &rules);
   ASSERT_EQ(1, rules.size());
   ASSERT_TRUE(ContainsKey(rules, "tablet"));
+}
+
+// The server-wide --metrics_prometheus_default_metrics allowlist is applied
+// when a request carries no 'metrics' filter of its own.
+TEST_F(MetricsTest, PrometheusDefaultMetricsFromFlagTest) {
+  google::FlagSaver saver;
+  FLAGS_metrics_prometheus_default_metrics = "test_counter";
+
+  // No per-request allowlist: the flag default seeds the filter.
+  vector<string> entity_metrics;
+  GetPrometheusMetricsFilter(&entity_metrics);
+  ASSERT_EQ(vector<string>{"test_counter"}, entity_metrics);
+}
+
+// A request's own 'metrics' allowlist takes precedence over the flag default.
+TEST_F(MetricsTest, PrometheusRequestMetricsOverrideFlagTest) {
+  google::FlagSaver saver;
+  FLAGS_metrics_prometheus_default_metrics = "test_counter";
+
+  // The request-supplied allowlist is left untouched by the flag default.
+  vector<string> entity_metrics = {"raft_term"};
+  GetPrometheusMetricsFilter(&entity_metrics);
+  ASSERT_EQ(vector<string>{"raft_term"}, entity_metrics);
+}
+
+// A --metrics_prometheus_default_metrics value with no usable token (e.g. only
+// commas) yields an empty allowlist, so no metric name filtering is performed.
+TEST_F(MetricsTest, PrometheusNoUsableDefaultMetricsFlagTest) {
+  google::FlagSaver saver;
+
+  // Empty flag and empty request: nothing to filter by.
+  FLAGS_metrics_prometheus_default_metrics = "";
+  vector<string> entity_metrics;
+  GetPrometheusMetricsFilter(&entity_metrics);
+  ASSERT_TRUE(entity_metrics.empty());
+
+  // Only commas: SplitStringUsing() skips the empty tokens, so the allowlist
+  // stays empty rather than degrading to an all-matching empty substring.
+  FLAGS_metrics_prometheus_default_metrics = ",,";
+  entity_metrics.clear();
+  GetPrometheusMetricsFilter(&entity_metrics);
+  ASSERT_TRUE(entity_metrics.empty());
+}
+
+// The server-wide --metrics_prometheus_default_metrics allowlist restricts the
+// exported metrics end-to-end when a request carries no 'metrics' filter.
+TEST_F(MetricsTest, PrometheusDefaultMetricsFilterAppliedTest) {
+  google::FlagSaver saver;
+  FLAGS_metrics_prometheus_default_metrics = "tablet_test_counter";
+
+  MetricRegistry registry;
+  auto tablet = METRIC_ENTITY_tablet.Instantiate(&registry, "tablet-1");
+  METRIC_tablet_test_counter.Instantiate(tablet)->IncrementBy(7);
+  auto table = METRIC_ENTITY_table.Instantiate(&registry, "table-1");
+  METRIC_table_test_counter.Instantiate(table)->IncrementBy(9);
+
+  // No per-request allowlist: the flag default restricts the output.
+  MetricPrometheusOptions opts;
+  GetPrometheusMetricsFilter(&opts.filters.entity_metrics);
+
+  ostringstream output;
+  PrometheusWriter writer(&output);
+  ASSERT_OK(registry.WriteAsPrometheus(&writer, opts));
+
+  const auto& out = output.str();
+  ASSERT_STR_CONTAINS(out, "tablet_test_counter");
+  ASSERT_STR_NOT_CONTAINS(out, "table_test_counter");
 }
 
 TEST_F(MetricsTest, CounterPrometheusTest) {

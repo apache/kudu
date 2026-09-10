@@ -505,6 +505,13 @@ typedef std::array<const char*, kNumHistogramQuantiles> HistogramQuantiles;
 void GetPrometheusQuantiles(const std::vector<std::string>& request_quantiles,
                             HistogramQuantiles* quantiles);
 
+// Apply the server-side default metric name allowlist for a /metrics_prometheus
+// request to 'entity_metrics'. A request-supplied 'metrics' allowlist (already
+// parsed into 'entity_metrics') takes precedence; the server-wide default
+// configured via --metrics_prometheus_default_metrics is applied only when
+// 'entity_metrics' is empty. An empty result means "export every metric".
+void GetPrometheusMetricsFilter(std::vector<std::string>* entity_metrics);
+
 struct MetricJsonOptions {
   MetricJsonOptions() :
     include_raw_histograms(false),

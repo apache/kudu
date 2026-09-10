@@ -552,6 +552,12 @@ static void WriteMetricsAsPrometheus(const MetricRegistry* const metrics,
   // default configured via --metrics_prometheus_default_quantiles.
   GetPrometheusQuantiles(ParseArray(req.parsed_args, kQuantilesParam), &opts.quantiles);
 
+  // A 'metrics' query parameter (already parsed into 'entity_metrics' above)
+  // takes precedence over the server-side default configured via
+  // --metrics_prometheus_default_metrics, which restricts even parameter-less
+  // scrapes to the configured allowlist.
+  GetPrometheusMetricsFilter(&opts.filters.entity_metrics);
+
   // The hostname label is emitted either in the label-based non-merged format,
   // or whenever merging is active (merged output is always label-based).
   if (FLAGS_metrics_prometheus_use_entity_labels || !opts.merge_rules.empty()) {
