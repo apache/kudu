@@ -3167,6 +3167,47 @@ TEST_F(TabletServerTest, TestScanWithPredicates) {
   ASSERT_EQ(50, results.size());
 }
 
+class DeprecatedPredicateTypeMismatchParamTest :
+    public TabletServerTest,
+    public ::testing::WithParamInterface<bool> { // Use invalid column names for the predicates.
+};
+
+// Regression test for the deprecated range predicate type-mismatch crash.
+//
+// If we don't reject the request, it is easy to cause a crash.
+TEST_P(DeprecatedPredicateTypeMismatchParamTest, TestDeprecatedPredicateTypeMismatch) {
+  const bool invalid_column_name = GetParam();
+
+  InsertTestRowsDirect(0, 100);
+
+  ScanRequestPB req;
+  NewScanRequestPB* scan = req.mutable_new_scan_request();
+  scan->set_tablet_id(kTabletId);
+  req.set_batch_size_bytes(0);
+  ASSERT_OK(SchemaToColumnPBs(schema_, scan->mutable_projected_columns()));
+
+  const char* const col_a_name = invalid_column_name ? "not_a_column" : "string_val";
+  int64_t random_int_value = 42;
+
+  ColumnRangePredicatePB* pred_a = scan->add_deprecated_range_predicates();
+  pred_a->mutable_column()->set_name(col_a_name);
+  pred_a->mutable_column()->set_type(INT64);
+  pred_a->mutable_lower_bound()->append(reinterpret_cast<const char*>(&random_int_value),
+                                        sizeof(random_int_value));
+
+  ScanResponsePB resp;
+  RpcController rpc;
+  SCOPED_TRACE(SecureDebugString(req));
+  ASSERT_OK(proxy_->Scan(req, &resp, &rpc));
+  SCOPED_TRACE(SecureDebugString(resp));
+  ASSERT_TRUE(resp.has_error());
+  ASSERT_EQ(TabletServerErrorPB::INVALID_SCAN_SPEC, resp.error().code());
+  ASSERT_EQ(AppStatusPB::INVALID_ARGUMENT, resp.error().status().code());
+}
+
+INSTANTIATE_TEST_SUITE_P(Params, DeprecatedPredicateTypeMismatchParamTest,
+                         ::testing::Bool());
+
 TEST_F(TabletServerTest, TestScanWithEncodedPredicates) {
   InsertTestRowsDirect(0, 100);
 
