@@ -2779,12 +2779,29 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
   for (const ColumnRangePredicatePB& pred_pb : scan_pb.deprecated_range_predicates()) {
     if (!pred_pb.has_lower_bound() && !pred_pb.has_inclusive_upper_bound()) {
       return Status::InvalidArgument(
-        string("Invalid predicate ") + SecureShortDebugString(pred_pb) +
-        ": has no lower or upper bound.");
+        Substitute("Invalid predicate $0: has no lower or upper bound",
+                   SecureShortDebugString(pred_pb)));
     }
     ColumnSchemaBuilder builder;
     RETURN_NOT_OK(ColumnSchemaBuilderFromPB(pred_pb.column(), &builder));
-    const auto column_schema(builder.Build());
+    const auto client_column(builder.Build());
+
+    // Check if the client used the correct type for the column.
+    const int32_t idx = tablet_schema.find_column(client_column.name());
+    if (PREDICT_FALSE(idx == Schema::kColumnNotFound)) {
+      return Status::InvalidArgument(
+        Substitute("Invalid predicate $0: unknown column",
+                   SecureShortDebugString(pred_pb)));
+    }
+    const ColumnSchema& column_schema = tablet_schema.column(idx);
+    if (PREDICT_FALSE(client_column.type_info()->type() != column_schema.type_info()->type())) {
+      return Status::InvalidArgument(
+        Substitute("Invalid predicate $0: column '$1' has type $2, not $3",
+                   SecureShortDebugString(pred_pb),
+                   column_schema.name(),
+                   column_schema.type_info()->name(),
+                   client_column.type_info()->name()));
+    }
 
     const void* lower_bound = nullptr;
     const void* upper_bound = nullptr;
