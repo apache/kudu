@@ -145,7 +145,7 @@ if(NOT APPLE)
   # (see KUDU-3334 for details). The --version-script and --exclude-libs
   # GNU ld linker's options are not supported by the OS X linker.
   set(LINK_FLAGS "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/symbols.map")
-  set(LINK_FLAGS "${LINK_FLAGS} -Wl,--exclude-libs=libprotobuf")
+  set(LINK_FLAGS "${LINK_FLAGS} -Wl,--exclude-libs=libprotobuf.a")
 endif()
 
 set_target_properties(kudu_client_exported
