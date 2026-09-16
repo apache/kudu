@@ -195,9 +195,16 @@ class TwoDimensionalGreedyAlgo : public RebalancingAlgo {
     PICK_FIRST,
     PICK_RANDOM,
   };
-  explicit TwoDimensionalGreedyAlgo(
-      EqualSkewOption opt = EqualSkewOption::PICK_RANDOM,
-      bool prefer_follower_moves = true);
+  // 'opt' decides how ties are broken when several tables or servers are
+  // equally skewed: PICK_FIRST is deterministic, PICK_RANDOM spreads repeated
+  // runs over different candidates. When 'prefer_follower_moves' is set, among
+  // the equally skewed candidates the algorithm favors a move whose source
+  // server hosts a non-leader replica of that table, so rebalancing avoids
+  // leadership changes where it can; it falls back to a leader source if no
+  // such candidate exists, including when follower information isn't available
+  // in ClusterInfo.
+  explicit TwoDimensionalGreedyAlgo(EqualSkewOption opt,
+                                    bool prefer_follower_moves);
 
  protected:
   Status GetNextMove(const ClusterInfo& cluster_info,

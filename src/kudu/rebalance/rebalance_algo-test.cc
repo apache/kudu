@@ -217,7 +217,8 @@ void VerifyRebalancingMoves(const TestClusterConfig& cfg) {
     ClusterInfo ci;
     ClusterConfigToClusterInfo(cfg, &ci);
     TwoDimensionalGreedyAlgo algo(
-        TwoDimensionalGreedyAlgo::EqualSkewOption::PICK_FIRST);
+        TwoDimensionalGreedyAlgo::EqualSkewOption::PICK_FIRST,
+        /*prefer_follower_moves=*/true);
     ASSERT_OK(algo.GetNextMoves(ci, 0, &moves));
   }
   EXPECT_EQ(cfg.expected_moves, moves);
@@ -304,7 +305,10 @@ string TestClusterConfigToDebugString(const TestClusterConfig& cfg) {
 TEST(RebalanceAlgoUnitTest, EmptyClusterInfoGetNextMoves) {
   vector<TableReplicaMove> moves;
   const ClusterInfo info = {};
-  ASSERT_OK(TwoDimensionalGreedyAlgo().GetNextMoves(info, 0, &moves));
+  ASSERT_OK(TwoDimensionalGreedyAlgo(
+                TwoDimensionalGreedyAlgo::EqualSkewOption::PICK_RANDOM,
+                /*prefer_follower_moves=*/true)
+                .GetNextMoves(info, 0, &moves));
   EXPECT_TRUE(moves.empty());
 }
 
@@ -314,14 +318,20 @@ TEST(RebalanceAlgoUnitTest, NoTableSkewInClusterBalanceInfoGetNextMoves) {
   {
     vector<TableReplicaMove> moves;
     const ClusterInfo info = { { {}, { { 0, "ts_0" } } } };
-    ASSERT_OK(TwoDimensionalGreedyAlgo().GetNextMoves(info, 0, &moves));
+    ASSERT_OK(TwoDimensionalGreedyAlgo(
+                  TwoDimensionalGreedyAlgo::EqualSkewOption::PICK_RANDOM,
+                  /*prefer_follower_moves=*/true)
+                  .GetNextMoves(info, 0, &moves));
     EXPECT_TRUE(moves.empty());
   }
 
   {
     vector<TableReplicaMove> moves;
     const ClusterInfo info = { { {}, { { 1, "ts_0" }, } } };
-    const auto s = TwoDimensionalGreedyAlgo().GetNextMoves(info, 0, &moves);
+    const auto s = TwoDimensionalGreedyAlgo(
+                       TwoDimensionalGreedyAlgo::EqualSkewOption::PICK_RANDOM,
+                       /*prefer_follower_moves=*/true)
+                       .GetNextMoves(info, 0, &moves);
     ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_MATCHES(s.ToString(),
         "non-zero table count .* on tablet server .* while no table "
@@ -334,7 +344,10 @@ TEST(RebalanceAlgoUnitTest, NoTableSkewInClusterBalanceInfoGetNextMoves) {
 TEST(RebalanceAlgoUnitTest, EmptyBalanceInfoGetNextMove) {
   optional<TableReplicaMove> move;
   const ClusterInfo info = {};
-  const auto s = TwoDimensionalGreedyAlgo().GetNextMove(info, &move);
+  const auto s = TwoDimensionalGreedyAlgo(
+                     TwoDimensionalGreedyAlgo::EqualSkewOption::PICK_RANDOM,
+                     /*prefer_follower_moves=*/true)
+                     .GetNextMove(info, &move);
   ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
   EXPECT_EQ(nullopt, move);
 }
@@ -425,7 +438,8 @@ TEST(RebalanceAlgoUnitTest, EqualSkewTieBreakingIsRandomized) {
   ClusterConfigToClusterInfo(kConfig, &ci);
 
   TwoDimensionalGreedyAlgo algo(
-      TwoDimensionalGreedyAlgo::EqualSkewOption::PICK_RANDOM);
+      TwoDimensionalGreedyAlgo::EqualSkewOption::PICK_RANDOM,
+      /*prefer_follower_moves=*/true);
   set<string> chosen_tables;
   for (int i = 0; i < 100; ++i) {
     vector<TableReplicaMove> moves;
@@ -456,7 +470,8 @@ TEST(RebalanceAlgoUnitTest, EqualSkewTieBreakingPickFirstIsDeterministic) {
   ClusterConfigToClusterInfo(kConfig, &ci);
 
   TwoDimensionalGreedyAlgo algo(
-      TwoDimensionalGreedyAlgo::EqualSkewOption::PICK_FIRST);
+      TwoDimensionalGreedyAlgo::EqualSkewOption::PICK_FIRST,
+      /*prefer_follower_moves=*/true);
   for (int i = 0; i < 20; ++i) {
     vector<TableReplicaMove> moves;
     ASSERT_OK(algo.GetNextMoves(ci, 1, &moves));
@@ -1273,7 +1288,8 @@ TEST(RebalanceAlgoUnitTest, ManyMoves) {
   }
 
   TwoDimensionalGreedyAlgo algo(
-      TwoDimensionalGreedyAlgo::EqualSkewOption::PICK_FIRST);
+      TwoDimensionalGreedyAlgo::EqualSkewOption::PICK_FIRST,
+      /*prefer_follower_moves=*/true);
   vector<TableReplicaMove> moves;
   ASSERT_OK(algo.GetNextMoves(ci, 0, &moves));
   EXPECT_EQ(ref_moves, moves);
@@ -1321,7 +1337,9 @@ TEST(RebalanceAlgoUnitTest, RandomizedTest) {
       SCOPED_TRACE(TestClusterConfigToDebugString(cfg));
       ClusterInfo ci;
       ClusterConfigToClusterInfo(cfg, &ci);
-      TwoDimensionalGreedyAlgo algo;
+      TwoDimensionalGreedyAlgo algo(
+          TwoDimensionalGreedyAlgo::EqualSkewOption::PICK_RANDOM,
+          /*prefer_follower_moves=*/true);
       optional<TableReplicaMove> move;
       // Set a generous upper bound on the number of moves allowed before we
       // conclude the algorithm is not converging.
