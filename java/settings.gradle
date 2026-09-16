@@ -25,7 +25,6 @@ include "kudu-backup-tools"
 include "kudu-client"
 include "kudu-flatbuffers"
 include "kudu-hive"
-include "kudu-jepsen"
 include "kudu-proto"
 include 'kudu-replication'
 include "kudu-spark"

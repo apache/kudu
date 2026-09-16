@@ -130,9 +130,7 @@ if(!JavaVersion.current().isJava11Compatible()) {
 
 // Don't enable code coverage for kudu-proto and kudu-flatbuffers given it is exclusively
 // generated code.
-// Don't enable code coverage for kudu-jepsen given it is exclusively test code.
-if (project.name != "kudu-proto" && project.name != "kudu-jepsen" &&
-        project.name != "kudu-flatbuffers") {
+if (project.name != "kudu-proto" && project.name != "kudu-flatbuffers") {
   apply plugin: "jacoco" // Provides code coverage metrics for Java code.
   jacoco {
     toolVersion = versions.jacoco

@@ -84,10 +84,9 @@ task initializeTasks() {
 }
 
 // The subprojects whose source participates in the aggregate Javadoc.
-// kudu-jepsen is excluded: it is a Clojure-only module (no Java sources, so
-// it contributes nothing to the docs) and it pulls in the unpublished
-// jepsen:jepsen dependency, which cannot be resolved from Maven.
-def javadocSubprojects = subprojects.findAll { it.name != "kudu-jepsen" }
+// To exclude particular sub-projects, update the predicate for 'findAll'
+// below, replacing all-inclusive 'true' predicate.
+def javadocSubprojects = subprojects.findAll { true }
 
 // Gradle 9 forbids a task in one project from resolving another project's
 // configuration directly, so the root javadocAggregate task can no longer
@@ -116,11 +115,9 @@ task javadocAggregate(type: Javadoc, group: "Documentation") {
 }
 
 // The subprojects whose tests participate in the distributed test run.
-// kudu-jepsen is excluded: it is a Clojure-only module that disables all of
-// its tasks on JDK 12+ and whose tests never run as dist-tests. Including it
-// would also make the tasks below resolve its testRuntimeClasspath without it
-// ever being resolved in-project, which Gradle 9 forbids (see below).
-def distTestSubprojects = subprojects.findAll { it.name != "kudu-jepsen" }
+// To exclude particular sub-projects, update the predicate for 'findAll'
+// below, replacing all-inclusive 'true' predicate.
+def distTestSubprojects = subprojects.findAll { true }
 
 // Copies all the dependency jars locally so that we can reference
 // them inside the project structure while running the distributed

@@ -19,7 +19,6 @@
 
 repositories {
   mavenCentral()
-  maven { url = "https://clojars.org/repo" } // Only used for the clojure plugin below.
   maven { url = "https://plugins.gradle.org/m2/" }
 }
 
@@ -31,7 +30,6 @@ dependencies {
   implementation "gradle.plugin.org.barfuin.gradle.jacocolog:gradle-jacoco-log:2.0.0"
   implementation "gradle.plugin.com.google.gradle:osdetector-gradle-plugin:1.7.3"
   implementation "com.google.protobuf:protobuf-gradle-plugin:0.10.0"
-  implementation "com.netflix.nebula:nebula-clojure-plugin:14.2.2"
   implementation "com.github.spotbugs.snom:spotbugs-gradle-plugin:6.4.7"
   implementation "net.ltgt.gradle:gradle-errorprone-plugin:2.0.2"
   implementation "ru.vyarus:gradle-animalsniffer-plugin:1.7.2"
