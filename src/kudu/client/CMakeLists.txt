@@ -143,8 +143,10 @@ if(NOT APPLE)
   # Localize thirdparty symbols using a linker version script. This hides them
   # from the client application. Also, completely remove libprotobuf symbols
   # (see KUDU-3334 for details). The --version-script and --exclude-libs
-  # GNU ld linker's options are not supported by the OS X linker.
+  # GNU ld-compatible linker's options are not supported by the OS X linker.
   set(LINK_FLAGS "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/symbols.map")
+  set(LINK_FLAGS "${LINK_FLAGS} -Wl,--exclude-libs=libgflags.a")
+  set(LINK_FLAGS "${LINK_FLAGS} -Wl,--exclude-libs=libglog.a")
   set(LINK_FLAGS "${LINK_FLAGS} -Wl,--exclude-libs=libprotobuf.a")
   set(LINK_FLAGS "${LINK_FLAGS} -Wl,--exclude-libs=libyaml-cpp.a")
 endif()

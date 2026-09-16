@@ -24,7 +24,7 @@ function(APPEND_LINKER_FLAGS)
   # On macOS, LLD from third-party ${THIRDPARTY_TOOLCHAIN_DIR}/bin/ld64.lld
   # isn't fully functional yet: it doesn't support -U option, etc.
   if (NOT APPLE)
-    set(linkers "lld" "thirdparty lld" "gold")
+    set(linkers "mold" "lld" "thirdparty lld" "gold")
   endif()
   list(APPEND linkers "default")
   foreach(candidate_linker ${linkers})
@@ -127,6 +127,16 @@ function(GET_LINKER_VERSION)
     RESULT_VARIABLE LINKER_EXITCODE)
   if (NOT LINKER_EXITCODE EQUAL 0)
     set(LINKER_FOUND FALSE)
+  elseif (LINKER_STDOUT MATCHES "mold")
+    # We're expecting LINKER_STDOUT to look like:
+    #   mold 2.40.4 (compatible with GNU ld)
+    if (NOT "${LINKER_STDOUT}" MATCHES "^mold (([0-9]+\\.?)+) .*")
+      message(SEND_ERROR "Could not extract mold linker version. "
+        "Linker version output: ${LINKER_STDOUT}")
+    endif()
+    set(LINKER_FOUND TRUE)
+    set(LINKER_FAMILY "mold")
+    set(LINKER_VERSION "${CMAKE_MATCH_1}")
   elseif (LINKER_STDOUT MATCHES "GNU gold")
     # We're expecting LINKER_STDOUT to look like one of these:
     #   GNU gold (version 2.24) 1.11
