@@ -38,15 +38,24 @@
 #   * PORTABLE - whether to build portable libraries, otherwise build native libraries. Portable
 #                libraries may cause a slight performance degradation, it's recommend to disable
 #                portable option if there is no port requirements. (defaults to ON).
-#   * USE_PREBUILT_THIRDPARTY - when set to 0, build 3rd-party components from
-#                               source instead of using archived pre-built
-#                               artifacts, when they are available (default: 1).
-#                               NOTE: different prefix is used for pre-built
-#                                     and build-locally-from-source artifacts
-#   * REBUILD_PREBUILT_THIRDPARTY - when set to 1, always build every 3rd-party
-#                                   component from scratch, even if pre-built
-#                                   archive is available either locally or
-#                                   in the designated S3 bucket (default: 0)
+#   * USE_PREBUILT_THIRDPARTY
+#       when set to 0, build 3rd-party components from source instead of using
+#       archived pre-built artifacts, when they are available (default: 1)
+#       NOTE: different prefix is used for pre-built and
+#             build-locally-from-source artifacts
+#
+#   * REBUILD_PREBUILT_THIRDPARTY
+#       when set to 1, always build every 3rd-party component from scratch,
+#       even if pre-built archive is available either locally or
+#       in the designated S3 bucket (default: 0)
+#
+#   * PREBUILT_THIRDPARTY_RECREATE_SYMLINKS
+#       when set to 1, always re-create symbolic links from /opt/kudu/thirdparty
+#       to the actual location of the installed 3rd-party artifacts (default: 1)
+#       NOTE: setting this variable to 0 makes sense in environments with
+#             multiple actors working concurrently in separate workspaces
+#             with exactly same versions of 3rd-party components
+#             (e.g., on a multi-tenant build/test node)
 
 set -ex
 

@@ -253,7 +253,19 @@ extract_prebuilt_tarball() {
       exit 1
     fi
     pushd "$dirpath"
-    ln -nsf "$target_path" "$subdir"
+    local recreate_symlink=1
+    if [ "${PREBUILT_THIRDPARTY_RECREATE_SYMLINKS:-1}" = "0" ]; then
+      if [ -L "$subdir" ] && stat -L "$subdir" > /dev/null 2>&1; then
+        # If the symlink already exists and points to existing directory,
+        # don't re-create it if PREBUILT_THIRDPARTY_RECREATE_SYMLINKS set to 0.
+        recreate_symlink=0
+      fi
+    fi
+    if [ $recreate_symlink -ne 1 ]; then
+      echo "Using existing symlink $subdir --> $target_path"
+    else
+      ln -nsf "$target_path" "$subdir"
+    fi
     popd
   done
 }
