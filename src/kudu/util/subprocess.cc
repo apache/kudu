@@ -25,14 +25,17 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cerrno>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -55,6 +58,7 @@
 #include "kudu/util/stopwatch.h"
 
 using std::map;
+using std::optional;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -177,11 +181,17 @@ void RedirectToDevNull(int fd) {
   }
 }
 
-// Stateful libev watcher to help ReadFdsFully().
+// Stateful libev watcher to help ReadFdsFully(). Each instance drains one fd.
+// When an fd reaches EOF (or errors), it decrements the shared '*open_count'
+// and, once that hits zero, breaks the loop. Breaking explicitly (rather than
+// relying on ev_run() to exit when no watchers remain) lets ReadFdsFully() also
+// install a deadline timer -- an otherwise-active watcher that would keep the
+// loop running past EOF -- without changing when the drain finishes.
 class ReadFdsFullyHelper {
  public:
-  ReadFdsFullyHelper(string progname, ev::dynamic_loop* loop, int fd)
-      : progname_(std::move(progname)) {
+  ReadFdsFullyHelper(string progname, ev::dynamic_loop* loop, int fd,
+                     int* open_count)
+      : progname_(std::move(progname)), loop_(loop), open_count_(open_count) {
     // Bind the watcher to the provided loop, to this functor, and to the
     // readable fd.
     watcher_.set(*loop);
@@ -200,12 +210,12 @@ class ReadFdsFullyHelper {
     RETRY_ON_EINTR(n, read(w.fd, buf, arraysize(buf)));
     if (n == 0) {
       // EOF, stop watching.
-      w.stop();
+      Stop(&w);
     } else if (n < 0) {
       // A fatal error. Store it and stop watching.
       status_ = Status::IOError("IO error reading from " + progname_,
                                 ErrnoToString(errno), errno);
-      w.stop();
+      Stop(&w);
     } else {
       // Add our bytes and keep watching.
       output_.append(buf, n);
@@ -216,28 +226,89 @@ class ReadFdsFullyHelper {
   const string& output() const { return output_; }
 
  private:
+  // Stops watching this fd and, if it was the last open one, breaks the loop.
+  void Stop(ev::io* w) {
+    w->stop();
+    if (--(*open_count_) == 0) {
+      loop_->break_loop();
+    }
+  }
+
   const string progname_;
+  ev::dynamic_loop* const loop_;
+  int* const open_count_;
 
   ev::io watcher_;
   string output_;
   Status status_;
+
+  DISALLOW_COPY_AND_ASSIGN(ReadFdsFullyHelper);
 };
 
-// Reads from all descriptors in 'fds' until EOF on all of them. If any read
-// yields an error, it is returned. Otherwise, 'out' contains the bytes read
-// for each fd, in the same order as was in 'fds'.
-Status ReadFdsFully(const string& progname,
-                    const vector<int>& fds,
-                    vector<string>* out) {
-  ev::dynamic_loop loop;
-
-  // Set up a watcher for each fd.
-  vector<unique_ptr<ReadFdsFullyHelper>> helpers;
-  for (int fd : fds) {
-    helpers.emplace_back(new ReadFdsFullyHelper(progname, &loop, fd));
+// Breaks a libev loop when its one-shot timer fires, recording that it did so.
+// Used by ReadFdsFully() to enforce a deadline on the drain.
+class DeadlineHelper {
+ public:
+  DeadlineHelper(ev::dynamic_loop* loop, double after_seconds)
+      : loop_(loop) {
+    timer_.set(*loop);
+    timer_.set(this);
+    // A one-shot timer: 'after_seconds' from now, no repeat. A non-positive
+    // delay (deadline already passed) fires on the loop's first iteration.
+    timer_.start(std::max(after_seconds, 0.0), 0.0);
   }
 
-  // This will read until all fds return EOF.
+  void operator() (ev::timer& /*w*/, int /*revents*/) {
+    fired_ = true;
+    // Break out even though the fd watchers may still be active.
+    loop_->break_loop();
+  }
+
+  bool fired() const { return fired_; }
+
+ private:
+  ev::dynamic_loop* const loop_;
+  ev::timer timer_;
+  bool fired_ = false;
+
+  DISALLOW_COPY_AND_ASSIGN(DeadlineHelper);
+};
+
+// Reads from all descriptors in 'fds' until EOF on all of them, or until
+// 'timeout' elapses (if it is initialized). If any read yields an error, it is
+// returned. On a clean drain, 'out' contains the bytes read for each fd, in the
+// same order as was in 'fds'. If 'timeout' elapses first, '*timed_out' is set
+// and 'out' holds whatever was read before then. '*timed_out' is always
+// written; the caller may pass a throwaway bool when no timeout is used.
+Status ReadFdsFully(const string& progname,
+                    const vector<int>& fds,
+                    const MonoDelta& timeout,
+                    vector<string>* out,
+                    bool* timed_out) {
+  *timed_out = false;
+  if (fds.empty()) {
+    return Status::OK();
+  }
+  ev::dynamic_loop loop;
+
+  // Set up a watcher for each fd. 'open_count' tracks how many are still open;
+  // the last one to close breaks the loop.
+  int open_count = static_cast<int>(fds.size());
+  vector<unique_ptr<ReadFdsFullyHelper>> helpers;
+  for (int fd : fds) {
+    helpers.emplace_back(
+        new ReadFdsFullyHelper(progname, &loop, fd, &open_count));
+  }
+
+  // Arm a deadline timer that breaks the loop, if a timeout was requested. The
+  // timeout is relative and libev's timer wants a relative delay, so it is
+  // handed straight through -- the clock starts now, as the drain begins.
+  optional<DeadlineHelper> deadline_helper;
+  if (timeout.Initialized()) {
+    deadline_helper.emplace(&loop, timeout.ToSeconds());
+  }
+
+  // This will read until all fds return EOF or the deadline timer fires.
   loop.run();
 
   // Check for failures.
@@ -247,9 +318,12 @@ Status ReadFdsFully(const string& progname,
     }
   }
 
-  // No failures; write the output to the caller.
+  // No failures; write the (possibly partial, on timeout) output to the caller.
   for (const auto& h : helpers) {
     out->push_back(h->output());
+  }
+  if (deadline_helper && deadline_helper->fired()) {
+    *timed_out = true;
   }
   return Status::OK();
 }
@@ -579,6 +653,56 @@ Status Subprocess::WaitAndCheckExitCode() {
                                       exit_status, info_str));
 }
 
+Status Subprocess::WaitAndCollect(const MonoDelta& timeout,
+                                  string* stdout_out, string* stderr_out,
+                                  bool* timed_out, int* wait_status) {
+  // A timeout is only enforced while draining a pipe; with nothing to drain the
+  // trailing Wait() below blocks until the child exits regardless. So bounding a
+  // child that neither exits nor writes requires collecting at least one stream.
+  // An uninitialized timeout is fine either way -- it's a plain draining Wait().
+  DCHECK(!timeout.Initialized() || stdout_out || stderr_out)
+      << "a timeout requires at least one of stdout_out/stderr_out to bound a "
+         "child that neither exits nor writes";
+
+  *timed_out = false;
+
+  // Collect only the streams the caller asked for; each must be piped (i.e. not
+  // shared with the parent), same precondition as from_child_std*_fd().
+  vector<int> fds;
+  if (stdout_out) {
+    fds.push_back(from_child_stdout_fd());
+  }
+  if (stderr_out) {
+    fds.push_back(from_child_stderr_fd());
+  }
+
+  vector<string> outv;
+  RETURN_NOT_OK(ReadFdsFully(program_, fds, timeout, &outv, timed_out));
+
+  // ReadFdsFully returns one string per fd, in the order they were pushed.
+  CHECK_EQ(outv.size(), fds.size());
+  size_t i = 0;
+  if (stdout_out) {
+    *stdout_out = std::move(outv[i++]);
+  }
+  if (stderr_out) {
+    *stderr_out = std::move(outv[i++]);
+  }
+
+  // On timeout the child is still running (or draining slowly); force it down
+  // so the Wait() below can reap it rather than blocking indefinitely. It will
+  // be reaped as killed-by-SIGKILL, but the caller is told via '*timed_out' to
+  // disregard '*wait_status' in that case.
+  if (*timed_out) {
+    const Status s = KillAndWait(SIGKILL);
+    if (!s.ok()) {
+      LOG(WARNING) << Substitute("failed to kill timed-out child $0: $1",
+                                 program_, s.ToString());
+    }
+  }
+  return Wait(wait_status);
+}
+
 Status Subprocess::GetProcfsState(int pid, ProcfsState* state) {
   faststring data;
   string filename = Substitute("/proc/$0/stat", pid);
@@ -790,7 +914,9 @@ Status Subprocess::Call(const vector<string>& argv,
     fds.push_back(p.from_child_stderr_fd());
   }
   vector<string> outv;
-  RETURN_NOT_OK(ReadFdsFully(argv[0], fds, &outv));
+  bool timed_out;
+  // No timeout: drain to EOF, matching the historical behavior of Call().
+  RETURN_NOT_OK(ReadFdsFully(argv[0], fds, {}, &outv, &timed_out));
 
   // Given that ReadFdsFully captures the strings in the order in which we
   // had installed 'fds' above, it can be assured that we can receive

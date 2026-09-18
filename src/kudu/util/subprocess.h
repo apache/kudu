@@ -29,10 +29,11 @@
 #include <gtest/gtest_prod.h>
 
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/port.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
+
+class MonoDelta;
 
 // Wrapper around a spawned subprocess.
 //
@@ -124,6 +125,29 @@ class Subprocess {
   // not a clean exit, it returns RemoteError.
   // Note: this is thread-safe with WaitNoBlock() and Wait()
   Status WaitAndCheckExitCode();
+
+  // Concurrently drains the child's piped stdout/stderr into '*stdout_out' and
+  // '*stderr_out' (either may be null, in which case that stream is not
+  // collected -- it must have been disabled or left shared) while waiting for
+  // the child to exit, for up to 'timeout'. Draining both pipes together means a
+  // large write on one cannot deadlock against a full buffer on the other.
+  //
+  // If 'timeout' is uninitialized there is no timeout: this behaves like a
+  // draining Wait(). Otherwise, if 'timeout' elapses before the child exits,
+  // the child is killed (SIGKILL) and '*timed_out' is set to true; whatever
+  // output was collected so far is still returned. The timeout is enforced
+  // while draining the pipes, so at least one of 'stdout_out'/'stderr_out' must
+  // be non-null for it to bound a child that neither exits nor writes.
+  //
+  // The child is reaped either way and '*wait_status' receives the raw
+  // waitpid() status (as from Wait()); it is meaningful only when
+  // '*timed_out' is false. Returns non-OK only on a genuine read/reap failure
+  // (a server-side problem) -- a child that exits non-zero, dies by signal, or
+  // times out is a normal OK return with the outcome described by the out
+  // params. Only call after Start().
+  Status WaitAndCollect(const MonoDelta& timeout,
+                        std::string* stdout_out, std::string* stderr_out,
+                        bool* timed_out, int* wait_status);
 
   // Send a signal to the subprocess.
   // Note that this does not reap the process -- you must still Wait()
