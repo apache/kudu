@@ -51,6 +51,7 @@
 #include "kudu/server/server_base.pb.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet.pb.h"
+#include "kudu/tools/mcp_disposition.h"
 #include "kudu/tools/tool_action.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/tserver/tablet_server.h"
@@ -411,11 +412,13 @@ unique_ptr<Mode> BuildRemoteReplicaMode() {
                    "running. Tombstoned replica do not count as not running, "
                    "because they are just records of the previous existence of "
                    "a replica.")
+      .McpDisposition(Disposition::SURFACE)
       .Build();
 
   unique_ptr<Action> copy_replica =
       RpcActionBuilder("copy", &CopyReplica)
       .Description("Copy a tablet replica from one Kudu Tablet Server to another")
+      .McpDisposition(Disposition::REJECT)
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .AddRequiredParameter({ kSrcAddressArg, kTServerAddressDesc })
       .AddRequiredParameter({ kDstAddressArg, kTServerAddressDesc })
@@ -425,6 +428,7 @@ unique_ptr<Mode> BuildRemoteReplicaMode() {
   unique_ptr<Action> delete_replica =
       TServerActionBuilder("delete", &DeleteReplica)
       .Description("Delete a tablet replica from a Kudu Tablet Server")
+      .McpDisposition(Disposition::GATED)
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .AddRequiredParameter({ kReasonArg, "Reason for deleting the replica" })
       .Build();
@@ -432,12 +436,14 @@ unique_ptr<Mode> BuildRemoteReplicaMode() {
   unique_ptr<Action> dump_replica =
       TServerActionBuilder("dump", &DumpReplica)
       .Description("Dump the data of a tablet replica on a Kudu Tablet Server")
+      .McpDisposition(Disposition::SURFACE)
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .Build();
 
   unique_ptr<Action> list =
       TServerActionBuilder("list", &ListReplicas)
       .Description("List all tablet replicas on a Kudu Tablet Server")
+      .McpDisposition(Disposition::SURFACE)
       .AddOptionalParameter("include_schema")
       .AddOptionalParameter("table_name")
       .AddOptionalParameter("tablets",
@@ -456,6 +462,8 @@ unique_ptr<Mode> BuildRemoteReplicaMode() {
                         "The members of the new Raft config must be a subset "
                         "of (or the same as) the members of the existing "
                         "committed Raft config.")
+      .McpDisposition(Disposition::GATED)
+      .McpUnsafe()
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .AddRequiredVariadicParameter({ kPeerUUIDsArg, kPeerUUIDsArgDesc })
       .Build();

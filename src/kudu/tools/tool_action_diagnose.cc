@@ -41,6 +41,7 @@
 #include "kudu/security/tls_socket.h"
 #include "kudu/security/token.pb.h"
 #include "kudu/tools/diagnostics_log_parser.h"
+#include "kudu/tools/mcp_disposition.h"
 #include "kudu/tools/tool_action.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/util/net/net_util.h"
@@ -286,6 +287,8 @@ unique_ptr<Mode> BuildDiagnoseMode() {
   unique_ptr<Action> parse_stacks =
       ActionBuilder("parse_stacks", &ParseStacks)
       .Description("Parse sampled stack traces out of a diagnostics log")
+      .McpDisposition(Disposition::SURFACE)
+      .McpNodeLocal()
       .AddRequiredVariadicParameter({ kLogPathArg, kLogPathArgDesc })
       .Build();
 
@@ -293,6 +296,8 @@ unique_ptr<Mode> BuildDiagnoseMode() {
   unique_ptr<Action> parse_metrics =
       ActionBuilder("parse_metrics", &ParseMetrics)
       .Description("Parse metrics out of a diagnostics log")
+      .McpDisposition(Disposition::SURFACE)
+      .McpNodeLocal()
       .AddRequiredVariadicParameter({ kLogPathArg, kLogPathArgDesc })
       .AddOptionalParameter("tablet_ids")
       .AddOptionalParameter("simple_metrics")
@@ -303,6 +308,7 @@ unique_ptr<Mode> BuildDiagnoseMode() {
   unique_ptr<Action> tls_debug =
       RpcActionBuilder("tls_debug", &TlsDebug)
       .Description("Connect to a running cluster and dump TLS debug information")
+      .McpDisposition(Disposition::SURFACE)
       .AddRequiredParameter({"server_addr", "Address of a Kudu Master or Tablet server "
                                             "of the form 'hostname:port'."})
       .AddOptionalParameter("disable_tls")

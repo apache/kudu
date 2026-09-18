@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -32,6 +33,11 @@ namespace tools {
 
 class Action;
 class Mode;
+
+// The MCP safety classification of an action. Defined in mcp_disposition.h;
+// forward-declared here (with a fixed underlying type) so an action can carry
+// its own disposition without the CLI framework depending on the MCP feature.
+enum class Disposition : uint8_t;
 
 // The command line tool is structured as a tree with two kinds of nodes: modes
 // and actions. Actions are leaf nodes, each representing a particular
@@ -212,6 +218,27 @@ class ActionBuilder {
   // the passed `program_name`.
   ActionBuilder& ProgramName(const std::string& program_name);
 
+  // Sets the MCP safety classification for this action (see mcp_disposition.h).
+  //
+  // Every action reachable from the CLI tree must set this:
+  // ValidateDispositionCoverage[OrDie]() (mcp_disposition.h) fails if an action
+  // has no disposition, and an unclassified action is never surfaced as a tool.
+  ActionBuilder& McpDisposition(Disposition disposition);
+
+  // Marks this action as operating on the on-disk data of the single node the
+  // server runs on (the fs / wal / pbc / local_replica families, plus a few
+  // node-local admin ops). Advisory metadata consumed by the MCP server.
+  ActionBuilder& McpNodeLocal();
+
+  // Marks this action as an "unsafe" operation (e.g. unsafe_* commands or raw
+  // Raft config edits). Advisory metadata consumed by the MCP server.
+  ActionBuilder& McpUnsafe();
+
+  // Marks this action as returning row-level user data (e.g. scanned rows or
+  // decoded WAL / rowset contents) rather than metadata. Advisory metadata
+  // consumed by the MCP server.
+  ActionBuilder& McpUserData();
+
   // Add a new required parameter to this builder.
   //
   // This parameter will be parsed as a positional argument following the name
@@ -258,6 +285,14 @@ class ActionBuilder {
 
   std::optional<std::string> program_name_;
 
+  std::optional<Disposition> mcp_disposition_;
+
+  bool mcp_node_local_ = false;
+
+  bool mcp_unsafe_ = false;
+
+  bool mcp_user_data_ = false;
+
   ActionRunner runner_;
 
   ActionArgsDescriptor args_;
@@ -299,6 +334,19 @@ class Action {
     return program_name_;
   }
 
+  // The MCP safety classification for this action, or nullopt if the action was
+  // never classified (see ActionBuilder::McpDisposition). The MCP server treats
+  // an unclassified action as non-surfaceable.
+  const std::optional<Disposition>& mcp_disposition() const {
+    return mcp_disposition_;
+  }
+
+  // Whether this action was tagged node-local / unsafe / user-data (advisory
+  // MCP metadata).
+  bool mcp_node_local() const { return mcp_node_local_; }
+  bool mcp_unsafe() const { return mcp_unsafe_; }
+  bool mcp_user_data() const { return mcp_user_data_; }
+
   const ActionArgsDescriptor& args() const { return args_; }
 
  private:
@@ -317,6 +365,14 @@ class Action {
   std::optional<std::string> extra_description_;
 
   std::optional<std::string> program_name_;
+
+  std::optional<Disposition> mcp_disposition_;
+
+  bool mcp_node_local_ = false;
+
+  bool mcp_unsafe_ = false;
+
+  bool mcp_user_data_ = false;
 
   ActionRunner runner_;
 

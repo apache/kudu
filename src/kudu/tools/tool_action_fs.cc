@@ -66,6 +66,7 @@
 #include "kudu/tablet/rowset_metadata.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/tablet_metadata.h"
+#include "kudu/tools/mcp_disposition.h"
 #include "kudu/tools/tool_action.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/util/compression/compression.pb.h"
@@ -979,6 +980,9 @@ static unique_ptr<Mode> BuildFsDumpMode() {
   unique_ptr<Action> dump_cfile =
       ActionBuilder("cfile", &DumpCFile)
       .Description("Dump the contents of a CFile (column file)")
+      .McpDisposition(Disposition::SURFACE)
+      .McpNodeLocal()
+      .McpUserData()
       .ExtraDescription("This interprets the contents of a CFile-formatted block "
                         "and outputs the decoded row data.")
       .AddRequiredParameter({ "block_id", "block identifier" })
@@ -992,6 +996,9 @@ static unique_ptr<Mode> BuildFsDumpMode() {
   unique_ptr<Action> dump_block =
       ActionBuilder("block", &DumpBlock)
       .Description("Dump the binary contents of a data block")
+      .McpDisposition(Disposition::SURFACE)
+      .McpNodeLocal()
+      .McpUserData()
       .ExtraDescription("This performs no parsing or interpretation of the data stored "
                         "in the block but rather outputs its binary contents directly.")
       .AddRequiredParameter({ "block_id", "block identifier" })
@@ -1003,6 +1010,8 @@ static unique_ptr<Mode> BuildFsDumpMode() {
   unique_ptr<Action> dump_tree =
       ActionBuilder("tree", &DumpFsTree)
       .Description("Dump the tree of a Kudu filesystem")
+      .McpDisposition(Disposition::SURFACE)
+      .McpNodeLocal()
       .AddOptionalParameter("fs_data_dirs")
       .AddOptionalParameter("fs_metadata_dir")
       .AddOptionalParameter("fs_wal_dir")
@@ -1011,6 +1020,8 @@ static unique_ptr<Mode> BuildFsDumpMode() {
   unique_ptr<Action> dump_uuid =
       ActionBuilder("uuid", &DumpUuid)
       .Description("Dump the UUID of a Kudu filesystem")
+      .McpDisposition(Disposition::SURFACE)
+      .McpNodeLocal()
       .AddOptionalParameter("fs_data_dirs")
       .AddOptionalParameter("fs_metadata_dir")
       .AddOptionalParameter("fs_wal_dir")
@@ -1029,6 +1040,9 @@ unique_ptr<Mode> BuildFsMode() {
   unique_ptr<Action> check =
       ActionBuilder("check", &Check)
       .Description("Check a Kudu filesystem for inconsistencies")
+      // EXCLUDE rather than SURFACE: --repair mutates the on-disk data.
+      .McpDisposition(Disposition::EXCLUDE)
+      .McpNodeLocal()
       .AddOptionalParameter("fs_data_dirs")
       .AddOptionalParameter("fs_metadata_dir")
       .AddOptionalParameter("fs_wal_dir")
@@ -1038,6 +1052,8 @@ unique_ptr<Mode> BuildFsMode() {
   unique_ptr<Action> format =
       ActionBuilder("format", &Format)
       .Description("Format a new Kudu filesystem")
+      .McpDisposition(Disposition::EXCLUDE)
+      .McpNodeLocal()
       .AddOptionalParameter("fs_data_dirs")
       .AddOptionalParameter("fs_metadata_dir")
       .AddOptionalParameter("fs_wal_dir")
@@ -1048,6 +1064,8 @@ unique_ptr<Mode> BuildFsMode() {
   unique_ptr<Action> update =
       ActionBuilder("update_dirs", &Update)
       .Description("Updates the set of data directories in an existing Kudu filesystem")
+      .McpDisposition(Disposition::EXCLUDE)
+      .McpNodeLocal()
       .ExtraDescription("If a data directory is in use by a tablet and is "
           "removed, the operation will fail unless --force is also used. "
           "Starting with Kudu 1.12.0, it is not required to run this tool "
@@ -1065,6 +1083,8 @@ unique_ptr<Mode> BuildFsMode() {
   unique_ptr<Action> list =
       ActionBuilder("list", &List)
       .Description("List metadata for on-disk tablets, rowsets, blocks, and cfiles")
+      .McpDisposition(Disposition::SURFACE)
+      .McpNodeLocal()
       .ExtraDescription("This tool is useful for discovering and gathering information about "
                         "on-disk data. Many field types can be added to the results with the "
                         "--columns flag, and results can be filtered to a specific table, "
@@ -1094,6 +1114,8 @@ unique_ptr<Mode> BuildFsMode() {
   unique_ptr<Action> upgrade_encryption_key =
       ActionBuilder("upgrade_encryption_key", &UpgradeEncryptionKey)
       .Description("Upgrade the encryption key info in metadata")
+      .McpDisposition(Disposition::EXCLUDE)
+      .McpNodeLocal()
       .ExtraDescription("Upgrade the server key to the tenant key which belongs to the default "
                         "tenant. This feature only works on a cluster with data rest encryption "
                         "enabled.\n\n"
@@ -1107,6 +1129,8 @@ unique_ptr<Mode> BuildFsMode() {
   unique_ptr<Action> locate_block =
       ActionBuilder("locate_block", &LocateBlock)
       .Description("Find the file's path where the block locates")
+      .McpDisposition(Disposition::SURFACE)
+      .McpNodeLocal()
       .AddRequiredParameter({ kBlockIdsArg, kBlockIdsDesc })
       .AddOptionalParameter("fs_data_dirs")
       .AddOptionalParameter("fs_metadata_dir")

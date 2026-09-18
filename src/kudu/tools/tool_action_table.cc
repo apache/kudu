@@ -59,6 +59,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
+#include "kudu/tools/mcp_disposition.h"
 #include "kudu/tools/table_scanner.h"
 #include "kudu/tools/tool.pb.h"
 #include "kudu/tools/tool_action.h"
@@ -1989,6 +1990,7 @@ unique_ptr<Mode> BuildSetTableLimitMode() {
   unique_ptr<Action> set_disk_size_limit =
       ClusterActionBuilder("disk_size", &SetDiskSizeLimit)
       .Description("Set the disk size limit")
+      .McpDisposition(Disposition::GATED)
       .AddRequiredParameter({ kTableNameArg, "Name of the table to set limit" })
       .AddRequiredParameter({ "disk_size",
                               "The disk size limit, 'unlimited' for no write limit" })
@@ -1996,6 +1998,7 @@ unique_ptr<Mode> BuildSetTableLimitMode() {
   unique_ptr<Action> set_row_count_limit =
       ClusterActionBuilder("row_count", &SetRowCountLimit)
       .Description("Set the row count limit")
+      .McpDisposition(Disposition::GATED)
       .AddRequiredParameter({ kTableNameArg, "Name of the table to set limit" })
       .AddRequiredParameter({ "row_count",
                               "The row count limit, 'unlimited' for no write limit" })
@@ -2011,6 +2014,7 @@ unique_ptr<Mode> BuildTableMode() {
   unique_ptr<Action> delete_table =
       ClusterActionBuilder("delete", &DeleteTable)
       .Description("Delete a table")
+      .McpDisposition(Disposition::GATED)
       .AddRequiredParameter({ kTableNameArg, "Name of the table to delete" })
       .AddOptionalParameter("modify_external_catalogs")
       .AddOptionalParameter("reserve_seconds")
@@ -2019,6 +2023,7 @@ unique_ptr<Mode> BuildTableMode() {
   unique_ptr<Action> describe_table =
       ClusterActionBuilder("describe", &DescribeTable)
       .Description("Describe a table")
+      .McpDisposition(Disposition::SURFACE)
       .AddRequiredParameter({ kTableNameArg, "Name of the table to describe" })
       .AddOptionalParameter("show_attributes")
       .AddOptionalParameter("show_avro_format_schema")
@@ -2029,6 +2034,7 @@ unique_ptr<Mode> BuildTableMode() {
   unique_ptr<Action> list_tables =
       ClusterActionBuilder("list", &ListTables)
       .Description("List tables")
+      .McpDisposition(Disposition::SURFACE)
       .AddOptionalParameter("soft_deleted_only")
       .AddOptionalParameter("tables")
       .AddOptionalParameter("list_tablets")
@@ -2047,12 +2053,14 @@ unique_ptr<Mode> BuildTableMode() {
   unique_ptr<Action> list_in_flight =
       ClusterActionBuilder("list_in_flight", &ListInFlightTables)
       .Description("List tables in flight")
+      .McpDisposition(Disposition::SURFACE)
       .AddOptionalParameter("list_table_output_format")
       .Build();
 
   unique_ptr<Action> locate_row =
       ClusterActionBuilder("locate_row", &LocateRow)
       .Description("Locate which tablet a row belongs to")
+      .McpDisposition(Disposition::SURFACE)
       .ExtraDescription("Provide the primary key as a JSON array of primary "
                         "key values, e.g. '[1, \"foo\", 2, \"bar\"]'. The "
                         "output will be the tablet id associated with the row "
@@ -2069,6 +2077,7 @@ unique_ptr<Mode> BuildTableMode() {
   unique_ptr<Action> rename_column =
       ClusterActionBuilder("rename_column", &RenameColumn)
       .Description("Rename a column")
+      .McpDisposition(Disposition::GATED)
       .AddRequiredParameter({ kTableNameArg, "Name of the table to alter" })
       .AddRequiredParameter({ kColumnNameArg, "Name of the table column to rename" })
       .AddRequiredParameter({ kNewColumnNameArg, "New column name" })
@@ -2077,6 +2086,7 @@ unique_ptr<Mode> BuildTableMode() {
   unique_ptr<Action> recall =
       ActionBuilder("recall", &RecallTable)
       .Description("Recall a deleted but still reserved table")
+      .McpDisposition(Disposition::GATED)
       .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddRequiredParameter({ kTableIdArg, "ID of the table to recall" })
       .AddOptionalParameter("new_table_name")
@@ -2085,6 +2095,7 @@ unique_ptr<Mode> BuildTableMode() {
   unique_ptr<Action> rename_table =
       ClusterActionBuilder("rename_table", &RenameTable)
       .Description("Rename a table")
+      .McpDisposition(Disposition::GATED)
       .AddRequiredParameter({ kTableNameArg, "Name of the table to rename" })
       .AddRequiredParameter({ kNewTableNameArg, "New table name" })
       .AddOptionalParameter("modify_external_catalogs")
@@ -2093,6 +2104,8 @@ unique_ptr<Mode> BuildTableMode() {
   unique_ptr<Action> scan_table =
       ClusterActionBuilder("scan", &ScanTable)
       .Description("Scan rows from a table")
+      .McpDisposition(Disposition::SURFACE)
+      .McpUserData()
       .ExtraDescription("Scan rows from an existing table. See the help "
                         "for the --predicates flag on how predicates can be specified.")
       .AddRequiredParameter({ kTableNameArg, "Name of the table to scan"})
@@ -2111,6 +2124,7 @@ unique_ptr<Mode> BuildTableMode() {
   unique_ptr<Action> copy_table =
       ClusterActionBuilder("copy", &CopyTable)
       .Description("Copy table data to another table")
+      .McpDisposition(Disposition::REJECT)
       .ExtraDescription("Copy table data to another table; the two tables could be in the same "
                         "cluster or not. The two tables must have the same table schema, but "
                         "could have different partition schemas. Alternatively, the tool can "
@@ -2137,6 +2151,7 @@ unique_ptr<Mode> BuildTableMode() {
   unique_ptr<Action> set_extra_config =
       ClusterActionBuilder("set_extra_config", &SetExtraConfig)
       .Description("Change a extra configuration value on a table")
+      .McpDisposition(Disposition::GATED)
       .AddRequiredParameter({ kTableNameArg, "Name of the table to alter" })
       .AddRequiredParameter({ kConfigNameArg, "Name of the configuration" })
       .AddRequiredParameter({ kConfigValueArg, "New value for the configuration" })
@@ -2145,6 +2160,7 @@ unique_ptr<Mode> BuildTableMode() {
   unique_ptr<Action> get_extra_configs =
       ClusterActionBuilder("get_extra_configs", &GetExtraConfigs)
       .Description("Get the extra configuration properties for a table")
+      .McpDisposition(Disposition::SURFACE)
       .AddRequiredParameter({ kTableNameArg,
                               "Name of the table for which to get extra configurations" })
       .AddOptionalParameter("config_names")
@@ -2153,6 +2169,7 @@ unique_ptr<Mode> BuildTableMode() {
   unique_ptr<Action> drop_range_partition =
       ClusterActionBuilder("drop_range_partition", &DropRangePartition)
       .Description("Drop a range partition of table")
+      .McpDisposition(Disposition::GATED)
       .AddRequiredParameter({ kTableNameArg, "Name of the table" })
       .AddRequiredParameter({ kTableRangeLowerBoundArg,
                               "String representation of lower bound of "
@@ -2167,6 +2184,7 @@ unique_ptr<Mode> BuildTableMode() {
   unique_ptr<Action> add_range_partition =
       ClusterActionBuilder("add_range_partition", &AddRangePartition)
       .Description("Add a range partition for table")
+      .McpDisposition(Disposition::GATED)
       .AddRequiredParameter({ kTableNameArg, "Name of the table" })
       .AddRequiredParameter({ kTableRangeLowerBoundArg,
                               "String representation of lower bound of "
@@ -2186,6 +2204,7 @@ unique_ptr<Mode> BuildTableMode() {
   unique_ptr<Action> column_set_default =
       ClusterActionBuilder("column_set_default", &ColumnSetDefault)
       .Description("Set write_default value for a column")
+      .McpDisposition(Disposition::GATED)
       .AddRequiredParameter({ kTableNameArg, "Name of the table to alter" })
       .AddRequiredParameter({ kColumnNameArg, "Name of the table column to alter" })
       .AddRequiredParameter({ kDefaultValueArg,
@@ -2196,6 +2215,7 @@ unique_ptr<Mode> BuildTableMode() {
   unique_ptr<Action> column_remove_default =
       ClusterActionBuilder("column_remove_default", &ColumnRemoveDefault)
       .Description("Remove write_default value for a column")
+      .McpDisposition(Disposition::GATED)
       .AddRequiredParameter({ kTableNameArg, "Name of the table to alter" })
       .AddRequiredParameter({ kColumnNameArg, "Name of the table column to alter" })
       .Build();
@@ -2203,6 +2223,7 @@ unique_ptr<Mode> BuildTableMode() {
   unique_ptr<Action> column_set_compression =
       ClusterActionBuilder("column_set_compression", &ColumnSetCompression)
       .Description("Set compression type for a column")
+      .McpDisposition(Disposition::GATED)
       .AddRequiredParameter({ kTableNameArg, "Name of the table to alter" })
       .AddRequiredParameter({ kColumnNameArg, "Name of the table column to alter" })
       .AddRequiredParameter({ kCompressionTypeArg, "Compression type of the column" })
@@ -2211,6 +2232,7 @@ unique_ptr<Mode> BuildTableMode() {
   unique_ptr<Action> column_set_encoding =
       ClusterActionBuilder("column_set_encoding", &ColumnSetEncoding)
       .Description("Set encoding type for a column")
+      .McpDisposition(Disposition::GATED)
       .AddRequiredParameter({ kTableNameArg, "Name of the table to alter" })
       .AddRequiredParameter({ kColumnNameArg, "Name of the table column to alter" })
       .AddRequiredParameter({ kEncodingTypeArg, "Encoding type of the column" })
@@ -2219,6 +2241,7 @@ unique_ptr<Mode> BuildTableMode() {
   unique_ptr<Action> column_set_block_size =
       ClusterActionBuilder("column_set_block_size", &ColumnSetBlockSize)
       .Description("Set block size for a column")
+      .McpDisposition(Disposition::GATED)
       .AddRequiredParameter({ kTableNameArg, "Name of the table to alter" })
       .AddRequiredParameter({ kColumnNameArg, "Name of the table column to alter" })
       .AddRequiredParameter({ kBlockSizeArg, "Block size of the column" })
@@ -2227,6 +2250,7 @@ unique_ptr<Mode> BuildTableMode() {
   unique_ptr<Action> column_set_comment =
       ClusterActionBuilder("column_set_comment", &ColumnSetComment)
       .Description("Set comment for a column")
+      .McpDisposition(Disposition::GATED)
       .AddRequiredParameter({ kTableNameArg, "Name of the table to alter" })
       .AddRequiredParameter({ kColumnNameArg, "Name of the table column to alter" })
       .AddRequiredParameter({ kColumnCommentArg, "Comment of the column" })
@@ -2235,6 +2259,7 @@ unique_ptr<Mode> BuildTableMode() {
   unique_ptr<Action> add_column =
       ActionBuilder("add_column", &AddColumn)
       .Description("Add a column")
+      .McpDisposition(Disposition::GATED)
       .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddRequiredParameter({ kTableNameArg, "Name of the table to alter" })
       .AddRequiredParameter({ kColumnNameArg, "Name of the table column to add" })
@@ -2259,6 +2284,7 @@ unique_ptr<Mode> BuildTableMode() {
   unique_ptr<Action> delete_column =
       ClusterActionBuilder("delete_column", &DeleteColumn)
       .Description("Delete a column")
+      .McpDisposition(Disposition::GATED)
       .AddRequiredParameter({ kTableNameArg, "Name of the table to alter" })
       .AddRequiredParameter({ kColumnNameArg, "Name of the table column to delete" })
       .Build();
@@ -2266,6 +2292,7 @@ unique_ptr<Mode> BuildTableMode() {
   unique_ptr<Action> set_comment =
       ClusterActionBuilder("set_comment", &SetComment)
       .Description("Set the comment for a table")
+      .McpDisposition(Disposition::GATED)
       .AddRequiredParameter({ kTableNameArg, "Name of the table to alter" })
       .AddRequiredParameter({ kColumnCommentArg, "Comment of the table" })
       .Build();
@@ -2273,12 +2300,14 @@ unique_ptr<Mode> BuildTableMode() {
   unique_ptr<Action> clear_comment =
       ClusterActionBuilder("clear_comment", &ClearComment)
       .Description("Clear the comment for a table")
+      .McpDisposition(Disposition::GATED)
       .AddRequiredParameter({ kTableNameArg, "Name of the table to alter" })
       .Build();
 
   unique_ptr<Action> set_replication_factor =
       ClusterActionBuilder("set_replication_factor", &SetReplicationFactor)
       .Description("Change a table's replication factor")
+      .McpDisposition(Disposition::GATED)
       .AddRequiredParameter({ kTableNameArg, "Name of the table to alter" })
       .AddRequiredParameter({ kReplicationFactorArg, "New replication factor of the table" })
       .Build();
@@ -2286,6 +2315,7 @@ unique_ptr<Mode> BuildTableMode() {
   unique_ptr<Action> statistics =
       ClusterActionBuilder("statistics", &GetTableStatistics)
       .Description("Get table statistics")
+      .McpDisposition(Disposition::SURFACE)
       .AddRequiredParameter({ kTableNameArg, "Name of the table to get statistics" })
       .AddOptionalParameter("show_tablets")
       .Build();
@@ -2293,6 +2323,7 @@ unique_ptr<Mode> BuildTableMode() {
   unique_ptr<Action> create_table =
       ClusterActionBuilder("create", &CreateTable)
       .Description("Create a new table")
+      .McpDisposition(Disposition::GATED)
       .ExtraDescription(kCreateTableExtraDescription)
       .AddRequiredParameter({ kCreateTableJSONArg,
                               "JSON object for creating table" })

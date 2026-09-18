@@ -38,6 +38,7 @@
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/rpc/rpc_controller.h"
+#include "kudu/tools/mcp_disposition.h"
 #include "kudu/tools/tool_action.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/tserver/tablet_server.h"
@@ -381,6 +382,7 @@ unique_ptr<Mode> BuildTServerMode() {
   unique_ptr<Action> dump_memtrackers =
       TServerActionBuilder("dump_memtrackers", &TserverDumpMemTrackers)
       .Description("Dump the memtrackers from a Kudu Tablet Server")
+      .McpDisposition(Disposition::SURFACE)
       .AddOptionalParameter("format")
       .AddOptionalParameter("memtracker_output")
       .Build();
@@ -388,6 +390,7 @@ unique_ptr<Mode> BuildTServerMode() {
   unique_ptr<Action> get_flags =
       TServerActionBuilder("get_flags", &TServerGetFlags)
       .Description("Get the gflags for a Kudu Tablet Server")
+      .McpDisposition(Disposition::SURFACE)
       .AddOptionalParameter("all_flags")
       .AddOptionalParameter("flags")
       .AddOptionalParameter("flag_tags")
@@ -397,6 +400,7 @@ unique_ptr<Mode> BuildTServerMode() {
       ActionBuilder("run", &TServerRun)
       .ProgramName("kudu-tserver")
       .Description("Run a Kudu Tablet Server")
+      .McpDisposition(Disposition::REJECT)
       .ExtraDescription("Note: The tablet server is started in this process and "
                         "runs until interrupted.\n\n"
                         "The most common configuration flags are described below. "
@@ -419,6 +423,7 @@ unique_ptr<Mode> BuildTServerMode() {
   unique_ptr<Action> set_flag =
       TServerActionBuilder("set_flag", &TServerSetFlag)
       .Description("Change a gflag value on a Kudu Tablet Server")
+      .McpDisposition(Disposition::GATED)
       .AddRequiredParameter({ kFlagArg, "Name of the gflag" })
       .AddRequiredParameter({ kValueArg, "New value for the gflag" })
       .AddOptionalParameter("force")
@@ -428,6 +433,7 @@ unique_ptr<Mode> BuildTServerMode() {
   unique_ptr<Action> set_flag_for_all =
       ClusterActionBuilder("set_flag_for_all", &TServerSetAllTServersFlag)
       .Description("Change a gflag value for all Kudu Tablet Servers in the cluster")
+      .McpDisposition(Disposition::GATED)
       .AddRequiredParameter({ kFlagArg, "Name of the gflag" })
       .AddRequiredParameter({ kValueArg, "New value for the gflag" })
       .AddOptionalParameter("force")
@@ -436,16 +442,19 @@ unique_ptr<Mode> BuildTServerMode() {
   unique_ptr<Action> status =
       TServerActionBuilder("status", &TServerStatus)
       .Description("Get the status of a Kudu Tablet Server")
+      .McpDisposition(Disposition::SURFACE)
       .Build();
 
   unique_ptr<Action> timestamp =
       TServerActionBuilder("timestamp", &TServerTimestamp)
       .Description("Get the current timestamp of a Kudu Tablet Server")
+      .McpDisposition(Disposition::SURFACE)
       .Build();
 
   unique_ptr<Action> list_tservers =
       ClusterActionBuilder("list", &ListTServers)
       .Description("List tablet servers in a Kudu cluster")
+      .McpDisposition(Disposition::SURFACE)
       .AddOptionalParameter("columns", string("uuid,rpc-addresses"),
                             string("Comma-separated list of tserver info fields to "
                                    "include in output.\nPossible values: uuid, "
@@ -458,6 +467,7 @@ unique_ptr<Mode> BuildTServerMode() {
       TServerActionBuilder("status", &QuiescingStatus)
       .Description("Output information about the quiescing state of a Tablet "
                    "Server.")
+      .McpDisposition(Disposition::SURFACE)
       .Build();
   unique_ptr<Action> start_quiescing =
       TServerActionBuilder("start", &StartQuiescingTServer)
@@ -465,11 +475,13 @@ unique_ptr<Mode> BuildTServerMode() {
                    "Server is quiescing, Tablet replicas on it will no longer "
                    "attempt to become leader, and new scan requests will be "
                    "retried at other servers.")
+      .McpDisposition(Disposition::GATED)
       .AddOptionalParameter("error_if_not_fully_quiesced")
       .Build();
   unique_ptr<Action> stop_quiescing =
       TServerActionBuilder("stop", &StopQuiescingTServer)
       .Description("Stop quiescing a Tablet Server.")
+      .McpDisposition(Disposition::GATED)
       .Build();
   unique_ptr<Mode> quiesce = ModeBuilder("quiesce")
       .Description("Operate on the quiescing state of a Kudu Tablet Server.")
@@ -483,6 +495,7 @@ unique_ptr<Mode> BuildTServerMode() {
       .Description("Begin maintenance on the Tablet Server. While under "
                    "maintenance, downtime of the Tablet Server will not lead "
                    "to the immediate re-replication of its tablet replicas.")
+      .McpDisposition(Disposition::GATED)
       .AddRequiredParameter({ kTServerIdArg, kTServerIdDesc })
       .AddOptionalParameter("allow_missing_tserver")
       .Build();
@@ -492,6 +505,7 @@ unique_ptr<Mode> BuildTServerMode() {
   unique_ptr<Action> exit_maintenance =
       ClusterActionBuilder("exit_maintenance", &ExitMaintenance)
       .Description("End maintenance of the Tablet Server.")
+      .McpDisposition(Disposition::GATED)
       .AddRequiredParameter({ kTServerIdArg, kTServerIdDesc })
       .Build();
   unique_ptr<Mode> state = ModeBuilder("state")
@@ -504,6 +518,7 @@ unique_ptr<Mode> BuildTServerMode() {
       ClusterActionBuilder("unregister", &UnregisterTServer)
           .Description(
               "Unregister a tablet server from the master's in-memory state and system catalog.")
+          .McpDisposition(Disposition::GATED)
           .AddRequiredParameter({kTServerIdArg, kTServerIdDesc})
           .AddOptionalParameter("force_unregister_live_tserver")
           .AddOptionalParameter("remove_tserver_state")

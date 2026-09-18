@@ -127,6 +127,7 @@ set(KUDU_CLI_ACTION_SRCS
   tool_action_hms.cc
   tool_action_local_replica.cc
   tool_action_master.cc
+  mcp_disposition.cc
   tool_action_pbc.cc
   tool_action_perf.cc
   tool_action_remote_replica.cc
@@ -253,3 +254,8 @@ ADD_KUDU_TEST(rebalancer_tool-test
 ADD_KUDU_TEST_DEPENDENCIES(rebalancer_tool-test
   kudu)
 ADD_KUDU_TEST(tool_action-test)
+ADD_KUDU_TEST(mcp_disposition-test)
+# Reconstructs the full action tree to validate disposition coverage against it.
+if(NOT NO_TESTS)
+  target_link_libraries(mcp_disposition-test kudu_cli_actions)
+endif()

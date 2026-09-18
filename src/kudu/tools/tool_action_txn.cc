@@ -46,6 +46,7 @@
 #include "kudu/gutil/strings/util.h"
 #include "kudu/master/master.h"
 #include "kudu/tablet/metadata.pb.h"
+#include "kudu/tools/mcp_disposition.h"
 #include "kudu/tools/tool_action.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/transactions/transactions.pb.h"
@@ -444,6 +445,7 @@ unique_ptr<Mode> BuildTxnMode() {
   unique_ptr<Action> list =
       ClusterActionBuilder("list", &ListTxns)
       .Description("Show details of multi-row transactions in the cluster")
+      .McpDisposition(Disposition::SURFACE)
       .AddOptionalParameter(
           "columns",
           string("txn_id,user,state,commit_datetime,start_datetime,last_transition_datetime"),
@@ -474,6 +476,7 @@ unique_ptr<Mode> BuildTxnMode() {
                  "participant_commit_hybridtime"))
       .AddOptionalParameter("timeout_ms")
       .Description("Show details of a specific transaction")
+      .McpDisposition(Disposition::SURFACE)
       .Build();
 
   return ModeBuilder("txn")

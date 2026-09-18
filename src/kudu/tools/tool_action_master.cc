@@ -53,6 +53,7 @@
 #include "kudu/tools/ksck.h"
 #include "kudu/tools/ksck_remote.h"
 #include "kudu/tools/master_rebuilder.h"
+#include "kudu/tools/mcp_disposition.h"
 #include "kudu/tools/tool_action.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/util/env.h"
@@ -762,6 +763,7 @@ unique_ptr<Mode> BuildMasterMode() {
     unique_ptr<Action> action_refresh =
         ClusterActionBuilder("refresh", &RefreshAuthzCache)
         .Description("Refresh the authorization policies")
+        .McpDisposition(Disposition::GATED)
         .AddOptionalParameter(
             "force", std::nullopt,
             string(
@@ -779,6 +781,7 @@ unique_ptr<Mode> BuildMasterMode() {
     unique_ptr<Action> dump_memtrackers =
         MasterActionBuilder("dump_memtrackers", &MasterDumpMemTrackers)
         .Description("Dump the memtrackers from a Kudu Master")
+        .McpDisposition(Disposition::SURFACE)
         .AddOptionalParameter("format")
         .AddOptionalParameter("memtracker_output")
         .Build();
@@ -788,6 +791,7 @@ unique_ptr<Mode> BuildMasterMode() {
     unique_ptr<Action> get_flags =
         MasterActionBuilder("get_flags", &MasterGetFlags)
         .Description("Get the gflags for a Kudu Master")
+        .McpDisposition(Disposition::SURFACE)
         .AddOptionalParameter("all_flags")
         .AddOptionalParameter("flags")
         .AddOptionalParameter("flag_tags")
@@ -799,6 +803,7 @@ unique_ptr<Mode> BuildMasterMode() {
         ActionBuilder("run", &MasterRun)
         .ProgramName("kudu-master")
         .Description("Run a Kudu Master")
+        .McpDisposition(Disposition::REJECT)
         .ExtraDescription("Note: The master server is started in this process and "
                           "runs until interrupted.\n\n"
                           "The most common configuration flags are described below. "
@@ -822,6 +827,7 @@ unique_ptr<Mode> BuildMasterMode() {
     unique_ptr<Action> set_flag =
         MasterActionBuilder("set_flag", &MasterSetFlag)
         .Description("Change a gflag value on a Kudu Master")
+        .McpDisposition(Disposition::GATED)
         .AddRequiredParameter({ kFlagArg, "Name of the gflag" })
         .AddRequiredParameter({ kValueArg, "New value for the gflag" })
         .AddOptionalParameter("force")
@@ -833,6 +839,7 @@ unique_ptr<Mode> BuildMasterMode() {
     unique_ptr<Action> set_flag_for_all =
         ClusterActionBuilder("set_flag_for_all", &MasterSetAllMasterFlag)
         .Description("Change a gflag value for all Kudu Masters in the cluster")
+        .McpDisposition(Disposition::GATED)
         .AddRequiredParameter({ kFlagArg, "Name of the gflag" })
         .AddRequiredParameter({ kValueArg, "New value for the gflag" })
         .AddOptionalParameter("force")
@@ -843,6 +850,7 @@ unique_ptr<Mode> BuildMasterMode() {
     unique_ptr<Action> status =
         MasterActionBuilder("status", &MasterStatus)
         .Description("Get the status of a Kudu Master")
+        .McpDisposition(Disposition::SURFACE)
         .Build();
     builder.AddAction(std::move(status));
   }
@@ -850,6 +858,7 @@ unique_ptr<Mode> BuildMasterMode() {
     unique_ptr<Action> timestamp =
         MasterActionBuilder("timestamp", &MasterTimestamp)
         .Description("Get the current timestamp of a Kudu Master")
+        .McpDisposition(Disposition::SURFACE)
         .Build();
     builder.AddAction(std::move(timestamp));
   }
@@ -857,6 +866,7 @@ unique_ptr<Mode> BuildMasterMode() {
     unique_ptr<Action> list_masters =
         ClusterActionBuilder("list", &ListMasters)
         .Description("List masters in a Kudu cluster")
+        .McpDisposition(Disposition::SURFACE)
         .AddOptionalParameter(
             "columns",
             string("uuid,rpc-addresses,role"),
@@ -872,6 +882,10 @@ unique_ptr<Mode> BuildMasterMode() {
     unique_ptr<Action> add_master =
         ActionBuilder("add", &AddMaster)
         .Description("Add a new master to existing Kudu cluster")
+        // Long, multi-step and must run on the new master's node (uses the
+        // local fs_* directories): node-local mutating, hence EXCLUDE.
+        .McpDisposition(Disposition::EXCLUDE)
+        .McpNodeLocal()
         .ExtraDescription(
             "NOTE: with kudu-master binaries of 1.16.0 and newer versions, "
             "there is no need to run this tool to add a new Kudu master; "
@@ -904,6 +918,7 @@ unique_ptr<Mode> BuildMasterMode() {
     unique_ptr<Action> remove_master =
         ActionBuilder("remove", &RemoveMasterChangeConfig)
         .Description("Remove a master from the Kudu cluster")
+        .McpDisposition(Disposition::GATED)
         .ExtraDescription(
             "Removes a master from the Raft configuration of the Kudu cluster.\n\n"
             "Please refer to the Kudu administration documentation on "
@@ -950,6 +965,9 @@ unique_ptr<Mode> BuildMasterMode() {
     unique_ptr<Action> unsafe_rebuild =
         ActionBuilder("unsafe_rebuild", &RebuildMaster)
         .Description("Rebuild a Kudu master from tablet server metadata")
+        .McpDisposition(Disposition::EXCLUDE)
+        .McpNodeLocal()
+        .McpUnsafe()
         .ExtraDescription(rebuild_extra_description)
         .AddRequiredVariadicParameter({ kTabletServerAddressArg, kTabletServerAddressDesc })
         .AddOptionalParameter("default_num_replicas")

@@ -40,6 +40,7 @@
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/security/test/mini_kdc.h"
 #include "kudu/subprocess/subprocess_protocol.h"
+#include "kudu/tools/mcp_disposition.h"
 #include "kudu/tools/tool.pb.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
@@ -487,6 +488,7 @@ unique_ptr<Mode> BuildTestMode() {
   unique_ptr<Action> control_shell =
       ActionBuilder("mini_cluster", &RunControlShell)
       .Description("Spawn a control shell for running a mini-cluster")
+      .McpDisposition(Disposition::EXCLUDE)
       .ExtraDescription(extra)
       .AddOptionalParameter("serialization")
       .Build();

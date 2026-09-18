@@ -41,6 +41,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
+#include "kudu/tools/mcp_disposition.h"
 #include "kudu/tools/tool_action.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/tools/tool_replica_util.h"
@@ -351,6 +352,7 @@ unique_ptr<Mode> BuildTabletMode() {
   unique_ptr<Action> add_replica =
       ClusterActionBuilder("add_replica", &AddReplica)
       .Description("Add a new replica to a tablet's Raft configuration")
+      .McpDisposition(Disposition::GATED)
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .AddRequiredParameter({ kTsUuidArg,
                               "UUID of the tablet server that should host the new replica" })
@@ -363,6 +365,7 @@ unique_ptr<Mode> BuildTabletMode() {
       ClusterActionBuilder("change_replica_type", &ChangeReplicaType)
       .Description(
           "Change the type of an existing replica in a tablet's Raft configuration")
+      .McpDisposition(Disposition::GATED)
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .AddRequiredParameter({ kTsUuidArg,
                               "UUID of the tablet server hosting the existing replica" })
@@ -374,6 +377,7 @@ unique_ptr<Mode> BuildTabletMode() {
   unique_ptr<Action> remove_replica =
       ClusterActionBuilder("remove_replica", &RemoveReplica)
       .Description("Remove an existing replica from a tablet's Raft configuration")
+      .McpDisposition(Disposition::GATED)
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .AddRequiredParameter({ kTsUuidArg,
                               "UUID of the tablet server hosting the existing replica" })
@@ -390,6 +394,7 @@ unique_ptr<Mode> BuildTabletMode() {
   unique_ptr<Action> move_replica =
       ClusterActionBuilder("move_replica", &MoveReplica)
       .Description("Move a tablet replica from one tablet server to another")
+      .McpDisposition(Disposition::REJECT)
       .ExtraDescription(move_extra_desc)
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .AddRequiredParameter({ kFromTsUuidArg, "UUID of the tablet server to move from" })
@@ -399,6 +404,7 @@ unique_ptr<Mode> BuildTabletMode() {
   unique_ptr<Action> leader_step_down =
       ClusterActionBuilder("leader_step_down", &LeaderStepDown)
       .Description("Change the tablet's leader")
+      .McpDisposition(Disposition::GATED)
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .AddOptionalParameter("abrupt")
       .AddOptionalParameter("new_leader_uuid")
@@ -417,6 +423,8 @@ unique_ptr<Mode> BuildTabletMode() {
   unique_ptr<Action> replace_tablet =
       ClusterActionBuilder("unsafe_replace_tablet", &ReplaceTablet)
       .Description("Replace a tablet with an empty one, deleting the previous tablet.")
+      .McpDisposition(Disposition::GATED)
+      .McpUnsafe()
       .ExtraDescription("Use this tool to repair a table when one of its tablets has permanently "
                         "lost all of its replicas. It replaces the unrecoverable tablet with a new "
                         "empty one representing the same partition. Its primary use is to jettison "
@@ -432,6 +440,7 @@ unique_ptr<Mode> BuildTabletMode() {
       ClusterActionBuilder("info", &Info)
       .Description("Show information of the table which the tablets blongs to "
                    "and where the tablets replicas are located.")
+      .McpDisposition(Disposition::SURFACE)
       .AddRequiredParameter({ kTabletIdsCsvArg, kTabletIdsCsvArgDesc })
       .AddOptionalParameter("format")
       .Build();

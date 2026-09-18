@@ -45,6 +45,7 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
+#include "kudu/tools/mcp_disposition.h"
 #include "kudu/tools/tool_action.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/util/env.h"
@@ -299,6 +300,8 @@ unique_ptr<Mode> BuildPbcMode() {
   unique_ptr<Action> dump =
       ActionBuilder("dump", &DumpPBContainerFile)
       .Description("Dump a PBC (protobuf container) file")
+      .McpDisposition(Disposition::SURFACE)
+      .McpNodeLocal()
       .AddRequiredParameter({kPathArg, "path to PBC file"})
       .AddOptionalParameter("debug")
       .AddOptionalParameter("oneline")
@@ -309,6 +312,8 @@ unique_ptr<Mode> BuildPbcMode() {
   unique_ptr<Action> edit =
       ActionBuilder("edit", &EditFile)
       .Description("Edit a PBC (protobuf container) file")
+      .McpDisposition(Disposition::EXCLUDE)
+      .McpNodeLocal()
       .AddRequiredParameter({kPathArg, "path to PBC file"})
       .AddOptionalParameter("backup")
       .AddOptionalParameter("json")

@@ -24,6 +24,7 @@
 #include "kudu/consensus/log_util.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/tools/mcp_disposition.h"
 #include "kudu/tools/tool_action.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/util/env.h"
@@ -59,6 +60,9 @@ unique_ptr<Mode> BuildWalMode() {
   unique_ptr<Action> dump =
       ActionBuilder("dump", &Dump)
       .Description("Dump a WAL (write-ahead log) file")
+      .McpDisposition(Disposition::SURFACE)
+      .McpNodeLocal()
+      .McpUserData()
       .AddRequiredParameter({ kPathArg, "path to WAL file" })
       .AddOptionalParameter("print_entries")
       .AddOptionalParameter("print_meta")
