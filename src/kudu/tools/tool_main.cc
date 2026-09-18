@@ -59,29 +59,6 @@ using strings::Substitute;
 namespace kudu {
 namespace tools {
 
-unique_ptr<Mode> RootMode(const string& name) {
-  return ModeBuilder(name)
-      .Description("Kudu Command Line Tools") // root mode description isn't printed
-      .AddMode(BuildClusterMode())
-      .AddMode(BuildDiagnoseMode())
-      .AddMode(BuildFsMode())
-      .AddMode(BuildHmsMode())
-      .AddMode(BuildLocalReplicaMode())
-      .AddMode(BuildMasterMode())
-      .AddMode(BuildPbcMode())
-      .AddMode(BuildPerfMode())
-      .AddMode(BuildRemoteReplicaMode())
-      .AddMode(BuildTableMode())
-      .AddMode(BuildTabletMode())
-#if defined(KUDU_CLI_TEST_TOOL_ENABLED)
-      .AddMode(BuildTestMode())
-#endif
-      .AddMode(BuildTxnMode())
-      .AddMode(BuildTServerMode())
-      .AddMode(BuildWalMode())
-      .Build();
-}
-
 Status MarshalArgs(const vector<Mode*>& chain,
                    Action* action,
                    deque<string> input,
@@ -149,7 +126,7 @@ static string HyphensToUnderscores(string str) {
 }
 
 void DumpToolXML(const string& path) {
-  unique_ptr<Mode> root = RootMode(BaseName(path));
+  unique_ptr<Mode> root = BuildRootMode(BaseName(path));
   cout << "<?xml version=\"1.0\"?>";
   cout << "<AllModes>";
   for (const auto& mode : root->modes()) {
@@ -160,7 +137,7 @@ void DumpToolXML(const string& path) {
 }
 
 int RunTool(int argc, char** argv, bool show_help) {
-  unique_ptr<Mode> root = RootMode(argv[0]);
+  unique_ptr<Mode> root = BuildRootMode(argv[0]);
   // Initialize arg parsing state.
   vector<Mode*> chain = { root.get() };
 

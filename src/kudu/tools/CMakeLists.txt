@@ -115,7 +115,11 @@ target_link_libraries(kudu_tools_rebalance
 # kudu
 #######################################
 
-set(KUDU_CLI_TOOL_SRCS
+# The CLI action sources (the Build*Mode() factories and their helpers). These
+# build into a static library, separate from main(), so unit tests can
+# reconstruct the full action tree in-process by linking the library instead of
+# recompiling every source into each test.
+set(KUDU_CLI_ACTION_SRCS
   master_rebuilder.cc
   tool_action_cluster.cc
   tool_action_diagnose.cc
@@ -126,23 +130,19 @@ set(KUDU_CLI_TOOL_SRCS
   tool_action_pbc.cc
   tool_action_perf.cc
   tool_action_remote_replica.cc
+  tool_action_root.cc
   tool_action_table.cc
   tool_action_tablet.cc
   tool_action_tserver.cc
   tool_action_txn.cc
   tool_action_wal.cc
-  tool_main.cc
 )
 
 if (KUDU_CLI_TEST_TOOL_ENABLED)
-  set(KUDU_CLI_TOOL_SRCS ${KUDU_CLI_TOOL_SRCS} tool_action_test.cc)
+  set(KUDU_CLI_ACTION_SRCS ${KUDU_CLI_ACTION_SRCS} tool_action_test.cc)
 endif()
 
-add_executable(kudu ${KUDU_CLI_TOOL_SRCS})
-
-set(KUDU_CLI_TOOL_LINK_LIBS
-  ${SANITIZER_OPTIONS_OVERRIDE}
-  ${KRB5_REALM_OVERRIDE}
+set(KUDU_CLI_ACTION_LINK_LIBS
   clock
   consensus
   gutil
@@ -164,16 +164,26 @@ set(KUDU_CLI_TOOL_LINK_LIBS
   ${KUDU_BASE_LIBS}
 )
 if(NOT NO_ROCKSDB)
-  list(APPEND KUDU_CLI_TOOL_LINK_LIBS
+  list(APPEND KUDU_CLI_ACTION_LINK_LIBS
     rocksdb)
 endif()
 
-# The mini_cluster is used only for tests.
+# The mini_cluster is used only by the test-only 'test' mode.
 if (KUDU_CLI_TEST_TOOL_ENABLED)
-  set(KUDU_CLI_TOOL_LINK_LIBS ${KUDU_CLI_TOOL_LINK_LIBS} mini_cluster)
+  set(KUDU_CLI_ACTION_LINK_LIBS ${KUDU_CLI_ACTION_LINK_LIBS} mini_cluster)
 endif()
 
-target_link_libraries(kudu ${KUDU_CLI_TOOL_LINK_LIBS})
+add_library(kudu_cli_actions ${KUDU_CLI_ACTION_SRCS})
+target_link_libraries(kudu_cli_actions ${KUDU_CLI_ACTION_LINK_LIBS})
+
+# The 'kudu' executable is the main() entrypoint linked against the action
+# library. The override link flags must come first in the final binary (see the
+# top-level CMakeLists and security/krb5_realm_override.cc).
+add_executable(kudu tool_main.cc)
+target_link_libraries(kudu
+  ${SANITIZER_OPTIONS_OVERRIDE}
+  ${KRB5_REALM_OVERRIDE}
+  kudu_cli_actions)
 
 option(KUDU_CLIENT_INSTALL "Whether to install the Kudu command line tool" ON)
 if(KUDU_CLIENT_INSTALL)

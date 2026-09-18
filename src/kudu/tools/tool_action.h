@@ -349,5 +349,16 @@ std::unique_ptr<Mode> BuildWalMode();
 std::unique_ptr<Mode> BuildTestMode();
 #endif
 
+// Builds the full root mode: the entire top-level CLI action tree, assembled
+// from every Build*Mode() factory (including the test mode in
+// KUDU_CLI_TEST_TOOL_ENABLED builds). 'name' becomes the root mode's name
+// (argv0 for the real CLI).
+//
+// This is the single source of truth for the top-level mode list: the CLI and
+// any code that needs to reconstruct the action tree in-process (e.g. unit
+// tests linking kudu_cli_actions) delegate here, so a newly added top-level
+// mode is wired in exactly one place.
+std::unique_ptr<Mode> BuildRootMode(const std::string& name);
+
 } // namespace tools
 } // namespace kudu
