@@ -187,11 +187,18 @@ void RedirectToDevNull(int fd) {
 // relying on ev_run() to exit when no watchers remain) lets ReadFdsFully() also
 // install a deadline timer -- an otherwise-active watcher that would keep the
 // loop running past EOF -- without changing when the drain finishes.
+//
+// If 'max_bytes' is non-zero, at most that many bytes are kept; the rest is
+// still read (so the child never blocks on a full pipe) but discarded, and
+// truncated() reports that it happened.
 class ReadFdsFullyHelper {
  public:
   ReadFdsFullyHelper(string progname, ev::dynamic_loop* loop, int fd,
-                     int* open_count)
-      : progname_(std::move(progname)), loop_(loop), open_count_(open_count) {
+                     int* open_count, size_t max_bytes)
+      : progname_(std::move(progname)),
+        loop_(loop),
+        open_count_(open_count),
+        max_bytes_(max_bytes) {
     // Bind the watcher to the provided loop, to this functor, and to the
     // readable fd.
     watcher_.set(*loop);
@@ -217,13 +224,23 @@ class ReadFdsFullyHelper {
                                 ErrnoToString(errno), errno);
       Stop(&w);
     } else {
-      // Add our bytes and keep watching.
-      output_.append(buf, n);
+      // Add our bytes (up to the cap, if any) and keep watching.
+      size_t keep = n;
+      if (max_bytes_ > 0) {
+        const size_t room =
+            output_.size() < max_bytes_ ? max_bytes_ - output_.size() : 0;
+        if (keep > room) {
+          keep = room;
+          truncated_ = true;
+        }
+      }
+      output_.append(buf, keep);
     }
   }
 
   const Status& status() const { return status_; }
   const string& output() const { return output_; }
+  bool truncated() const { return truncated_; }
 
  private:
   // Stops watching this fd and, if it was the last open one, breaks the loop.
@@ -237,9 +254,11 @@ class ReadFdsFullyHelper {
   const string progname_;
   ev::dynamic_loop* const loop_;
   int* const open_count_;
+  const size_t max_bytes_;
 
   ev::io watcher_;
   string output_;
+  bool truncated_ = false;
   Status status_;
 
   DISALLOW_COPY_AND_ASSIGN(ReadFdsFullyHelper);
@@ -284,8 +303,13 @@ Status ReadFdsFully(const string& progname,
                     const vector<int>& fds,
                     const MonoDelta& timeout,
                     vector<string>* out,
-                    bool* timed_out) {
+                    bool* timed_out,
+                    size_t max_bytes_per_fd = 0,
+                    bool* truncated = nullptr) {
   *timed_out = false;
+  if (truncated) {
+    *truncated = false;
+  }
   if (fds.empty()) {
     return Status::OK();
   }
@@ -297,7 +321,8 @@ Status ReadFdsFully(const string& progname,
   vector<unique_ptr<ReadFdsFullyHelper>> helpers;
   for (int fd : fds) {
     helpers.emplace_back(
-        new ReadFdsFullyHelper(progname, &loop, fd, &open_count));
+        new ReadFdsFullyHelper(progname, &loop, fd, &open_count,
+                               max_bytes_per_fd));
   }
 
   // Arm a deadline timer that breaks the loop, if a timeout was requested. The
@@ -321,6 +346,9 @@ Status ReadFdsFully(const string& progname,
   // No failures; write the (possibly partial, on timeout) output to the caller.
   for (const auto& h : helpers) {
     out->push_back(h->output());
+    if (truncated && h->truncated()) {
+      *truncated = true;
+    }
   }
   if (deadline_helper && deadline_helper->fired()) {
     *timed_out = true;
@@ -655,7 +683,9 @@ Status Subprocess::WaitAndCheckExitCode() {
 
 Status Subprocess::WaitAndCollect(const MonoDelta& timeout,
                                   string* stdout_out, string* stderr_out,
-                                  bool* timed_out, int* wait_status) {
+                                  bool* timed_out, int* wait_status,
+                                  size_t max_bytes_per_stream,
+                                  bool* truncated) {
   // A timeout is only enforced while draining a pipe; with nothing to drain the
   // trailing Wait() below blocks until the child exits regardless. So bounding a
   // child that neither exits nor writes requires collecting at least one stream.
@@ -677,7 +707,8 @@ Status Subprocess::WaitAndCollect(const MonoDelta& timeout,
   }
 
   vector<string> outv;
-  RETURN_NOT_OK(ReadFdsFully(program_, fds, timeout, &outv, timed_out));
+  RETURN_NOT_OK(ReadFdsFully(program_, fds, timeout, &outv, timed_out,
+                             max_bytes_per_stream, truncated));
 
   // ReadFdsFully returns one string per fd, in the order they were pushed.
   CHECK_EQ(outv.size(), fds.size());

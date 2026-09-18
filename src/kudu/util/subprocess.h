@@ -21,6 +21,7 @@
 
 #include <atomic>
 #include <csignal>
+#include <cstddef>
 #include <map>
 #include <mutex>
 #include <string>
@@ -145,9 +146,16 @@ class Subprocess {
   // (a server-side problem) -- a child that exits non-zero, dies by signal, or
   // times out is a normal OK return with the outcome described by the out
   // params. Only call after Start().
+  //
+  // If 'max_bytes_per_stream' is non-zero, at most that many bytes of each
+  // collected stream are kept. The rest is still drained (so the child never
+  // blocks on a full pipe and runs to completion as usual) but discarded, and
+  // '*truncated' (if non-null) is set to true.
   Status WaitAndCollect(const MonoDelta& timeout,
                         std::string* stdout_out, std::string* stderr_out,
-                        bool* timed_out, int* wait_status);
+                        bool* timed_out, int* wait_status,
+                        size_t max_bytes_per_stream = 0,
+                        bool* truncated = nullptr);
 
   // Send a signal to the subprocess.
   // Note that this does not reap the process -- you must still Wait()

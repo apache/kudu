@@ -302,6 +302,62 @@ TEST_F(SubprocessTest, TestWaitAndCollectTimeoutStreaming) {
   ASSERT_TRUE(WIFSIGNALED(wait_status));
 }
 
+// With a per-stream byte cap, only the first 'max_bytes_per_stream' bytes of
+// each stream are kept and '*truncated' is set, but the rest is still drained:
+// the child is not blocked on a full pipe and exits normally (no timeout).
+TEST_F(SubprocessTest, TestWaitAndCollectTruncatesOutput) {
+  alarm(60);
+  SCOPED_CLEANUP({ alarm(0); });
+
+  // ~1 MiB on stdout, far more than a pipe buffer, plus a short stderr.
+  Subprocess p({ "/bin/bash", "-c",
+                 "head -c 1048576 /dev/zero | tr '\\0' x; echo err 1>&2" });
+  p.ShareParentStdin(false);
+  p.ShareParentStdout(false);
+  p.ShareParentStderr(false);
+  ASSERT_OK(p.Start());
+  const int stdin_fd = p.ReleaseChildStdinFd();
+  if (stdin_fd >= 0) {
+    close(stdin_fd);
+  }
+
+  string out, err;
+  bool timed_out;
+  bool truncated;
+  int wait_status;
+  ASSERT_OK(p.WaitAndCollect(MonoDelta::FromSeconds(30), &out, &err,
+                             &timed_out, &wait_status,
+                             /*max_bytes_per_stream=*/100, &truncated));
+  ASSERT_FALSE(timed_out);
+  ASSERT_TRUE(truncated);
+  ASSERT_EQ(string(100, 'x'), out);
+  ASSERT_EQ("err\n", err);
+  ASSERT_TRUE(WIFEXITED(wait_status));
+  ASSERT_EQ(0, WEXITSTATUS(wait_status));
+}
+
+// Output under the cap is returned whole and is not reported as truncated.
+TEST_F(SubprocessTest, TestWaitAndCollectUnderCapNotTruncated) {
+  Subprocess p({ "/bin/bash", "-c", "echo out" });
+  p.ShareParentStdin(false);
+  p.ShareParentStdout(false);
+  ASSERT_OK(p.Start());
+  const int stdin_fd = p.ReleaseChildStdinFd();
+  if (stdin_fd >= 0) {
+    close(stdin_fd);
+  }
+
+  string out;
+  bool timed_out;
+  bool truncated = true;
+  int wait_status;
+  ASSERT_OK(p.WaitAndCollect(MonoDelta::FromSeconds(30), &out,
+                             /*stderr_out=*/nullptr, &timed_out, &wait_status,
+                             /*max_bytes_per_stream=*/100, &truncated));
+  ASSERT_FALSE(truncated);
+  ASSERT_EQ("out\n", out);
+}
+
 // A deadline that has already expired, expressed as a non-positive timeout --
 // what a caller computing 'deadline - now' produces when the deadline is
 // already in the past. The drain must not block waiting on a long-running

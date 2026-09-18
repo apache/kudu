@@ -47,6 +47,7 @@ unique_ptr<Mode> BuildRootMode(const string& name) {
       .AddMode(BuildHmsMode())
       .AddMode(BuildLocalReplicaMode())
       .AddMode(BuildMasterMode())
+      .AddMode(BuildMcpMode())
       .AddMode(BuildPbcMode())
       .AddMode(BuildPerfMode())
       .AddMode(BuildRemoteReplicaMode())

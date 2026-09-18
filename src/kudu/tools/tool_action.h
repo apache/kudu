@@ -392,6 +392,7 @@ std::unique_ptr<Mode> BuildFsMode();
 std::unique_ptr<Mode> BuildHmsMode();
 std::unique_ptr<Mode> BuildLocalReplicaMode();
 std::unique_ptr<Mode> BuildMasterMode();
+std::unique_ptr<Mode> BuildMcpMode();
 std::unique_ptr<Mode> BuildPbcMode();
 std::unique_ptr<Mode> BuildPerfMode();
 std::unique_ptr<Mode> BuildRemoteReplicaMode();
