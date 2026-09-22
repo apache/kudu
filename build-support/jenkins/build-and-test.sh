@@ -66,6 +66,12 @@
 #     such as the HMS plugin and the Java subprocess, will still be built
 #     even if set to 0.
 #
+#   BUILD_JAVA_EXAMPLES Default: 1
+#     Build and test the Maven-based Java example projects under
+#     examples/java/ (via java/test-java-examples.sh) if this is set to 1.
+#     Requires BUILD_JAVA=1. Set to 0 in build environments where there is
+#     no need to ship or exercise the example projects.
+#
 #   BUILD_PYTHON       Default: 1
 #     Build and test the Python wrapper of the client API.
 #
@@ -186,6 +192,7 @@ export PARALLEL_TESTS=${PARALLEL_TESTS:-$PARALLEL}
 export THIRDPARTY_DIR=${THIRDPARTY_DIR:-$SOURCE_ROOT/thirdparty}
 
 BUILD_JAVA=${BUILD_JAVA:-1}
+BUILD_JAVA_EXAMPLES=${BUILD_JAVA_EXAMPLES:-1}
 BUILD_GRADLE=${BUILD_GRADLE:-1}
 BUILD_PYTHON=${BUILD_PYTHON:-1}
 BUILD_PYTHON3=${BUILD_PYTHON3:-1}
@@ -657,9 +664,13 @@ if [ "$BUILD_JAVA" == "1" ]; then
     fi
 
     # Run the Java examples tests
-    if ! ./test-java-examples.sh ; then
-      TESTS_FAILED=1
-      FAILURES="$FAILURES"$'Java examples tests failed\n'
+    if [ "$BUILD_JAVA_EXAMPLES" == "1" ]; then
+      if ! ./test-java-examples.sh ; then
+        TESTS_FAILED=1
+        FAILURES="$FAILURES"$'Java examples tests failed\n'
+      fi
+    else
+      echo "Skipping Java examples tests (BUILD_JAVA_EXAMPLES=0)"
     fi
   else
     if [ "$DO_COVERAGE" == "1" ]; then
@@ -692,9 +703,13 @@ if [ "$BUILD_JAVA" == "1" ]; then
       fi
 
       # Run the Java examples tests
-      if ! ./test-java-examples.sh ; then
-        TESTS_FAILED=1
-        FAILURES="$FAILURES"$'Java examples tests failed\n'
+      if [ "$BUILD_JAVA_EXAMPLES" == "1" ]; then
+        if ! ./test-java-examples.sh ; then
+          TESTS_FAILED=1
+          FAILURES="$FAILURES"$'Java examples tests failed\n'
+        fi
+      else
+        echo "Skipping Java examples tests (BUILD_JAVA_EXAMPLES=0)"
       fi
     fi
   fi
