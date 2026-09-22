@@ -18,6 +18,7 @@
 #include <functional>
 #include <iostream>
 #include <memory>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -47,6 +48,7 @@
 #include "kudu/tserver/tserver_admin.pb.h"
 #include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/util/init.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 #include "kudu/util/string_case.h"
 
@@ -66,9 +68,15 @@ DEFINE_bool(remove_tserver_state, true,
             "state (if any). If the same tserver re-registers on the master it will get its "
             "original state");
 
+DEFINE_bool(dry_run, false, "If true, do not perform the operation; instead, "
+    "print the tablet servers that it would be applied to and exit.");
+
+DECLARE_int64(timeout_ms);
 DECLARE_string(columns);
 
 using std::cout;
+using std::endl;
+using std::set;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -84,6 +92,7 @@ using master::MasterServiceProxy;
 using master::UnregisterTServerRequestPB;
 using master::UnregisterTServerResponsePB;
 using master::TServerStateChangePB;
+using master::TServerStatePB;
 using rpc::RpcController;
 using tserver::QuiesceTabletServerRequestPB;
 using tserver::QuiesceTabletServerResponsePB;
@@ -97,6 +106,10 @@ const char* const kTServerIdArg = "tserver_uuid";
 const char* const kTServerIdDesc = "UUID of a Kudu Tablet Server";
 const char* const kFlagArg = "flag";
 const char* const kValueArg = "value";
+const char* const kLocationArg = "location";
+const char* const kLocationDesc = "Location (e.g. /dc-0/rack-1) whose Tablet Servers to "
+    "operate on. Must match the location assigned by the master exactly; see "
+    "'kudu tserver list --columns=uuid,location' for the locations in use.";
 
 Status TServerGetFlags(const RunnerContext& context) {
   const string& address = FindOrDie(context.required_args, kTServerAddressArg);
@@ -254,24 +267,30 @@ Status TserverDumpMemTrackers(const RunnerContext& context) {
   return DumpMemTrackers(address, tserver::TabletServer::kDefaultPort);
 }
 
-Status TServerSetState(const RunnerContext& context, TServerStateChangePB::StateChange sc) {
+Status SetTServerState(LeaderMasterProxy* proxy,
+                       const string& uuid,
+                       TServerStateChangePB::StateChange sc) {
   ChangeTServerStateRequestPB req;
   ChangeTServerStateResponsePB resp;
-  const string& tserver_uuid = FindOrDie(context.required_args, kTServerIdArg);
   TServerStateChangePB* change = req.mutable_change();
-  change->set_uuid(tserver_uuid);
+  change->set_uuid(uuid);
   change->set_change(sc);
   if (FLAGS_allow_missing_tserver) {
     req.set_handle_missing_tserver(ChangeTServerStateRequestPB::ALLOW_MISSING_TSERVER);
   }
-  LeaderMasterProxy proxy;
-  RETURN_NOT_OK(proxy.Init(context));
-  RETURN_NOT_OK((proxy.SyncRpc<ChangeTServerStateRequestPB, ChangeTServerStateResponsePB>(
+  RETURN_NOT_OK((proxy->SyncRpc<ChangeTServerStateRequestPB, ChangeTServerStateResponsePB>(
       req, &resp, "ChangeTServerState", &MasterServiceProxy::ChangeTServerStateAsync)));
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());
   }
   return Status::OK();
+}
+
+Status TServerSetState(const RunnerContext& context, TServerStateChangePB::StateChange sc) {
+  const string& tserver_uuid = FindOrDie(context.required_args, kTServerIdArg);
+  LeaderMasterProxy proxy;
+  RETURN_NOT_OK(proxy.Init(context));
+  return SetTServerState(&proxy, tserver_uuid, sc);
 }
 
 Status EnterMaintenance(const RunnerContext& context) {
@@ -374,6 +393,306 @@ Status UnregisterTServer(const RunnerContext& context) {
     return Status::OK();
   }
   return Status::RemoteError(err_str);
+}
+
+struct TServerInLocation {
+  string uuid;
+  // Comma-separated RPC addresses, as BuildProxy() accepts them.
+  string address;
+  TServerStatePB state = TServerStatePB::UNKNOWN_STATE;
+};
+
+// Get the tablet servers the master has registered in location. Returns
+// NotFound if there are none.
+Status ListTServersInLocation(LeaderMasterProxy* proxy,
+                              const string& location,
+                              vector<TServerInLocation>* tservers) {
+  // An empty location would match every tserver without one, which on a
+  // cluster without location mapping is all of them.
+  if (location.empty() || location[0] != '/') {
+    return Status::InvalidArgument(Substitute(
+        "invalid location '$0': a location must start with '/'", location));
+  }
+  ListTabletServersRequestPB req;
+  ListTabletServersResponsePB resp;
+  req.set_include_states(true);
+  RETURN_NOT_OK((proxy->SyncRpc<ListTabletServersRequestPB, ListTabletServersResponsePB>(
+      req, &resp, "ListTabletServers", &MasterServiceProxy::ListTabletServersAsync)));
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
+  }
+
+  const auto hostport_to_string = [](const HostPortPB& hostport) {
+    return Substitute("$0:$1", hostport.host(), hostport.port());
+  };
+  set<string> known_locations;
+  vector<TServerInLocation> matched;
+  for (const auto& server : resp.servers()) {
+    known_locations.emplace(server.location().empty() ? "<none>" : server.location());
+    if (server.location() != location) {
+      continue;
+    }
+    TServerInLocation ts;
+    ts.uuid = server.instance_id().permanent_uuid();
+    ts.address = JoinMapped(server.registration().rpc_addresses(), hostport_to_string, ",");
+    ts.state = server.state();
+    matched.emplace_back(std::move(ts));
+  }
+  if (matched.empty()) {
+    return Status::NotFound(Substitute(
+        "no tablet server is registered in location '$0'; locations in use: $1",
+        location, JoinStrings(vector<string>(known_locations.begin(),
+                                            known_locations.end()), ", ")));
+  }
+  *tservers = std::move(matched);
+  return Status::OK();
+}
+
+// Print the tservers an operation would affect, without performing it.
+// show_maintenance_state adds a column with each tserver's maintenance state.
+Status PrintAffectedTServers(const string& op_desc,
+                             const string& location,
+                             const vector<TServerInLocation>& tservers,
+                             bool show_maintenance_state) {
+  cout << Substitute("[dry run] would $0 for $1 tablet server(s) in location '$2':",
+                     op_desc, tservers.size(), location) << endl;
+  vector<string> uuids;
+  vector<string> addresses;
+  vector<string> states;
+  for (const auto& ts : tservers) {
+    uuids.emplace_back(ts.uuid);
+    addresses.emplace_back(ts.address);
+    states.emplace_back(TServerStatePB_Name(ts.state));
+  }
+  DataTable table({});
+  table.AddColumn("uuid", std::move(uuids));
+  table.AddColumn("rpc-addresses", std::move(addresses));
+  if (show_maintenance_state) {
+    table.AddColumn("maintenance state", std::move(states));
+  }
+  return table.PrintTo(cout);
+}
+
+// Run func against every tserver and print the outcome for each.
+// All tservers are attempted even if some fail, so the table shows exactly which
+// ones took the change. Any failure fails the command and prints caution.
+// Incomplete from func isn't a failure. Only quiescing returns it, for a
+// tserver that is quiescing but still has leaders or scanners.
+// show_maintenance_state adds a column with each tserver's maintenance state
+// from before the change.
+Status FanOutToLocation(const string& op_desc,
+                        const string& location,
+                        const vector<TServerInLocation>& tservers,
+                        const std::function<Status(const TServerInLocation&)>& func,
+                        const string& caution,
+                        bool show_maintenance_state) {
+  vector<string> uuids;
+  vector<string> addresses;
+  vector<string> prior_states;
+  vector<string> results;
+  int failures = 0;
+  int incomplete = 0;
+  for (const auto& ts : tservers) {
+    const Status s = func(ts);
+    uuids.emplace_back(ts.uuid);
+    addresses.emplace_back(ts.address);
+    prior_states.emplace_back(TServerStatePB_Name(ts.state));
+    if (s.ok()) {
+      results.emplace_back("OK");
+    } else if (s.IsIncomplete()) {
+      ++incomplete;
+      results.emplace_back(s.ToString());
+    } else {
+      ++failures;
+      results.emplace_back(s.ToString());
+      LOG(WARNING) << Substitute("Unable to $0 for tserver $1 ($2): $3",
+                                 op_desc, ts.uuid, ts.address, s.ToString());
+    }
+  }
+  DataTable table({});
+  table.AddColumn("uuid", std::move(uuids));
+  table.AddColumn("rpc-addresses", std::move(addresses));
+  if (show_maintenance_state) {
+    table.AddColumn("prior maintenance state", std::move(prior_states));
+  }
+  table.AddColumn("result", std::move(results));
+  RETURN_NOT_OK(table.PrintTo(cout));
+  if (failures != 0) {
+    if (!caution.empty()) {
+      cout << endl << caution << endl;
+    }
+    return Status::RuntimeError(Substitute(
+        "unable to $0 for $1 of the $2 tablet server(s) in location '$3'",
+        op_desc, failures, tservers.size(), location));
+  }
+  if (incomplete != 0) {
+    return Status::Incomplete(Substitute(
+        "$0 of the $1 tablet server(s) in location '$2' are not fully quiesced",
+        incomplete, tservers.size(), location));
+  }
+  return Status::OK();
+}
+
+Status LocationSetState(const RunnerContext& context, TServerStateChangePB::StateChange sc) {
+  const bool entering = (sc == TServerStateChangePB::ENTER_MAINTENANCE_MODE);
+  const string op_desc = entering ? "enter maintenance mode" : "exit maintenance mode";
+  const string& location = FindOrDie(context.required_args, kLocationArg);
+
+  LeaderMasterProxy proxy;
+  RETURN_NOT_OK(proxy.Init(context));
+  vector<TServerInLocation> tservers;
+  RETURN_NOT_OK(ListTServersInLocation(&proxy, location, &tservers));
+
+  if (FLAGS_dry_run) {
+    return PrintAffectedTServers(op_desc, location, tservers,
+                                 /*show_maintenance_state=*/true);
+  }
+  return FanOutToLocation(
+      op_desc, location, tservers,
+      [&](const TServerInLocation& ts) {
+        return SetTServerState(&proxy, ts.uuid, sc);
+      },
+      entering ? "WARNING: maintenance mode is not in effect on every tablet server in "
+                 "this location. Do not take the location offline yet: replicas on the "
+                 "tablet servers above that failed would be re-replicated. Re-run this "
+                 "command until it succeeds for all of them."
+               : "WARNING: the tablet servers above that failed are still in maintenance "
+                 "mode, so their replicas won't be re-replicated if they go down. Re-run "
+                 "this command until it succeeds for all of them.",
+      /*show_maintenance_state=*/true);
+}
+
+Status LocationEnterMaintenance(const RunnerContext& context) {
+  return LocationSetState(context, TServerStateChangePB::ENTER_MAINTENANCE_MODE);
+}
+
+Status LocationExitMaintenance(const RunnerContext& context) {
+  return LocationSetState(context, TServerStateChangePB::EXIT_MAINTENANCE_MODE);
+}
+
+Status LocationSetQuiescing(const RunnerContext& context, bool quiesce) {
+  const string op_desc = quiesce ? "start quiescing" : "stop quiescing";
+  const string& location = FindOrDie(context.required_args, kLocationArg);
+
+  LeaderMasterProxy proxy;
+  RETURN_NOT_OK(proxy.Init(context));
+  vector<TServerInLocation> tservers;
+  RETURN_NOT_OK(ListTServersInLocation(&proxy, location, &tservers));
+
+  if (FLAGS_dry_run) {
+    return PrintAffectedTServers(op_desc, location, tservers,
+                                 /*show_maintenance_state=*/false);
+  }
+  // The master doesn't track quiescing, so each tserver is asked directly.
+  return FanOutToLocation(
+      op_desc, location, tservers,
+      [&](const TServerInLocation& ts) {
+        unique_ptr<TabletServerAdminServiceProxy> ts_proxy;
+        RETURN_NOT_OK(BuildProxy(ts.address, TabletServer::kDefaultPort, &ts_proxy));
+        QuiesceTabletServerRequestPB req;
+        req.set_quiesce(quiesce);
+        req.set_return_stats(quiesce && FLAGS_error_if_not_fully_quiesced);
+        QuiesceTabletServerResponsePB resp;
+        RpcController rpc;
+        rpc.set_timeout(MonoDelta::FromMilliseconds(FLAGS_timeout_ms));
+        RETURN_NOT_OK(ts_proxy->Quiesce(req, &resp, &rpc));
+        if (resp.has_error()) {
+          return StatusFromPB(resp.error().status());
+        }
+        if (quiesce && FLAGS_error_if_not_fully_quiesced &&
+            (resp.num_leaders() != 0 || resp.num_active_scanners() != 0)) {
+          return Status::Incomplete(
+              Substitute("not fully quiesced: $0 tablet leaders and $1 active "
+                         "scanners remain", resp.num_leaders(), resp.num_active_scanners()));
+        }
+        return Status::OK();
+      },
+      quiesce ? "WARNING: quiescing is not in effect on every tablet server in this "
+                "location. Leadership may have moved onto the tablet servers above that "
+                "failed. Re-run this command until it succeeds for all of them."
+              : "WARNING: the tablet servers above that failed may still be quiescing, "
+                "so they won't take leadership or serve new scans. Re-run this command "
+                "until it succeeds for all of them.",
+      /*show_maintenance_state=*/false);
+}
+
+Status LocationStartQuiescing(const RunnerContext& context) {
+  return LocationSetQuiescing(context, /*quiesce=*/true);
+}
+
+Status LocationStopQuiescing(const RunnerContext& context) {
+  return LocationSetQuiescing(context, /*quiesce=*/false);
+}
+
+Status LocationQuiescingStatus(const RunnerContext& context) {
+  const string& location = FindOrDie(context.required_args, kLocationArg);
+
+  LeaderMasterProxy proxy;
+  RETURN_NOT_OK(proxy.Init(context));
+  vector<TServerInLocation> tservers;
+  RETURN_NOT_OK(ListTServersInLocation(&proxy, location, &tservers));
+
+  vector<string> uuids;
+  vector<string> addresses;
+  vector<string> quiescing;
+  vector<string> leaders;
+  vector<string> scanners;
+  vector<string> errors;
+  int failures = 0;
+  int total_leaders = 0;
+  int total_scanners = 0;
+  for (const auto& ts : tservers) {
+    QuiesceTabletServerResponsePB resp;
+    unique_ptr<TabletServerAdminServiceProxy> ts_proxy;
+    Status s = BuildProxy(ts.address, TabletServer::kDefaultPort, &ts_proxy);
+    if (s.ok()) {
+      // 'quiesce' is left unset, so this only reads the state.
+      QuiesceTabletServerRequestPB req;
+      req.set_return_stats(true);
+      RpcController rpc;
+      rpc.set_timeout(MonoDelta::FromMilliseconds(FLAGS_timeout_ms));
+      rpc.RequireServerFeature(tserver::TabletServerFeatures::QUIESCING);
+      s = ts_proxy->Quiesce(req, &resp, &rpc);
+      if (s.ok() && resp.has_error()) {
+        s = StatusFromPB(resp.error().status());
+      }
+    }
+    uuids.emplace_back(ts.uuid);
+    addresses.emplace_back(ts.address);
+    if (s.ok()) {
+      quiescing.emplace_back(resp.is_quiescing() ? "true" : "false");
+      leaders.emplace_back(IntToString(resp.num_leaders()));
+      scanners.emplace_back(IntToString(resp.num_active_scanners()));
+      errors.emplace_back("");
+      total_leaders += resp.num_leaders();
+      total_scanners += resp.num_active_scanners();
+    } else {
+      ++failures;
+      quiescing.emplace_back("<unknown>");
+      leaders.emplace_back("<unknown>");
+      scanners.emplace_back("<unknown>");
+      errors.emplace_back(s.ToString());
+      LOG(WARNING) << Substitute("Unable to get the quiescing state of tserver $0 ($1): $2",
+                                 ts.uuid, ts.address, s.ToString());
+    }
+  }
+  DataTable table({});
+  table.AddColumn("uuid", std::move(uuids));
+  table.AddColumn("rpc-addresses", std::move(addresses));
+  table.AddColumn("Quiescing", std::move(quiescing));
+  table.AddColumn("Tablet Leaders", std::move(leaders));
+  table.AddColumn("Active Scanners", std::move(scanners));
+  table.AddColumn("Error", std::move(errors));
+  RETURN_NOT_OK(table.PrintTo(cout));
+
+  if (failures != 0) {
+    return Status::RuntimeError(Substitute(
+        "unable to get the quiescing state of $0 of the $1 tablet server(s) in "
+        "location '$2'", failures, tservers.size(), location));
+  }
+  cout << endl << Substitute("$0 tablet leader(s) and $1 active scanner(s) remain in "
+                            "location '$2'", total_leaders, total_scanners, location) << endl;
+  return Status::OK();
 }
 
 } // anonymous namespace
@@ -537,6 +856,72 @@ unique_ptr<Mode> BuildTServerMode() {
       .AddAction(std::move(unregister_tserver))
       .AddMode(std::move(quiesce))
       .AddMode(std::move(state))
+      .Build();
+}
+
+unique_ptr<Mode> BuildLocationQuiesceMode() {
+  unique_ptr<Action> quiescing_status =
+      ClusterActionBuilder("status", &LocationQuiescingStatus)
+      .Description("Output information about the quiescing state of every Tablet "
+                   "Server in a location.")
+      .AddRequiredParameter({ kLocationArg, kLocationDesc })
+      .Build();
+  unique_ptr<Action> start_quiescing =
+      ClusterActionBuilder("start", &LocationStartQuiescing)
+      .Description("Start quiescing every Tablet Server in a location. While a "
+                   "Tablet Server is quiescing, Tablet replicas on it will no "
+                   "longer attempt to become leader, and new scan requests will "
+                   "be retried at other servers.")
+      .ExtraDescription("Quiescing is not persisted, so it is lost if a Tablet "
+                        "Server restarts. Leadership only moves to replicas whose "
+                        "Tablet Server is not quiescing, so it moves out of the "
+                        "location; a tablet with no such replica keeps its leader "
+                        "here. To wait for the location to drain, re-run with "
+                        "--error_if_not_fully_quiesced until it succeeds, or watch "
+                        "'kudu cluster location quiesce status'.")
+      .AddRequiredParameter({ kLocationArg, kLocationDesc })
+      .AddOptionalParameter("error_if_not_fully_quiesced")
+      .AddOptionalParameter("dry_run")
+      .Build();
+  unique_ptr<Action> stop_quiescing =
+      ClusterActionBuilder("stop", &LocationStopQuiescing)
+      .Description("Stop quiescing every Tablet Server in a location.")
+      .AddRequiredParameter({ kLocationArg, kLocationDesc })
+      .AddOptionalParameter("dry_run")
+      .Build();
+  return ModeBuilder("quiesce")
+      .Description("Operate on the quiescing state of every Kudu Tablet Server "
+                   "in a location")
+      .AddAction(std::move(quiescing_status))
+      .AddAction(std::move(start_quiescing))
+      .AddAction(std::move(stop_quiescing))
+      .Build();
+}
+
+unique_ptr<Mode> BuildLocationStateMode() {
+  unique_ptr<Action> enter_maintenance =
+      ClusterActionBuilder("enter_maintenance", &LocationEnterMaintenance)
+      .Description("Begin maintenance on every Tablet Server in a location. "
+                   "While under maintenance, downtime of a Tablet Server will "
+                   "not lead to the immediate re-replication of its tablet "
+                   "replicas.")
+      .ExtraDescription("This does not check whether the location is safe to take "
+                        "offline; run 'kudu cluster location check' for that. If it "
+                        "fails for any Tablet Server in the location, re-run it "
+                        "until it succeeds for all of them.")
+      .AddRequiredParameter({ kLocationArg, kLocationDesc })
+      .AddOptionalParameter("dry_run")
+      .Build();
+  unique_ptr<Action> exit_maintenance =
+      ClusterActionBuilder("exit_maintenance", &LocationExitMaintenance)
+      .Description("End maintenance of every Tablet Server in a location.")
+      .AddRequiredParameter({ kLocationArg, kLocationDesc })
+      .AddOptionalParameter("dry_run")
+      .Build();
+  return ModeBuilder("state")
+      .Description("Operate on the state of every Kudu Tablet Server in a location")
+      .AddAction(std::move(enter_maintenance))
+      .AddAction(std::move(exit_maintenance))
       .Build();
 }
 

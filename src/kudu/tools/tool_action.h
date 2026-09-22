@@ -401,6 +401,11 @@ std::unique_ptr<Mode> BuildTxnMode();
 std::unique_ptr<Mode> BuildTServerMode();
 std::unique_ptr<Mode> BuildWalMode();
 
+// The quiesce and state modes of kudu cluster location. The kudu tserver
+// commands of the same names, applied to every tablet server in a location.
+std::unique_ptr<Mode> BuildLocationQuiesceMode();
+std::unique_ptr<Mode> BuildLocationStateMode();
+
 #if defined(KUDU_CLI_TEST_TOOL_ENABLED)
 std::unique_ptr<Mode> BuildTestMode();
 #endif

@@ -176,7 +176,9 @@ DECLARE_string(block_manager);
 DECLARE_string(hive_metastore_uris);
 
 METRIC_DECLARE_counter(bloom_lookups);
+METRIC_DECLARE_entity(server);
 METRIC_DECLARE_entity(tablet);
+METRIC_DECLARE_gauge_int32(num_raft_leaders);
 
 using kudu::cfile::CFileWriter;
 using kudu::cfile::StringDataGenerator;
@@ -339,6 +341,12 @@ class ToolTest : public KuduTest {
 
   Status RunActionStderrString(const string& arg_str, string* stderr) const {
     return RunTool(arg_str, nullptr, stderr, nullptr, nullptr);
+  }
+
+  // Run an action that should succeed, ignoring its output.
+  void RunActionOk(const string& arg_str) const {
+    string stdout;
+    NO_FATALS(RunActionStdoutString(arg_str, &stdout));
   }
 
   Status RunActionStdoutStderrString(const string& arg_str, string* stdout,
@@ -863,6 +871,46 @@ class ToolTest : public KuduTest {
   void StartExternalMiniCluster(ExternalMiniClusterOptions opts = {});
   void StartMiniCluster(InternalMiniClusterOptions opts = {});
   void StopMiniCluster();
+
+  // Get uuid -> (location, state) for every tablet server, as the master
+  // reports it via 'kudu tserver list'.
+  void GetTServerLocationsAndStates(map<string, pair<string, string>>* by_uuid) const {
+    vector<string> lines;
+    NO_FATALS(RunActionStdoutLines(
+        Substitute("tserver list $0 --columns=uuid,location,state --format=csv",
+                   cluster_->master()->bound_rpc_addr().ToString()), &lines));
+    by_uuid->clear();
+    for (const auto& line : lines) {
+      vector<string> fields = strings::Split(line, ",");
+      ASSERT_EQ(3, fields.size()) << line;
+      EmplaceOrDie(by_uuid, fields[0], make_pair(fields[1], fields[2]));
+    }
+  }
+
+  // Quiesce 'location' and wait until it has no leaders or scanners left.
+  void QuiesceAndDrainLocation(const string& location) const {
+    ASSERT_EVENTUALLY([&] {
+      string stdout;
+      string stderr;
+      ASSERT_OK(RunActionStdoutStderrString(
+          Substitute("cluster location quiesce start $0 $1 --error_if_not_fully_quiesced",
+                     cluster_->master()->bound_rpc_addr().ToString(), location),
+          &stdout, &stderr));
+    });
+  }
+
+  // Wait until the tservers in 'location' lead 'num_leaders' tablets in total.
+  void WaitForLeadersInLocation(const string& location, int num_leaders) const {
+    ASSERT_EVENTUALLY([&] {
+      string out;
+      NO_FATALS(RunActionStdoutString(
+          Substitute("cluster location quiesce status $0 $1",
+                     cluster_->master()->bound_rpc_addr().ToString(), location),
+          &out));
+      ASSERT_STR_CONTAINS(out, Substitute("$0 tablet leader(s) and", num_leaders));
+    });
+  }
+
   unique_ptr<ExternalMiniCluster> cluster_;
   unique_ptr<MiniClusterFsInspector> inspect_;
   unordered_map<string, TServerDetails*> ts_map_;
@@ -1442,6 +1490,8 @@ TEST_F(ToolTest, TestModeHelp) {
     const string kSubCmd = "cluster location";
     const vector<string> kClusterLocationModeRegexes = {
         "check.*Check whether a location can be taken offline",
+        "quiesce.*Operate on the quiescing state of every Kudu Tablet Server",
+        "state.*Operate on the state of every Kudu Tablet Server",
     };
     NO_FATALS(RunTestHelp(kSubCmd, kClusterLocationModeRegexes));
     NO_FATALS(RunTestHelpRpcFlags(kSubCmd, { "check" }));
@@ -1812,6 +1862,28 @@ TEST_F(ToolTest, TestModeHelp) {
         "stop.*Stop quiescing a Tablet Server",
     };
     NO_FATALS(RunTestHelp(kSubCmd, kTServerQuiesceModeRegexes));
+    NO_FATALS(RunTestHelpRpcFlags(kSubCmd, {"status", "start", "stop"}));
+  }
+  {
+    const string kSubCmd = "cluster location state";
+    const vector<string> kLocationSetStateModeRegexes = {
+        "enter_maintenance.*Begin maintenance on every Tablet Server in a location",
+        "exit_maintenance.*End maintenance of every Tablet Server in a location",
+    };
+    NO_FATALS(RunTestHelp(kSubCmd, kLocationSetStateModeRegexes));
+    NO_FATALS(RunTestHelpRpcFlags(kSubCmd,
+        { "enter_maintenance",
+          "exit_maintenance",
+        }));
+  }
+  {
+    const string kSubCmd = "cluster location quiesce";
+    const vector<string> kLocationQuiesceModeRegexes = {
+        "status.*Output information about the quiescing state of every Tablet",
+        "start.*Start quiescing every Tablet Server in a location",
+        "stop.*Stop quiescing every Tablet Server in a location",
+    };
+    NO_FATALS(RunTestHelp(kSubCmd, kLocationQuiesceModeRegexes));
     NO_FATALS(RunTestHelpRpcFlags(kSubCmd, {"status", "start", "stop"}));
   }
   {
@@ -9375,6 +9447,437 @@ TEST_F(ToolTest, TestCheckLocationMaintenanceNoLocations) {
   ASSERT_STR_CONTAINS(stderr, "--location_mapping_cmd");
   // The empty location isn't reported as if it were a real one.
   ASSERT_STR_NOT_CONTAINS(stderr, "locations present");
+}
+
+// 'kudu cluster location state' applies to every tserver in the location and
+// no others.
+TEST_F(ToolTest, TestLocationEnterExitMaintenanceMode) {
+  constexpr int kTServersPerLocation = 2;
+  NO_FATALS(StartExternalMiniCluster(MultiLocationOpts(/*num_locations=*/3,
+                                                       kTServersPerLocation)));
+  const string master_addr = cluster_->master()->bound_rpc_addr().ToString();
+
+  // Checks that only the tservers in 'expected_location' are in maintenance
+  // mode. An empty location means none should be.
+  const auto check_states = [&](const string& expected_location) {
+    map<string, pair<string, string>> by_uuid;
+    NO_FATALS(GetTServerLocationsAndStates(&by_uuid));
+    ASSERT_EQ(3 * kTServersPerLocation, by_uuid.size());
+    int in_maintenance = 0;
+    for (const auto& [uuid, loc_and_state] : by_uuid) {
+      const auto& [location, state] = loc_and_state;
+      if (location == expected_location) {
+        ASSERT_EQ("MAINTENANCE_MODE", state) << uuid << " in " << location;
+        ++in_maintenance;
+      } else {
+        ASSERT_EQ("NONE", state) << uuid << " in " << location;
+      }
+    }
+    ASSERT_EQ(expected_location.empty() ? 0 : kTServersPerLocation, in_maintenance);
+  };
+
+  NO_FATALS(check_states(""));
+
+  // Checks that 'out' names every tserver in /L0 and none elsewhere.
+  const auto check_lists_l0_only = [&](const string& out) {
+    map<string, pair<string, string>> by_uuid;
+    NO_FATALS(GetTServerLocationsAndStates(&by_uuid));
+    for (const auto& [uuid, loc_and_state] : by_uuid) {
+      if (loc_and_state.first == "/L0") {
+        ASSERT_STR_CONTAINS(out, uuid);
+      } else {
+        ASSERT_STR_NOT_CONTAINS(out, uuid);
+      }
+    }
+  };
+
+  {
+    // A dry run lists the tservers it would affect and changes nothing.
+    string out;
+    NO_FATALS(RunActionStdoutString(
+        Substitute("cluster location state enter_maintenance $0 /L0 --dry_run", master_addr),
+        &out));
+    ASSERT_STR_CONTAINS(out, Substitute(
+        "[dry run] would enter maintenance mode for $0 tablet server(s) in location '/L0':",
+        kTServersPerLocation));
+    ASSERT_STR_CONTAINS(out, "maintenance state");
+    ASSERT_STR_CONTAINS(out, "NONE");
+    NO_FATALS(check_lists_l0_only(out));
+    NO_FATALS(check_states(""));
+  }
+
+  // Re-running is a no-op, which is why it's safe to tell operators to re-run
+  // after a partial failure.
+  for (int i = 0; i < 2; i++) {
+    string out;
+    NO_FATALS(RunActionStdoutString(
+        Substitute("cluster location state enter_maintenance $0 /L0", master_addr), &out));
+    ASSERT_STR_CONTAINS(out, "prior maintenance state");
+    ASSERT_STR_CONTAINS(out, "OK");
+    ASSERT_STR_NOT_CONTAINS(out, "WARNING:");
+    NO_FATALS(check_lists_l0_only(out));
+    NO_FATALS(check_states("/L0"));
+  }
+  {
+    string out;
+    NO_FATALS(RunActionStdoutString(
+        Substitute("cluster location state exit_maintenance $0 /L0 --dry_run", master_addr),
+        &out));
+    ASSERT_STR_CONTAINS(out, Substitute(
+        "[dry run] would exit maintenance mode for $0 tablet server(s) in location '/L0':",
+        kTServersPerLocation));
+    ASSERT_STR_CONTAINS(out, "MAINTENANCE_MODE");
+    NO_FATALS(check_states("/L0"));
+  }
+
+  // Another location can enter and exit maintenance mode independently.
+  NO_FATALS(RunActionOk(
+      Substitute("cluster location state enter_maintenance $0 /L2", master_addr)));
+  {
+    map<string, pair<string, string>> by_uuid;
+    NO_FATALS(GetTServerLocationsAndStates(&by_uuid));
+    for (const auto& [uuid, loc_and_state] : by_uuid) {
+      const auto& [location, state] = loc_and_state;
+      const bool expect_maintenance = (location == "/L0" || location == "/L2");
+      ASSERT_EQ(expect_maintenance ? "MAINTENANCE_MODE" : "NONE", state)
+          << uuid << " in " << location;
+    }
+  }
+  NO_FATALS(RunActionOk(
+      Substitute("cluster location state exit_maintenance $0 /L2", master_addr)));
+  NO_FATALS(check_states("/L0"));
+
+  // Exiting maintenance mode is idempotent too.
+  for (int i = 0; i < 2; i++) {
+    NO_FATALS(RunActionOk(
+        Substitute("cluster location state exit_maintenance $0 /L0", master_addr)));
+    NO_FATALS(check_states(""));
+  }
+
+  {
+    // An unknown location is an error that lists the locations in use.
+    string stderr;
+    const Status s = RunActionStderrString(
+        Substitute("cluster location state enter_maintenance $0 /typo", master_addr), &stderr);
+    ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
+    ASSERT_STR_CONTAINS(stderr, "no tablet server is registered in location '/typo'");
+    ASSERT_STR_CONTAINS(stderr, "locations in use: /L0, /L1, /L2");
+    NO_FATALS(check_states(""));
+  }
+}
+
+// Test 'kudu cluster location quiesce start', 'stop' and 'status'.
+TEST_F(ToolTest, TestLocationQuiescing) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+  auto opts = MultiLocationOpts(/*num_locations=*/3, /*tservers_per_location=*/1);
+  // Speed up the leadership transfers that quiescing triggers.
+  opts.extra_tserver_flags = { "--raft_heartbeat_interval_ms=100" };
+  NO_FATALS(StartExternalMiniCluster(std::move(opts)));
+  const string master_addr = cluster_->master()->bound_rpc_addr().ToString();
+
+  // Every tserver has a replica of every tablet.
+  constexpr int kNumTablets = 6;
+  TestWorkload workload(cluster_.get());
+  workload.set_num_replicas(3);
+  workload.set_num_tablets(kNumTablets);
+  workload.set_num_write_threads(0);
+  workload.Setup();
+
+  {
+    // Nothing is quiescing to begin with.
+    string out;
+    NO_FATALS(RunActionStdoutString(
+        Substitute("cluster location quiesce status $0 /L0", master_addr), &out));
+    ASSERT_STR_CONTAINS(out, "Quiescing | Tablet Leaders | Active Scanners | Error");
+    ASSERT_STR_CONTAINS(out, "false");
+    ASSERT_STR_CONTAINS(out, "active scanner(s) remain in location '/L0'");
+  }
+  {
+    // A dry run changes nothing.
+    string out;
+    NO_FATALS(RunActionStdoutString(
+        Substitute("cluster location quiesce start $0 /L0 --dry_run", master_addr), &out));
+    ASSERT_STR_CONTAINS(out, "[dry run] would start quiescing for 1 tablet server(s) "
+                             "in location '/L0':");
+    // Maintenance state has nothing to do with quiescing, so it isn't shown.
+    ASSERT_STR_NOT_CONTAINS(out, "maintenance state");
+    NO_FATALS(RunActionStdoutString(
+        Substitute("cluster location quiesce status $0 /L0", master_addr), &out));
+    ASSERT_STR_CONTAINS(out, "false");
+  }
+
+  // Without --error_if_not_fully_quiesced this succeeds right away.
+  {
+    string out;
+    NO_FATALS(RunActionStdoutString(
+        Substitute("cluster location quiesce start $0 /L0", master_addr), &out));
+    ASSERT_STR_NOT_CONTAINS(out, "maintenance state");
+    NO_FATALS(RunActionStdoutString(
+        Substitute("cluster location quiesce status $0 /L0", master_addr), &out));
+    ASSERT_STR_CONTAINS(out, "true");
+    // The other locations are unaffected.
+    NO_FATALS(RunActionStdoutString(
+        Substitute("cluster location quiesce status $0 /L1", master_addr), &out));
+    ASSERT_STR_CONTAINS(out, "false");
+  }
+
+  // Leadership moves to /L1 and /L2.
+  NO_FATALS(QuiesceAndDrainLocation("/L0"));
+  {
+    string out;
+    NO_FATALS(RunActionStdoutString(
+        Substitute("cluster location quiesce status $0 /L0", master_addr), &out));
+    ASSERT_STR_CONTAINS(out, "0 tablet leader(s) and 0 active scanner(s) remain in "
+                             "location '/L0'");
+  }
+  {
+    string out;
+    NO_FATALS(RunActionStdoutString(
+        Substitute("cluster location quiesce stop $0 /L0 --dry_run", master_addr), &out));
+    ASSERT_STR_CONTAINS(out, "[dry run] would stop quiescing for 1 tablet server(s) "
+                             "in location '/L0':");
+    NO_FATALS(RunActionStdoutString(
+        Substitute("cluster location quiesce status $0 /L0", master_addr), &out));
+    ASSERT_STR_CONTAINS(out, "true");
+  }
+  NO_FATALS(RunActionOk(
+      Substitute("cluster location quiesce stop $0 /L0", master_addr)));
+  {
+    string out;
+    NO_FATALS(RunActionStdoutString(
+        Substitute("cluster location quiesce status $0 /L0", master_addr), &out));
+    ASSERT_STR_CONTAINS(out, "false");
+  }
+
+  // Drain /L1 and /L2, which moves every leader to /L0. Now /L0 can't shed
+  // leadership since every other replica is quiescing, so it never drains.
+  // That's Incomplete, not a failure, and shouldn't print the WARNING.
+  NO_FATALS(QuiesceAndDrainLocation("/L1"));
+  NO_FATALS(QuiesceAndDrainLocation("/L2"));
+  // /L2 drains as soon as its leaders step down, which can be before /L0 has
+  // won every election. Wait for that while /L0 isn't quiescing yet: once it
+  // is, a pending election there can't finish.
+  NO_FATALS(WaitForLeadersInLocation("/L0", kNumTablets));
+  {
+    string stdout;
+    string stderr;
+    const Status s = RunActionStdoutStderrString(
+        Substitute("cluster location quiesce start $0 /L0 --error_if_not_fully_quiesced",
+                   master_addr), &stdout, &stderr);
+    ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
+    ASSERT_STR_CONTAINS(stdout, Substitute(
+        "Incomplete: not fully quiesced: $0 tablet leaders", kNumTablets));
+    ASSERT_STR_NOT_CONTAINS(stdout, "WARNING:");
+    ASSERT_STR_CONTAINS(stderr, "Incomplete: 1 of the 1 tablet server(s) in location '/L0' "
+                                "are not fully quiesced");
+    ASSERT_STR_NOT_CONTAINS(stderr, "unable to start quiescing");
+
+    string out;
+    NO_FATALS(RunActionStdoutString(
+        Substitute("cluster location quiesce status $0 /L0", master_addr), &out));
+    ASSERT_STR_CONTAINS(out, "true");
+    ASSERT_STR_CONTAINS(out, Substitute(
+        "$0 tablet leader(s) and 0 active scanner(s) remain in location '/L0'", kNumTablets));
+  }
+  {
+    string stderr;
+    const Status s = RunActionStderrString(
+        Substitute("cluster location quiesce start $0 /typo", master_addr), &stderr);
+    ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
+    ASSERT_STR_CONTAINS(stderr, "no tablet server is registered in location '/typo'");
+  }
+}
+
+// If a tserver in the location is down, the others are still handled, the
+// table says which one failed, and the command fails.
+TEST_F(ToolTest, TestLocationFanOutPartialFailure) {
+  constexpr int kTServersPerLocation = 2;
+  NO_FATALS(StartExternalMiniCluster(MultiLocationOpts(/*num_locations=*/3,
+                                                       kTServersPerLocation)));
+  const string master_addr = cluster_->master()->bound_rpc_addr().ToString();
+
+  // Find the two tservers in /L0.
+  vector<ExternalTabletServer*> in_l0;
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    auto* ts = cluster_->tablet_server(i);
+    if (FindOrDie(ts_map_, ts->uuid())->location == "/L0") {
+      in_l0.emplace_back(ts);
+    }
+  }
+  ASSERT_EQ(kTServersPerLocation, in_l0.size());
+  ExternalTabletServer* dead = in_l0[0];
+  ExternalTabletServer* alive = in_l0[1];
+  const string dead_uuid = dead->uuid();
+  const string alive_uuid = alive->uuid();
+  NO_FATALS(dead->Shutdown());
+
+  {
+    // Quiescing is sent to each tserver directly, so the down one fails.
+    string stdout;
+    string stderr;
+    const Status s = RunActionStdoutStderrString(
+        Substitute("cluster location quiesce start $0 /L0", master_addr), &stdout, &stderr);
+    ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
+    ASSERT_STR_CONTAINS(stdout, dead_uuid);
+    ASSERT_STR_CONTAINS(stdout, alive_uuid);
+    ASSERT_STR_CONTAINS(stdout, "WARNING: quiescing is not in effect on every tablet server "
+                                "in this location.");
+    ASSERT_STR_CONTAINS(stderr, Substitute(
+        "unable to start quiescing for 1 of the $0 tablet server(s) in location '/L0'",
+        kTServersPerLocation));
+
+    // The other one is quiescing even though the command failed.
+    string quiesce_status;
+    NO_FATALS(RunActionStdoutString(
+        Substitute("tserver quiesce status $0", alive->bound_rpc_addr().ToString()),
+        &quiesce_status));
+    ASSERT_STR_CONTAINS(quiesce_status, "true");
+  }
+  {
+    // 'quiesce status' shows the error in the down tserver's row.
+    string stdout;
+    string stderr;
+    const Status s = RunActionStdoutStderrString(
+        Substitute("cluster location quiesce status $0 /L0", master_addr), &stdout, &stderr);
+    ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
+    ASSERT_STR_CONTAINS(stdout, "<unknown>");
+    ASSERT_STR_CONTAINS(stdout, alive_uuid);
+    ASSERT_STR_CONTAINS(stderr, Substitute(
+        "unable to get the quiescing state of 1 of the $0 tablet server(s) in location '/L0'",
+        kTServersPerLocation));
+  }
+  {
+    // Maintenance mode is kept by the master, so it can be set on a tserver
+    // that is down.
+    NO_FATALS(RunActionOk(
+        Substitute("cluster location state enter_maintenance $0 /L0", master_addr)));
+    map<string, pair<string, string>> by_uuid;
+    NO_FATALS(GetTServerLocationsAndStates(&by_uuid));
+    ASSERT_EQ("MAINTENANCE_MODE", FindOrDie(by_uuid, dead_uuid).second);
+    ASSERT_EQ("MAINTENANCE_MODE", FindOrDie(by_uuid, alive_uuid).second);
+  }
+}
+
+// With --error_if_not_fully_quiesced, a down tserver fails the command even if
+// another tserver in the location is only not drained yet.
+TEST_F(ToolTest, TestLocationQuiesceFailureAndIncomplete) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+  constexpr int kTServersPerLocation = 2;
+  auto opts = MultiLocationOpts(/*num_locations=*/3, kTServersPerLocation);
+  opts.extra_tserver_flags = { "--raft_heartbeat_interval_ms=100" };
+  NO_FATALS(StartExternalMiniCluster(std::move(opts)));
+  const string master_addr = cluster_->master()->bound_rpc_addr().ToString();
+
+  // Every tablet has one replica in each location.
+  constexpr int kNumTablets = 6;
+  TestWorkload workload(cluster_.get());
+  workload.set_num_replicas(3);
+  workload.set_num_tablets(kNumTablets);
+  workload.set_num_write_threads(0);
+  workload.Setup();
+
+  // Move every leader to /L0, where they're stuck.
+  NO_FATALS(QuiesceAndDrainLocation("/L1"));
+  NO_FATALS(QuiesceAndDrainLocation("/L2"));
+  NO_FATALS(WaitForLeadersInLocation("/L0", kNumTablets));
+
+  // Keep the /L0 tserver with the most leaders running, so it isn't drained.
+  vector<pair<int64_t, ExternalTabletServer*>> in_l0;
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    auto* ts = cluster_->tablet_server(i);
+    if (FindOrDie(ts_map_, ts->uuid())->location != "/L0") {
+      continue;
+    }
+    int64_t num_leaders = 0;
+    ASSERT_OK(itest::GetInt64Metric(ts->bound_http_hostport(), &METRIC_ENTITY_server,
+                                    nullptr, &METRIC_num_raft_leaders, "value",
+                                    &num_leaders));
+    in_l0.emplace_back(num_leaders, ts);
+  }
+  ASSERT_EQ(kTServersPerLocation, in_l0.size());
+  std::sort(in_l0.begin(), in_l0.end());
+  ExternalTabletServer* dead = in_l0[0].second;
+  ExternalTabletServer* alive = in_l0[1].second;
+  ASSERT_GT(in_l0[1].first, 0);
+  NO_FATALS(dead->Shutdown());
+
+  string stdout;
+  string stderr;
+  const Status s = RunActionStdoutStderrString(
+      Substitute("cluster location quiesce start $0 /L0 --error_if_not_fully_quiesced",
+                 master_addr), &stdout, &stderr);
+  ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
+  ASSERT_STR_CONTAINS(stdout, dead->uuid());
+  ASSERT_STR_CONTAINS(stdout, alive->uuid());
+  ASSERT_STR_CONTAINS(stdout, "Incomplete: not fully quiesced");
+  ASSERT_STR_CONTAINS(stdout, "WARNING: quiescing is not in effect on every tablet server "
+                              "in this location.");
+  // The failure is reported, not the Incomplete.
+  ASSERT_STR_CONTAINS(stderr, Substitute(
+      "unable to start quiescing for 1 of the $0 tablet server(s) in location '/L0'",
+      kTServersPerLocation));
+  ASSERT_STR_NOT_CONTAINS(stderr, "are not fully quiesced");
+}
+
+// A location must start with '/'. In particular, an empty one would match
+// every tserver without a location.
+TEST_F(ToolTest, TestLocationInvalid) {
+  NO_FATALS(StartExternalMiniCluster(MultiLocationOpts(/*num_locations=*/2,
+                                                       /*tservers_per_location=*/1)));
+  const string master_addr = cluster_->master()->bound_rpc_addr().ToString();
+
+  const vector<vector<string>> actions = {
+    { "state", "enter_maintenance" },
+    { "state", "exit_maintenance" },
+    { "quiesce", "start" },
+    { "quiesce", "stop" },
+    { "quiesce", "status" },
+  };
+  for (const auto& action : actions) {
+    for (const char* location : { "", "L0" }) {
+      // RunTool() drops empty arguments, so build the command line here.
+      vector<string> args = { "cluster", "location" };
+      args.insert(args.end(), action.begin(), action.end());
+      args.emplace_back(master_addr);
+      args.emplace_back(location);
+      string stderr;
+      const Status s = RunKuduTool(args, nullptr, &stderr);
+      ASSERT_FALSE(s.ok()) << JoinStrings(args, " ");
+      ASSERT_STR_CONTAINS(stderr, Substitute(
+          "invalid location '$0': a location must start with '/'", location));
+    }
+  }
+
+  // No tserver was touched.
+  map<string, pair<string, string>> by_uuid;
+  NO_FATALS(GetTServerLocationsAndStates(&by_uuid));
+  for (const auto& [uuid, loc_and_state] : by_uuid) {
+    ASSERT_EQ("NONE", loc_and_state.second) << uuid;
+  }
+  for (const char* location : { "/L0", "/L1" }) {
+    string out;
+    NO_FATALS(RunActionStdoutString(
+        Substitute("cluster location quiesce status $0 $1", master_addr, location), &out));
+    ASSERT_STR_NOT_CONTAINS(out, "true");
+  }
+}
+
+// Without location mapping no tserver has a location, so none is ever picked.
+TEST_F(ToolTest, TestLocationNoLocations) {
+  NO_FATALS(StartExternalMiniCluster());
+  const string master_addr = cluster_->master()->bound_rpc_addr().ToString();
+
+  string stderr;
+  const Status s = RunActionStderrString(
+      Substitute("cluster location state enter_maintenance $0 /L0", master_addr), &stderr);
+  ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
+  ASSERT_STR_CONTAINS(stderr, "no tablet server is registered in location '/L0'; "
+                              "locations in use: <none>");
+  map<string, pair<string, string>> by_uuid;
+  NO_FATALS(GetTServerLocationsAndStates(&by_uuid));
+  for (const auto& [uuid, loc_and_state] : by_uuid) {
+    ASSERT_EQ("NONE", loc_and_state.second) << uuid;
+  }
 }
 
 TEST_F(ToolTest, TestFsRemoveDataDirWithTombstone) {

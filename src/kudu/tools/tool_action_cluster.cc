@@ -686,6 +686,8 @@ unique_ptr<Mode> BuildClusterMode() {
     unique_ptr<Mode> location = ModeBuilder("location")
         .Description("Operate on the locations of a Kudu cluster")
         .AddAction(std::move(check))
+        .AddMode(BuildLocationQuiesceMode())
+        .AddMode(BuildLocationStateMode())
         .Build();
     builder.AddMode(std::move(location));
   }
