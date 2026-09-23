@@ -56,6 +56,7 @@
 #include "kudu/consensus/replica_management.pb.h"
 #include "kudu/generated/version_defines.h"
 #include "kudu/gutil/basictypes.h"
+#include "kudu/gutil/casts.h"
 #include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/map-util.h"
@@ -150,6 +151,7 @@ DECLARE_int32(flush_upper_bound_ms);
 DECLARE_int32(master_inject_latency_on_tablet_lookups_ms);
 DECLARE_int32(max_table_comment_length);
 DECLARE_int32(rpc_service_queue_length);
+DECLARE_int32(tserver_unresponsive_timeout_ms);
 DECLARE_int64(live_row_count_for_testing);
 DECLARE_int64(on_disk_size_for_testing);
 DECLARE_string(ipki_private_key_password_cmd);
@@ -159,6 +161,7 @@ DECLARE_string(metrics_default_level);
 DECLARE_string(tsk_private_key_password_cmd);
 DECLARE_string(webserver_doc_root);
 
+METRIC_DECLARE_gauge_int32(cluster_leader_skew);
 METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetTableSchema);
 
 namespace kudu {
@@ -830,6 +833,88 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
     ASSERT_FALSE(list_ts_resp.has_error());
     ASSERT_EQ(0, list_ts_resp.servers_size());
   }
+}
+
+// The 'cluster_leader_skew' gauge reports the spread in Raft leader count
+// across live tablet servers, as reported by their heartbeats.
+TEST_F(MasterTest, ClusterLeaderSkewMetric) {
+  const auto skew = [&]() {
+    return down_cast<FunctionGauge<int32_t>*>(
+        master_->metric_entity()->FindOrNull(METRIC_cluster_leader_skew).get())->value();
+  };
+
+  // Send a heartbeat for 'uuid', registering it if 'reg' is true, reporting
+  // 'num_raft_leaders' leader replicas unless that is std::nullopt.
+  const auto heartbeat = [&](const string& uuid,
+                             bool reg,
+                             optional<int> num_raft_leaders) {
+    TSHeartbeatRequestPB req;
+    TSHeartbeatResponsePB resp;
+    RpcController rpc;
+    req.mutable_common()->mutable_ts_instance()->set_permanent_uuid(uuid);
+    req.mutable_common()->mutable_ts_instance()->set_instance_seqno(1);
+    if (reg) {
+      ServerRegistrationPB fake_reg;
+      MakeHostPortPB("localhost", 1000, fake_reg.add_rpc_addresses());
+      MakeHostPortPB("localhost", 2000, fake_reg.add_http_addresses());
+      fake_reg.set_software_version(VersionInfo::GetVersionInfo());
+      fake_reg.set_start_time(10000);
+      ReplicaManagementInfoPB rmi;
+      rmi.set_replacement_scheme(FLAGS_raft_prepare_replacement_before_eviction
+          ? ReplicaManagementInfoPB::PREPARE_REPLACEMENT_BEFORE_EVICTION
+          : ReplicaManagementInfoPB::EVICT_FIRST);
+      *req.mutable_registration() = fake_reg;
+      *req.mutable_replica_management_info() = rmi;
+    }
+    if (num_raft_leaders) {
+      req.set_num_raft_leaders(*num_raft_leaders);
+    }
+    ASSERT_OK(proxy_->TSHeartbeat(req, &resp, &rpc));
+    ASSERT_FALSE(resp.has_error());
+  };
+
+  // No tablet server has registered yet, so there is nothing to compare.
+  ASSERT_EQ(0, skew());
+
+  NO_FATALS(heartbeat("ts-0", /*reg=*/true, 5));
+  ASSERT_EQ(0, skew()) << "a single tablet server can't be skewed against itself";
+
+  NO_FATALS(heartbeat("ts-1", /*reg=*/true, 1));
+  ASSERT_EQ(4, skew());
+
+  // Leaders are reported per heartbeat, so the gauge follows the latest one.
+  NO_FATALS(heartbeat("ts-1", /*reg=*/false, 5));
+  ASSERT_EQ(0, skew());
+
+  // A tablet server that doesn't report a leader count at all (one running a
+  // version older than the heartbeat field) is left out rather than counted as
+  // hosting no leaders, which would otherwise show up as a skew of 5.
+  NO_FATALS(heartbeat("ts-2", /*reg=*/true, std::nullopt));
+  ASSERT_EQ(0, skew());
+
+  // Three servers report a count now, so the skew spans 'ts-0' and 'ts-1'.
+  NO_FATALS(heartbeat("ts-1", /*reg=*/false, 1));
+  NO_FATALS(heartbeat("ts-3", /*reg=*/true, 3));
+  ASSERT_EQ(4, skew());
+
+  // A tablet server that stops heartbeating is presumed dead and drops out of
+  // the calculation. Both 'ts-0' and 'ts-2' go silent below, and 'ts-2' was
+  // already out of the calculation for not reporting a count, so the skew
+  // narrows to the spread between 'ts-1' and 'ts-3'.
+  //
+  // The timeout has to be long enough that a pause between the heartbeats
+  // forged below and the gauge read that follows them can't make a server that
+  // just heartbeated look dead -- TSAN and ASAN builds stall for a while -- and
+  // short enough that waiting 'ts-0' out fits in ASSERT_EVENTUALLY's budget.
+  // A failed attempt is harmless either way: each one forges its heartbeats
+  // again before reading the gauge.
+  google::FlagSaver flag_saver;
+  FLAGS_tserver_unresponsive_timeout_ms = 2000;
+  ASSERT_EVENTUALLY([&] {
+    NO_FATALS(heartbeat("ts-1", /*reg=*/false, 1));
+    NO_FATALS(heartbeat("ts-3", /*reg=*/false, 3));
+    ASSERT_EQ(2, skew());
+  });
 }
 
 TEST_F(MasterTest, TestCatalog) {

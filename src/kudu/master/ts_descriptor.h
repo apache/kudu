@@ -189,6 +189,13 @@ class TSDescriptor : public enable_make_shared<TSDescriptor> {
     num_live_replicas_ = n;
   }
 
+  // Set the number of replicas on this host that are Raft leaders.
+  void set_num_raft_leaders(int n) {
+    DCHECK_GE(n, 0);
+    std::lock_guard l(lock_);
+    num_raft_leaders_ = n;
+  }
+
   // Set the number of live replicas in each dimension.
   void set_num_live_replicas_by_dimension(TabletNumByDimensionMap num_live_tablets_by_dimension) {
     std::lock_guard l(lock_);
@@ -216,6 +223,14 @@ class TSDescriptor : public enable_make_shared<TSDescriptor> {
       return num_live_tablets;
     }
     return num_live_replicas_;
+  }
+
+  // Return the number of replicas on this host that are Raft leaders, or
+  // std::nullopt if this tablet server has never reported that number (it runs
+  // a version that predates the heartbeat field).
+  std::optional<int> num_raft_leaders() const {
+    std::shared_lock l(lock_);
+    return num_raft_leaders_;
   }
 
   // Return the number of live replicas (i.e. running or bootstrapping)
@@ -307,6 +322,10 @@ class TSDescriptor : public enable_make_shared<TSDescriptor> {
 
   // The number of live replicas on this host, from the last heartbeat.
   int num_live_replicas_;
+
+  // The number of replicas on this host that are Raft leaders, from the last
+  // heartbeat. Unset if the tablet server hasn't reported it.
+  std::optional<int> num_raft_leaders_;
 
   // The number of live replicas in each dimension, from the last heartbeat.
   std::optional<TabletNumByDimensionMap> num_live_tablets_by_dimension_;

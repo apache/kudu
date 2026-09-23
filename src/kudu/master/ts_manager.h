@@ -133,6 +133,11 @@ class TSManager {
 
   int ClusterSkew() const;
 
+  // The difference in Raft leader count between the most and the least loaded
+  // live tablet server. Tablet servers that haven't reported a leader count are
+  // left out; 0 if none of them has.
+  int LeaderSkew() const;
+
   // Return the tserver state for the given tablet server UUID, or NONE if one
   // doesn't exist. Must hold 'ts_state_lock_' to call.
   TServerStatePB GetTServerStateUnlocked(const std::string& ts_uuid) const;

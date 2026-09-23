@@ -26,6 +26,7 @@
 #include <optional>
 #include <ostream>
 #include <shared_mutex>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -59,6 +60,18 @@ METRIC_DEFINE_gauge_int32(server, cluster_replica_skew,
                           "the tablet server hosting the most replicas and "
                           "the number of replicas on the tablet server hosting "
                           "the least replicas.",
+                          kudu::MetricLevel::kWarn);
+
+METRIC_DEFINE_gauge_int32(server, cluster_leader_skew,
+                          "Cluster Leader Skew",
+                          kudu::MetricUnit::kTablets,
+                          "The difference between the number of Raft leader "
+                          "replicas on the tablet server hosting the most "
+                          "leaders and the number of leader replicas on the "
+                          "tablet server hosting the least. Tablet servers "
+                          "that don't report a leader count (those running a "
+                          "version older than the heartbeat field) are not "
+                          "taken into account.",
                           kudu::MetricLevel::kWarn);
 
 using kudu::pb_util::SecureShortDebugString;
@@ -101,6 +114,9 @@ TSManager::TSManager(LocationCache* location_cache,
       location_cache_(location_cache) {
   METRIC_cluster_replica_skew.InstantiateFunctionGauge(
       metric_entity, [this]() { return this->ClusterSkew(); })
+      ->AutoDetach(&metric_detacher_);
+  METRIC_cluster_leader_skew.InstantiateFunctionGauge(
+      metric_entity, [this]() { return this->LeaderSkew(); })
       ->AutoDetach(&metric_detacher_);
 }
 
@@ -339,6 +355,9 @@ Status TSManager::UnregisterTServer(const std::string& ts_uuid,
   return Status::OK();
 }
 
+// TODO(gabriellalotz): unlike LeaderSkew() below, this has no guard for the
+// case of no live tablet servers, so a freshly started master reports a skew
+// of 0 - INT_MAX rather than 0. Fix it to match.
 int TSManager::ClusterSkew() const {
   int min_count = std::numeric_limits<int>::max();
   int max_count = 0;
@@ -351,6 +370,31 @@ int TSManager::ClusterSkew() const {
     int num_live_replicas = ts->num_live_replicas();
     min_count = std::min(min_count, num_live_replicas);
     max_count = std::max(max_count, num_live_replicas);
+  }
+  return max_count - min_count;
+}
+
+int TSManager::LeaderSkew() const {
+  int min_count = std::numeric_limits<int>::max();
+  int max_count = 0;
+  shared_lock l(lock_);
+  for (const auto& [_, ts] : servers_by_id_) {
+    if (ts->PresumedDead()) {
+      continue;
+    }
+    // Skipped rather than counted as zero: a tablet server that doesn't report
+    // its leader count would otherwise look like the least loaded one in the
+    // cluster and make the skew read as large as the maximum leader count.
+    const auto& num_raft_leaders = ts->num_raft_leaders();
+    if (!num_raft_leaders) {
+      continue;
+    }
+    min_count = std::min(min_count, *num_raft_leaders);
+    max_count = std::max(max_count, *num_raft_leaders);
+  }
+  if (min_count == std::numeric_limits<int>::max()) {
+    // Nothing to compare, e.g. every live tablet server predates the field.
+    return 0;
   }
   return max_count - min_count;
 }

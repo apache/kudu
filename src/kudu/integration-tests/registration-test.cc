@@ -300,6 +300,43 @@ TEST_F(RegistrationTest, TestMultipleTS) {
   ASSERT_OK(cluster_->WaitForTabletServerCount(2));
 }
 
+// The number of Raft leaders a tablet server reports in its heartbeats reaches
+// the master's view of that server, which is where the 'cluster_leader_skew'
+// gauge reads it from.
+TEST_F(RegistrationTest, TestTSReportsRaftLeaderCount) {
+  vector<shared_ptr<TSDescriptor>> descs;
+  ASSERT_OK(cluster_->WaitForTabletServerCount(
+      1, InternalMiniCluster::MatchMode::MATCH_TSERVERS, &descs));
+  ASSERT_EQ(1, descs.size());
+
+  // No table exists yet, so the tablet server hosts no replicas and reports no
+  // leaders. That's still a report, as opposed to the std::nullopt a tablet
+  // server too old to know about the field leaves behind.
+  ASSERT_EVENTUALLY([&] {
+    const auto& num_raft_leaders = descs[0]->num_raft_leaders();
+    ASSERT_TRUE(num_raft_leaders.has_value());
+    ASSERT_EQ(0, *num_raft_leaders);
+    ASSERT_EQ(0, descs[0]->num_live_replicas());
+  });
+
+  string tablet_id;
+  NO_FATALS(CreateTableForTesting(
+      cluster_->mini_master(), "leader-count", schema_, &tablet_id));
+  ASSERT_OK(WaitForReplicaCount(tablet_id, 1));
+
+  // The sole replica of the new tablet becomes its leader, and the next
+  // heartbeat carries that. Only a live replica can be a Raft leader, so the
+  // leader count never runs ahead of the live replica count; the table is
+  // created with a replication factor of 1, so the two are equal once
+  // leadership is established.
+  ASSERT_EVENTUALLY([&] {
+    const auto& num_raft_leaders = descs[0]->num_raft_leaders();
+    ASSERT_TRUE(num_raft_leaders.has_value());
+    ASSERT_EQ(1, *num_raft_leaders);
+    ASSERT_EQ(descs[0]->num_live_replicas(), *num_raft_leaders);
+  });
+}
+
 // TODO: this doesn't belong under "RegistrationTest" - rename this file
 // to something more appropriate - doesn't seem worth having separate
 // whole test suites for registration, tablet reports, etc.

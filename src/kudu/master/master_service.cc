@@ -460,6 +460,11 @@ void MasterServiceImpl::TSHeartbeat(const TSHeartbeatRequestPB* req,
   // TODO(mreddy) If --enable_range_replica_placement is set to false, don't populate ranges map.
   ts_desc->UpdateHeartbeatTime();
   ts_desc->set_num_live_replicas(req->num_live_tablets());
+  // Leave the count unset for tablet servers too old to report it, so they
+  // don't look like they host no leaders at all.
+  if (req->has_num_raft_leaders()) {
+    ts_desc->set_num_raft_leaders(req->num_raft_leaders());
+  }
   ts_desc->set_num_live_replicas_by_dimension(
       TabletNumByDimensionMap(req->num_live_tablets_by_dimension().begin(),
                               req->num_live_tablets_by_dimension().end()));

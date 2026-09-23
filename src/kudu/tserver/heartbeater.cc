@@ -60,6 +60,7 @@
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/net/dns_resolver.h"
@@ -525,6 +526,7 @@ Status Heartbeater::Thread::DoHeartbeat(MasterErrorPB* error,
   }
 
   req.set_num_live_tablets(server_->tablet_manager()->GetNumLiveTablets());
+  req.set_num_raft_leaders(server_->num_raft_leaders()->value());
   auto num_live_tablets_by_dimension = server_->tablet_manager()->GetNumLiveTabletsByDimension();
   req.mutable_num_live_tablets_by_dimension()->insert(num_live_tablets_by_dimension.begin(),
                                                       num_live_tablets_by_dimension.end());

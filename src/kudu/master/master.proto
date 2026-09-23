@@ -389,6 +389,12 @@ message TSHeartbeatRequestPB {
   // in each range. Used by the master to determine load when placing
   // new tablet replicas based on range and table.
   map<string, TabletsByRangePerTablePB> num_live_tablets_by_range_per_table = 9;
+
+  // The number of tablet replicas on this tablet server that are Raft leaders.
+  // Used by the master to report the leader skew across the cluster. Not set by
+  // tablet servers older than the field itself, so the master distinguishes
+  // "reported zero leaders" from "didn't report".
+  optional int32 num_raft_leaders = 10;
 }
 
 message TSHeartbeatResponsePB {
