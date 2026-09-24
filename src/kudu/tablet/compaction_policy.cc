@@ -51,6 +51,12 @@ using std::make_optional;
 using std::vector;
 using strings::Substitute;
 
+// --tablet_compaction_budget_mb is defined in tablet.cc because it is a
+// tablet-level property. It is declared here so that BudgetedCompactionPolicy
+// can read the current value directly inside PickRowSets(), picking up any
+// runtime change without needing the caller to push the value in.
+DECLARE_uint32(tablet_compaction_budget_mb);
+
 DEFINE_int64(budgeted_compaction_target_rowset_size, 32 * 1024 * 1024,
              "The target size in bytes for DiskRowSets produced by flushes or "
              "compactions when the budgeted compaction policy is used.");
@@ -150,11 +156,9 @@ static const double kSupportAdjust = 1.003;
 // BudgetedCompactionPolicy
 ////////////////////////////////////////////////////////////
 
-BudgetedCompactionPolicy::BudgetedCompactionPolicy(int size_budget_mb,
-                                                   const TabletMetrics* metrics)
-    : size_budget_mb_(size_budget_mb),
+BudgetedCompactionPolicy::BudgetedCompactionPolicy(const TabletMetrics* metrics)
+    : size_budget_mb_(FLAGS_tablet_compaction_budget_mb),
       metrics_(metrics) {
-  CHECK_GT(size_budget_mb, 0);
 }
 
 uint64_t BudgetedCompactionPolicy::target_rowset_size() const {
@@ -520,7 +524,16 @@ Status BudgetedCompactionPolicy::PickRowSets(
   DCHECK(picked);
   DCHECK(quality);
 
-  vector<RowSetInfo> asc_min_key, asc_max_key;
+  // Snapshot the runtime flag once. This ensures RunApproximation() and
+  // RunExact() see the same immutable budget for the entire selection, even if
+  // an operator changes FLAGS_tablet_compaction_budget_mb concurrently. The
+  // flag is defined in tablet.cc (a tablet-level property) and declared here
+  // via DECLARE_uint32 so BudgetedCompactionPolicy can read it without the
+  // caller having to push the value in.
+  size_budget_mb_ = FLAGS_tablet_compaction_budget_mb;
+
+  vector<RowSetInfo> asc_min_key;
+  vector<RowSetInfo> asc_max_key;
   SetupKnapsackInput(tree, &asc_min_key, &asc_max_key);
   if (asc_max_key.empty()) {
     if (log) {

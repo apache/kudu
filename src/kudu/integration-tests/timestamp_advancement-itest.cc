@@ -85,7 +85,7 @@ DECLARE_double(leader_failure_max_missed_heartbeat_periods);
 DECLARE_int32(consensus_inject_latency_ms_in_notifications);
 DECLARE_int32(heartbeat_interval_ms);
 DECLARE_int32(raft_heartbeat_interval_ms);
-DECLARE_int32(tablet_compaction_budget_mb);
+DECLARE_uint32(tablet_compaction_budget_mb);
 DECLARE_int32(tablet_history_max_age_sec);
 
 #ifndef NDEBUG

@@ -24,6 +24,7 @@
 #include <optional>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -33,14 +34,21 @@
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/common/common.pb.h"
+#include "kudu/common/partial_row.h"
+#include "kudu/common/schema.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/tablet/compaction.h"
+#include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/mock-rowsets.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/tablet/rowset_info.h"
 #include "kudu/tablet/rowset_tree.h"
+#include "kudu/tablet/tablet-test-util.h"
+#include "kudu/tablet/tablet.h"
 #include "kudu/util/env.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/path_util.h"
@@ -55,6 +63,7 @@ using std::vector;
 
 DECLARE_double(compaction_minimum_improvement);
 DECLARE_double(compaction_small_rowset_tradeoff);
+DECLARE_uint32(tablet_compaction_budget_mb);
 DECLARE_int64(budgeted_compaction_target_rowset_size);
 
 namespace kudu {
@@ -69,7 +78,8 @@ class TestCompactionPolicy : public KuduTest {
     RowSetTree tree;
     ASSERT_OK(tree.Reset(vec));
 
-    BudgetedCompactionPolicy policy(size_budget_mb);
+    FLAGS_tablet_compaction_budget_mb = size_budget_mb;
+    BudgetedCompactionPolicy policy;
 
     ASSERT_OK(policy.PickRowSets(tree, picked, quality, /*log=*/nullptr));
   }
@@ -274,7 +284,8 @@ TEST_F(TestCompactionPolicy, TestYcsbCompaction) {
   ASSERT_OK(tree.Reset(rowsets));
   vector<double> qualities;
   for (int budget_mb : {128, 256, 512, 1024}) {
-    BudgetedCompactionPolicy policy(budget_mb);
+    FLAGS_tablet_compaction_budget_mb = budget_mb;
+    BudgetedCompactionPolicy policy;
 
     CompactionSelection picked;
     double quality = 0.0;
@@ -638,5 +649,77 @@ TEST_F(TestCompactionPolicy, TestKUDU2704) {
   ASSERT_EQ(2, picked.size());
   ASSERT_GT(quality, 0.0);
 }
+
+class TestCompactionBudgetRuntimeFlag
+    : public KuduTabletTest {
+ public:
+  TestCompactionBudgetRuntimeFlag()
+      : KuduTabletTest(Schema(
+            {ColumnSchema("key", STRING), ColumnSchema("val", INT64)}, 1)) {}
+};
+
+// Verify that changing 'tablet_compaction_budget_mb' at runtime causes
+// Tablet::PickRowSetsToCompact() to use the new budget value on its very next
+// call, without any tablet-server restart.
+//
+// Setup: three DiskRowSets with interleaved (and therefore overlapping) key
+// ranges. Each is tiny (well below 1 MB) so it is assigned the 1 MB minimum
+// weight by RowSetInfo. The budget values are chosen so that:
+//
+//   budget = 1 MB - at most one rowset can fit in the knapsack (1*1 MB = 1);
+//                   two would overflow (2*1 MB > 1 MB budget).
+//   budget = 4 MB - all three rowsets fit (3*1 MB <= 4 MB budget) and,
+//                   because they overlap, selecting all three maximises the
+//                   compaction quality score.
+TEST_F(TestCompactionBudgetRuntimeFlag, TestFlagDrivesPickRowSets) {
+  // Build three DiskRowSets with interleaved keys so that every pair of
+  // rowsets has overlapping key bounds:
+  //
+  // RS0: keys  0, 3, 6, ..., 297  ->  ["0000000000", "0000000297"]
+  // RS1: keys  1, 4, 7, ..., 298  ->  ["0000000001", "0000000298"]
+  // RS2: keys  2, 5, 8, ..., 299  ->  ["0000000002", "0000000299"]
+  {
+    LocalTabletWriter writer(tablet().get(), &client_schema());
+    KuduPartialRow row(&client_schema());
+    constexpr int kStride = 3;   // one row per RS per stride
+    constexpr int kTotal  = 300; // 100 rows per RS
+    for (int rs = 0; rs < kStride; rs++) {
+      for (int i = rs; i < kTotal; i += kStride) {
+        ASSERT_OK(row.SetStringCopy("key", StringPrintf("%010d", i)));
+        ASSERT_OK(row.SetInt64("val", i));
+        ASSERT_OK(writer.Insert(row));
+      }
+      ASSERT_OK(tablet()->Flush());
+    }
+  }
+
+  // Phase 1: tight budget - no rowsets should be selected.
+  FLAGS_tablet_compaction_budget_mb = 1;
+  {
+    RowSetsInCompactionOrFlush input;
+    ASSERT_OK(tablet()->PickRowSetsToCompact(&input, Tablet::COMPACT_NO_FLAGS));
+    // Selecting a single rowset produces no merge benefit (nothing to combine
+    // it with under a 1 MB budget), so the quality score is effectively zero
+    // and falls below FLAGS_compaction_minimum_improvement. The policy should
+    // therefore pick nothing.
+    ASSERT_EQ(0, input.num_rowsets())
+        << "Expected 0 rowsets with budget=1 MB, got "
+        << input.num_rowsets();
+    // Locks released when 'input' goes out of scope.
+  }
+
+  // Phase 2: raised budget - all three overlapping rowsets selected.
+  FLAGS_tablet_compaction_budget_mb = 4;
+  {
+    RowSetsInCompactionOrFlush input;
+    ASSERT_OK(tablet()->PickRowSetsToCompact(&input, Tablet::COMPACT_NO_FLAGS));
+    // All three rowsets fit (3 MB - 4 MB) and their key-range overlap gives a
+    // positive quality score, so all three should be selected together.
+    ASSERT_EQ(3, input.num_rowsets())
+        << "Expected all 3 rowsets with budget=4 MB, got "
+        << input.num_rowsets();
+  }
+}
+
 } // namespace tablet
 } // namespace kudu

@@ -78,8 +78,7 @@ class CompactionPolicy {
 // See docs/design-docs/compaction-policy.md for details.
 class BudgetedCompactionPolicy : public CompactionPolicy {
  public:
-  explicit BudgetedCompactionPolicy(int size_budget_mb,
-                                    const TabletMetrics* metrics = nullptr);
+  explicit BudgetedCompactionPolicy(const TabletMetrics* metrics = nullptr);
 
   Status PickRowSets(const RowSetTree &tree,
                      CompactionSelection* picked,
@@ -126,7 +125,11 @@ class BudgetedCompactionPolicy : public CompactionPolicy {
                 const std::vector<double>& best_upper_bounds,
                 SolutionAndValue* best_solution) const;
 
-  const size_t size_budget_mb_;
+  // The compaction size budget in MB. Initialized at construction time and
+  // refreshed at the start of every PickRowSets() call from
+  // FLAGS_tablet_compaction_budget_mb, so that runtime changes to the flag
+  // are picked up on the next compaction without a tablet-server restart.
+  size_t size_budget_mb_;
   const TabletMetrics* metrics_;
 };
 

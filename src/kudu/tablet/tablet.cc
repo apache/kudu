@@ -108,10 +108,11 @@ DEFINE_bool(prevent_kudu_2233_corruption, true,
             "Whether or not to prevent KUDU-2233 corruptions. Used for testing only!");
 TAG_FLAG(prevent_kudu_2233_corruption, unsafe);
 
-DEFINE_int32(tablet_compaction_budget_mb, 256,
+DEFINE_uint32(tablet_compaction_budget_mb, 256,
              "Budget for a single compaction. Consider setting this back to 128 if "
              "--rowset_deltas_size_include_undo is set to false.");
 TAG_FLAG(tablet_compaction_budget_mb, experimental);
+TAG_FLAG(tablet_compaction_budget_mb, runtime);
 
 DEFINE_int32(tablet_bloom_block_size, 4096,
              "Block size of the bloom filters used for tablet keys.");
@@ -385,8 +386,7 @@ Tablet::Tablet(scoped_refptr<TabletMetadata> metadata,
         ->AutoDetach(&metric_detacher_);
   }
 
-  compaction_policy_.reset(new BudgetedCompactionPolicy(
-      FLAGS_tablet_compaction_budget_mb, metrics_.get()));
+  compaction_policy_.reset(new BudgetedCompactionPolicy(metrics_.get()));
 
   if (FLAGS_tablet_throttler_rpc_per_sec > 0 || FLAGS_tablet_throttler_bytes_per_sec > 0) {
     throttler_.reset(new Throttler(FLAGS_tablet_throttler_rpc_per_sec,
