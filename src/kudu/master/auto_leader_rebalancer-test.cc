@@ -102,7 +102,9 @@ enum class BalanceThreadType { REPLICA_REBALANCE, LEADER_REBALANCE };
 
 class LeaderRebalancerTest : public KuduTest {
  public:
-  Status CreateAndStartCluster() {
+  // The leader rebalancer thread reads its flags while the cluster runs, so
+  // tests that need it on must say so here rather than flip the flag later.
+  Status CreateAndStartCluster(bool enable_leader_rebalancing = false) {
     // Disable replica rebalancing, we'll do it manually
     FLAGS_auto_rebalancing_enabled = true;
     FLAGS_auto_rebalancing_interval_seconds = 1;                // Shorten for testing.
@@ -110,8 +112,8 @@ class LeaderRebalancerTest : public KuduTest {
     // The replica rebalancer enforces this cap per batch. The default of 1
     // is too slow for tests that wait for replicas to move onto a new tserver.
     FLAGS_auto_rebalancing_max_moves_per_server = 5;
-    // Disable leader rebalancing, we'll do it manually.
-    FLAGS_auto_leader_rebalancing_enabled = false;
+    // Leader rebalancing is off unless asked for; most tests drive it manually.
+    FLAGS_auto_leader_rebalancing_enabled = enable_leader_rebalancing;
     cluster_.reset(new InternalMiniCluster(env_, cluster_opts_));
     return cluster_->Start();
   }
@@ -133,11 +135,17 @@ class LeaderRebalancerTest : public KuduTest {
 
   std::string table_name() { return workload_->table_name(); }
 
-  // Exposes the task's private test counter (the fixture is a friend of the
+  // Exposes the task's private test counters (the fixture is a friend of the
   // task, individual TEST_F bodies are not).
   int MovesScheduledThisRoundForTest() {
     return cluster_->mini_master()->master()->catalog_manager()
         ->auto_leader_rebalancer()->moves_scheduled_this_round_for_test_;
+  }
+
+  // Counts only the passes that got past the leadership check.
+  int NumLoopIterations() {
+    return cluster_->mini_master()->master()->catalog_manager()
+        ->auto_leader_rebalancer()->number_of_loop_iterations_for_test_;
   }
 
   Status RunLeaderRebalanceForTable(
@@ -1261,6 +1269,48 @@ TEST_F(LeaderRebalancerTest, RebalancerMetrics) {
     ASSERT_GT(GetLeaderMasterCounterValue(
         &METRIC_auto_leader_rebalancer_moves_completed), completed_before);
   });
+}
+
+// The loop must run its first pass as soon as this master is leader-ready, not
+// an interval later: at the production default below, a master that sleeps the
+// interval first is idle for an hour after startup or failover.
+TEST_F(LeaderRebalancerTest, FirstPassDoesNotWaitOutFullInterval) {
+  const int kNumTServers = 3;
+  const int kNumTablets = 6;
+  cluster_opts_.num_tablet_servers = kNumTServers;
+  FLAGS_auto_leader_rebalancing_interval_seconds = 3600;
+  ASSERT_OK(CreateAndStartCluster(/*enable_leader_rebalancing=*/true));
+  CreateWorkloadTable(kNumTablets, /*num_replicas*/ 3);
+
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_LT(0, NumLoopIterations());
+  });
+}
+
+// An interval of 0 is reachable -- the flag has no validator and is runtime
+// settable -- and reads as "rebalance as often as possible". The loop must
+// still pace itself rather than spin on RunLeaderRebalancer().
+TEST_F(LeaderRebalancerTest, ZeroIntervalDoesNotSpin) {
+  const int kNumTServers = 3;
+  const int kNumTablets = 6;
+  cluster_opts_.num_tablet_servers = kNumTServers;
+  FLAGS_auto_leader_rebalancing_interval_seconds = 0;
+  ASSERT_OK(CreateAndStartCluster(/*enable_leader_rebalancing=*/true));
+  CreateWorkloadTable(kNumTablets, /*num_replicas*/ 3);
+
+  // Let the loop get going before counting, so that the window below measures
+  // its steady-state pace and not the wait for leadership.
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_LT(0, NumLoopIterations());
+  });
+
+  static constexpr int kWindowSecs = 3;
+  const int before = NumLoopIterations();
+  SleepFor(MonoDelta::FromSeconds(kWindowSecs));
+  // The one-second floor on the interval caps the window at kWindowSecs passes
+  // or so; a loop that doesn't clamp turns over thousands of times in the same
+  // window, so the bound need not be tight to catch a spin.
+  ASSERT_GT(10, NumLoopIterations() - before);
 }
 
 }  // namespace master

@@ -846,8 +846,12 @@ Status AutoLeaderRebalancerTask::RunGlobalLeaderRebalance(
   return Status::OK();
 }
 
-Status AutoLeaderRebalancerTask::RunLeaderRebalancer() {
+Status AutoLeaderRebalancerTask::RunLeaderRebalancer(bool* ran) {
   std::lock_guard guard(running_mutex_);
+
+  if (ran) {
+    *ran = false;
+  }
 
   // If catalog manager isn't initialized or isn't the leader, don't do leader
   // rebalancing. Putting the auto-rebalancer to sleep shouldn't affect the
@@ -861,6 +865,9 @@ Status AutoLeaderRebalancerTask::RunLeaderRebalancer() {
     }
   }
 
+  if (ran) {
+    *ran = true;
+  }
   number_of_loop_iterations_for_test_++;
 
   // Leader balance need not disk capacity, so
@@ -955,18 +962,51 @@ Status AutoLeaderRebalancerTask::RunLeaderRebalancer() {
 }
 
 void AutoLeaderRebalancerTask::RunLoop() {
-  while (
-      !shutdown_.WaitFor(MonoDelta::FromSeconds(FLAGS_auto_leader_rebalancing_interval_seconds))) {
-    if (FLAGS_auto_leader_rebalancing_enabled) {
+  // Poll at this interval only while waiting to (re-)acquire leadership, which
+  // is granted after the thread starts, at the end of
+  // CatalogManager::PrepareForLeadershipTask(). Once a pass has run as leader we
+  // sleep until the next one is due instead of polling.
+  static const MonoDelta poll_interval = MonoDelta::FromSeconds(5);
+
+  MonoTime last_run_time;
+
+  while (true) {
+    // Runtime-settable with no validator, so 0 is reachable. Clamp to a second
+    // so 'due' can't be true every iteration and spin the loop.
+    const MonoDelta interval = MonoDelta::FromSeconds(
+        std::max(1U, FLAGS_auto_leader_rebalancing_interval_seconds));
+    const bool pass_is_due =
+        FLAGS_auto_leader_rebalancing_enabled &&
+        (!last_run_time.Initialized() || MonoTime::Now() - last_run_time >= interval);
+    if (pass_is_due) {
       // RunLeaderRebalancer() normalises the "we're not the catalog-manager
       // leader" cases to Status::OK(), so any non-OK reaching here is an
       // unexpected failure worth surfacing to both the log and the
       // warning-severity 'auto_leader_rebalancer_task_errors' counter.
-      const Status s = RunLeaderRebalancer();
+      bool ran = false;
+      const Status s = RunLeaderRebalancer(&ran);
       if (PREDICT_FALSE(!s.ok())) {
         task_errors_->Increment();
         WARN_NOT_OK(s, "auto-leader-rebalancer round failed");
       }
+      // Only a pass that actually happened starts the interval clock; one
+      // skipped for want of leadership is retried on the next poll.
+      if (ran) {
+        last_run_time = MonoTime::Now();
+      }
+    }
+    // Sleep until the next pass is due; fall back to the poll while acquiring
+    // leadership, when disabled, or when a due pass couldn't run (until_due <= 0,
+    // so it can't spin).
+    MonoDelta wait = poll_interval;
+    if (FLAGS_auto_leader_rebalancing_enabled && last_run_time.Initialized()) {
+      const MonoDelta until_due = last_run_time + interval - MonoTime::Now();
+      if (until_due > wait) {
+        wait = until_due;
+      }
+    }
+    if (shutdown_.WaitFor(wait)) {
+      break;
     }
   }
 }

@@ -66,7 +66,11 @@ class AutoLeaderRebalancerTask {
 
   void Shutdown();
 
-  Status RunLeaderRebalancer();
+  // Returns Status::OK() without doing anything if the catalog manager isn't
+  // running or this master isn't leader-ready yet. 'ran', when provided, is set
+  // to whether a pass actually took place, distinguishing that no-op from a
+  // completed round.
+  Status RunLeaderRebalancer(bool* ran = nullptr);
 
   enum class ExecuteMode { NORMAL, TEST };
 
