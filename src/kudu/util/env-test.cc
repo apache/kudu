@@ -32,6 +32,7 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
+// IWYU pragma: no_include <bits/struct_stat.h>
 
 #include <cerrno>
 #include <climits>
@@ -44,6 +45,7 @@
 #include <ostream>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <type_traits>
 #include <unordered_set>
 #include <utility>
@@ -57,6 +59,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
@@ -74,10 +77,13 @@
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
+#include "kudu/util/trace.h"
+#include "kudu/util/trace_metrics.h"
 
-DECLARE_bool(never_fsync);
-DECLARE_bool(crash_on_eio);
 DECLARE_bool(encrypt_data_at_rest);
+DECLARE_bool(env_use_fsync);
+DECLARE_bool(crash_on_eio);
+DECLARE_bool(never_fsync);
 DECLARE_double(env_inject_eio);
 DECLARE_int32(env_inject_short_read_bytes);
 DECLARE_int32(env_inject_short_write_bytes);
@@ -90,6 +96,7 @@ using std::pair;
 using std::shared_ptr;
 using std::string;
 using std::thread;
+using std::tuple;
 using std::unique_ptr;
 using std::unordered_set;
 using std::vector;
@@ -97,6 +104,12 @@ using strings::Substitute;
 
 static const uint64_t kOneMb = 1024 * 1024;
 static const uint64_t kTwoMb = 2 * kOneMb;
+
+//extern "C++" {
+  extern const char* const kTraceMetricFsync;
+  extern const char* const kTraceMetricFdatasync;
+  extern const char* const kTraceMetricSyncFileRange;
+//}
 
 class TestEnv : public KuduTest {
  public:
@@ -1250,6 +1263,142 @@ TEST_F(TestEnv, TestCreateFifo) {
   // Until our fifo gets deleted.
   ASSERT_OK(env_->DeleteFile(kFifo));
   ASSERT_OK(env_->NewFifo(kFifo, &fifo));
+}
+
+class FsSyncControlTest : public TestEnv,
+                          public ::testing::WithParamInterface<tuple<bool, bool>> {
+ public:
+  FsSyncControlTest()
+      : no_sync_(std::get<0>(GetParam())),
+        use_fsync_(std::get<1>(GetParam())),
+        slice_(scratch_, kBufSize),
+        trace_(new Trace) {
+  }
+
+  void SetUp() override {
+    FLAGS_never_fsync = no_sync_;
+    FLAGS_env_use_fsync = use_fsync_;
+  }
+
+ protected:
+  static void VerifyNewFileMetrics(const TraceMetrics& m) {
+    ASSERT_EQ(0, m.GetMetric(kTraceMetricFsync));
+    ASSERT_EQ(0, m.GetMetric(kTraceMetricFdatasync));
+    ASSERT_EQ(0, m.GetMetric(kTraceMetricSyncFileRange));
+  }
+
+  static void VerifyPreSyncMetrics(const TraceMetrics& m) {
+    return VerifyNewFileMetrics(m);
+  }
+
+  void VerifyPostSyncMetrics(const TraceMetrics& m) const {
+    if (use_fsync_) {
+      ASSERT_EQ(no_sync_ ? 0 : 1, m.GetMetric(kTraceMetricFsync));
+      ASSERT_EQ(0, m.GetMetric(kTraceMetricFdatasync));
+    } else {
+      ASSERT_EQ(0, m.GetMetric(kTraceMetricFsync));
+      ASSERT_EQ(no_sync_ ? 0 : 1, m.GetMetric(kTraceMetricFdatasync));
+    }
+    ASSERT_EQ(0, m.GetMetric(kTraceMetricSyncFileRange));
+  }
+
+  void VerifyPostFlushMetrics(const TraceMetrics& m) const {
+    #if defined(__linux__)
+      // The sync_file_range metric should be incremented by 1.
+      ASSERT_EQ(no_sync_ ? 0 : 1, m.GetMetric(kTraceMetricSyncFileRange));
+      // fsync()/fdatasync() metrics stay as-is.
+      if (use_fsync_) {
+        ASSERT_EQ(no_sync_ ? 0 : 1, m.GetMetric(kTraceMetricFsync));
+        ASSERT_EQ(0, m.GetMetric(kTraceMetricFdatasync));
+      } else {
+        ASSERT_EQ(0, m.GetMetric(kTraceMetricFsync));
+        ASSERT_EQ(no_sync_ ? 0 : 1, m.GetMetric(kTraceMetricFdatasync));
+      }
+    #elif defined(__APPLE__)
+      ASSERT_EQ(0, m.GetMetric(kTraceMetricSyncFileRange));
+      if (use_fsync_) {
+        ASSERT_EQ(no_sync_ ? 0 : 2, m.GetMetric(kTraceMetricFsync));
+        ASSERT_EQ(0, m.GetMetric(kTraceMetricFdatasync));
+      } else {
+        ASSERT_EQ(no_sync_ ? 0 : 1, m.GetMetric(kTraceMetricFsync));
+        ASSERT_EQ(no_sync_ ? 0 : 1, m.GetMetric(kTraceMetricFdatasync));
+      }
+    #endif
+  }
+
+  // This should be multiple of page size on supported OS/arch combinations
+  // to allow for sync_file_range() calls to succeed.
+  static constexpr const size_t kBufSize = 64 * 1024;
+
+  const bool no_sync_;
+  const bool use_fsync_;
+  uint8_t scratch_[kBufSize];
+  Slice slice_;
+  scoped_refptr<Trace> trace_;
+};
+
+INSTANTIATE_TEST_SUITE_P(SyncFlags,
+                         FsSyncControlTest,
+                         ::testing::Combine(testing::Bool(), testing::Bool()),
+                         [](const auto& info) {
+                           return Substitute("NoSync_$0_UseFsync_$1",
+                                             std::get<0>(info.param) ? 1 : 0,
+                                             std::get<1>(info.param) ? 1 : 0);
+                         });
+
+TEST_P(FsSyncControlTest, WritableFileControls) {
+  ADOPT_TRACE(trace_.get());
+  unique_ptr<WritableFile> file;
+  ASSERT_OK(env_->NewWritableFile(GetTestPath("writable_file_controls"), &file));
+
+  const auto& m = *(trace_->metrics());
+  NO_FATALS(VerifyNewFileMetrics(m));
+
+  ASSERT_OK(file->Append(slice_));
+
+  NO_FATALS(VerifyPreSyncMetrics(m));
+  ASSERT_OK(file->Sync());
+  NO_FATALS(VerifyPostSyncMetrics(m));
+
+  ASSERT_OK(file->Flush(WritableFile::FLUSH_SYNC));
+  NO_FATALS(VerifyPostFlushMetrics(m));
+}
+
+TEST_P(FsSyncControlTest, RwFileControls) {
+  ADOPT_TRACE(trace_.get());
+  unique_ptr<RWFile> file;
+  ASSERT_OK(env_->NewRWFile({}, GetTestPath("rw_file_controls"), &file));
+
+  const auto& m = *(trace_->metrics());
+  NO_FATALS(VerifyNewFileMetrics(m));
+
+  ASSERT_OK(file->Write(0, slice_));
+
+  NO_FATALS(VerifyPreSyncMetrics(m));
+  ASSERT_OK(file->Sync());
+  NO_FATALS(VerifyPostSyncMetrics(m));
+
+  ASSERT_OK(file->Flush(RWFile::FLUSH_SYNC, 0, kBufSize / 2));
+  NO_FATALS(VerifyPostFlushMetrics(m));
+}
+
+TEST_P(FsSyncControlTest, DirControls) {
+  const auto& dir_path = GetTestDataDirectory();
+
+  ADOPT_TRACE(trace_.get());
+  const auto& m = *(trace_->metrics());
+
+  ASSERT_EQ(0, m.GetMetric(kTraceMetricFsync));
+  ASSERT_EQ(0, m.GetMetric(kTraceMetricFdatasync));
+  ASSERT_EQ(0, m.GetMetric(kTraceMetricSyncFileRange));
+
+  ASSERT_OK(env_->SyncDir(dir_path));
+
+  // Env::SyncDir() invokes only fsync() on the directory descriptor.
+  // It does so unless --never_fsync is set 'true'.
+  ASSERT_EQ(no_sync_ ? 0 : 1, m.GetMetric(kTraceMetricFsync));
+  ASSERT_EQ(0, m.GetMetric(kTraceMetricFdatasync));
+  ASSERT_EQ(0, m.GetMetric(kTraceMetricSyncFileRange));
 }
 
 class TestEncryptedEnv : public TestEnv, public ::testing::WithParamInterface<int> {

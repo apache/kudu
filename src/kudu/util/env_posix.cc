@@ -180,8 +180,11 @@ TAG_FLAG(crash_on_eio, advanced);
 TAG_FLAG(crash_on_eio, experimental);
 
 DEFINE_bool(never_fsync, false,
-            "Never fsync() anything to disk. This is used by certain test cases to "
-            "speed up runtime. This is very unsafe to use in production.");
+            "Short-circuit explicit calls to fsync(), fdatasync(), and "
+            "sync_file_range() syscalls, deferring synchronization of files' "
+            "data with backing storage devices at the discretion of the OS. "
+            "This is used by certain test cases to speed up runtime and it's "
+            "very unsafe to use in production.");
 TAG_FLAG(never_fsync, advanced);
 TAG_FLAG(never_fsync, unsafe);
 
@@ -243,6 +246,13 @@ const uint8_t kEncryptionHeaderSize = 64;
 
 const char* const kEncryptionHeaderMagic = "kuduenc";
 
+// Tokens used as trace metric keys in this file.  Some of them may be unused
+// on a particular OS since the related code is under OS/platform-specific
+// macros. They are marked 'extern' since they are also used in env-test.cc,
+// but that doesn't command separating them into their own header file.
+[[maybe_unused]] extern constexpr const char* const kTraceMetricFsync = "fsync";
+[[maybe_unused]] extern constexpr const char* const kTraceMetricFdatasync = "fdatasync";
+[[maybe_unused]] extern constexpr const char* const kTraceMetricSyncFileRange = "sync_file_range";
 namespace security {
 
 template<> struct SslTypeTraits<EVP_CIPHER_CTX> {
@@ -438,17 +448,19 @@ Status DoSync(int fd, const string& filename) {
   MAYBE_RETURN_EIO(filename, IOError(Env::kInjectedFailureStatusMsg, EIO));
 
   ThreadRestrictions::AssertIOAllowed();
-  if (FLAGS_never_fsync) return Status::OK();
-  if (FLAGS_env_use_fsync) {
+  if (PREDICT_FALSE(FLAGS_never_fsync)) {
+    return Status::OK();
+  }
+  if (PREDICT_FALSE(FLAGS_env_use_fsync)) {
+    TRACE_COUNTER_INCREMENT(kTraceMetricFsync, 1);
     TRACE_COUNTER_SCOPE_LATENCY_US("fsync_us");
-    TRACE_COUNTER_INCREMENT("fsync", 1);
-    if (fsync(fd) < 0) {
+    if (PREDICT_FALSE(fsync(fd) < 0)) {
       return IOError(filename, errno);
     }
   } else {
-    TRACE_COUNTER_INCREMENT("fdatasync", 1);
+    TRACE_COUNTER_INCREMENT(kTraceMetricFdatasync, 1);
     TRACE_COUNTER_SCOPE_LATENCY_US("fdatasync_us");
-    if (fdatasync(fd) < 0) {
+    if (PREDICT_FALSE(fdatasync(fd) < 0)) {
       return IOError(filename, errno);
     }
   }
@@ -1214,18 +1226,25 @@ class PosixWritableFile : public WritableFile {
     TRACE_EVENT1("io", "PosixWritableFile::Flush", "path", filename_);
     MAYBE_RETURN_EIO(filename_, IOError(Env::kInjectedFailureStatusMsg, EIO));
     ThreadRestrictions::AssertIOAllowed();
+    if (PREDICT_FALSE(FLAGS_never_fsync)) {
+      return Status::OK();
+    }
 #if defined(__linux__)
     int flags = SYNC_FILE_RANGE_WRITE;
     if (mode == FLUSH_SYNC) {
       flags |= SYNC_FILE_RANGE_WAIT_BEFORE;
       flags |= SYNC_FILE_RANGE_WAIT_AFTER;
     }
-    if (sync_file_range(fd_, 0, 0, flags) < 0) {
+    TRACE_COUNTER_INCREMENT(kTraceMetricSyncFileRange, 1);
+    if (PREDICT_FALSE(sync_file_range(fd_, 0, 0, flags) < 0)) {
       return IOError(filename_, errno);
     }
 #else
-    if (mode == FLUSH_SYNC && fsync(fd_) < 0) {
-      return IOError(filename_, errno);
+    if (mode == FLUSH_SYNC) {
+      TRACE_COUNTER_INCREMENT(kTraceMetricFsync, 1);
+      if (PREDICT_FALSE(fsync(fd_) < 0)) {
+        return IOError(filename_, errno);
+      }
     }
 #endif
     return Status::OK();
@@ -1387,17 +1406,24 @@ class PosixRWFile : public RWFile {
     TRACE_EVENT1("io", "PosixRWFile::Flush", "path", filename_);
     MAYBE_RETURN_EIO(filename_, IOError(Env::kInjectedFailureStatusMsg, EIO));
     ThreadRestrictions::AssertIOAllowed();
+    if (PREDICT_FALSE(FLAGS_never_fsync)) {
+      return Status::OK();
+    }
 #if defined(__linux__)
     int flags = SYNC_FILE_RANGE_WRITE;
     if (mode == FLUSH_SYNC) {
       flags |= SYNC_FILE_RANGE_WAIT_AFTER;
     }
-    if (sync_file_range(fd_, offset, length, flags) < 0) {
+    TRACE_COUNTER_INCREMENT(kTraceMetricSyncFileRange, 1);
+    if (PREDICT_FALSE(sync_file_range(fd_, offset, length, flags) < 0)) {
       return IOError(filename_, errno);
     }
 #else
-    if (mode == FLUSH_SYNC && fsync(fd_) < 0) {
-      return IOError(filename_, errno);
+    if (mode == FLUSH_SYNC) {
+      TRACE_COUNTER_INCREMENT(kTraceMetricFsync, 1);
+      if (PREDICT_FALSE(fsync(fd_) < 0)) {
+        return IOError(filename_, errno);
+      }
     }
 #endif
     return Status::OK();
@@ -1846,14 +1872,17 @@ class PosixEnv : public Env {
     TRACE_EVENT1("io", "SyncDir", "path", dirname);
     MAYBE_RETURN_EIO(dirname, IOError(Env::kInjectedFailureStatusMsg, EIO));
     ThreadRestrictions::AssertIOAllowed();
-    if (FLAGS_never_fsync) return Status::OK();
+    if (PREDICT_FALSE(FLAGS_never_fsync)) {
+      return Status::OK();
+    }
     int dir_fd;
     RETRY_ON_EINTR(dir_fd, open(dirname.c_str(), O_DIRECTORY|O_RDONLY));
     if (dir_fd < 0) {
       return IOError(dirname, errno);
     }
     ScopedFdCloser fd_closer(dir_fd);
-    if (fsync(dir_fd) != 0) {
+    TRACE_COUNTER_INCREMENT(kTraceMetricFsync, 1);
+    if (PREDICT_FALSE(fsync(dir_fd) != 0)) {
       return IOError(dirname, errno);
     }
     return Status::OK();
