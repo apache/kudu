@@ -73,7 +73,7 @@ TEST(StatusTest, TestMoveAssignment) {
     Status src = Status::OK();
     Status dst = Status::NotFound("orig dst");
     dst = std::move(src);
-    ASSERT_OK(src); // NOLINT(bugprone-use-after-move)
+    ASSERT_TRUE(src.IsNotFound()); // NOLINT(bugprone-use-after-move)
     ASSERT_OK(dst);
   }
 
@@ -82,7 +82,7 @@ TEST(StatusTest, TestMoveAssignment) {
     Status src = Status::NotFound("orig src");
     Status dst = Status::NotFound("orig dst");
     dst = std::move(src);
-    ASSERT_OK(src); // NOLINT(bugprone-use-after-move)
+    ASSERT_EQ("Not found: orig dst", src.ToString()); // NOLINT(bugprone-use-after-move)
     ASSERT_EQ("Not found: orig src", dst.ToString());
   }
 

@@ -134,7 +134,7 @@
   // types/styles, see [1] for details. So, enable this only if compiling with
   // CLANG or GCC version 13 and newer.
   //
-  // [1] https://gcc.gnu.org/bugzilla/show_bug.cgi?id=69585 for details).
+  // [1] https://gcc.gnu.org/bugzilla/show_bug.cgi?id=69585
   #if defined(__clang__) || (defined(__GNUC__) && __GNUC__ >= 13)
     #define KUDU_ATTR_NODISCARD [[nodiscard]] // NOLINT(whitespace/braces)
   #else
@@ -525,11 +525,7 @@ inline Status::Status(Status&& s) noexcept : state_(s.state_) {
 }
 
 inline Status& Status::operator=(Status&& s) noexcept {
-  if (state_ != s.state_) {
-    delete[] state_;
-    state_ = s.state_;
-    s.state_ = nullptr;
-  }
+  std::swap(state_, s.state_);
   return *this;
 }
 #endif
