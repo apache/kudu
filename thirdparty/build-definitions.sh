@@ -1188,7 +1188,14 @@ build_postgres() {
   pushd $POSTGRES_BDIR
 
   # We don't need readline, zlib and icu, so let's simplify build.
-  CFLAGS="$EXTRA_CFLAGS -std=c17" \
+  #
+  # Add '-std=c11' to avoid compilation errors with GCC 15 (e.g., Ubuntu26)
+  # and newer versions, switching it from its default C23 standard. Also,
+  # keep it compilable at least with GCC 7 (e.g., Ubuntu18) since '-std=c17'
+  # (i.e. the C17 standard) is supported only starting GCC 8 [1].
+  #
+  # [1] https://gcc.gnu.org/projects/c-status.html
+  CFLAGS="$EXTRA_CFLAGS -std=c11" \
     LDFLAGS="$EXTRA_LDFLAGS" \
     $POSTGRES_SOURCE/configure \
     --prefix=$PREFIX \
