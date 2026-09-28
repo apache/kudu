@@ -1,0 +1,175 @@
+commit 12eee85e511ff8854ac61e8caad8cec218b20513
+Author: Tom Lane <tgl@sss.pgh.pa.us>
+Date:   Sun May 18 12:45:55 2025 -0400
+
+    Make our usage of memset_s() conform strictly to the C11 standard.
+    
+    Per the letter of the C11 standard, one must #define
+    __STDC_WANT_LIB_EXT1__ as 1 before including <string.h> in order to
+    have access to memset_s().  It appears that many platforms are lenient
+    about this, because we weren't doing it and yet the code appeared to
+    work anyway.  But we now find that with -std=c11, macOS is strict and
+    doesn't declare memset_s, leading to compile failures since we try to
+    use it anyway.  (Given the lack of prior reports, perhaps this is new
+    behavior in the latest SDK?  No matter, we're clearly in the wrong.)
+    
+    In addition to the immediate problem, which could be fixed merely by
+    adding the needed #define to explicit_bzero.c, it seems possible that
+    our configure-time probe for memset_s() could fail in case a platform
+    implements the function in some odd way due to this spec requirement.
+    This concern can be fixed in largely the same way that we dealt with
+    strchrnul() in 6da2ba1d8: switch to using a declaration-based
+    configure probe instead of a does-it-link probe.
+    
+    Back-patch to v13 where we started using memset_s().
+    
+    Reported-by: Lakshmi Narayana Velayudam <dev.narayana.v@gmail.com>
+    Author: Tom Lane <tgl@sss.pgh.pa.us>
+    Discussion: https://postgr.es/m/CAA4pTnLcKGG78xeOjiBr5yS7ZeE-Rh=FaFQQGOO=nPzA1L8yEA@mail.gmail.com
+    Backpatch-through: 13
+
+diff --git a/configure b/configure
+index 275c67ee67c..4f15347cc95 100755
+--- a/configure
++++ b/configure
+@@ -15616,7 +15616,7 @@ fi
+ LIBS_including_readline="$LIBS"
+ LIBS=`echo "$LIBS" | sed -e 's/-ledit//g' -e 's/-lreadline//g'`
+ 
+-for ac_func in backtrace_symbols copyfile copy_file_range elf_aux_info getauxval getifaddrs getpeerucred inet_pton kqueue localeconv_l mbstowcs_l memset_s posix_fallocate ppoll pthread_is_threaded_np setproctitle setproctitle_fast strsignal syncfs sync_file_range uselocale wcstombs_l
++for ac_func in backtrace_symbols copyfile copy_file_range elf_aux_info getauxval getifaddrs getpeerucred inet_pton kqueue localeconv_l mbstowcs_l posix_fallocate ppoll pthread_is_threaded_np setproctitle setproctitle_fast strsignal syncfs sync_file_range uselocale wcstombs_l
+ do :
+   as_ac_var=`$as_echo "ac_cv_func_$ac_func" | $as_tr_sh`
+ ac_fn_c_check_func "$LINENO" "$ac_func" "$as_ac_var"
+@@ -16192,6 +16192,19 @@ cat >>confdefs.h <<_ACEOF
+ #define HAVE_DECL_STRCHRNUL $ac_have_decl
+ _ACEOF
+ 
++ac_fn_c_check_decl "$LINENO" "memset_s" "ac_cv_have_decl_memset_s" "#define __STDC_WANT_LIB_EXT1__ 1
++#include <string.h>
++"
++if test "x$ac_cv_have_decl_memset_s" = xyes; then :
++  ac_have_decl=1
++else
++  ac_have_decl=0
++fi
++
++cat >>confdefs.h <<_ACEOF
++#define HAVE_DECL_MEMSET_S $ac_have_decl
++_ACEOF
++
+ 
+ # This is probably only present on macOS, but may as well check always
+ ac_fn_c_check_decl "$LINENO" "F_FULLFSYNC" "ac_cv_have_decl_F_FULLFSYNC" "#include <fcntl.h>
+diff --git a/configure.ac b/configure.ac
+index 7ea91d56adb..4b8335dc613 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -1792,7 +1792,6 @@ AC_CHECK_FUNCS(m4_normalize([
+ 	kqueue
+ 	localeconv_l
+ 	mbstowcs_l
+-	memset_s
+ 	posix_fallocate
+ 	ppoll
+ 	pthread_is_threaded_np
+@@ -1838,6 +1837,8 @@ AC_CHECK_DECLS([strlcat, strlcpy, strnlen, strsep, timingsafe_bcmp])
+ AC_CHECK_DECLS([preadv], [], [], [#include <sys/uio.h>])
+ AC_CHECK_DECLS([pwritev], [], [], [#include <sys/uio.h>])
+ AC_CHECK_DECLS([strchrnul], [], [], [#include <string.h>])
++AC_CHECK_DECLS([memset_s], [], [], [#define __STDC_WANT_LIB_EXT1__ 1
++#include <string.h>])
+ 
+ # This is probably only present on macOS, but may as well check always
+ AC_CHECK_DECLS(F_FULLFSYNC, [], [], [#include <fcntl.h>])
+diff --git a/meson.build b/meson.build
+index 12de5e80c31..d142e3e408b 100644
+--- a/meson.build
++++ b/meson.build
+@@ -2654,6 +2654,7 @@ decl_checks += [
+   ['preadv', 'sys/uio.h'],
+   ['pwritev', 'sys/uio.h'],
+   ['strchrnul', 'string.h'],
++  ['memset_s', 'string.h', '#define __STDC_WANT_LIB_EXT1__ 1'],
+ ]
+ 
+ # Check presence of some optional LLVM functions.
+@@ -2667,21 +2668,23 @@ endif
+ foreach c : decl_checks
+   func = c.get(0)
+   header = c.get(1)
+-  args = c.get(2, {})
++  prologue = c.get(2, '')
++  args = c.get(3, {})
+   varname = 'HAVE_DECL_' + func.underscorify().to_upper()
+ 
+   found = cc.compiles('''
+-#include <@0@>
++@0@
++#include <@1@>
+ 
+ int main()
+ {
+-#ifndef @1@
+-    (void) @1@;
++#ifndef @2@
++    (void) @2@;
+ #endif
+ 
+ return 0;
+ }
+-'''.format(header, func),
++'''.format(prologue, header, func),
+     name: 'test whether @0@ is declared'.format(func),
+     # need to add cflags_warn to get at least
+     # -Werror=unguarded-availability-new if applicable
+@@ -2880,7 +2883,6 @@ func_checks = [
+   ['kqueue'],
+   ['localeconv_l'],
+   ['mbstowcs_l'],
+-  ['memset_s'],
+   ['mkdtemp'],
+   ['posix_fadvise'],
+   ['posix_fallocate'],
+diff --git a/src/include/pg_config.h.in b/src/include/pg_config.h.in
+index c3cc9fa856d..726a7c1be1f 100644
+--- a/src/include/pg_config.h.in
++++ b/src/include/pg_config.h.in
+@@ -91,6 +91,10 @@
+    `LLVMCreatePerfJITEventListener', and to 0 if you don't. */
+ #undef HAVE_DECL_LLVMCREATEPERFJITEVENTLISTENER
+ 
++/* Define to 1 if you have the declaration of `memset_s', and to 0 if you
++   don't. */
++#undef HAVE_DECL_MEMSET_S
++
+ /* Define to 1 if you have the declaration of `posix_fadvise', and to 0 if you
+    don't. */
+ #undef HAVE_DECL_POSIX_FADVISE
+@@ -291,9 +295,6 @@
+ /* Define to 1 if you have the <memory.h> header file. */
+ #undef HAVE_MEMORY_H
+ 
+-/* Define to 1 if you have the `memset_s' function. */
+-#undef HAVE_MEMSET_S
+-
+ /* Define to 1 if you have the `mkdtemp' function. */
+ #undef HAVE_MKDTEMP
+ 
+diff --git a/src/port/explicit_bzero.c b/src/port/explicit_bzero.c
+index 1d37b119bab..53766e86e94 100644
+--- a/src/port/explicit_bzero.c
++++ b/src/port/explicit_bzero.c
+@@ -12,9 +12,11 @@
+  *-------------------------------------------------------------------------
+  */
+ 
++#define __STDC_WANT_LIB_EXT1__ 1	/* needed to access memset_s() */
++
+ #include "c.h"
+ 
+-#if defined(HAVE_MEMSET_S)
++#if HAVE_DECL_MEMSET_S
+ 
+ void
+ explicit_bzero(void *buf, size_t len)

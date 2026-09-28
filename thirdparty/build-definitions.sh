@@ -1227,10 +1227,15 @@ build_postgres() {
   # latter allows for more flexibility when deploying Postgres and its utility
   # binaries, so there isn't a need to override the compiled-in linker hints
   # using LD_LIBRARY_PATH -- that's useful for dist-test and alike.
+  # Add '-std=c11' to avoid compilation errors with GCC 15 (e.g., Ubuntu26)
+  # and newer versions, switching it from its default C23 standard. Also,
+  # keep it compilable at least with GCC 7 (e.g., Ubuntu18) since '-std=c17'
+  # (i.e. the C17 standard) is supported only starting GCC 8 [3].
   #
   # [1] https://stackoverflow.com/questions/70931415/
   # [2] https://stackoverflow.com/questions/38058041/
-  CFLAGS="$EXTRA_CFLAGS -std=c17" \
+  # [3] https://gcc.gnu.org/projects/c-status.html
+  CFLAGS="$EXTRA_CFLAGS -std=c11" \
     LDFLAGS="$EXTRA_LDFLAGS" \
     $POSTGRES_SOURCE/configure \
     --prefix=$PREFIX \

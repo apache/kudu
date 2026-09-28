@@ -608,7 +608,7 @@ GUMBO_QUERY_PATCHES=(
 )
 
 POSTGRES_VERSION=17.2
-POSTGRES_PATCHLEVEL=2
+POSTGRES_PATCHLEVEL=3
 POSTGRES_NAME=postgresql-$POSTGRES_VERSION
 POSTGRES_SOURCE=$TP_SOURCE_DIR/$POSTGRES_NAME
 POSTGRES_ARCHIVE=$POSTGRES_NAME.tar.gz
@@ -616,6 +616,7 @@ POSTGRES_PATCHES=(
  "patch -p0 < $TP_DIR/patches/postgres-root-can-run-initdb.patch"
  "patch -p0 < $TP_DIR/patches/postgres-no-check-root.patch"
  "patch -p1 < $TP_DIR/patches/postgres-fix-strchrnul-macos-check.patch"
+ "patch -p1 < $TP_DIR/patches/postgres-memset_s.patch"
 )
 
 POSTGRES_JDBC_VERSION=42.7.4
