@@ -67,8 +67,8 @@ TEST(StatusTest, TestMoveConstructor) {
 }
 
 TEST(StatusTest, TestMoveAssignment) {
-  // OK->Bad move should clear the source status and also make the
-  // destination status OK.
+  // As currently implementated, Status::OK->Status::NotFound move should
+  // swap the source and the destination objects.
   {
     Status src = Status::OK();
     Status dst = Status::NotFound("orig dst");
