@@ -455,25 +455,26 @@ Status AutoRebalancerTask::GetMovesUsingRebalancingAlgo(
 
   unordered_set<string> tablets_in_move;
   vector<Rebalancer::ReplicaMove> rep_moves;
+  // moves_per_tserver_ is empty at selection time (RunLoop() drains every
+  // outstanding move before planning a batch), so track the per-server cap
+  // within the batch instead.
+  unordered_map<string, int> batch_moves_per_server;
 
   for (const auto& move : moves) {
-    // Check if this move would exceed the per-tserver limit based on currently
-    // in-flight moves. We check against moves_per_tserver_ (the actual ongoing moves)
-    // rather than limiting within this batch, since the global max_moves limit
-    // already constrains the batch size.
-    int src_ongoing = moves_per_tserver_[move.from];
-    int dst_ongoing = moves_per_tserver_[move.to];
-
-    if (src_ongoing >= max_moves_per_server || dst_ongoing >= max_moves_per_server) {
-      // Skip this move as it would violate per-tserver limits.
+    // Gate on move.to even though SelectReplicaToMove may later turn this into
+    // a pure drop (which doesn't touch the destination). We can't tell a drop
+    // apart until a tablet is picked below, so checking the destination here is
+    // deliberately conservative: worst case a drop waits for the next round.
+    if (batch_moves_per_server[move.from] >= max_moves_per_server ||
+        batch_moves_per_server[move.to] >= max_moves_per_server) {
       VLOG(1) << Substitute(
-          "Skipping move from $0 to $1: per-tserver limit reached "
-          "(src=$2, dst=$3, limit=$4)",
+          "skipping move from $0 to $1: per-server cap of $2 reached for this "
+          "batch (from=$3, to=$4)",
           move.from,
           move.to,
-          src_ongoing,
-          dst_ongoing,
-          max_moves_per_server);
+          max_moves_per_server,
+          batch_moves_per_server[move.from],
+          batch_moves_per_server[move.to]);
       continue;
     }
 
@@ -492,6 +493,16 @@ Status AutoRebalancerTask::GetMovesUsingRebalancingAlgo(
                                       &random_generator_, std::move(tablet_ids),
                                       &tablets_in_move, &rep_moves,
                                       is_leader_move));
+    // SelectReplicaToMove() returns a non-OK status when it finds no move, so
+    // a move was appended at this point.
+    DCHECK(!rep_moves.empty());
+    // SelectReplicaToMove clears the destination when the replica is only being
+    // dropped, so count a destination only when one is set.
+    const auto& selected = rep_moves.back();
+    ++batch_moves_per_server[selected.ts_uuid_from];
+    if (!selected.ts_uuid_to.empty()) {
+      ++batch_moves_per_server[selected.ts_uuid_to];
+    }
   }
 
   *replica_moves = std::move(rep_moves);

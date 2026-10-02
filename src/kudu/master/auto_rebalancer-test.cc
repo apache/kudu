@@ -346,6 +346,16 @@ class AutoRebalancerTest : public KuduTest {
         raw_info, moves_in_progress, cluster_info);
   }
 
+  static Status GetMovesUsingRebalancingAlgoForTest(
+      AutoRebalancerTask* auto_rebalancer,
+      const rebalance::ClusterRawInfo& raw_info,
+      rebalance::RebalancingAlgo* algo,
+      CrossLocations cross_location,
+      vector<rebalance::Rebalancer::ReplicaMove>* replica_moves) {
+    return auto_rebalancer->GetMovesUsingRebalancingAlgo(
+        raw_info, algo, cross_location, replica_moves);
+  }
+
   static map<string, int> ComputeRangeReplicaSkew(
       const rebalance::ClusterRawInfo& raw_info,
       const string& table_id) {
@@ -772,6 +782,9 @@ TEST_F(AutoRebalancerTest, RangeAwareRebalancesNewRangeReplicas) {
   FLAGS_enable_range_replica_placement = false;
   // Avoid minidump handler thread teardown races in mini-cluster shutdown.
   FLAGS_enable_minidumps = false;
+  // The new tserver is the destination of every move, so with the default cap
+  // of 1 the ~12 moves needed take too long to finish before the timeout below.
+  FLAGS_auto_rebalancing_max_moves_per_server = 4;
 
   cluster_opts_.num_tablet_servers = 3;
   ASSERT_OK(CreateAndStartCluster());
@@ -1720,6 +1733,88 @@ TEST_F(AutoRebalancerTest, ExecuteMovesCASRejectionDropsMoveGracefully) {
     ASSERT_STRINGS_ANY_MATCH(sink.logged_msgs(), "Failed to schedule move for tablet");
   });
   NO_PENDING_FATALS();
+}
+
+// Regression test: GetMovesUsingRebalancingAlgo used to bound only the whole
+// batch at max_moves_per_server * num_tservers, so one server could source
+// several moves in a single batch even with the cap set to 1. It now tracks
+// each server's moves (as source or destination) within the batch and skips a
+// move once either end reaches the cap, so this checks no server exceeds it.
+TEST_F(AutoRebalancerTest, MaxMovesPerServerEnforcedWithinOneBatch) {
+  flag_saver_ = make_unique<FlagSaver>();
+  FLAGS_auto_rebalancing_max_moves_per_server = 1;
+
+  constexpr int kNumOrigTservers = 3;
+  constexpr int kNumAdditionalTservers = 3;
+  constexpr int kNumTablets = 12;
+
+  cluster_opts_.num_tablet_servers = kNumOrigTservers;
+  ASSERT_OK(CreateAndStartCluster(/*enable_leader_rebalance=*/false));
+
+  FLAGS_auto_rebalancing_enabled = false;
+
+  CreateWorkloadTable(kNumTablets, /*num_replicas*/3);
+
+  int leader_idx;
+  ASSERT_OK(cluster_->GetLeaderMasterIndex(&leader_idx));
+  auto* catalog = cluster_->mini_master(leader_idx)->master()->catalog_manager();
+  auto* auto_rebalancer = catalog->auto_rebalancer();
+  auto standalone = MakeStandaloneRebalancerForTest(
+      catalog, cluster_->mini_master(leader_idx)->master()->ts_manager(),
+      cluster_->mini_master(leader_idx)->master()->metric_entity(),
+      auto_rebalancer);
+  auto* rebalancer = standalone.get();
+
+  // The 3 added servers come up empty while the 3 originals hold every replica,
+  // so only the originals can be sources. With 6 servers and a cap of 1 the
+  // batch budget is 6 moves, which forces at least one source to be reused.
+  for (int i = 0; i < kNumAdditionalTservers; ++i) {
+    ASSERT_OK(cluster_->AddTabletServer());
+  }
+  NO_FATALS(WaitForLiveTServerCount(kNumOrigTservers + kNumAdditionalTservers));
+
+  rebalance::ClusterRawInfo raw_info;
+  ASSERT_EVENTUALLY([&] {
+    rebalance::ClusterRawInfo info;
+    ASSERT_OK(BuildClusterRawInfoForTest(rebalancer, nullopt, &info));
+    ASSERT_FALSE(info.tablet_summaries.empty());
+    raw_info = std::move(info);
+  });
+
+  vector<rebalance::Rebalancer::ReplicaMove> replica_moves;
+  rebalance::TwoDimensionalGreedyAlgo algo(
+      rebalance::TwoDimensionalGreedyAlgo::EqualSkewOption::PICK_RANDOM,
+      FLAGS_auto_rebalancing_prefer_follower_replica_moves);
+  ASSERT_OK(GetMovesUsingRebalancingAlgoForTest(
+      rebalancer, raw_info, &algo, CrossLocations::NO, &replica_moves));
+
+  // A server's turns as source and as destination both count against the cap.
+  map<string, int> moves_per_server;
+  for (const auto& move : replica_moves) {
+    ++moves_per_server[move.ts_uuid_from];
+    if (!move.ts_uuid_to.empty()) {
+      ++moves_per_server[move.ts_uuid_to];
+    }
+  }
+  int busiest_count = 0;
+  string busiest_ts;
+  for (const auto& [ts_uuid, count] : moves_per_server) {
+    if (count > busiest_count) {
+      busiest_count = count;
+      busiest_ts = ts_uuid;
+    }
+  }
+
+  // Guard against a vacuous pass: with no more moves than the cap, the
+  // assertion below cannot fail however the code behaves, so a failure here
+  // means the setup was not skewed enough rather than that the cap works.
+  const int cap = FLAGS_auto_rebalancing_max_moves_per_server;
+  ASSERT_GT(replica_moves.size(), cap)
+      << "setup produced no more moves than the cap; cluster not skewed enough";
+
+  ASSERT_LE(busiest_count, cap)
+      << "server " << busiest_ts << " got " << busiest_count << " moves in a batch of "
+      << replica_moves.size() << " with the cap at " << cap;
 }
 
 // Verify follower-move counter increments and leader-move counter stays zero

@@ -107,6 +107,9 @@ class LeaderRebalancerTest : public KuduTest {
     FLAGS_auto_rebalancing_enabled = true;
     FLAGS_auto_rebalancing_interval_seconds = 1;                // Shorten for testing.
     FLAGS_auto_rebalancing_wait_for_replica_moves_seconds = 0;  // Shorten for testing.
+    // The replica rebalancer enforces this cap per batch. The default of 1
+    // is too slow for tests that wait for replicas to move onto a new tserver.
+    FLAGS_auto_rebalancing_max_moves_per_server = 5;
     // Disable leader rebalancing, we'll do it manually.
     FLAGS_auto_leader_rebalancing_enabled = false;
     cluster_.reset(new InternalMiniCluster(env_, cluster_opts_));
