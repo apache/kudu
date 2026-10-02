@@ -83,6 +83,20 @@ target_link_libraries(ksck
 )
 
 #######################################
+# kudu_tools_location
+#######################################
+
+add_library(kudu_tools_location
+  location_maintenance.cc
+)
+target_link_libraries(kudu_tools_location
+  gutil
+  kudu_util
+  rebalance
+  ${KUDU_BASE_LIBS}
+)
+
+#######################################
 # kudu_tools_rebalance
 #######################################
 
@@ -138,6 +152,7 @@ set(KUDU_CLI_TOOL_LINK_LIBS
   kudu_common
   kudu_fs
   kudu_subprocess
+  kudu_tools_location
   kudu_tools_rebalance
   kudu_util
   log
@@ -191,6 +206,7 @@ SET_KUDU_TEST_LINK_LIBS(
   ksck
   kudu_hms
   kudu_subprocess
+  kudu_tools_location
   kudu_tools_rebalance
   kudu_tools_test_util
   kudu_tools_util
@@ -211,7 +227,7 @@ ADD_KUDU_TEST_DEPENDENCIES(kudu-admin-test
 ADD_KUDU_TEST(kudu-tool-test
   NUM_SHARDS 4 PROCESSORS 3
   DATA_FILES testdata/sample-diagnostics-log.txt testdata/bad-diagnostics-log.txt
-  DATA_FILES ../scripts/first_argument.sh)
+  DATA_FILES ../scripts/first_argument.sh ../scripts/assign-location.py)
 ADD_KUDU_TEST_DEPENDENCIES(kudu-tool-test
   kudu)
 ADD_KUDU_TEST(kudu-ts-cli-test)
@@ -220,6 +236,7 @@ ADD_KUDU_TEST_DEPENDENCIES(kudu-ts-cli-test
 ADD_KUDU_TEST(kudu-txn-cli-test)
 ADD_KUDU_TEST_DEPENDENCIES(kudu-txn-cli-test
   kudu)
+ADD_KUDU_TEST(location_maintenance-test)
 ADD_KUDU_TEST(rebalancer_tool-test
   NUM_SHARDS 8 PROCESSORS 3
   DATA_FILES ../scripts/assign-location.py)

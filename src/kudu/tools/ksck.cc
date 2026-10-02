@@ -151,6 +151,9 @@ void BuildConsensusStateForConfigMember(const consensus::ConsensusStatePB& cstat
     } else {
       InsertOrDie(&ksck_cstate->voter_uuids, pb.permanent_uuid());
     }
+    if (pb.attrs().replace()) {
+      InsertOrDie(&ksck_cstate->replace_uuids, pb.permanent_uuid());
+    }
   }
 }
 

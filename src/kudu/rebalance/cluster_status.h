@@ -109,6 +109,8 @@ struct ConsensusState {
   std::optional<std::string> leader_uuid;
   std::set<std::string> voter_uuids;
   std::set<std::string> non_voter_uuids;
+  // Peers with the REPLACE attribute set. Not compared by Matches().
+  std::set<std::string> replace_uuids;
 };
 
 // Represents the health of a server.

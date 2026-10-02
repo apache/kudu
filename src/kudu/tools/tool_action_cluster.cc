@@ -19,18 +19,24 @@
 #include <cstdlib>
 #include <functional>
 #include <initializer_list>
+#include <iomanip>
 #include <iostream>
 #include <iterator>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <tuple>
 #include <type_traits>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
+#include "kudu/gutil/map-util.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rebalance/cluster_status.h"
@@ -38,6 +44,7 @@
 #include "kudu/tools/ksck.h"
 #include "kudu/tools/ksck_remote.h"
 #include "kudu/tools/ksck_results.h"
+#include "kudu/tools/location_maintenance.h"
 #include "kudu/tools/rebalancer_tool.h"
 #include "kudu/tools/tool_action.h"
 #include "kudu/tools/tool_action_common.h"
@@ -46,21 +53,29 @@
 #include "kudu/util/string_case.h"
 #include "kudu/util/version_util.h"
 
+using kudu::cluster_summary::ServerHealthSummary;
 using kudu::rebalance::Rebalancer;
 using kudu::iequals;
 using std::cout;
 using std::endl;
 using std::make_shared;
 using std::make_tuple;
+using std::set;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
+using std::unordered_map;
 using std::vector;
 using strings::Split;
 using strings::Substitute;
 
 DECLARE_string(tables);
 DECLARE_string(tablets);
+
+DEFINE_string(location, "",
+              "Location to check for maintenance. If empty, every location "
+              "present in the cluster is checked and a per-location verdict is "
+              "printed. If set, only the specified location is checked.");
 
 DEFINE_string(ignored_tservers, "",
               "UUIDs of tablet servers to ignore while rebalancing the cluster "
@@ -213,6 +228,196 @@ Status RunKsck(const RunnerContext& context) {
   ksck->set_print_sections(Split(FLAGS_sections, ",", strings::SkipEmpty()));
 
   return ksck->RunAndPrintResults();
+}
+
+// Prints notes about the cluster as a whole. They don't affect any verdict.
+void PrintClusterNotes(const set<string>& locations,
+                       const vector<string>& tablets_in_flux) {
+  if (locations.size() >= 3) {
+    cout << "  [OK]   " << locations.size() << " locations present:";
+  } else {
+    cout << "  [WARN] only " << locations.size() << " location(s) present:";
+  }
+  for (const auto& loc : locations) {
+    cout << " " << loc;
+  }
+  cout << endl;
+  if (locations.size() < 3) {
+    cout << "         With fewer than 3 locations, every tablet has a majority of "
+            "its voters" << endl
+         << "         in a single location, which can't be taken offline." << endl;
+  }
+  if (!tablets_in_flux.empty()) {
+    constexpr size_t kMaxListed = 5;
+    const size_t num_listed = std::min(kMaxListed, tablets_in_flux.size());
+    const vector<string> listed(tablets_in_flux.begin(),
+                                tablets_in_flux.begin() + num_listed);
+    cout << "  [NOTE] " << tablets_in_flux.size()
+         << " tablet(s) have a Raft config change in progress";
+    if (num_listed < tablets_in_flux.size()) {
+      cout << " (showing " << num_listed << " of " << tablets_in_flux.size()
+           << ")";
+    }
+    cout << ": " << JoinStrings(listed, ", ") << endl
+         << "         Replicas are being replaced or added (e.g. by the "
+            "auto-rebalancer," << endl
+         << "         'kudu cluster rebalance', or re-replication), so the "
+            "placement checked" << endl
+         << "         below is about to change. Re-run once it settles." << endl;
+  }
+}
+
+void PrintVerdict(const LocationVerdict& v) {
+  if (v.safe) {
+    cout << "  [OK]   0 tablets would lose quorum" << endl;
+    cout << "Verdict: SAFE to take " << v.location << " offline" << endl;
+    return;
+  }
+  cout << "  [FAIL] " << v.blocking.size()
+       << " tablet(s) would lose quorum:" << endl;
+  for (const auto& bt : v.blocking) {
+    cout << "           tablet " << bt.tablet_id
+         << " (table " << bt.table_name << ", RF=" << bt.rf << "): "
+         << bt.voters_on_target << " voter(s) on " << v.location
+         << ", " << bt.healthy_voters_off_target
+         << " healthy voter(s) elsewhere, majority=" << bt.majority;
+    // Otherwise a majority that doesn't match the RF looks like a bug.
+    if (bt.voters_in_config != bt.rf) {
+      cout << " of " << bt.voters_in_config << " voter(s) in the config";
+    }
+    if (bt.non_voters_on_target > 0) {
+      cout << " (" << bt.non_voters_on_target
+           << " non-voter(s) on " << v.location << ", not counted)";
+    }
+    cout << endl;
+  }
+  cout << "Verdict: NOT SAFE to take " << v.location << " offline" << endl;
+}
+
+// Checks whether a location, or every location if --location isn't set, can be
+// taken offline without any tablet losing quorum.
+Status RunCheckLocationMaintenance(const RunnerContext& context) {
+  vector<string> master_addresses;
+  RETURN_NOT_OK(ParseMasterAddresses(context, &master_addresses));
+  shared_ptr<KsckCluster> cluster;
+  RETURN_NOT_OK_PREPEND(RemoteKsckCluster::Build(master_addresses, &cluster),
+                        "unable to build KsckCluster");
+  auto ksck(make_shared<Ksck>(cluster));
+
+  // ksck returns an error for any health issue, but its results are still
+  // usable, so only stop on authorization errors. Same as in
+  // EvaluateMoveSingleReplicasFlag().
+  Status s = ksck->Run();
+  if (s.IsNotAuthorized()) {
+    RETURN_NOT_OK_PREPEND(s, "re-run with administrator privileges");
+  }
+  const auto& cs = ksck->results().cluster_status;
+
+  // Without a location there's no telling whether a tablet server would go
+  // offline with the location being checked, so don't guess. The location comes
+  // from the master, so an unreachable tablet server still has one.
+  vector<string> unlocated_tservers;
+  for (const auto& ts : cs.tserver_summaries) {
+    if (ts.ts_location.empty()) {
+      unlocated_tservers.push_back(ts.uuid);
+    }
+  }
+  if (!unlocated_tservers.empty()) {
+    // The master won't register a tablet server it can't assign a location to,
+    // so normally either all of them have one or none do.
+    if (unlocated_tservers.size() == cs.tserver_summaries.size()) {
+      return Status::IllegalState(
+          "no tablet server has a location assigned; this check needs a "
+          "location-aware cluster (see the master's --location_mapping_cmd "
+          "flag)");
+    }
+    std::sort(unlocated_tservers.begin(), unlocated_tservers.end());
+    return Status::IllegalState(Substitute(
+        "$0 of $1 tablet server(s) have no location assigned: [$2]; every "
+        "tablet server needs one before a location can be checked for "
+        "maintenance",
+        unlocated_tservers.size(), cs.tserver_summaries.size(),
+        JoinStrings(unlocated_tservers, ", ")));
+  }
+
+  // Map tablet servers to locations.
+  unordered_map<string, string> loc_by_ts;
+  set<string> locations;
+  for (const auto& ts : cs.tserver_summaries) {
+    EmplaceOrDie(&loc_by_ts, ts.uuid, ts.ts_location);
+    locations.insert(ts.ts_location);
+  }
+
+  // Map tables to replication factors, including system tables.
+  unordered_map<string, int> rf_by_table;
+  for (const auto* tables : { &cs.table_summaries, &cs.system_table_summaries }) {
+    for (const auto& t : *tables) {
+      EmplaceOrDie(&rf_by_table, t.id, t.replication_factor);
+    }
+  }
+
+  // Decide which locations to check.
+  vector<string> targets;
+  if (!FLAGS_location.empty()) {
+    if (!ContainsKey(locations, FLAGS_location)) {
+      return Status::NotFound(Substitute(
+          "location '$0' is not present in the cluster; known locations: [$1]",
+          FLAGS_location, JoinStrings(vector<string>(locations.begin(),
+                                                    locations.end()), ", ")));
+    }
+    targets.push_back(FLAGS_location);
+  } else {
+    targets.assign(locations.begin(), locations.end());
+  }
+
+  const auto tablets_in_flux = FindTabletsInFlux(cs.tablet_summaries);
+
+  if (targets.size() == 1) {
+    const string& target = targets.front();
+    cout << "Location " << target << " maintenance check:" << endl;
+    PrintClusterNotes(locations, tablets_in_flux);
+    LocationVerdict v = EvaluateLocation(target, cs.tablet_summaries,
+                                         loc_by_ts, rf_by_table);
+    PrintVerdict(v);
+    if (!v.safe) {
+      return Status::IllegalState(Substitute(
+          "location '$0' is not safe to take offline", target));
+    }
+    return Status::OK();
+  }
+
+  // Check every location.
+  cout << "Cluster location-maintenance check:" << endl;
+  PrintClusterNotes(locations, tablets_in_flux);
+  cout << endl;
+  cout << std::left << std::setw(24) << "Location"
+       << std::setw(12) << "Verdict"
+       << "Blocking tablets" << endl;
+  cout << std::string(24 + 12 + 16, '-') << endl;
+  bool any_unsafe = false;
+  vector<LocationVerdict> verdicts;
+  verdicts.reserve(targets.size());
+  for (const auto& target : targets) {
+    verdicts.push_back(EvaluateLocation(target, cs.tablet_summaries,
+                                        loc_by_ts, rf_by_table));
+    const auto& v = verdicts.back();
+    any_unsafe = any_unsafe || !v.safe;
+    cout << std::left << std::setw(24) << target
+         << std::setw(12) << (v.safe ? "SAFE" : "NOT SAFE")
+         << v.blocking.size() << endl;
+  }
+  // Print details for the unsafe locations.
+  for (const auto& v : verdicts) {
+    if (v.safe) continue;
+    cout << endl;
+    cout << "Location " << v.location << " detail:" << endl;
+    PrintVerdict(v);
+  }
+  if (any_unsafe) {
+    return Status::IllegalState(
+        "at least one location is not safe to take offline");
+  }
+  return Status::OK();
 }
 
 // Does the version in 'version_str' support movement of single replicas?
@@ -456,6 +661,29 @@ unique_ptr<Mode> BuildClusterMode() {
         .AddOptionalParameter("tables")
         .Build();
     builder.AddAction(std::move(rebalance));
+  }
+
+  {
+    constexpr auto desc = "Check whether a location can be taken offline";
+    constexpr auto extra_desc = "A location is safe to take offline if every "
+        "tablet would keep a majority of its voters on healthy tablet servers "
+        "outside of it. If --location is set, only that location is checked; "
+        "otherwise every location is checked and a per-location verdict is "
+        "printed. The command exits non-zero if any checked location is "
+        "unsafe. The check is a snapshot: tablets whose replicas are being "
+        "moved at the time are reported, but the moves are not anticipated.";
+    unique_ptr<Action> check =
+        ClusterActionBuilder("check", &RunCheckLocationMaintenance)
+        .Description(desc)
+        .ExtraDescription(extra_desc)
+        .AddOptionalParameter("fetch_info_concurrency")
+        .AddOptionalParameter("location")
+        .Build();
+    unique_ptr<Mode> location = ModeBuilder("location")
+        .Description("Operate on the locations of a Kudu cluster")
+        .AddAction(std::move(check))
+        .Build();
+    builder.AddMode(std::move(location));
   }
 
   return builder.Build();

@@ -203,6 +203,7 @@ using kudu::cluster::ExternalMiniClusterOptions;
 using kudu::cluster::ExternalTabletServer;
 using kudu::cluster::InternalMiniCluster;
 using kudu::cluster::InternalMiniClusterOptions;
+using kudu::cluster::LocationInfo;
 using kudu::consensus::OpId;
 using kudu::consensus::RECEIVED_OPID;
 using kudu::consensus::ReplicateMsg;
@@ -1428,10 +1429,22 @@ TEST_F(ToolTest, TestModeHelp) {
     const string kCmd = "cluster";
     const vector<string> kClusterModeRegexes = {
         "ksck.*Check the health of a Kudu cluster",
+        "location.*Operate on the locations of a Kudu cluster",
         "rebalance.*Move tablet replicas between tablet servers",
     };
     NO_FATALS(RunTestHelp(kCmd, kClusterModeRegexes));
-    NO_FATALS(RunTestHelpRpcFlags(kCmd, {"ksck", "rebalance"}));
+    NO_FATALS(RunTestHelpRpcFlags(kCmd,
+        { "ksck",
+          "rebalance",
+        }));
+  }
+  {
+    const string kSubCmd = "cluster location";
+    const vector<string> kClusterLocationModeRegexes = {
+        "check.*Check whether a location can be taken offline",
+    };
+    NO_FATALS(RunTestHelp(kSubCmd, kClusterLocationModeRegexes));
+    NO_FATALS(RunTestHelpRpcFlags(kSubCmd, { "check" }));
   }
   {
     const vector<string> kDiagnoseModeRegexes = {
@@ -9186,6 +9199,182 @@ TEST_F(ToolTest, TestStartEndMaintenanceMode) {
     ASSERT_EQ(TServerStatePB::NONE, ts_manager->GetTServerState(ts_uuid));
     ASSERT_EQ(TServerStatePB::NONE, ts_manager->GetTServerState(kDummyUuid));
   }
+}
+
+namespace {
+
+// Options for a cluster with locations /L0, /L1, ... and
+// 'tservers_per_location' tablet servers in each.
+ExternalMiniClusterOptions MultiLocationOpts(int num_locations,
+                                            int tservers_per_location) {
+  LocationInfo locations;
+  for (int i = 0; i < num_locations; i++) {
+    EmplaceOrDie(&locations, Substitute("/L$0", i), tservers_per_location);
+  }
+  ExternalMiniClusterOptions opts;
+  opts.num_tablet_servers = num_locations * tservers_per_location;
+  opts.location_info = std::move(locations);
+  // These tests don't need client locations.
+  opts.extra_master_flags = { "--master_client_location_assignment_enabled=false" };
+  return opts;
+}
+
+// Returns the locations that 'kudu cluster location check' reports as NOT SAFE.
+vector<string> UnsafeLocations(const string& out) {
+  static const string kPrefix = "Verdict: NOT SAFE to take ";
+  vector<string> unsafe;
+  for (auto pos = out.find(kPrefix); pos != string::npos; pos = out.find(kPrefix, pos)) {
+    pos += kPrefix.size();
+    unsafe.emplace_back(out.substr(pos, out.find(' ', pos) - pos));
+  }
+  return unsafe;
+}
+
+} // anonymous namespace
+
+// Every location is safe to take offline until an RF=1 table is added, which
+// makes exactly one of them unsafe.
+TEST_F(ToolTest, TestCheckLocationMaintenance) {
+  NO_FATALS(StartExternalMiniCluster(MultiLocationOpts(/*num_locations=*/3,
+                                                       /*tservers_per_location=*/1)));
+  const string master_addr = cluster_->master()->bound_rpc_addr().ToString();
+
+  // Each tablet has a replica in every location, so any location can go.
+  TestWorkload rf3(cluster_.get());
+  rf3.set_table_name("rf3_table");
+  rf3.set_num_replicas(3);
+  rf3.set_num_tablets(3);
+  rf3.set_num_write_threads(0);
+  rf3.Setup();
+
+  {
+    // Check every location.
+    string out;
+    NO_FATALS(RunActionStdoutString(
+        Substitute("cluster location check $0", master_addr), &out));
+    ASSERT_STR_CONTAINS(out, "Cluster location-maintenance check:");
+    ASSERT_STR_CONTAINS(out, "[OK]   3 locations present: /L0 /L1 /L2");
+    // No replicas are moving, so there's no notice about it.
+    ASSERT_STR_NOT_CONTAINS(out, "[NOTE]");
+    for (int i = 0; i < 3; i++) {
+      ASSERT_STR_MATCHES(out, Substitute("/L$0 +SAFE +0", i));
+    }
+    ASSERT_STR_NOT_CONTAINS(out, "NOT SAFE");
+  }
+  {
+    // Check a single location.
+    string out;
+    NO_FATALS(RunActionStdoutString(
+        Substitute("cluster location check $0 --location=/L1", master_addr), &out));
+    ASSERT_STR_CONTAINS(out, "Location /L1 maintenance check:");
+    ASSERT_STR_CONTAINS(out, "[OK]   0 tablets would lose quorum");
+    ASSERT_STR_CONTAINS(out, "Verdict: SAFE to take /L1 offline");
+    // Only that location is reported.
+    ASSERT_STR_NOT_CONTAINS(out, "take /L0 offline");
+  }
+  {
+    // An unknown location is an error that lists the known ones.
+    string stderr;
+    const Status s = RunActionStderrString(
+        Substitute("cluster location check $0 --location=/nope", master_addr),
+        &stderr);
+    ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
+    ASSERT_STR_CONTAINS(stderr, "location '/nope' is not present in the cluster");
+    ASSERT_STR_CONTAINS(stderr, "known locations: [/L0, /L1, /L2]");
+  }
+
+  // An RF=1 table makes the location holding its replica unsafe, but not the
+  // other two.
+  TestWorkload rf1(cluster_.get());
+  rf1.set_table_name("rf1_table");
+  rf1.set_num_replicas(1);
+  rf1.set_num_tablets(1);
+  rf1.set_num_write_threads(0);
+  rf1.Setup();
+
+  string unsafe_location;
+  {
+    string stdout;
+    string stderr;
+    const Status s = RunActionStdoutStderrString(
+        Substitute("cluster location check $0", master_addr), &stdout, &stderr);
+    ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
+    ASSERT_STR_CONTAINS(stderr, "at least one location is not safe to take offline");
+    const auto unsafe = UnsafeLocations(stdout);
+    ASSERT_EQ(1, unsafe.size()) << stdout;
+    unsafe_location = unsafe.front();
+    ASSERT_STR_MATCHES(stdout, "table rf1_table, RF=1\\): 1 voter\\(s\\) on " + unsafe_location);
+  }
+  for (int i = 0; i < 3; i++) {
+    // Checking each location on its own gives the same answer.
+    const string location = Substitute("/L$0", i);
+    string stdout;
+    string stderr;
+    const Status s = RunActionStdoutStderrString(
+        Substitute("cluster location check $0 --location=$1", master_addr, location),
+        &stdout, &stderr);
+    if (location == unsafe_location) {
+      ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
+      ASSERT_STR_CONTAINS(stdout, Substitute("Verdict: NOT SAFE to take $0 offline", location));
+      ASSERT_STR_CONTAINS(stderr,
+          Substitute("location '$0' is not safe to take offline", location));
+    } else {
+      ASSERT_TRUE(s.ok()) << s.ToString() << ": " << stderr;
+      ASSERT_STR_CONTAINS(stdout, Substitute("Verdict: SAFE to take $0 offline", location));
+    }
+  }
+}
+
+// With only two locations the check warns, but the location holding fewer of
+// the tablet's voters is still safe to take offline.
+TEST_F(ToolTest, TestCheckLocationMaintenanceTooFewLocations) {
+  NO_FATALS(StartExternalMiniCluster(MultiLocationOpts(/*num_locations=*/2,
+                                                       /*tservers_per_location=*/2)));
+  const string master_addr = cluster_->master()->bound_rpc_addr().ToString();
+
+  // The tablet ends up with two replicas in one location and one in the other.
+  TestWorkload workload(cluster_.get());
+  workload.set_num_replicas(3);
+  workload.set_num_tablets(1);
+  workload.set_num_write_threads(0);
+  workload.Setup();
+
+  string unsafe_location;
+  {
+    string stdout;
+    string stderr;
+    const Status s = RunActionStdoutStderrString(
+        Substitute("cluster location check $0", master_addr), &stdout, &stderr);
+    ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
+    ASSERT_STR_CONTAINS(stdout, "[WARN] only 2 location(s) present: /L0 /L1");
+    const auto unsafe = UnsafeLocations(stdout);
+    ASSERT_EQ(1, unsafe.size()) << stdout;
+    unsafe_location = unsafe.front();
+  }
+  {
+    const string safe_location = unsafe_location == "/L0" ? "/L1" : "/L0";
+    string stdout;
+    NO_FATALS(RunActionStdoutString(
+        Substitute("cluster location check $0 --location=$1", master_addr, safe_location),
+        &stdout));
+    ASSERT_STR_CONTAINS(stdout, "[WARN] only 2 location(s) present: /L0 /L1");
+    ASSERT_STR_CONTAINS(stdout, Substitute("Verdict: SAFE to take $0 offline", safe_location));
+  }
+}
+
+// The check refuses to run on a cluster without locations.
+TEST_F(ToolTest, TestCheckLocationMaintenanceNoLocations) {
+  NO_FATALS(StartExternalMiniCluster());
+  const string master_addr = cluster_->master()->bound_rpc_addr().ToString();
+
+  string stderr;
+  const Status s = RunActionStderrString(
+      Substitute("cluster location check $0", master_addr), &stderr);
+  ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
+  ASSERT_STR_CONTAINS(stderr, "no tablet server has a location assigned");
+  ASSERT_STR_CONTAINS(stderr, "--location_mapping_cmd");
+  // The empty location isn't reported as if it were a real one.
+  ASSERT_STR_NOT_CONTAINS(stderr, "locations present");
 }
 
 TEST_F(ToolTest, TestFsRemoveDataDirWithTombstone) {
