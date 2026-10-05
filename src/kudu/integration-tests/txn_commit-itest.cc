@@ -114,9 +114,13 @@ class TxnCommitITest : public KuduTest {
   void SetUp() override {
     KuduTest::SetUp();
     // Speed up the staleness checks to help stress cases where it might race
-    // with commits.
-    FLAGS_txn_keepalive_interval_ms = 300;
-    FLAGS_txn_staleness_tracker_interval_ms = 100;
+    // with commits. However, making heartbeat interval too short might
+    // introduce flakiness in TSAN builds at overloaded test nodes where
+    // sending out next heartbeat from client would be delayed for hundreds of
+    // milliseconds because of scheduler anomalies and other slowness induced
+    // by TSAN instrumentation, see KUDU-3813 for details.
+    FLAGS_txn_keepalive_interval_ms = 500;
+    FLAGS_txn_staleness_tracker_interval_ms = 250;
     NO_FATALS(SetUpClusterAndTable(1));
   }
 
