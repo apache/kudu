@@ -430,11 +430,11 @@ Status AutoRebalancerTask::GetMovesUsingRebalancingAlgo(
   // and protect against in-flight changes via 'kudu master set_flag'.
   const int max_moves_per_server = FLAGS_auto_rebalancing_max_moves_per_server;
 
-  // Use signed integers to handle the case where replica_moves->size() might exceed
-  // the calculated limit, which would cause underflow with unsigned types.
+  // Earlier passes' moves in 'replica_moves' aren't charged against this
+  // budget: they can be on servers outside 'raw_info', and the per-server
+  // check below already counts the ones on its servers.
   const int64_t num_tservers = raw_info.tserver_summaries.size();
-  int64_t max_moves = max_moves_per_server * num_tservers;
-  max_moves -= static_cast<int64_t>(replica_moves->size());
+  const int64_t max_moves = max_moves_per_server * num_tservers;
   if (max_moves <= 0) {
     return Status::OK();
   }
@@ -453,12 +453,21 @@ Status AutoRebalancerTask::GetMovesUsingRebalancingAlgo(
       raw_info, Rebalancer::MovesInProgress(), &cluster_info));
   RETURN_NOT_OK(algo->GetNextMoves(cluster_info, max_moves, &moves));
 
-  unordered_set<string> tablets_in_move;
-  vector<Rebalancer::ReplicaMove> rep_moves;
   // moves_per_tserver_ is empty at selection time (RunLoop() drains every
   // outstanding move before planning a batch), so track the per-server cap
-  // within the batch instead.
+  // within the batch instead. Earlier passes in GetMoves() may have already
+  // added moves to the same batch, so count them too and don't pick their
+  // tablets again.
+  unordered_set<string> tablets_in_move;
   unordered_map<string, int> batch_moves_per_server;
+  for (const auto& m : *replica_moves) {
+    tablets_in_move.emplace(m.tablet_uuid);
+    ++batch_moves_per_server[m.ts_uuid_from];
+    if (!m.ts_uuid_to.empty()) {
+      ++batch_moves_per_server[m.ts_uuid_to];
+    }
+  }
+  vector<Rebalancer::ReplicaMove> rep_moves;
 
   for (const auto& move : moves) {
     // Gate on move.to even though SelectReplicaToMove may later turn this into
@@ -489,12 +498,18 @@ Status AutoRebalancerTask::GetMovesUsingRebalancingAlgo(
           cluster_info.locality.location_by_ts_id, tpi, move, &tablet_ids));
     }
 
-    RETURN_NOT_OK(SelectReplicaToMove(move, extra_info_by_tablet_id,
-                                      &random_generator_, std::move(tablet_ids),
-                                      &tablets_in_move, &rep_moves,
-                                      is_leader_move));
-    // SelectReplicaToMove() returns a non-OK status when it finds no move, so
-    // a move was appended at this point.
+    // NotFound means no candidate tablet is left, which gets more likely once
+    // earlier passes have picked tablets. Skip this move rather than dropping
+    // the whole batch.
+    const Status s = SelectReplicaToMove(move, extra_info_by_tablet_id,
+                                         &random_generator_, std::move(tablet_ids),
+                                         &tablets_in_move, &rep_moves,
+                                         is_leader_move);
+    if (s.IsNotFound()) {
+      VLOG(1) << s.ToString();
+      continue;
+    }
+    RETURN_NOT_OK(s);
     DCHECK(!rep_moves.empty());
     // SelectReplicaToMove clears the destination when the replica is only being
     // dropped, so count a destination only when one is set.
@@ -505,7 +520,10 @@ Status AutoRebalancerTask::GetMovesUsingRebalancingAlgo(
     }
   }
 
-  *replica_moves = std::move(rep_moves);
+  // Append: 'replica_moves' may already hold moves from earlier passes.
+  for (auto& m : rep_moves) {
+    replica_moves->emplace_back(std::move(m));
+  }
   return Status::OK();
 }
 

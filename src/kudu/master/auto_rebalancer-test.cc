@@ -16,6 +16,8 @@
 // under the License.
 #include "kudu/master/auto_rebalancer.h"
 
+#include <stddef.h>
+
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
@@ -57,6 +59,7 @@
 #include "kudu/master/ts_manager.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/rebalance/cluster_status.h"
+#include "kudu/rebalance/placement_policy_util.h"
 #include "kudu/rebalance/rebalance_algo.h"
 #include "kudu/rebalance/rebalancer.h"
 #include "kudu/rpc/rpc_controller.h"
@@ -220,6 +223,28 @@ class AutoRebalancerTest : public KuduTest {
     }
   }
 
+  // Assigns locations[i] to the i-th tserver of the mini cluster.
+  void AssignLocations(const vector<string>& locations) {
+    const int num_tservers = cluster_->num_tablet_servers();
+    ASSERT_EQ(num_tservers, locations.size());
+    unordered_map<string, string> location_by_uuid;
+    for (int i = 0; i < num_tservers; ++i) {
+      location_by_uuid.emplace(cluster_->mini_tablet_server(i)->uuid(), locations[i]);
+    }
+
+    int master_idx;
+    ASSERT_OK(cluster_->GetLeaderMasterIndex(&master_idx));
+    TSDescriptorVector descs;
+    ASSERT_EVENTUALLY([&] {
+      cluster_->mini_master(master_idx)->master()->ts_manager()->
+        GetAllDescriptors(&descs);
+      ASSERT_EQ(num_tservers, descs.size());
+    });
+    for (const auto& desc : descs) {
+      desc->AssignLocationForTesting(FindOrDie(location_by_uuid, desc->permanent_uuid()));
+    }
+  }
+
   // Make sure the leader master has begun the auto-rebalancing thread.
   void CheckAutoRebalancerStarted(BalanceThreadType type =
                                   BalanceThreadType::REPLICA_REBALANCE) {
@@ -354,6 +379,15 @@ class AutoRebalancerTest : public KuduTest {
       vector<rebalance::Rebalancer::ReplicaMove>* replica_moves) {
     return auto_rebalancer->GetMovesUsingRebalancingAlgo(
         raw_info, algo, cross_location, replica_moves);
+  }
+
+  static Status GetMovesForTest(
+      AutoRebalancerTask* auto_rebalancer,
+      const rebalance::ClusterRawInfo& raw_info,
+      const rebalance::ClusterLocalityInfo& locality,
+      const rebalance::TabletsPlacementInfo& placement_info,
+      vector<rebalance::Rebalancer::ReplicaMove>* replica_moves) {
+    return auto_rebalancer->GetMoves(raw_info, locality, placement_info, replica_moves);
   }
 
   static map<string, int> ComputeRangeReplicaSkew(
@@ -1815,6 +1849,224 @@ TEST_F(AutoRebalancerTest, MaxMovesPerServerEnforcedWithinOneBatch) {
   ASSERT_LE(busiest_count, cap)
       << "server " << busiest_ts << " got " << busiest_count << " moves in a batch of "
       << replica_moves.size() << " with the cap at " << cap;
+
+  // GetMoves() runs several passes into the same batch. Running this pass
+  // again on top of the first one stands in for that, and since the cluster
+  // hasn't changed, the second pass goes after the same busy servers.
+  ASSERT_OK(GetMovesUsingRebalancingAlgoForTest(
+      rebalancer, raw_info, &algo, CrossLocations::NO, &replica_moves));
+  unordered_set<string> tablets;
+  moves_per_server.clear();
+  for (const auto& move : replica_moves) {
+    EXPECT_TRUE(tablets.emplace(move.tablet_uuid).second)
+        << "tablet " << move.tablet_uuid << " was picked by both passes";
+    ++moves_per_server[move.ts_uuid_from];
+    if (!move.ts_uuid_to.empty()) {
+      ++moves_per_server[move.ts_uuid_to];
+    }
+  }
+  for (const auto& [ts_uuid, count] : moves_per_server) {
+    EXPECT_LE(count, cap) << "server " << ts_uuid << " got " << count
+                          << " moves across two passes with the cap at " << cap;
+  }
+}
+
+// GetMoves() accumulates the cross-location and per-location passes into one
+// vector, so GetMovesUsingRebalancingAlgo must add to 'replica_moves' rather
+// than overwrite it, as auto_rebalancer.h documents, and must not pick a
+// tablet that an earlier pass already picked. The earlier passes' moves
+// mustn't eat into its budget either.
+TEST_F(AutoRebalancerTest, GetMovesUsingRebalancingAlgoAppendsToMoveList) {
+  flag_saver_ = make_unique<FlagSaver>();
+
+  const int kNumOrigTservers = 3;
+  const int kNumAdditionalTservers = 1;
+  const int kNumTablets = 6;
+
+  cluster_opts_.num_tablet_servers = kNumOrigTservers;
+  ASSERT_OK(CreateAndStartCluster(/*enable_leader_rebalance=*/false));
+  // Keep the live auto-rebalancer from moving replicas once the cluster is
+  // skewed below.
+  FLAGS_auto_rebalancing_enabled = false;
+
+  CreateWorkloadTable(kNumTablets, /*num_replicas*/3);
+
+  int leader_idx;
+  ASSERT_OK(cluster_->GetLeaderMasterIndex(&leader_idx));
+  auto* catalog = cluster_->mini_master(leader_idx)->master()->catalog_manager();
+  auto* auto_rebalancer = catalog->auto_rebalancer();
+  auto standalone = MakeStandaloneRebalancerForTest(
+      catalog, cluster_->mini_master(leader_idx)->master()->ts_manager(),
+      cluster_->mini_master(leader_idx)->master()->metric_entity(),
+      auto_rebalancer);
+  auto* rebalancer = standalone.get();
+
+  // Skew the cluster so the greedy algorithm has work to do: the added server
+  // comes up empty while the originals hold every replica.
+  for (int i = 0; i < kNumAdditionalTservers; ++i) {
+    ASSERT_OK(cluster_->AddTabletServer());
+  }
+  NO_FATALS(WaitForLiveTServerCount(kNumOrigTservers + kNumAdditionalTservers));
+
+  rebalance::ClusterRawInfo raw_info;
+  ASSERT_EVENTUALLY([&] {
+    raw_info = rebalance::ClusterRawInfo();
+    ASSERT_OK(BuildClusterRawInfoForTest(rebalancer, nullopt, &raw_info));
+    ASSERT_EQ(kNumTablets, raw_info.tablet_summaries.size());
+  });
+
+  rebalance::TwoDimensionalGreedyAlgo algo(
+      rebalance::TwoDimensionalGreedyAlgo::EqualSkewOption::PICK_RANDOM,
+      FLAGS_auto_rebalancing_prefer_follower_replica_moves);
+
+  // Make sure the pass finds moves when no tablet is taken yet. If it didn't,
+  // the check below that it adds none would pass regardless.
+  {
+    vector<rebalance::Rebalancer::ReplicaMove> replica_moves;
+    ASSERT_OK(GetMovesUsingRebalancingAlgoForTest(
+        rebalancer, raw_info, &algo, CrossLocations::NO, &replica_moves));
+    ASSERT_FALSE(replica_moves.empty())
+        << "cluster was not skewed enough to produce any rebalancing moves";
+  }
+
+  // Moves from earlier passes, as many as this pass's whole budget, but all on
+  // servers in other locations. They shouldn't stop this pass from finding
+  // moves for its own servers.
+  {
+    const size_t num_earlier_moves =
+        FLAGS_auto_rebalancing_max_moves_per_server * raw_info.tserver_summaries.size();
+    vector<rebalance::Rebalancer::ReplicaMove> replica_moves;
+    for (size_t i = 0; i < num_earlier_moves; ++i) {
+      rebalance::Rebalancer::ReplicaMove move;
+      move.tablet_uuid = Substitute("other-location-tablet-$0", i);
+      move.ts_uuid_from = Substitute("other-location-from-$0", i);
+      move.ts_uuid_to = Substitute("other-location-to-$0", i);
+      replica_moves.emplace_back(std::move(move));
+    }
+    ASSERT_OK(GetMovesUsingRebalancingAlgoForTest(
+        rebalancer, raw_info, &algo, CrossLocations::NO, &replica_moves));
+    ASSERT_GT(replica_moves.size(), num_earlier_moves)
+        << "moves on other servers used up this pass's budget";
+  }
+
+  // An earlier pass that already moves every tablet. Its servers are made up,
+  // so only the tablets, not the per-server cap, keep this pass from adding
+  // moves.
+  vector<rebalance::Rebalancer::ReplicaMove> replica_moves;
+  for (const auto& tablet : raw_info.tablet_summaries) {
+    rebalance::Rebalancer::ReplicaMove move;
+    move.tablet_uuid = tablet.id;
+    move.ts_uuid_from = "earlier-pass-from";
+    move.ts_uuid_to = "earlier-pass-to";
+    replica_moves.emplace_back(std::move(move));
+  }
+  ASSERT_OK(GetMovesUsingRebalancingAlgoForTest(
+      rebalancer, raw_info, &algo, CrossLocations::NO, &replica_moves));
+
+  ASSERT_EQ(kNumTablets, replica_moves.size())
+      << "the pass dropped the earlier moves or moved a tablet they already move";
+  for (const auto& move : replica_moves) {
+    EXPECT_EQ("earlier-pass-from", move.ts_uuid_from)
+        << "tablet " << move.tablet_uuid << " was picked again";
+  }
+}
+
+// All the moves GetMoves() finds across its cross-location and per-location
+// passes are scheduled as one batch, so the per-server cap and the
+// one-move-per-tablet rule must hold across passes, not just within each.
+TEST_F(AutoRebalancerTest, GetMovesLimitsHoldAcrossPasses) {
+  flag_saver_ = make_unique<FlagSaver>();
+  FLAGS_auto_rebalancing_max_moves_per_server = 1;
+
+  constexpr int kNumOrigTservers = 3;
+  constexpr int kNumAdditionalTservers = 3;
+  constexpr int kNumTservers = kNumOrigTservers + kNumAdditionalTservers;
+  // Few tablets, so the cross-location pass and the pass for L0 have a fair
+  // chance of picking the same tablet if nothing stops them. Not too few
+  // though: the L0 pass only picks among ts0's follower replicas, and it
+  // needs one left after the cross-location pass takes its tablet.
+  constexpr int kNumTablets = 6;
+
+  cluster_opts_.num_tablet_servers = kNumOrigTservers;
+  ASSERT_OK(CreateAndStartCluster(/*enable_leader_rebalance=*/false));
+  FLAGS_auto_rebalancing_enabled = false;
+
+  CreateWorkloadTable(kNumTablets, /*num_replicas*/3);
+  for (int i = 0; i < kNumAdditionalTservers; ++i) {
+    ASSERT_OK(cluster_->AddTabletServer());
+  }
+  NO_FATALS(WaitForLiveTServerCount(kNumTservers));
+
+  // Each original server holds a replica of every tablet, one per location,
+  // so there's nothing for the placement policy fixer to do. The empty L3
+  // draws cross-location moves, while L0 is skewed inside: ts0 holds
+  // everything and ts4, ts5 hold nothing.
+  NO_FATALS(AssignLocations({ "L0", "L1", "L2", "L3", "L0", "L0" }));
+
+  int leader_idx;
+  ASSERT_OK(cluster_->GetLeaderMasterIndex(&leader_idx));
+  auto* master = cluster_->mini_master(leader_idx)->master();
+  auto standalone = MakeStandaloneRebalancerForTest(
+      master->catalog_manager(), master->ts_manager(), master->metric_entity(),
+      master->catalog_manager()->auto_rebalancer());
+  auto* rebalancer = standalone.get();
+
+  rebalance::ClusterRawInfo raw_info;
+  ASSERT_EVENTUALLY([&] {
+    rebalance::ClusterRawInfo info;
+    ASSERT_OK(BuildClusterRawInfoForTest(rebalancer, nullopt, &info));
+    ASSERT_EQ(kNumTservers, info.tserver_summaries.size());
+    ASSERT_EQ(kNumTablets, info.tablet_summaries.size());
+    // The rebalancer skips tablets without exactly one leader, which can
+    // leave a pass with nothing to move.
+    for (const auto& tablet : info.tablet_summaries) {
+      ASSERT_EQ(cluster_summary::HealthCheckResult::HEALTHY, tablet.result);
+      ASSERT_EQ(3, tablet.replicas.size());
+    }
+    raw_info = std::move(info);
+  });
+  rebalance::ClusterInfo cluster_info;
+  ASSERT_OK(BuildClusterInfoForTest(rebalancer, raw_info, &cluster_info));
+  ASSERT_EQ(4, cluster_info.locality.servers_by_location.size());
+  rebalance::TabletsPlacementInfo placement_info;
+  ASSERT_OK(rebalance::BuildTabletsPlacementInfo(
+      raw_info, rebalance::Rebalancer::MovesInProgress(), &placement_info));
+
+  vector<rebalance::Rebalancer::ReplicaMove> replica_moves;
+  ASSERT_OK(GetMovesForTest(rebalancer, raw_info, cluster_info.locality,
+                            placement_info, &replica_moves));
+
+  // The cross-location pass can only move into ts3 (anywhere else would put
+  // two replicas in one location) and the L0 pass only out of ts0. With a cap
+  // of 1 each adds at most one move, so two moves means both passes ran.
+  const auto& location_by_ts_id = cluster_info.locality.location_by_ts_id;
+  vector<string> move_strs;
+  move_strs.reserve(replica_moves.size());
+  for (const auto& move : replica_moves) {
+    move_strs.emplace_back(Substitute(
+        "$0: $1 ($2) -> $3 ($4)", move.tablet_uuid,
+        move.ts_uuid_from, FindWithDefault(location_by_ts_id, move.ts_uuid_from, ""),
+        move.ts_uuid_to, FindWithDefault(location_by_ts_id, move.ts_uuid_to, "")));
+  }
+  const int cap = FLAGS_auto_rebalancing_max_moves_per_server;
+  ASSERT_GT(replica_moves.size(), cap)
+      << "setup produced moves from only one pass; cluster not skewed enough. Moves: "
+      << JoinStrings(move_strs, ", ");
+
+  unordered_set<string> tablets;
+  map<string, int> moves_per_server;
+  for (const auto& move : replica_moves) {
+    EXPECT_TRUE(tablets.emplace(move.tablet_uuid).second)
+        << "tablet " << move.tablet_uuid << " was picked by more than one pass";
+    ++moves_per_server[move.ts_uuid_from];
+    if (!move.ts_uuid_to.empty()) {
+      ++moves_per_server[move.ts_uuid_to];
+    }
+  }
+  for (const auto& [ts_uuid, count] : moves_per_server) {
+    EXPECT_LE(count, cap) << "server " << ts_uuid << " got " << count
+                          << " moves with the cap at " << cap;
+  }
 }
 
 // Verify follower-move counter increments and leader-move counter stays zero
