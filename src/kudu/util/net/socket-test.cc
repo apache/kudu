@@ -19,6 +19,7 @@
 
 #include <unistd.h>
 
+#include <cerrno>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -203,6 +204,32 @@ class SocketTest : public KuduTest {
 TEST_F(SocketTest, TestRecvReset) {
   DoTestServerDisconnects(false, "recv error from 127.0.0.1:[0-9]+: "
                           "Resource temporarily unavailable");
+}
+
+TEST_F(SocketTest, TestRecvPreservesErrnoWhenPeerLookupFails) {
+  class SocketWithFailingPeerLookup : public Socket {
+   public:
+    mutable bool peer_lookup_called = false;
+
+    Status GetPeerAddress(Sockaddr*) const override {
+      peer_lookup_called = true;
+      errno = ENOTCONN;
+      return Status::NetworkError("injected peer lookup failure", Slice(), ENOTCONN);
+    }
+  };
+
+  NO_FATALS(BindAndListen("127.0.0.1"));
+  SocketWithFailingPeerLookup client;
+  ASSERT_OK(client.Init(listen_addr_.family(), 0));
+  ASSERT_OK(client.Connect(listen_addr_));
+  ASSERT_OK(client.SetNonBlocking(true));
+
+  uint8_t buf;
+  int nread;
+  const Status status = client.Recv(&buf, 1, &nread);
+  ASSERT_TRUE(client.peer_lookup_called);
+  ASSERT_TRUE(status.IsNetworkError()) << status.ToString();
+  ASSERT_EQ(EAGAIN, status.posix_code()) << status.ToString();
 }
 
 TEST_F(SocketTest, TestRecvEOF) {
