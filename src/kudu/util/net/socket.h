@@ -176,6 +176,7 @@ class Socket {
 
  private:
   FRIEND_TEST(rpc::RpcAcceptorBench, MeasureAcceptorDispatchTimes);
+  FRIEND_TEST(SocketTest, TestRecvPreservesErrnoAfterConnectionReset);
 
   // Called internally from SetSend/RecvTimeout().
   Status SetTimeout(int opt, const char* optname, const MonoDelta& timeout);

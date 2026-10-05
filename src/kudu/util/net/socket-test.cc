@@ -21,6 +21,7 @@
 #include <sys/un.h>
 #include <unistd.h>
 
+#include <cerrno>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -275,6 +276,64 @@ TEST_F(SocketTest, TestRecvReset) {
   DoTestServerDisconnects(kIpV6NullAddr, false,
                           "recv error from \\[::1\\]:[0-9]+: "
                           "Resource temporarily unavailable");
+}
+
+TEST_F(SocketTest, TestRecvPreservesErrnoWhenPeerLookupFails) {
+  class SocketWithFailingPeerLookup : public Socket {
+   public:
+    mutable bool peer_lookup_called = false;
+
+    Status GetPeerAddress(Sockaddr*) const override {
+      peer_lookup_called = true;
+      errno = ENOTCONN;
+      return Status::NetworkError("injected peer lookup failure", Slice(), ENOTCONN);
+    }
+  };
+
+  NO_FATALS(BindAndListen("127.0.0.1"));
+  SocketWithFailingPeerLookup client;
+  ASSERT_OK(client.Init(listen_addr_.family(), 0));
+  ASSERT_OK(client.Connect(listen_addr_));
+  ASSERT_OK(client.SetNonBlocking(true));
+
+  uint8_t buf;
+  int nread;
+  const Status status = client.Recv(&buf, 1, &nread);
+  ASSERT_TRUE(client.peer_lookup_called);
+  ASSERT_TRUE(status.IsNetworkError()) << status.ToString();
+  ASSERT_EQ(EAGAIN, status.posix_code()) << status.ToString();
+}
+
+TEST_F(SocketTest, TestRecvPreservesErrnoAfterConnectionReset) {
+  const char* const addresses[] = {"127.0.0.1", "::1"};
+  for (const auto* address : addresses) {
+    SCOPED_TRACE(address);
+    Sockaddr listen_addr;
+    ASSERT_OK(listen_addr.ParseString(address, 0));
+    Socket listener;
+    ASSERT_OK(listener.Init(listen_addr.family(), 0));
+    ASSERT_OK(listener.BindAndListen(listen_addr, 1));
+    ASSERT_OK(listener.GetSocketAddress(&listen_addr));
+
+    Socket client;
+    ASSERT_OK(client.Init(listen_addr.family(), 0));
+    ASSERT_OK(client.Connect(listen_addr));
+    ASSERT_OK(client.SetRecvTimeout(MonoDelta::FromSeconds(5)));
+
+    Socket server;
+    Sockaddr peer_addr;
+    ASSERT_OK(listener.Accept(&server, &peer_addr, 0));
+    // Closing with zero linger sends a TCP reset instead of an orderly shutdown.
+    ASSERT_OK(server.SetLinger(true));
+    ASSERT_OK(server.Close());
+
+    uint8_t buf;
+    int nread;
+    const Status status = client.Recv(&buf, 1, &nread);
+    ASSERT_TRUE(status.IsNetworkError()) << status.ToString();
+    ASSERT_EQ(ECONNRESET, status.posix_code()) << status.ToString();
+    ASSERT_STR_CONTAINS(status.ToString(), "Connection reset by peer");
+  }
 }
 
 TEST_F(SocketTest, TestRecvEOF) {

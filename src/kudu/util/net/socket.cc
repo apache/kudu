@@ -694,6 +694,8 @@ Status Socket::Recv(uint8_t* buf, int32_t amt, int32_t* nread) {
   int res;
   RETRY_ON_EINTR(res, recv(fd_, buf, amt, 0));
   if (res <= 0) {
+    // GetPeerAddress() can change errno, so preserve the receive error first.
+    const int err = errno;
     Sockaddr remote;
     Status get_addr_status = GetPeerAddress(&remote);
     string remote_str = get_addr_status.ok() ? remote.ToString() : "unknown peer";
@@ -701,7 +703,6 @@ Status Socket::Recv(uint8_t* buf, int32_t amt, int32_t* nread) {
       string error_message = Substitute("recv got EOF from $0", remote_str);
       return Status::NetworkError(error_message, Slice(), ESHUTDOWN);
     }
-    int err = errno;
     string error_message = Substitute("recv error from $0", remote_str);
     return Status::NetworkError(error_message, ErrnoToString(err), err);
   }
