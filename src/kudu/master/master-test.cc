@@ -910,11 +910,12 @@ TEST_F(MasterTest, ClusterLeaderSkewMetric) {
   // again before reading the gauge.
   google::FlagSaver flag_saver;
   FLAGS_tserver_unresponsive_timeout_ms = 2000;
-  ASSERT_EVENTUALLY([&] {
+  auto check_skew = [&] {
     NO_FATALS(heartbeat("ts-1", /*reg=*/false, 1));
     NO_FATALS(heartbeat("ts-3", /*reg=*/false, 3));
     ASSERT_EQ(2, skew());
-  });
+  };
+  ASSERT_EVENTUALLY(check_skew);
 }
 
 TEST_F(MasterTest, TestCatalog) {
