@@ -127,6 +127,9 @@
         <Or>
             <!-- Often fields are initialized in the setUp method in tests. -->
             <Bug pattern="UWF_FIELD_NOT_INITIALIZED_IN_CONSTRUCTOR" />
+            <!-- Test suites (ScalaTest/JUnit) legitimately do fixture setup in their
+            constructor, which SpotBugs flags as a Finalizer-attack risk. -->
+            <Bug pattern="CT_CONSTRUCTOR_THROW" />
             <!-- Tests often ignore expected exceptions -->
             <Bug pattern="DE_MIGHT_IGNORE" />
             <Bug pattern="REC_CATCH_EXCEPTION" />

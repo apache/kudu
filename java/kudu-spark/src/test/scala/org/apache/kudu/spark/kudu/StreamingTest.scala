@@ -20,9 +20,11 @@ package org.apache.kudu.spark.kudu
 import org.apache.kudu.test.KuduTestHarness.MasterServerConfig
 import org.apache.kudu.test.KuduTestHarness.TabletServerConfig
 import org.apache.spark.sql.SQLContext
-import org.apache.spark.sql.execution.streaming._
 import org.apache.spark.sql.streaming.OutputMode
 import org.apache.spark.sql.streaming.StreamingQuery
+// MemoryStream lives in a different package on Spark 3 vs Spark 4; MemoryStreamCompat
+// aliases it per variant (src/test/scala-spark3 vs scala-spark4).
+import org.apache.kudu.spark.kudu.MemoryStreamCompat.MemoryStream
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before

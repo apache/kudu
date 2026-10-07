@@ -52,7 +52,7 @@ import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import nl.altindag.log.LogCaptor
 
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters._
 
 class TestKuduBackup extends KuduTestSuite {
   val log: Logger = LoggerFactory.getLogger(getClass)

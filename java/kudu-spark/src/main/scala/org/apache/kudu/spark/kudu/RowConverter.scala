@@ -31,7 +31,6 @@ import org.apache.spark.sql.types.DecimalType
 import org.apache.spark.sql.types.StructType
 import org.apache.yetus.audience.InterfaceAudience
 import org.apache.yetus.audience.InterfaceStability
-import scala.collection.JavaConverters._
 
 @InterfaceAudience.Private
 @InterfaceStability.Unstable
@@ -72,7 +71,7 @@ class RowConverter(kuduSchema: Schema, schema: StructType, ignoreNull: Boolean) 
 
           // ========== ARRAY WRITE ==========
           case ArrayType(elemType, containsNull) =>
-            val seq = row.getList[Any](sparkIdx).asScala
+            val seq = row.getAs[scala.collection.Seq[Any]](sparkIdx)
             writeArray(
               partialRow,
               kuduIdx,
@@ -174,7 +173,11 @@ class RowConverter(kuduSchema: Schema, schema: StructType, ignoreNull: Boolean) 
   // the corresponding PartialRow.addArray*() method (e.g. addArrayInt32,
   // addArrayString, etc.). Null elements are recorded as invalid in the
   // validity mask.
-  private def writeArray(pr: PartialRow, idx: Int, elemKuduType: Type, seq: Seq[Any]): Unit = {
+  private def writeArray(
+      pr: PartialRow,
+      idx: Int,
+      elemKuduType: Type,
+      seq: scala.collection.Seq[Any]): Unit = {
 
     val n = seq.length
     val validity = new Array[Boolean](n)

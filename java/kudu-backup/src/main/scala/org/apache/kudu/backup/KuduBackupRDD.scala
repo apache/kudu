@@ -32,7 +32,7 @@ import org.apache.spark.TaskContext
 import org.apache.yetus.audience.InterfaceAudience
 import org.apache.yetus.audience.InterfaceStability
 
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters._
 
 @InterfaceAudience.Private
 @InterfaceStability.Unstable

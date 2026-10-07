@@ -36,6 +36,16 @@ import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.apache.kudu.client.SessionConfiguration.FlushMode
 import org.apache.kudu.client._
+// Explicitly import the OperationType case objects so they take precedence over the
+// same-named Java operation classes pulled in by the `client._` wildcard above (see
+// the note in DefaultSource.scala).
+import org.apache.kudu.spark.kudu.Delete
+import org.apache.kudu.spark.kudu.DeleteIgnore
+import org.apache.kudu.spark.kudu.Insert
+import org.apache.kudu.spark.kudu.InsertIgnore
+import org.apache.kudu.spark.kudu.Update
+import org.apache.kudu.spark.kudu.UpdateIgnore
+import org.apache.kudu.spark.kudu.Upsert
 import org.apache.kudu.spark.kudu.SparkUtil.kuduSchema
 import org.apache.kudu.spark.kudu.SparkUtil._
 import org.apache.kudu.Schema

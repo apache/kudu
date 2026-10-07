@@ -61,7 +61,7 @@ class BackupGraph(val tableId: String) {
    * @return all the full backups in the graph.
    */
   def fullBackups: Seq[BackupNode] = {
-    adjacencyList.getOrElse(FullBackupFromMs, Seq())
+    adjacencyList.getOrElse(FullBackupFromMs, Seq()).toSeq
   }
 
   /**

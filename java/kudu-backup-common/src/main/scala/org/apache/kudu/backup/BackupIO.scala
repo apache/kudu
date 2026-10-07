@@ -215,7 +215,7 @@ final class BackupIO(val conf: Configuration, rootPathStr: String) {
         }
       }
     }
-    results
+    results.toSeq
   }
 
   /**

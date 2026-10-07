@@ -19,7 +19,7 @@ package org.apache.kudu.spark.kudu
 
 import java.nio.charset.StandardCharsets
 import java.util
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters._
 import scala.collection.immutable.IndexedSeq
 import org.apache.spark.SparkException
 import org.apache.spark.sql.Row
@@ -659,7 +659,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
       def isSorted(rows: Seq[Int]): Boolean = {
         rows.sliding(2).forall(p => (p.size == 1) || p.head < p.tail.head)
       }
-      val (bottomRows, topRows) = rows.map(_.getInt(0)).partition(_ < splitValue)
+      val (bottomRows, topRows) = rows.map(_.getInt(0)).toSeq.partition(_ < splitValue)
       assertTrue(isSorted(bottomRows))
       assertTrue(isSorted(topRows))
     }
@@ -788,7 +788,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
     assertEquals(2, dfWithUserSchema.schema.fields.length)
 
     dfWithUserSchema.limit(10).collect()
-    assertTrue(dfWithUserSchema.columns.deep == Array("c4_long", "key").deep)
+    assertTrue(dfWithUserSchema.columns.sameElements(Array("c4_long", "key")))
   }
 
   @Test
@@ -889,9 +889,29 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
 
   @Test
   def testReadDataFrameAtSnapshot() {
-    insertRows(table, 100, 1)
-    val timestamp = getLastPropagatedTimestampMs()
-    insertRows(table, 100, 100)
+    // setUp() has already inserted `rowCount` rows (keys 0 until rowCount).
+    // Insert a first batch and snapshot it, then a second, disjoint batch. All
+    // three key ranges are kept non-overlapping so the counts are exact: the old
+    // version started batch 1 at key 1 and batch 2 at key 100, overlapping both
+    // the setUp rows and each other, which (combined with the millisecond-granular
+    // snapshot boundary) made the row count flap (99/100/101).
+    val firstBatch = 100
+    val secondBatch = 100
+    insertRows(table, firstBatch, rowCount)
+    // snapshotTimestampMs is millisecond-granular while Kudu commit timestamps are
+    // microsecond-granular, and getLastPropagatedTimestampMs() floors to the
+    // millisecond. Round up by one millisecond so the snapshot boundary is strictly
+    // after every row committed so far (otherwise the last row can be missed).
+    val timestamp = getLastPropagatedTimestampMs() + 1
+    val rowsBeforeSnapshot = rowCount + firstBatch
+    // The mini cluster shares this host's clock, so once the wall clock is past the
+    // snapshot boundary every row of the second batch commits strictly after it.
+    while (System.currentTimeMillis() <= timestamp) {
+      Thread.sleep(1)
+    }
+    insertRows(table, secondBatch, rowsBeforeSnapshot)
+    assertTrue(getLastPropagatedTimestampMs() > timestamp)
+    val totalRows = rowsBeforeSnapshot + secondBatch
     kuduOptions = Map(
       "kudu.table" -> tableName,
       "kudu.master" -> harness.getMasterAddressesAsString,
@@ -900,8 +920,8 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
     kuduOptions =
       Map("kudu.table" -> tableName, "kudu.master" -> harness.getMasterAddressesAsString)
     val dataFrameWithoutSnapshotTimestamp = sqlContext.read.options(kuduOptions).format("kudu").load
-    assertEquals(100, dataFrameWithSnapshotTimestamp.collect().length)
-    assertEquals(200, dataFrameWithoutSnapshotTimestamp.collect().length)
+    assertEquals(rowsBeforeSnapshot, dataFrameWithSnapshotTimestamp.collect().length)
+    assertEquals(totalRows, dataFrameWithoutSnapshotTimestamp.collect().length)
   }
 
   @Test

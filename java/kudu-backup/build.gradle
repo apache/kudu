@@ -51,6 +51,9 @@ dependencies {
   implementation libs.yetusAnnotations
 
   compileOnlyApi libs.scalaLibrary
+  // Parallel collections were extracted from the Scala 2.13 stdlib into a separate
+  // module; the Scala 2.13 Spark runtime provides it, so it is compile-only like scala-library.
+  compileOnlyApi libs.scalaParallelCollections
   compileOnlyApi libs.sparkAvro
   compileOnlyApi libs.sparkCore
   compileOnlyApi libs.sparkSql

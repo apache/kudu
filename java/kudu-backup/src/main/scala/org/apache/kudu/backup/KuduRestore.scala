@@ -33,8 +33,9 @@ import org.apache.yetus.audience.InterfaceStability
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
-import scala.collection.JavaConverters._
+import scala.collection.parallel.CollectionConverters._
 import scala.collection.parallel.ForkJoinTaskSupport
+import scala.jdk.CollectionConverters._
 import java.util.concurrent.ForkJoinPool;
 import scala.util.Failure
 import scala.util.Success
@@ -219,7 +220,9 @@ object KuduRestore {
     // Key the backupMap by the last table name.
     val backupMap = backupGraphs
       .groupBy(_.restorePath.tableName)
+      .view
       .mapValues(_.maxBy(_.restorePath.toMs))
+      .toMap
 
     // Parallelize the processing. Managing resources of parallel restore jobs is very complex, so
     // only the simplest possible thing is attempted. Kudu trusts Spark to manage resources.

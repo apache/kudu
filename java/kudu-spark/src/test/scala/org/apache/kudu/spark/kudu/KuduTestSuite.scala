@@ -20,7 +20,7 @@ package org.apache.kudu.spark.kudu
 import java.math.BigDecimal
 import java.nio.charset.StandardCharsets.UTF_8
 import java.util.Date
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters._
 import scala.collection.immutable.IndexedSeq
 import org.apache.spark.SparkConf
 import org.apache.kudu.ColumnSchema.ColumnSchemaBuilder
@@ -267,6 +267,13 @@ trait KuduTestSuite {
     .setAppName("test")
     .set("spark.ui.enabled", "false")
     .set("spark.app.id", appID)
+    // Bind the driver to loopback so local-mode class/block fetches don't try
+    // to reach the host's (possibly unreachable/firewalled) LAN address. Spark 4
+    // routes whole-stage-codegen class loading through the executor class loader,
+    // which fetches from the driver's file server, so an unreachable driver host
+    // makes every codegen query time out.
+    .set("spark.driver.host", "127.0.0.1")
+    .set("spark.driver.bindAddress", "127.0.0.1")
 
   // Ensure the annotation is applied to the getter and not the field
   // or else Junit will complain that the Rule must be public.
@@ -489,9 +496,15 @@ trait KuduTestSuite {
    * testing purposes.
    */
   def kuduRelationFromDataFrame(dataFrame: DataFrame) = {
-    val logicalPlan = dataFrame.queryExecution.logical
-    val logicalRelation = logicalPlan.asInstanceOf[LogicalRelation]
-    val baseRelation = logicalRelation.relation
+    // Use the analyzed plan rather than the raw logical plan: in Spark 4 the
+    // DataFrameReader no longer eagerly resolves the source, so the unanalyzed
+    // plan is an UnresolvedDataSource node; analysis turns it into a
+    // LogicalRelation. Match on the node type to stay robust across versions.
+    val analyzed = dataFrame.queryExecution.analyzed
+    val baseRelation = analyzed
+      .collectFirst { case lr: LogicalRelation => lr.relation }
+      .getOrElse(
+        throw new IllegalStateException(s"Expected a LogicalRelation in the plan, got:\n$analyzed"))
     baseRelation.asInstanceOf[KuduRelation]
   }
 }

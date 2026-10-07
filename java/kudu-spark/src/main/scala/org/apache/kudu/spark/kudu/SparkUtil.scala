@@ -28,7 +28,7 @@ import org.apache.kudu.ColumnSchema
 import org.apache.kudu.Schema
 import org.apache.kudu.Type
 
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters._
 
 @InterfaceAudience.Private
 @InterfaceStability.Unstable
@@ -113,7 +113,7 @@ object SparkUtil {
   def sparkSchema(kuduSchema: Schema, fields: Option[Seq[String]] = None): StructType = {
     val kuduColumns: Seq[ColumnSchema] = fields match {
       case Some(fieldNames) => fieldNames.map(kuduSchema.getColumn)
-      case None => kuduSchema.getColumns.asScala
+      case None => kuduSchema.getColumns.asScala.toSeq
     }
     val sparkColumns = kuduColumns.map { col =>
       StructField(col.getName, kuduTypeToSparkType(col), col.isNullable)

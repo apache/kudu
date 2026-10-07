@@ -18,7 +18,7 @@
 package org.apache.kudu.spark.kudu
 
 import java.nio.charset.StandardCharsets.UTF_8
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters._
 import scala.collection.immutable.IndexedSeq
 import scala.util.control.NonFatal
 import org.apache.spark.sql.SQLContext
@@ -545,8 +545,8 @@ class SparkSQLTest extends KuduTestSuite with Matchers {
     assert(base.size() == rowCount)
 
     val first = base.get(0)
-    val intArray = first.getAs[Seq[Integer]]("c19_int32_array")
-    val strArray = first.getAs[Seq[String]]("c25_string_array")
+    val intArray = first.getAs[scala.collection.Seq[Integer]]("c19_int32_array")
+    val strArray = first.getAs[scala.collection.Seq[String]]("c25_string_array")
 
     // existing coverage: arrays with a null in the middle
     assert(intArray == Seq(Integer.valueOf(0), null, Integer.valueOf(2)))
@@ -636,15 +636,15 @@ class SparkSQLTest extends KuduTestSuite with Matchers {
 
     // Row 999: empty arrays
     val rowEmpty = checkDF(0)
-    val emptyInts = rowEmpty.getAs[Seq[Integer]]("c19_int32_array")
-    val emptyStrs = rowEmpty.getAs[Seq[String]]("c25_string_array")
+    val emptyInts = rowEmpty.getAs[scala.collection.Seq[Integer]]("c19_int32_array")
+    val emptyStrs = rowEmpty.getAs[scala.collection.Seq[String]]("c25_string_array")
     assert(emptyInts != null && emptyInts.isEmpty, "Empty int array should return Seq()")
     assert(emptyStrs != null && emptyStrs.isEmpty, "Empty string array should return Seq()")
 
     // Row 1000: null arrays
     val rowNull = checkDF(1)
-    val nullInts = rowNull.getAs[Seq[Integer]]("c19_int32_array")
-    val nullStrs = rowNull.getAs[Seq[String]]("c25_string_array")
+    val nullInts = rowNull.getAs[scala.collection.Seq[Integer]]("c19_int32_array")
+    val nullStrs = rowNull.getAs[scala.collection.Seq[String]]("c25_string_array")
     assert(nullInts == null, "Null int array cell should map to null")
     assert(nullStrs == null, "Null string array cell should map to null")
   }

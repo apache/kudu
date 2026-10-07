@@ -21,7 +21,7 @@ import org.apache.kudu.client.AsyncKuduClient.EncryptionPolicy
 
 import java.net.InetAddress
 import java.util.Locale
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.sources._
 import org.apache.spark.sql.types._
@@ -35,6 +35,17 @@ import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.apache.kudu.client.KuduPredicate.ComparisonOp
 import org.apache.kudu.client._
+// Explicitly import the OperationType case objects so they take precedence over the
+// same-named Java operation classes pulled in by the `client._` wildcard above. Under
+// Scala 2.13's name-resolution rules a wildcard import outranks package-sibling
+// definitions, so without this the bare names resolve to org.apache.kudu.client.*.
+import org.apache.kudu.spark.kudu.Delete
+import org.apache.kudu.spark.kudu.DeleteIgnore
+import org.apache.kudu.spark.kudu.Insert
+import org.apache.kudu.spark.kudu.InsertIgnore
+import org.apache.kudu.spark.kudu.Update
+import org.apache.kudu.spark.kudu.UpdateIgnore
+import org.apache.kudu.spark.kudu.Upsert
 import org.apache.kudu.spark.kudu.KuduReadOptions._
 import org.apache.kudu.spark.kudu.KuduWriteOptions._
 import org.apache.kudu.spark.kudu.SparkUtil._

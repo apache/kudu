@@ -19,6 +19,18 @@ apply plugin: "scala"
 apply plugin: "java-library"
 apply from: "$rootDir/gradle/shadow.gradle"
 
+// Version-specific source directories for the few APIs that differ between the
+// Spark 3 and Spark 4 variants (both build against Scala 2.13). `sparkBase` is 3 or 4,
+// so the default build picks up `scala-spark3` and a `-Pspark4` build picks `scala-spark4`.
+sourceSets {
+  main {
+    scala { srcDir "src/main/scala-spark${versions.sparkBase}" }
+  }
+  test {
+    scala { srcDir "src/test/scala-spark${versions.sparkBase}" }
+  }
+}
+
 dependencies {
   implementation project(path: ":kudu-client", configuration: "shadow")
   implementation libs.hdrhistogram

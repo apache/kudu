@@ -29,7 +29,7 @@ import java.sql.Timestamp
 import org.apache.spark.sql.types._
 import org.apache.kudu.client._
 import org.apache.kudu.Type
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters._
 
 import org.apache.kudu.util.DateUtil
 import org.apache.kudu.util.TimestampUtil
@@ -177,19 +177,19 @@ class KuduContextTest extends KuduTestSuite with Matchers {
 
     // Note: getAs[] will automatically convert nulls inside the Seq as null elements.
 
-    val bools = sample.getAs[Seq[Boolean]]("c16_bool_array")
-    val bytes = sample.getAs[Seq[Byte]]("c17_int8_array")
-    val shorts = sample.getAs[Seq[Short]]("c18_int16_array")
-    val ints = sample.getAs[Seq[Int]]("c19_int32_array")
-    val longs = sample.getAs[Seq[Long]]("c20_int64_array")
-    val floats = sample.getAs[Seq[Float]]("c21_float_array")
-    val doubles = sample.getAs[Seq[Double]]("c22_double_array")
-    val dates = sample.getAs[Seq[java.sql.Date]]("c23_date_array")
-    val timestamps = sample.getAs[Seq[java.sql.Timestamp]]("c24_unixtime_array")
-    val strings = sample.getAs[Seq[String]]("c25_string_array")
-    val varchars = sample.getAs[Seq[String]]("c26_varchar_array")
-    val binaries = sample.getAs[Seq[Array[Byte]]]("c27_binary_array")
-    val decimals = sample.getAs[Seq[java.math.BigDecimal]]("c28_decimal_array")
+    val bools = sample.getAs[scala.collection.Seq[Boolean]]("c16_bool_array")
+    val bytes = sample.getAs[scala.collection.Seq[Byte]]("c17_int8_array")
+    val shorts = sample.getAs[scala.collection.Seq[Short]]("c18_int16_array")
+    val ints = sample.getAs[scala.collection.Seq[Int]]("c19_int32_array")
+    val longs = sample.getAs[scala.collection.Seq[Long]]("c20_int64_array")
+    val floats = sample.getAs[scala.collection.Seq[Float]]("c21_float_array")
+    val doubles = sample.getAs[scala.collection.Seq[Double]]("c22_double_array")
+    val dates = sample.getAs[scala.collection.Seq[java.sql.Date]]("c23_date_array")
+    val timestamps = sample.getAs[scala.collection.Seq[java.sql.Timestamp]]("c24_unixtime_array")
+    val strings = sample.getAs[scala.collection.Seq[String]]("c25_string_array")
+    val varchars = sample.getAs[scala.collection.Seq[String]]("c26_varchar_array")
+    val binaries = sample.getAs[scala.collection.Seq[Array[Byte]]]("c27_binary_array")
+    val decimals = sample.getAs[scala.collection.Seq[java.math.BigDecimal]]("c28_decimal_array")
 
     // Validate structure (size, presence)
     val allArrays = Seq(
@@ -294,6 +294,6 @@ class KuduContextTest extends KuduTestSuite with Matchers {
       .load
 
     val rows = readDf.filter("id >= 3").orderBy("id").collect()
-    assert(rows.head.getAs[Seq[String]]("tags") == Seq("alpha", "beta"))
+    assert(rows.head.getAs[scala.collection.Seq[String]]("tags") == Seq("alpha", "beta"))
   }
 }
