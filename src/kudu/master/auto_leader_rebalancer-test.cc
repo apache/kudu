@@ -21,6 +21,7 @@
 #include <cmath>
 #include <cstdint>
 #include <functional>
+#include <initializer_list>
 #include <iostream>
 #include <map>
 #include <memory>
@@ -158,13 +159,19 @@ class LeaderRebalancerTest : public KuduTest {
   }
 
   Status CheckLeaderBalance() {
+    return CheckLeaderBalance(table_name());
+  }
+
+  // Plans 'name' in TEST mode: OK if its leaders are balanced, IllegalState if
+  // it wants a leader transfer.
+  Status CheckLeaderBalance(const string& name) {
     // Leader master
     master::Master* master = cluster_->mini_master()->master();
     master::CatalogManager* catalog_manager = master->catalog_manager();
     scoped_refptr<master::TableInfo> table_info;
     {
       CatalogManager::ScopedLeaderSharedLock leaderlock(catalog_manager);
-      catalog_manager->GetTableInfoByName(table_name(), &table_info);
+      catalog_manager->GetTableInfoByName(name, &table_info);
     }
 
     TSDescriptorVector descriptors;
@@ -320,6 +327,49 @@ class LeaderRebalancerTest : public KuduTest {
   int MovesScheduledLastRound() {
     return cluster_->mini_master()->master()->catalog_manager()
         ->auto_leader_rebalancer()->moves_scheduled_this_round_for_test_.load();
+  }
+
+  // Creates 'num_tables' RF=3 tables named '<table_prefix><i>', each seeded with
+  // 'distribution' leaders per tserver, and waits until leadership has settled
+  // and every table wants a transfer. Appends the table names to 'table_names'.
+  void CreateSkewedTables(int num_tables,
+                          const string& table_prefix,
+                          const vector<int32_t>& distribution,
+                          vector<string>* table_names) {
+    const int num_tablets = std::accumulate(distribution.begin(), distribution.end(), 0);
+    for (int i = 0; i < num_tables; i++) {
+      table_names->emplace_back(strings::Substitute("$0$1", table_prefix, i));
+      workload_.reset(new TestWorkload(cluster_.get()));
+      workload_->set_table_name(table_names->back());
+      workload_->set_num_tablets(num_tablets);
+      workload_->set_num_replicas(3);
+      workload_->Setup();
+      ASSERT_OK(MakeLeaderDistribution(distribution, table_names->back()));
+    }
+
+    AssertEventually([&] {
+      for (const auto& name : *table_names) {
+        std::map<string, int32_t> leader_map;
+        ASSERT_OK(GetLeaderDistribution(&leader_map, name));
+        for (int i = 0; i < distribution.size(); i++) {
+          ASSERT_EQ(distribution[i],
+                    leader_map.at(cluster_->mini_tablet_server(i)->uuid())) << name;
+        }
+        const Status s = CheckLeaderBalance(name);
+        ASSERT_TRUE(s.IsIllegalState()) << name << ": " << s.ToString();
+      }
+    }, MonoDelta::FromSeconds(kLeaderBalanceTimeoutSeconds));
+    NO_PENDING_FATALS();
+  }
+
+  // Runs one full rebalancer round and returns how many transfers it scheduled.
+  void RunRoundAndCountScheduledMoves(int64_t* scheduled) {
+    const int64_t before = GetLeaderMasterCounterValue(
+        &METRIC_auto_leader_rebalancer_moves_scheduled);
+    ASSERT_OK(cluster_->mini_master()->master()->catalog_manager()
+        ->auto_leader_rebalancer()->RunLeaderRebalancer());
+    *scheduled = GetLeaderMasterCounterValue(
+        &METRIC_auto_leader_rebalancer_moves_scheduled) - before;
   }
 
   // Returns the current value of a server-scoped counter on the leader master.
@@ -959,6 +1009,57 @@ TEST_F(LeaderRebalancerTest, GlobalLeaderBalanceRespectsMaxMovesPerRound) {
   // Restore the flag before asserting so a failure here doesn't leak it into
   // later tests.
   FLAGS_leader_rebalancing_max_moves_per_round = saved_max_moves;
+  ASSERT_EQ(1, scheduled);
+}
+
+// Regression test: --leader_rebalancing_max_moves_per_round used to apply per
+// table, so a round over N skewed tables could schedule up to N * cap transfers.
+// The cap is now shared by all tables in a round.
+TEST_F(LeaderRebalancerTest, LeaderRebalancingMaxMovesPerRoundIsPerRoundNotPerTable) {
+  constexpr int kNumTServers = 3;
+  constexpr int kNumTables = 4;
+
+  // Fail the step-downs so leadership stays as arranged below. A move is
+  // counted as scheduled before its RPC, so failed moves still count.
+  FLAGS_auto_leader_rebalancing_fail_moves_for_test = true;
+
+  cluster_opts_.num_tablet_servers = kNumTServers;
+  ASSERT_OK(CreateAndStartCluster());
+  // CreateAndStartCluster() turns the replica rebalancer on; switch it off.
+  FLAGS_auto_rebalancing_enabled = false;
+
+  // Two tablets per table, all led by ts0, leave ts0 above each table's
+  // ceiling of one leader, so every table wants one transfer.
+  vector<string> table_names;
+  NO_FATALS(CreateSkewedTables(kNumTables, "per_round_cap_table_", {2, 0, 0}, &table_names));
+
+  // A cap of 1 runs out on the first table, so also try 3, which has to be
+  // carried across tables. Step-downs fail, so every round starts the same.
+  for (const int cap : {1, 3}) {
+    FLAGS_leader_rebalancing_max_moves_per_round = cap;
+    int64_t scheduled = 0;
+    NO_FATALS(RunRoundAndCountScheduledMoves(&scheduled));
+    ASSERT_EQ(cap, scheduled)
+        << "one round scheduled " << scheduled << " transfers across "
+        << kNumTables << " skewed tables with the per-round cap at " << cap;
+  }
+}
+
+// A table seeded {3,3,0} has two source tservers that each want to shed a
+// leader. With a cap of 1 the planner must stop after the first one.
+TEST_F(LeaderRebalancerTest, LeaderRebalancingMaxMovesPerRoundStopsAtCapAcrossSources) {
+  FLAGS_auto_leader_rebalancing_fail_moves_for_test = true;
+  FLAGS_leader_rebalancing_max_moves_per_round = 1;
+
+  cluster_opts_.num_tablet_servers = 3;
+  ASSERT_OK(CreateAndStartCluster());
+  FLAGS_auto_rebalancing_enabled = false;
+
+  vector<string> table_names;
+  NO_FATALS(CreateSkewedTables(1, "cap_across_sources_table_", {3, 3, 0}, &table_names));
+
+  int64_t scheduled = 0;
+  NO_FATALS(RunRoundAndCountScheduledMoves(&scheduled));
   ASSERT_EQ(1, scheduled);
 }
 

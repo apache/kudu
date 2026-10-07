@@ -18,6 +18,7 @@
 #pragma once
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <random>
 #include <string>
@@ -87,13 +88,17 @@ class AutoLeaderRebalancerTask {
   // in-round leader distribution.
   // num_scheduled_moves, when provided, is incremented by the number of leader transfers planned
   // for this table, letting the caller tell whether per-table balancing still has work to do.
+  // remaining_moves, when provided, is the per-round transfer budget shared by all tables. This
+  // method plans at most '*remaining_moves' transfers and subtracts what it planned. When null,
+  // the cap falls back to --leader_rebalancing_max_moves_per_round for this call.
   Status RunLeaderRebalanceForTable(
       const scoped_refptr<TableInfo>& table_info,
       const std::vector<std::string>& tserver_uuids,
       const std::unordered_set<std::string>& exclude_dest_uuids,
       std::unordered_map<std::string, int>* global_leader_count = nullptr,
       AutoLeaderRebalancerTask::ExecuteMode mode = AutoLeaderRebalancerTask::ExecuteMode::NORMAL,
-      int* num_scheduled_moves = nullptr);
+      int* num_scheduled_moves = nullptr,
+      uint32_t* remaining_moves = nullptr);
 
   // Runs a global corrective pass once every table has been balanced on its
   // own by RunLeaderRebalanceForTable. Per-table balancing keeps each table
