@@ -105,11 +105,9 @@ using strings::Substitute;
 static const uint64_t kOneMb = 1024 * 1024;
 static const uint64_t kTwoMb = 2 * kOneMb;
 
-//extern "C++" {
-  extern const char* const kTraceMetricFsync;
-  extern const char* const kTraceMetricFdatasync;
-  extern const char* const kTraceMetricSyncFileRange;
-//}
+extern const char* const kTraceMetricFsync;
+extern const char* const kTraceMetricFdatasync;
+extern const char* const kTraceMetricSyncFileRange;
 
 class TestEnv : public KuduTest {
  public:
