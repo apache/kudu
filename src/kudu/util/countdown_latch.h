@@ -19,6 +19,8 @@
 
 #include <mutex>
 
+#include <glog/logging.h>
+
 #include "kudu/gutil/macros.h"
 #include "kudu/util/condition_variable.h"
 #include "kudu/util/monotime.h"

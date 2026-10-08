@@ -318,6 +318,14 @@ struct IteratorStats;
 
 namespace tablet {
 
+constexpr const char* const TC_BYTES_WRITTEN = "bytes_written";
+constexpr const char* const TC_DRS_WRITTEN = "drs_written";
+constexpr const char* const TC_NUM_INPUT_ROWSETS = "num_input_rowsets";
+constexpr const char* const TC_NUM_OPS = "num_ops";
+constexpr const char* const TC_PEAK_MEM_USAGE = "peak_mem_usage";
+constexpr const char* const TC_ROWS_WRITTEN = "rows_written";
+constexpr const char* const TC_ROWSET_ITERATORS = "rowset_iterators";
+
 class RowSetMetadata;
 
 ////////////////////////////////////////////////////////////
@@ -669,7 +677,7 @@ Status Tablet::DecodeWriteOperations(const Schema* client_schema,
                              schema_ptr.get(),
                              op_state->arena());
   RETURN_NOT_OK(dec.DecodeOperations<DecoderMode::WRITE_OPS>(&ops, &auto_incrementing_counter_));
-  TRACE_COUNTER_INCREMENT("num_ops", ops.size());
+  TRACE_COUNTER_INCREMENT(TC_NUM_OPS, ops.size());
 
   // Important to set the schema before the ops -- we need the
   // schema in order to stringify the ops.
@@ -2345,10 +2353,10 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompactionOrFlush &input,
   const auto rows_written = drsw.rows_written_count();
   const auto drs_written = drsw.drs_written_count();
   const auto bytes_written = drsw.written_size();
-  TRACE_COUNTER_INCREMENT("rows_written", rows_written);
-  TRACE_COUNTER_INCREMENT("drs_written", drs_written);
-  TRACE_COUNTER_INCREMENT("bytes_written", bytes_written);
-  TRACE_COUNTER_INCREMENT("peak_mem_usage", peak_mem_usage);
+  TRACE_COUNTER_INCREMENT(TC_ROWS_WRITTEN, rows_written);
+  TRACE_COUNTER_INCREMENT(TC_DRS_WRITTEN, drs_written);
+  TRACE_COUNTER_INCREMENT(TC_BYTES_WRITTEN, bytes_written);
+  TRACE_COUNTER_INCREMENT(TC_PEAK_MEM_USAGE, peak_mem_usage);
   VLOG_WITH_PREFIX(1) << Substitute("$0 successful on $1 rows ($2 rowsets, $3 bytes)",
                                     op_name,
                                     rows_written,
@@ -2410,7 +2418,7 @@ Status Tablet::Compact(CompactFlags flags) {
   RETURN_NOT_OK_PREPEND(PickRowSetsToCompact(&input, flags),
                         "Failed to pick rowsets to compact");
   const auto num_input_rowsets = input.num_rowsets();
-  TRACE_COUNTER_INCREMENT("num_input_rowsets", num_input_rowsets);
+  TRACE_COUNTER_INCREMENT(TC_NUM_INPUT_ROWSETS, num_input_rowsets);
   VLOG_WITH_PREFIX(1) << Substitute("Compaction: stage 1 complete, picked $0 "
                                     "rowsets to compact or flush",
                                     num_input_rowsets);
@@ -3416,7 +3424,7 @@ Status Tablet::Iterator::Init(ScanSpec *spec) {
 
   vector<IterWithBounds> iters;
   RETURN_NOT_OK(tablet_->CaptureConsistentIterators(opts_, spec, &iters));
-  TRACE_COUNTER_INCREMENT("rowset_iterators", iters.size());
+  TRACE_COUNTER_INCREMENT(TC_ROWSET_ITERATORS, iters.size());
 
   switch (opts_.order) {
     case ORDERED:

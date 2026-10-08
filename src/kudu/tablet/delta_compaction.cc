@@ -76,6 +76,12 @@ namespace {
 
 const size_t kRowsPerBlock = 100; // Number of rows per block of columns
 
+constexpr const char* const TC_DELTA_BLOCKS_COMPACTED = "delta_blocks_compacted";
+constexpr const char* const TC_DELETE_COUNT = "delete_count";
+constexpr const char* const TC_REINSERT_COUNT = "reinsert_count";
+constexpr const char* const TC_UPDATE_COUNT = "update_count";
+constexpr const char* const TC_PEAK_MEM_USAGE = "peak_mem_usage";
+
 } // anonymous namespace
 
 // TODO: can you major-delta-compact a new column after an alter table in order
@@ -391,14 +397,14 @@ Status MajorDeltaCompaction::Compact(const IOContext* io_context) {
   RETURN_NOT_OK(OpenBaseDataWriter());
   RETURN_NOT_OK(FlushRowSetAndDeltas(io_context));
 
-  TRACE_COUNTER_INCREMENT("delta_blocks_compacted", included_stores_.size());
+  TRACE_COUNTER_INCREMENT(TC_DELTA_BLOCKS_COMPACTED, included_stores_.size());
   const auto stats = ComputeDeltaStoreStats(included_stores_);
-  TRACE_COUNTER_INCREMENT("delete_count", stats.delete_count);
-  TRACE_COUNTER_INCREMENT("reinsert_count", stats.reinsert_count);
-  TRACE_COUNTER_INCREMENT("update_count", stats.update_count);
+  TRACE_COUNTER_INCREMENT(TC_DELETE_COUNT, stats.delete_count);
+  TRACE_COUNTER_INCREMENT(TC_REINSERT_COUNT, stats.reinsert_count);
+  TRACE_COUNTER_INCREMENT(TC_UPDATE_COUNT, stats.update_count);
 
   // Update stats with peak memory consumption.
-  TRACE_COUNTER_INCREMENT("peak_mem_usage", tracker_->peak_consumption());
+  TRACE_COUNTER_INCREMENT(TC_PEAK_MEM_USAGE, tracker_->peak_consumption());
   VLOG(1) << Substitute("Finished major delta compaction of columns $0. "
                         "Compacted $1 delta files. Overall stats: $2",
                         ColumnNamesToString(),

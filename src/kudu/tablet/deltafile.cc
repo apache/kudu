@@ -88,6 +88,9 @@ namespace tablet {
 
 const char* const DeltaFileReader::kDeltaStatsEntryName = "deltafilestats";
 
+constexpr const char* const TC_DELTA_ITERATORS_LAZY_INITTED = "delta_iterators_lazy_initted";
+constexpr const char* const TC_DELTA_ITERATORS_RELEVANT = "delta_iterators_relevant";
+
 namespace {
 
 constexpr auto kKeyEncoder = [] (const void* value, faststring* buffer) {
@@ -337,7 +340,7 @@ Status DeltaFileReader::NewDeltaIterator(const RowIteratorOptions& opts,
   if (IsRelevantForSnapshots(opts.snap_to_exclude, opts.snap_to_include)) {
     if (VLOG_IS_ON(2)) {
       if (!init_once_.init_succeeded()) {
-        TRACE_COUNTER_INCREMENT("delta_iterators_lazy_initted", 1);
+        TRACE_COUNTER_INCREMENT(TC_DELTA_ITERATORS_LAZY_INITTED, 1);
 
         VLOG(2) << (delta_type_ == REDO ? "REDO" : "UNDO") << " delta " << ToString()
                 << " has no delta stats"
@@ -353,7 +356,7 @@ Status DeltaFileReader::NewDeltaIterator(const RowIteratorOptions& opts,
       }
     }
 
-    TRACE_COUNTER_INCREMENT("delta_iterators_relevant", 1);
+    TRACE_COUNTER_INCREMENT(TC_DELTA_ITERATORS_RELEVANT, 1);
     // Ugly cast, but it lets the iterator fully initialize the reader
     // during its first seek.
     auto s_this = const_cast<DeltaFileReader*>(this)->shared_from_this();

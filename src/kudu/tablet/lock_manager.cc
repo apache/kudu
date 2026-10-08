@@ -55,6 +55,10 @@ using strings::Substitute;
 namespace kudu {
 namespace tablet {
 
+constexpr const char* const TC_PARTITION_LOCK_WAIT_US = "partition_lock_wait_us";
+constexpr const char* const TC_ROW_LOCK_WAIT_COUNT = "row_lock_wait_count";
+constexpr const char* const TC_ROW_LOCK_WAIT_US = "row_lock_wait_us";
+
 // ============================================================================
 //  LockTable
 // ============================================================================
@@ -528,7 +532,7 @@ PartitionLockState* LockManager::WaitUntilAcquiredPartitionLock(const TxnId& txn
   PartitionLockState* lock = TryAcquirePartitionLock(txn_id, &code);
   CHECK(lock);
   MicrosecondsInt64 wait_us = GetMonoTimeMicros() - start_wait_us;
-  TRACE_COUNTER_INCREMENT("partition_lock_wait_us", wait_us);
+  TRACE_COUNTER_INCREMENT(TC_PARTITION_LOCK_WAIT_US, wait_us);
   if (wait_us > 100 * 1000) {
     TRACE("Waited $0us to acquire the partition lock", wait_us);
   }
@@ -577,7 +581,7 @@ void LockManager::AcquireLockOnEntry(LockEntry* entry, const OpState* op) {
     // warn if it takes a long time.
     // TODO: would be nice to hook in some histogram metric about lock acquisition
     // time. For now we just associate with per-request metrics.
-    TRACE_COUNTER_INCREMENT("row_lock_wait_count", 1);
+    TRACE_COUNTER_INCREMENT(TC_ROW_LOCK_WAIT_COUNT, 1);
     MicrosecondsInt64 start_wait_us = GetMonoTimeMicros();
     int waited_seconds = 0;
     while (!entry->sem.TimedAcquire(MonoDelta::FromSeconds(1))) {
@@ -592,7 +596,7 @@ void LockManager::AcquireLockOnEntry(LockEntry* entry, const OpState* op) {
       // complete at any point)
     }
     MicrosecondsInt64 wait_us = GetMonoTimeMicros() - start_wait_us;
-    TRACE_COUNTER_INCREMENT("row_lock_wait_us", wait_us);
+    TRACE_COUNTER_INCREMENT(TC_ROW_LOCK_WAIT_US, wait_us);
     if (wait_us > 100 * 1000) {
       TRACE("Waited $0us for lock on $1 (key hash $2)",
             wait_us, entry->ToString(), entry->key_hash());

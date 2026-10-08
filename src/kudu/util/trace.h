@@ -98,17 +98,22 @@ class Trace;
 
 // Construct a constant C string counter name which acts as a sort of
 // coarse-grained histogram for trace metrics.
-#define BUCKETED_COUNTER_NAME(prefix, duration_us)      \
-  [=]() {                                               \
-    if (duration_us >= 100 * 1000) {                    \
-      return prefix "_gt_100_ms";                       \
-    } else if (duration_us >= 10 * 1000) {              \
-      return prefix "_10-100_ms";                       \
-    } else if (duration_us >= 1000) {                   \
-      return prefix "_1-10_ms";                         \
-    } else {                                            \
-      return prefix "_lt_1ms";                          \
-    }                                                   \
+#define BUCKETED_COUNTER_NAME(prefix, duration_us)                \
+  [=]() constexpr {                                               \
+    constexpr const char* const CT_GT_100  = prefix "_gt_100_ms"; \
+    constexpr const char* const CT_10_100  = prefix "_10-100_ms"; \
+    constexpr const char* const CT_1_10    = prefix "_1-10_ms";   \
+    constexpr const char* const CT_LT_1    = prefix "_lt_1ms";    \
+    if ((duration_us) >= 100 * 1000) {                            \
+      return CT_GT_100;                                           \
+    }                                                             \
+    if ((duration_us) >= 10 * 1000) {                             \
+      return CT_10_100;                                           \
+    }                                                             \
+    if ((duration_us) >= 1000) {                                  \
+      return CT_1_10;                                             \
+    }                                                             \
+    return CT_LT_1;                                               \
   }()
 
 namespace kudu {

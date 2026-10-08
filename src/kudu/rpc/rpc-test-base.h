@@ -106,6 +106,9 @@ using kudu::rpc_test_diff_package::RespDiffPackagePB;
 namespace kudu {
 namespace rpc {
 
+constexpr const char* const TC_TEST_SLEEP_US = "test_sleep_us";
+constexpr const char* const TC_RELATED_TRACE_METRIC = "related_trace_metric";
+
 // Implementation of CalculatorService which just implements the generic
 // RPC handler (no generated code).
 class GenericCalculatorService : public ServiceIf {
@@ -425,12 +428,12 @@ class CalculatorService : public CalculatorServiceIf {
  private:
   void DoSleep(const SleepRequestPB *req,
                RpcContext *context) {
-    TRACE_COUNTER_INCREMENT("test_sleep_us", req->sleep_micros());
+    TRACE_COUNTER_INCREMENT(TC_TEST_SLEEP_US, req->sleep_micros());
     if (Trace::CurrentTrace()) {
       scoped_refptr<Trace> child_trace(new Trace());
       Trace::CurrentTrace()->AddChildTrace("test_child", child_trace.get());
       ADOPT_TRACE(child_trace.get());
-      TRACE_COUNTER_INCREMENT("related_trace_metric", 1);
+      TRACE_COUNTER_INCREMENT(TC_RELATED_TRACE_METRIC, 1);
     }
 
     SleepFor(MonoDelta::FromMicroseconds(req->sleep_micros()));

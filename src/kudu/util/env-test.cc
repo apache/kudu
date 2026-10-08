@@ -105,9 +105,9 @@ using strings::Substitute;
 static const uint64_t kOneMb = 1024 * 1024;
 static const uint64_t kTwoMb = 2 * kOneMb;
 
-extern const char* const kTraceMetricFsync;
-extern const char* const kTraceMetricFdatasync;
-extern const char* const kTraceMetricSyncFileRange;
+extern const char* const TC_FDATASYNC;
+extern const char* const TC_FSYNC;
+extern const char* const TC_SYNC_FILE_RANGE;
 
 class TestEnv : public KuduTest {
  public:
@@ -1280,9 +1280,9 @@ class FsSyncControlTest : public TestEnv,
 
  protected:
   static void VerifyNewFileMetrics(const TraceMetrics& m) {
-    ASSERT_EQ(0, m.GetMetric(kTraceMetricFsync));
-    ASSERT_EQ(0, m.GetMetric(kTraceMetricFdatasync));
-    ASSERT_EQ(0, m.GetMetric(kTraceMetricSyncFileRange));
+    ASSERT_EQ(0, m.GetMetric(TC_FSYNC));
+    ASSERT_EQ(0, m.GetMetric(TC_FDATASYNC));
+    ASSERT_EQ(0, m.GetMetric(TC_SYNC_FILE_RANGE));
   }
 
   static void VerifyPreSyncMetrics(const TraceMetrics& m) {
@@ -1291,35 +1291,35 @@ class FsSyncControlTest : public TestEnv,
 
   void VerifyPostSyncMetrics(const TraceMetrics& m) const {
     if (use_fsync_) {
-      ASSERT_EQ(no_sync_ ? 0 : 1, m.GetMetric(kTraceMetricFsync));
-      ASSERT_EQ(0, m.GetMetric(kTraceMetricFdatasync));
+      ASSERT_EQ(no_sync_ ? 0 : 1, m.GetMetric(TC_FSYNC));
+      ASSERT_EQ(0, m.GetMetric(TC_FDATASYNC));
     } else {
-      ASSERT_EQ(0, m.GetMetric(kTraceMetricFsync));
-      ASSERT_EQ(no_sync_ ? 0 : 1, m.GetMetric(kTraceMetricFdatasync));
+      ASSERT_EQ(0, m.GetMetric(TC_FSYNC));
+      ASSERT_EQ(no_sync_ ? 0 : 1, m.GetMetric(TC_FDATASYNC));
     }
-    ASSERT_EQ(0, m.GetMetric(kTraceMetricSyncFileRange));
+    ASSERT_EQ(0, m.GetMetric(TC_SYNC_FILE_RANGE));
   }
 
   void VerifyPostFlushMetrics(const TraceMetrics& m) const {
     #if defined(__linux__)
       // The sync_file_range metric should be incremented by 1.
-      ASSERT_EQ(no_sync_ ? 0 : 1, m.GetMetric(kTraceMetricSyncFileRange));
+      ASSERT_EQ(no_sync_ ? 0 : 1, m.GetMetric(TC_SYNC_FILE_RANGE));
       // fsync()/fdatasync() metrics stay as-is.
       if (use_fsync_) {
-        ASSERT_EQ(no_sync_ ? 0 : 1, m.GetMetric(kTraceMetricFsync));
-        ASSERT_EQ(0, m.GetMetric(kTraceMetricFdatasync));
+        ASSERT_EQ(no_sync_ ? 0 : 1, m.GetMetric(TC_FSYNC));
+        ASSERT_EQ(0, m.GetMetric(TC_FDATASYNC));
       } else {
-        ASSERT_EQ(0, m.GetMetric(kTraceMetricFsync));
-        ASSERT_EQ(no_sync_ ? 0 : 1, m.GetMetric(kTraceMetricFdatasync));
+        ASSERT_EQ(0, m.GetMetric(TC_FSYNC));
+        ASSERT_EQ(no_sync_ ? 0 : 1, m.GetMetric(TC_FDATASYNC));
       }
     #elif defined(__APPLE__)
-      ASSERT_EQ(0, m.GetMetric(kTraceMetricSyncFileRange));
+      ASSERT_EQ(0, m.GetMetric(TC_SYNC_FILE_RANGE));
       if (use_fsync_) {
-        ASSERT_EQ(no_sync_ ? 0 : 2, m.GetMetric(kTraceMetricFsync));
-        ASSERT_EQ(0, m.GetMetric(kTraceMetricFdatasync));
+        ASSERT_EQ(no_sync_ ? 0 : 2, m.GetMetric(TC_FSYNC));
+        ASSERT_EQ(0, m.GetMetric(TC_FDATASYNC));
       } else {
-        ASSERT_EQ(no_sync_ ? 0 : 1, m.GetMetric(kTraceMetricFsync));
-        ASSERT_EQ(no_sync_ ? 0 : 1, m.GetMetric(kTraceMetricFdatasync));
+        ASSERT_EQ(no_sync_ ? 0 : 1, m.GetMetric(TC_FSYNC));
+        ASSERT_EQ(no_sync_ ? 0 : 1, m.GetMetric(TC_FDATASYNC));
       }
     #endif
   }
@@ -1386,17 +1386,17 @@ TEST_P(FsSyncControlTest, DirControls) {
   ADOPT_TRACE(trace_.get());
   const auto& m = *(trace_->metrics());
 
-  ASSERT_EQ(0, m.GetMetric(kTraceMetricFsync));
-  ASSERT_EQ(0, m.GetMetric(kTraceMetricFdatasync));
-  ASSERT_EQ(0, m.GetMetric(kTraceMetricSyncFileRange));
+  ASSERT_EQ(0, m.GetMetric(TC_FSYNC));
+  ASSERT_EQ(0, m.GetMetric(TC_FDATASYNC));
+  ASSERT_EQ(0, m.GetMetric(TC_SYNC_FILE_RANGE));
 
   ASSERT_OK(env_->SyncDir(dir_path));
 
   // Env::SyncDir() invokes only fsync() on the directory descriptor.
   // It does so unless --never_fsync is set 'true'.
-  ASSERT_EQ(no_sync_ ? 0 : 1, m.GetMetric(kTraceMetricFsync));
-  ASSERT_EQ(0, m.GetMetric(kTraceMetricFdatasync));
-  ASSERT_EQ(0, m.GetMetric(kTraceMetricSyncFileRange));
+  ASSERT_EQ(no_sync_ ? 0 : 1, m.GetMetric(TC_FSYNC));
+  ASSERT_EQ(0, m.GetMetric(TC_FDATASYNC));
+  ASSERT_EQ(0, m.GetMetric(TC_SYNC_FILE_RANGE));
 }
 
 class TestEncryptedEnv : public TestEnv, public ::testing::WithParamInterface<int> {

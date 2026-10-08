@@ -70,6 +70,8 @@ using strings::Substitute;
 namespace kudu {
 namespace tablet {
 
+constexpr const char* const TC_REPLICATION_TIME_US = "replication_time_us";
+
 static const char* kTimestampFieldName = "timestamp";
 
 class FollowerOpCompletionCallback : public OpCompletionCallback {
@@ -460,7 +462,7 @@ void OpDriver::ReplicationFinished(const Status& status) {
   if (auto* metrics = op_->state()->tablet_replica()->tablet()->metrics()) {
     metrics->replication_duration->Increment(replication_duration.ToMicroseconds());
   }
-  TRACE_COUNTER_INCREMENT("replication_time_us", replication_duration.ToMicroseconds());
+  TRACE_COUNTER_INCREMENT(TC_REPLICATION_TIME_US, replication_duration.ToMicroseconds());
   TRACE("REPLICATION: finished");
 
   // If we have prepared and replicated, we're ready

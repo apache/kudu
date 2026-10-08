@@ -49,6 +49,8 @@ TAG_FLAG(debug_mutex_collect_stacktrace, hidden);
 
 namespace kudu {
 
+constexpr const char* const TC_MUTEX_WAIT_US = "mutex_wait_us";
+
 Mutex::Mutex()
 #ifndef NDEBUG
   : owning_tid_(0),
@@ -110,9 +112,8 @@ void Mutex::Acquire() {
   ; // NOLINT(whitespace/semicolon)
   MicrosecondsInt64 end_time = GetMonoTimeMicros();
 
-  int64_t wait_time = end_time - start_time;
-  if (wait_time > 0) {
-    TRACE_COUNTER_INCREMENT("mutex_wait_us", wait_time);
+  if (int64_t wait_time = end_time - start_time; wait_time > 0) {
+    TRACE_COUNTER_INCREMENT(TC_MUTEX_WAIT_US, wait_time);
   }
 
 #ifndef NDEBUG

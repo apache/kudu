@@ -68,8 +68,8 @@
 #include "kudu/gutil/strings/util.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/alignment.h"
-#include "kudu/util/atomic-utils.h"
 #include "kudu/util/array_view.h"
+#include "kudu/util/atomic-utils.h"
 #include "kudu/util/env.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/fault_injection.h"
@@ -287,6 +287,9 @@ using strings::Substitute;
 namespace kudu {
 
 namespace fs {
+
+constexpr const char* const TC_LBM_WRITE_TIME_US = "lbm_write_time_us";
+constexpr const char* const TC_LBM_READ_TIME_US = "lbm_read_time_us";
 
 bool ValidateMetadataCompactFlags() {
   if (FLAGS_log_container_metadata_runtime_compact &&
@@ -2853,8 +2856,8 @@ Status LogWritableBlock::AppendV(ArrayView<const Slice> data) {
   MicrosecondsInt64 end_time = GetMonoTimeMicros();
 
   int64_t dur = end_time - start_time;
-  TRACE_COUNTER_INCREMENT("lbm_write_time_us", dur);
-  const char* counter = BUCKETED_COUNTER_NAME("lbm_writes", dur);
+  TRACE_COUNTER_INCREMENT(TC_LBM_WRITE_TIME_US, dur);
+  const char* const counter = BUCKETED_COUNTER_NAME("lbm_writes", dur);
   TRACE_COUNTER_INCREMENT(counter, 1);
 
   block_length_ += data_size;
@@ -3029,9 +3032,9 @@ Status LogReadableBlock::ReadV(uint64_t offset, ArrayView<Slice> results) const 
   MicrosecondsInt64 end_time = GetMonoTimeMicros();
 
   int64_t dur = end_time - start_time;
-  TRACE_COUNTER_INCREMENT("lbm_read_time_us", dur);
+  TRACE_COUNTER_INCREMENT(TC_LBM_READ_TIME_US, dur);
 
-  const char* counter = BUCKETED_COUNTER_NAME("lbm_reads", dur);
+  const char* const counter = BUCKETED_COUNTER_NAME("lbm_reads", dur);
   TRACE_COUNTER_INCREMENT(counter, 1);
 
   if (log_block_->container()->metrics()) {

@@ -91,6 +91,12 @@ class RowChangeList;
 
 namespace tablet {
 
+constexpr const char* const TC_DELETE_COUNT = "delete_count";
+constexpr const char* const TC_REINSERT_COUNT = "reinsert_count";
+constexpr const char* const TC_UPDATE_COUNT = "update_count";
+constexpr const char* const TC_DELTA_BLOCKS_COMPACTED = "delta_blocks_compacted";
+constexpr const char* const TC_BYTES_WRITTEN = "bytes_written";
+
 Status DeltaTracker::Open(const shared_ptr<RowSetMetadata>& rowset_metadata,
                           LogAnchorRegistry* log_anchor_registry,
                           const TabletMemTrackers& mem_trackers,
@@ -240,9 +246,9 @@ Status DeltaTracker::MakeDeltaIteratorMergerUnlocked(const IOContext* io_context
     target_stores->push_back(delta_store);
     target_blocks->push_back(dfr->block_id());
   }
-  TRACE_COUNTER_INCREMENT("delete_count", delete_count);
-  TRACE_COUNTER_INCREMENT("reinsert_count", reinsert_count);
-  TRACE_COUNTER_INCREMENT("update_count", update_count);
+  TRACE_COUNTER_INCREMENT(TC_DELETE_COUNT, delete_count);
+  TRACE_COUNTER_INCREMENT(TC_REINSERT_COUNT, reinsert_count);
+  TRACE_COUNTER_INCREMENT(TC_UPDATE_COUNT, update_count);
   RowIteratorOptions opts;
   opts.projection = projection;
   opts.io_context = io_context;
@@ -472,7 +478,7 @@ Status DeltaTracker::CompactStores(const IOContext* io_context, int start_idx, i
   update.ReplaceRedoDeltaBlocks(compacted_blocks, new_block);
 
   const auto num_blocks_compacted = compacted_blocks.size();
-  TRACE_COUNTER_INCREMENT("delta_blocks_compacted", num_blocks_compacted);
+  TRACE_COUNTER_INCREMENT(TC_DELTA_BLOCKS_COMPACTED, num_blocks_compacted);
   VLOG_WITH_PREFIX(1) << Substitute("Flushing compaction of $0 redo delta "
                                     "blocks { $1 } into block $2",
                                     num_blocks_compacted,
@@ -795,10 +801,10 @@ Status DeltaTracker::FlushDMS(DeltaMemStore* dms,
   RETURN_NOT_OK(dfw.Finish());
   unique_ptr<DeltaStats> stats = dfw.release_delta_stats();
   const auto bytes_written = dfw.written_size();
-  TRACE_COUNTER_INCREMENT("bytes_written", bytes_written);
-  TRACE_COUNTER_INCREMENT("delete_count", stats->delete_count());
-  TRACE_COUNTER_INCREMENT("reinsert_count", stats->reinsert_count());
-  TRACE_COUNTER_INCREMENT("update_count", stats->UpdateCount());
+  TRACE_COUNTER_INCREMENT(TC_BYTES_WRITTEN, bytes_written);
+  TRACE_COUNTER_INCREMENT(TC_DELETE_COUNT, stats->delete_count());
+  TRACE_COUNTER_INCREMENT(TC_REINSERT_COUNT, stats->reinsert_count());
+  TRACE_COUNTER_INCREMENT(TC_UPDATE_COUNT, stats->UpdateCount());
   VLOG_WITH_PREFIX(1) << Substitute("Flushed delta block $0 ($1 bytes on disk) "
                                     "stats: $2",
                                     block_id.ToString(),

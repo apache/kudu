@@ -59,6 +59,8 @@ using base::SpinLockHolder;
 
 namespace kudu {
 
+constexpr const char* const TC_SPINLOCK_WAIT_CYCLES = "spinlock_wait_cycles";
+
 static const double kMicrosPerSecond = 1000000.0;
 
 static LongAdder* g_contended_cycles = nullptr;
@@ -213,7 +215,7 @@ bool ContentionStacks::CollectSample(uint64_t* iterator, StackTrace* s, int64_t*
 
 
 void SubmitSpinLockProfileData(const void *contendedlock, int64_t wait_cycles) {
-  TRACE_COUNTER_INCREMENT("spinlock_wait_cycles", wait_cycles);
+  TRACE_COUNTER_INCREMENT(TC_SPINLOCK_WAIT_CYCLES, wait_cycles);
   bool profiling_enabled = base::subtle::Acquire_Load(&g_profiling_enabled);
   bool long_wait_time = wait_cycles > FLAGS_lock_contention_trace_threshold_cycles;
   // Short circuit this function quickly in the common case.

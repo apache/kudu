@@ -250,9 +250,9 @@ const char* const kEncryptionHeaderMagic = "kuduenc";
 // on a particular OS since the related code is under OS/platform-specific
 // macros. They are marked 'extern' since they are also used in env-test.cc,
 // but that doesn't command separating them into their own header file.
-[[maybe_unused]] extern constexpr const char* const kTraceMetricFsync = "fsync";
-[[maybe_unused]] extern constexpr const char* const kTraceMetricFdatasync = "fdatasync";
-[[maybe_unused]] extern constexpr const char* const kTraceMetricSyncFileRange = "sync_file_range";
+[[maybe_unused]] extern constexpr const char* const TC_FDATASYNC = "fdatasync";
+[[maybe_unused]] extern constexpr const char* const TC_FSYNC = "fsync";
+[[maybe_unused]] extern constexpr const char* const TC_SYNC_FILE_RANGE = "sync_file_range";
 namespace security {
 
 template<> struct SslTypeTraits<EVP_CIPHER_CTX> {
@@ -452,13 +452,13 @@ Status DoSync(int fd, const string& filename) {
     return Status::OK();
   }
   if (PREDICT_FALSE(FLAGS_env_use_fsync)) {
-    TRACE_COUNTER_INCREMENT(kTraceMetricFsync, 1);
+    TRACE_COUNTER_INCREMENT(TC_FSYNC, 1);
     TRACE_COUNTER_SCOPE_LATENCY_US("fsync_us");
     if (PREDICT_FALSE(fsync(fd) < 0)) {
       return IOError(filename, errno);
     }
   } else {
-    TRACE_COUNTER_INCREMENT(kTraceMetricFdatasync, 1);
+    TRACE_COUNTER_INCREMENT(TC_FDATASYNC, 1);
     TRACE_COUNTER_SCOPE_LATENCY_US("fdatasync_us");
     if (PREDICT_FALSE(fdatasync(fd) < 0)) {
       return IOError(filename, errno);
@@ -1235,13 +1235,13 @@ class PosixWritableFile : public WritableFile {
       flags |= SYNC_FILE_RANGE_WAIT_BEFORE;
       flags |= SYNC_FILE_RANGE_WAIT_AFTER;
     }
-    TRACE_COUNTER_INCREMENT(kTraceMetricSyncFileRange, 1);
+    TRACE_COUNTER_INCREMENT(TC_SYNC_FILE_RANGE, 1);
     if (PREDICT_FALSE(sync_file_range(fd_, 0, 0, flags) < 0)) {
       return IOError(filename_, errno);
     }
 #else
     if (mode == FLUSH_SYNC) {
-      TRACE_COUNTER_INCREMENT(kTraceMetricFsync, 1);
+      TRACE_COUNTER_INCREMENT(TC_FSYNC, 1);
       if (PREDICT_FALSE(fsync(fd_) < 0)) {
         return IOError(filename_, errno);
       }
@@ -1414,13 +1414,13 @@ class PosixRWFile : public RWFile {
     if (mode == FLUSH_SYNC) {
       flags |= SYNC_FILE_RANGE_WAIT_AFTER;
     }
-    TRACE_COUNTER_INCREMENT(kTraceMetricSyncFileRange, 1);
+    TRACE_COUNTER_INCREMENT(TC_SYNC_FILE_RANGE, 1);
     if (PREDICT_FALSE(sync_file_range(fd_, offset, length, flags) < 0)) {
       return IOError(filename_, errno);
     }
 #else
     if (mode == FLUSH_SYNC) {
-      TRACE_COUNTER_INCREMENT(kTraceMetricFsync, 1);
+      TRACE_COUNTER_INCREMENT(TC_FSYNC, 1);
       if (PREDICT_FALSE(fsync(fd_) < 0)) {
         return IOError(filename_, errno);
       }
@@ -1881,7 +1881,7 @@ class PosixEnv : public Env {
       return IOError(dirname, errno);
     }
     ScopedFdCloser fd_closer(dir_fd);
-    TRACE_COUNTER_INCREMENT(kTraceMetricFsync, 1);
+    TRACE_COUNTER_INCREMENT(TC_FSYNC, 1);
     if (PREDICT_FALSE(fsync(dir_fd) != 0)) {
       return IOError(dirname, errno);
     }

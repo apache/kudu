@@ -628,6 +628,8 @@ GROUP_FLAG_VALIDATOR(replication_factor_flags,
 namespace kudu {
 namespace master {
 
+constexpr const char* const TC_REPORTED_TABLETS = "reported_tablets";
+
 ////////////////////////////////////////////////////////////
 // Table Loader
 ////////////////////////////////////////////////////////////
@@ -5602,7 +5604,7 @@ Status CatalogManager::ProcessTabletReport(
   TRACE_EVENT2("master", "ProcessTabletReport",
                "requestor", rpc->requestor_string(),
                "num_tablets", num_tablets);
-  TRACE_COUNTER_INCREMENT("reported_tablets", num_tablets);
+  TRACE_COUNTER_INCREMENT(TC_REPORTED_TABLETS, num_tablets);
 
   leader_lock_.AssertAcquiredForReading();
 

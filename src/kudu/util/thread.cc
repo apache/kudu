@@ -601,7 +601,8 @@ int64_t Thread::WaitForTid() const {
 Status Thread::StartThread(string category, string name,
                            std::function<void()> functor, uint64_t flags,
                            scoped_refptr<Thread>* holder) {
-  TRACE_COUNTER_INCREMENT("threads_started", 1);
+  constexpr const char* const TC_THREADS_STARTED = "threads_started";
+  TRACE_COUNTER_INCREMENT(TC_THREADS_STARTED, 1);
   TRACE_COUNTER_SCOPE_LATENCY_US("thread_start_us");
 
   const string log_prefix = Substitute("$0 ($1) ", name, category);

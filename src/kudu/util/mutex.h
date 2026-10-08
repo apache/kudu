@@ -23,8 +23,6 @@
 #include <memory>
 #include <string>
 
-#include <glog/logging.h>
-
 #include "kudu/gutil/macros.h"
 
 namespace kudu {

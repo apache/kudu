@@ -106,8 +106,14 @@ using strings::Substitute;
 namespace kudu {
 namespace cfile {
 
-const char* CFILE_CACHE_MISS_BYTES_METRIC_NAME = "cfile_cache_miss_bytes";
-const char* CFILE_CACHE_HIT_BYTES_METRIC_NAME = "cfile_cache_hit_bytes";
+// Some of these trace counters are also used in a few other places by the
+// TRACE_COUNTER_INCREMENT() macro. Placing them into the cfile_reader.h header
+// doesn't make much sense, so keeping them here marked as 'extern'.
+extern constexpr const char* const TC_CFILE_CACHE_HIT = "cfile_cache_hit";
+extern constexpr const char* const TC_CFILE_CACHE_HIT_BYTES = "cfile_cache_hit_bytes";
+extern constexpr const char* const TC_CFILE_CACHE_MISS = "cfile_cache_miss";
+extern constexpr const char* const TC_CFILE_CACHE_MISS_BYTES = "cfile_cache_miss_bytes";
+extern constexpr const char* const TC_CFILE_INIT = "cfile_init";
 
 // Magic+Length: 8-byte magic, followed by 4-byte header size
 static const size_t kMagicAndLengthSize = 12;
@@ -183,7 +189,7 @@ Status CFileReader::OpenNoInit(unique_ptr<ReadableBlock> block,
 
 Status CFileReader::InitOnce(const IOContext* io_context) {
   VLOG(1) << "Initializing CFile with ID " << block_->id().ToString();
-  TRACE_COUNTER_INCREMENT("cfile_init", 1);
+  TRACE_COUNTER_INCREMENT(TC_CFILE_INIT, 1);
 
   // Parse Footer first to find unsupported features.
   RETURN_NOT_OK_HANDLE_CORRUPTION(ReadAndParseFooter(), HandleCorruption(io_context));
@@ -470,8 +476,8 @@ Status CFileReader::ReadBlock(const IOContext* io_context,
   BlockCache* cache = BlockCache::GetSingleton();
   BlockCache::CacheKey key(block_->id(), ptr.offset());
   if (cache->Lookup(key, cache_behavior, &bc_handle)) {
-    TRACE_COUNTER_INCREMENT("cfile_cache_hit", 1);
-    TRACE_COUNTER_INCREMENT(CFILE_CACHE_HIT_BYTES_METRIC_NAME, ptr.size());
+    TRACE_COUNTER_INCREMENT(TC_CFILE_CACHE_HIT, 1);
+    TRACE_COUNTER_INCREMENT(TC_CFILE_CACHE_HIT_BYTES, ptr.size());
     *ret = BlockHandle::WithDataFromCache(std::move(bc_handle));
     // Cache hit
     return Status::OK();
@@ -483,8 +489,8 @@ Status CFileReader::ReadBlock(const IOContext* io_context,
   // from the Linux cache).
   TRACE_EVENT1("io", "CFileReader::ReadBlock(cache miss)",
                "cfile", ToString());
-  TRACE_COUNTER_INCREMENT("cfile_cache_miss", 1);
-  TRACE_COUNTER_INCREMENT(CFILE_CACHE_MISS_BYTES_METRIC_NAME, ptr.size());
+  TRACE_COUNTER_INCREMENT(TC_CFILE_CACHE_MISS, 1);
+  TRACE_COUNTER_INCREMENT(TC_CFILE_CACHE_MISS_BYTES, ptr.size());
 
   uint32_t data_size = ptr.size();
   if (has_checksum()) {

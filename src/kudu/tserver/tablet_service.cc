@@ -266,8 +266,8 @@ using strings::Substitute;
 namespace kudu {
 
 namespace cfile {
-extern const char* CFILE_CACHE_MISS_BYTES_METRIC_NAME;
-extern const char* CFILE_CACHE_HIT_BYTES_METRIC_NAME;
+extern const char* TC_CFILE_CACHE_HIT_BYTES;
+extern const char* TC_CFILE_CACHE_MISS_BYTES;
 }
 
 namespace {
@@ -291,7 +291,7 @@ namespace {
 } // namespace
 namespace tserver {
 
-const char* SCANNER_BYTES_READ_METRIC_NAME = "scanner_bytes_read";
+constexpr const char* const TC_SCANNER_BYTES_READ = "scanner_bytes_read";
 
 namespace {
 
@@ -2247,12 +2247,12 @@ void SetResourceMetrics(const RpcContext* context,
                         const CpuTimes* cpu_times,
                         ResourceMetricsPB* metrics) {
   metrics->set_cfile_cache_miss_bytes(
-    context->trace()->metrics()->GetMetric(cfile::CFILE_CACHE_MISS_BYTES_METRIC_NAME));
+    context->trace()->metrics()->GetMetric(cfile::TC_CFILE_CACHE_MISS_BYTES));
   metrics->set_cfile_cache_hit_bytes(
-    context->trace()->metrics()->GetMetric(cfile::CFILE_CACHE_HIT_BYTES_METRIC_NAME));
+    context->trace()->metrics()->GetMetric(cfile::TC_CFILE_CACHE_HIT_BYTES));
 
   metrics->set_bytes_read(
-    context->trace()->metrics()->GetMetric(SCANNER_BYTES_READ_METRIC_NAME));
+    context->trace()->metrics()->GetMetric(TC_SCANNER_BYTES_READ));
 
   rpc::InboundCallTiming timing;
   timing.time_handled = context->GetTimeHandled();
@@ -3324,7 +3324,7 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
 
   // Calculate the number of rows/cells/bytes actually processed.
   IteratorStats delta_stats = scanner->UpdateStatsAndGetDelta();
-  TRACE_COUNTER_INCREMENT(SCANNER_BYTES_READ_METRIC_NAME, delta_stats.bytes_read);
+  TRACE_COUNTER_INCREMENT(TC_SCANNER_BYTES_READ, delta_stats.bytes_read);
 
   // Update metrics based on this scan request.
   if (tablet) {
