@@ -216,10 +216,9 @@ void RpcContext::Panic(const char* filepath, int line_number, const string& mess
 
   MY_ERROR << "Panic handling " << call_->ToString() << ": " << message;
   MY_ERROR << "Request:\n" << SecureDebugString(*request_pb_);
-  Trace* t = trace();
-  if (t) {
+  if (Trace* t = trace(); t) {
     MY_ERROR << "RPC trace:";
-    t->Dump(&MY_ERROR, true);
+    t->Dump(&MY_ERROR, Trace::INCLUDE_TIME_DELTAS);
   }
   MY_FATAL << "Exiting due to panic.";
 

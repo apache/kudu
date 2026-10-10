@@ -1513,7 +1513,7 @@ void TSTabletManager::OpenTablet(const scoped_refptr<tablet::TabletReplica>& rep
     LOG(WARNING) << LogPrefix(tablet_id) << "Tablet startup took " << elapsed_ms << "ms";
     if (Trace::CurrentTrace()) {
       LOG(WARNING) << LogPrefix(tablet_id) << "Trace:" << std::endl
-                   << Trace::CurrentTrace()->DumpToString();
+                   << Trace::CurrentTrace();
     }
   }
   IncrementTabletsProcessed((tablets_total != nullptr) ? tablets_total->load() : 0,

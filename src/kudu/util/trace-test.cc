@@ -22,7 +22,7 @@
 #include <cstring>
 #include <functional>
 #include <map>
-#include <ostream>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -55,6 +55,7 @@ using kudu::debug::TraceResultBuffer;
 using kudu::debug::CategoryFilter;
 using rapidjson::Document;
 using rapidjson::Value;
+using std::ostringstream;
 using std::string;
 using std::thread;
 using std::vector;
@@ -869,6 +870,77 @@ TEST_F(TraceTest, TestTraceMetrics) {
   }
   auto m = trace->metrics()->Get();
   EXPECT_GE(m["test_scope_us"], 80 * 1000);
+}
+
+TEST_F(TraceTest, NullTraceStreamOutput) {
+  // An empty/null trace. An attempt to output an empty trace shouldn't crash
+  // the caller in a RELEASE build, but report on a null trace instead.
+  // The situation is different for a DEBUG build -- it should call abort.
+  {
+    const Trace* ctr = Trace::CurrentTrace();
+    // There isn't current trace established, so 'ctr' should be nullptr.
+    EXPECT_EQ(nullptr, ctr);
+    ostringstream os;
+#if DCHECK_IS_ON()
+  ASSERT_DEATH({ os << ctr; },
+    "null trace");
+#else
+    os << ctr;
+    ASSERT_EQ("{null}", os.str());
+#endif
+  }
+}
+
+TEST_F(TraceTest, TraceStreamOutput) {
+  scoped_refptr<Trace> trace(new Trace);
+  trace->metrics()->Increment("foo", 1);
+  // Output the trace using 'const Trace*' overload operator.
+  {
+    ostringstream os0;
+    os0 << trace.get();
+    const auto& str = os0.str();
+    ASSERT_EQ("Metrics: {\"foo\":1}", str);
+
+    // The output should be the same as for Trace::Dump() and
+    // Trace::DumpToString().
+    ostringstream os1;
+    trace->Dump(&os1);
+    ASSERT_EQ(str, os1.str());
+    ASSERT_EQ(str, trace->DumpToString());
+  }
+
+  trace->metrics()->Increment("foo", 100);
+  // Output the trace using 'const scoped_refptr<Trace>&' overload operator.
+  {
+    ostringstream os;
+    os << trace;
+    const auto& str = os.str();
+    ASSERT_EQ("Metrics: {\"foo\":101}", str);
+
+    // The output should be the same as for Trace::Dump() and
+    // Trace::DumpToString().
+    ostringstream os1;
+    trace->Dump(&os1);
+    ASSERT_EQ(str, os1.str());
+    ASSERT_EQ(str, trace->DumpToString());
+  }
+
+  trace->metrics()->Increment("bar", 500);
+  trace->metrics()->Increment("foo", 1000);
+  // Output the trace using 'const Trace&' overload operator.
+  {
+    ostringstream os;
+    os << *trace.get();
+    const auto& str = os.str();
+    ASSERT_EQ("Metrics: {\"bar\":500,\"foo\":1101}", str);
+
+    // The output should be the same as for Trace::Dump() and
+    // Trace::DumpToString().
+    ostringstream os1;
+    trace->Dump(&os1);
+    ASSERT_EQ(str, os1.str());
+    ASSERT_EQ(str, trace->DumpToString());
+  }
 }
 
 // Regression test for KUDU-2075: using tracing from vanilla threads

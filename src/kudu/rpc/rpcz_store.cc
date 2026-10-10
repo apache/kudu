@@ -266,7 +266,7 @@ void RpczStore::LogTrace(InboundCall* call) {
       //                for the amount of accumulated log messages
       LOG(WARNING) << Substitute("$0 took $1 ms (client timeout $2 ms). Trace:\n",
                                  call->ToString(), duration_ms, timeout_ms);
-      call->trace()->Dump(&LOG(WARNING), Trace::INCLUDE_ALL);
+      call->trace()->Dump(&LOG(WARNING));
       return;
     }
   }
