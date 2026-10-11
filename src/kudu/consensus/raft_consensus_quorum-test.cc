@@ -886,6 +886,39 @@ TEST_F(RaftConsensusQuorumTest, TestLeaderHeartbeats) {
   VerifyLogs(2, 0, 1);
 }
 
+// A newly elected leader must replicate its NO_OP right away rather than on
+// its first heartbeat as until then MVCC clean time isn't initialized and the
+// tablet's replicas reject scans. With a heartbeat interval far longer than
+// the commit wait below the NO_OP can only get committed in time if the leader
+// sends it on becoming leader.
+TEST_F(RaftConsensusQuorumTest, TestNewLeaderReplicatesNoOpWithoutHeartbeat) {
+  constexpr int kFollower0Idx = 0;
+  constexpr int kFollower1Idx = 1;
+  constexpr int kLeaderIdx = 2;
+  FLAGS_raft_heartbeat_interval_ms = 60 * 1000;
+
+  ASSERT_OK(BuildAndStartConfig(3));
+
+  // The initial config isn't a log entry (its opid_index is kInvalidOpIdIndex),
+  // so the NO_OP of the leader's term is the first op in the log.
+  constexpr int64_t kNoOpIndex = 1;
+  NO_FATALS(WaitForCommitIfNotAlreadyPresent(kNoOpIndex, kLeaderIdx, kLeaderIdx));
+  NO_FATALS(WaitForCommitIfNotAlreadyPresent(kNoOpIndex, kFollower0Idx, kLeaderIdx));
+  NO_FATALS(WaitForCommitIfNotAlreadyPresent(kNoOpIndex, kFollower1Idx, kLeaderIdx));
+
+  // Make sure the op committed above is the NO_OP and not some other op. The
+  // next op replicated by the leader must directly follow it.
+  scoped_refptr<ConsensusRound> round;
+  ASSERT_OK(AppendDummyMessage(kLeaderIdx, &round));
+  ASSERT_OK(WaitForReplicate(round.get()));
+  ASSERT_OK(CommitDummyMessage(kLeaderIdx, round.get()));
+  ASSERT_EQ(kNoOpIndex + 1, round->id().index());
+  WaitForReplicateIfNotAlreadyPresent(round->id(), kFollower0Idx);
+  WaitForReplicateIfNotAlreadyPresent(round->id(), kFollower1Idx);
+
+  VerifyLogs(kLeaderIdx, kFollower0Idx, kFollower1Idx);
+}
+
 // After creating the initial configuration, this test writes a small sequence
 // of messages to the initial leader. It then shuts down the current
 // leader, makes another peer become leader and writes a sequence of

@@ -417,15 +417,19 @@ Status RaftConsensus::EmulateElectionForTests() {
                "tablet", options_.tablet_id);
 
   ThreadRestrictions::AssertWaitAllowed();
-  std::lock_guard l(lock_);
-  RETURN_NOT_OK(CheckRunningUnlocked());
+  {
+    std::lock_guard l(lock_);
+    RETURN_NOT_OK(CheckRunningUnlocked());
 
-  LOG_WITH_PREFIX_UNLOCKED(INFO) << "Emulating election...";
+    LOG_WITH_PREFIX_UNLOCKED(INFO) << "Emulating election...";
 
-  // Assume leadership of new term.
-  RETURN_NOT_OK(HandleTermAdvanceUnlocked(CurrentTermUnlocked() + 1));
-  SetLeaderUuidUnlocked(peer_uuid());
-  return BecomeLeaderUnlocked();
+    // Assume leadership of new term.
+    RETURN_NOT_OK(HandleTermAdvanceUnlocked(CurrentTermUnlocked() + 1));
+    SetLeaderUuidUnlocked(peer_uuid());
+    RETURN_NOT_OK(BecomeLeaderUnlocked());
+  } // Release lock before signaling request.
+  peer_manager_->SignalRequest();
+  return Status::OK();
 }
 
 namespace {
@@ -2816,6 +2820,12 @@ void RaftConsensus::DoElectionCallback(ElectionReason reason, const ElectionResu
     // It races with the above state check.
     // This could be a problem during tablet deletion.
     CHECK_OK(BecomeLeaderUnlocked());
+
+    // Send the NO_OP to the followers right away instead of waiting for the
+    // first heartbeat which is up to --raft_heartbeat_interval_ms away. This
+    // will ensure MVCC time is initialized and the replicas can serve scans.
+    l.unlock();
+    peer_manager_->SignalRequest();
   }
 }
 

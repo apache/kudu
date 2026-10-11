@@ -4284,9 +4284,13 @@ TEST_F(AdminCliTest, TestRebuildTables) {
                             kTable1);
   string stdout2;
   string stderr2;
-  // Rebuild kTable1 in add mode.
+  // Rebuild kTable1 in add mode. Its tablets have 3 replicas since the rebuild
+  // above so keep the replication factor at 3. If not, the master evicts the
+  // excess replicas after the restart and WaitForTSAndReplicas() below can't
+  // find 3 replicas.
   ASSERT_OK(RunKuduTool(RebuildMasterCmd(*cluster_, FLAGS_num_tablet_servers,
-                                         /*is_secure*/false, /*log_to_stderr*/true, kTable1),
+                                         /*is_secure*/false, /*log_to_stderr*/true,
+                                         kTable1, /*default_replica_num*/3),
                         &stdout2, &stderr2));
   ASSERT_STR_NOT_CONTAINS(stderr2, "must be empty");
   ASSERT_STR_CONTAINS(stdout2,
