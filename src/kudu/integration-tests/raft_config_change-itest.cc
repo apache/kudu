@@ -95,12 +95,14 @@ class RaftConfigChangeITest : public ExternalMiniClusterITestBase {
 //    heartbeat intervals to followers to be able to carefully control the
 //    sequence of events in this test.
 // 2. Evict a follower from the config.
-// 3. Immediately start an election on the remaining follower in the config.
-//    We know that this follower should win the election because in order to
-//    commit a removal from 3 voters, the removal op must be replicated to both
-//    of the two remaining voters in the config.
+// 3. Make the initial leader reject consensus updates, then immediately start
+//    an election on the remaining follower in the config. We know that this
+//    follower should win the election because in order to commit a removal
+//    from 3 voters, the removal op must be replicated to both of the two
+//    remaining voters in the config.
 // 4. The master will get the config change heartbeat from the initial leader,
-//    which will indicate a new term and no current leader.
+//    which will indicate a new term and no current leader. Once the master has
+//    it, the initial leader is allowed to accept consensus updates again.
 // 5. The master will then get a heartbeat from the new leader to report that
 //    it's now the leader of the config.
 // 6. Once the master knows who the new leader is, the master will instruct the
@@ -114,10 +116,9 @@ class RaftConfigChangeITest : public ExternalMiniClusterITestBase {
 TEST_F(RaftConfigChangeITest, TestKudu2147) {
   SKIP_IF_SLOW_NOT_ALLOWED();
   const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
-  // Slow down leader heartbeats so that in the explicit election below, the
-  // second leader does not immediately heartbeat to the initial leader. If
-  // that occurs, the initial leader will not report to the master that there
-  // is currently no leader.
+  // Slow down leader heartbeats so that the initial leader, while it rejects
+  // consensus updates from the new leader below, does not detect a leader
+  // failure and start an election of its own.
   NO_FATALS(StartCluster({"--raft_heartbeat_interval_ms=3000"}));
 
   // Create a new table.
@@ -142,14 +143,19 @@ TEST_F(RaftConfigChangeITest, TestKudu2147) {
   ASSERT_OK(WaitForServersToAgree(kTimeout, ts_map_, tablet_id, 1));
 
   // Retry as needed to counter normal leader election activity.
+  string initial_leader_uuid;
   ASSERT_EVENTUALLY([&] {
     // Find initial leader.
     TServerDetails* leader;
     ASSERT_OK(FindTabletLeader(ts_map_, tablet_id, kTimeout, &leader));
     ASSERT_OK(WaitForOpFromCurrentTerm(leader, tablet_id, COMMITTED_OPID, kTimeout));
+    initial_leader_uuid = leader->uuid();
 
     vector<TServerDetails*> followers;
     for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+      // Undo the update rejection from a previous attempt, if any.
+      ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(i),
+                "follower_reject_update_consensus_requests", "false"));
       // Dynamically set the latency injection flag to induce TS -> master
       // heartbeat delays. The leader delays its master heartbeats by 2 sec
       // each time; followers delay their master heartbeats by even longer.
@@ -168,12 +174,33 @@ TEST_F(RaftConfigChangeITest, TestKudu2147) {
     // an election on another follower immediately thereafter.
     ASSERT_OK(itest::RemoveServer(leader, tablet_id, followers[0], kTimeout));
 
+    // A new leader sends its NO_OP to the followers right after the election.
+    // Have the initial leader reject it so the initial leader doesn't learn
+    // who the new leader is before reporting to the master.
+    ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server_by_uuid(leader->uuid()),
+              "follower_reject_update_consensus_requests", "true"));
+
     // Immediately start an election on the remaining follower. This will cause
     // the initial leader's term to rev and it will have to step down. When it
     // sends a tablet report to the master with the new configuration excluding
     // the removed tablet it will report an unknown leader in the new term.
     ASSERT_OK(itest::StartElection(followers[1], tablet_id, kTimeout));
   });
+
+  // Wait for the master to get that report with no leader for the tablet.
+  ASSERT_EVENTUALLY([&] {
+    master::GetTableLocationsResponsePB locations;
+    ASSERT_OK(GetTableLocations(cluster_->master_proxy(), TestWorkload::kDefaultTableName,
+                                kTimeout, VOTER_REPLICA, /*table_id=*/nullopt, &locations));
+    ASSERT_EQ(1, locations.tablet_locations_size());
+    const auto& replicas = locations.tablet_locations(0).interned_replicas();
+    ASSERT_EQ(2, replicas.size());
+    for (const auto& replica : replicas) {
+      ASSERT_NE(RaftPeerPB::LEADER, replica.role());
+    }
+  });
+  ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server_by_uuid(initial_leader_uuid),
+            "follower_reject_update_consensus_requests", "false"));
 
   // Wait until the master re-adds the evicted replica and it is back up and
   // running. If the master hit KUDU-2147, this would fail because the master
