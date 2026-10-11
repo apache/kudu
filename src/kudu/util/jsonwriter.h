@@ -14,8 +14,8 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_UTIL_JSONWRITER_H
-#define KUDU_UTIL_JSONWRITER_H
+
+#pragma once
 
 #include <cstddef>
 #include <cstdint>
@@ -43,8 +43,10 @@ class JsonWriterIf;
 // This class implements all the methods of rapidjson::JsonWriter, plus an
 // additional convenience method for String(std::string).
 //
-// We take an instance of std::stringstream in the constructor because Mongoose / Squeasel
-// uses std::stringstream for output buffering.
+// The constructor takes a pointer to std::ostream as an argument -- it's
+// possible to supply a pointer to std::ostringstream or other derived class
+// there. For example, Mongoose / Squeasel uses std::ostringstream for output
+// buffering.
 class JsonWriter {
  public:
   enum Mode {
@@ -54,7 +56,7 @@ class JsonWriter {
     COMPACT
   };
 
-  JsonWriter(std::ostringstream* out, Mode mode);
+  JsonWriter(std::ostream* out, Mode mode);
   ~JsonWriter();
 
   void Null();
@@ -98,5 +100,3 @@ class JsonWriter {
 };
 
 } // namespace kudu
-
-#endif // KUDU_UTIL_JSONWRITER_H
