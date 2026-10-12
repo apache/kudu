@@ -21,6 +21,7 @@
 #include <ctime>
 #include <functional>
 #include <iterator>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -54,11 +55,13 @@
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/timestamp.h"
+#include "kudu/common/types.h"
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/fs/io_context.h"
+#include "kudu/gutil/bits.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
@@ -170,6 +173,15 @@ DEFINE_int32(max_encoded_key_size_bytes, 16 * 1024,
              "result in an error.");
 TAG_FLAG(max_encoded_key_size_bytes, unsafe);
 
+DEFINE_int64(max_scan_batch_approx_size_bytes, 16 * 1024 * 1024,
+             "Approximate target size, in bytes, of a scan batch used when "
+             "auto-tuning the per-tablet batch_num_rows_upper_limit for "
+             "tables whose 'kudu.table.batch_sizing' extra configuration "
+             "property is set to 'auto'. Larger rows lead to smaller row "
+             "batches.");
+TAG_FLAG(max_scan_batch_approx_size_bytes, advanced);
+TAG_FLAG(max_scan_batch_approx_size_bytes, runtime);
+
 DEFINE_int32(workload_stats_rate_collection_min_interval_ms, 60 * 1000,
              "The minimal interval in milliseconds at which we collect read/write rates.");
 TAG_FLAG(workload_stats_rate_collection_min_interval_ms, experimental);
@@ -233,6 +245,17 @@ TAG_FLAG(enable_gc_deleted_rowsets_without_live_row_count, advanced);
 
 DECLARE_bool(enable_undo_delta_block_gc);
 DECLARE_uint32(rowset_compaction_estimate_min_deltas_size_mb);
+DECLARE_int32(max_cell_size_bytes);
+DECLARE_int32(max_huge_cell_size_bytes);
+
+// The default value is sized to a power of 2 to improve BitmapCopy performance
+// when copying a RowBlock (in ORDERED scans). Defined here (in the tablet
+// library) rather than in the tserver library so that the write-time
+// batch-size auto-tuning can reference it; the tserver scan path declares it.
+DEFINE_int32(scanner_batch_size_rows, 128,
+             "The number of rows to batch for servicing scan requests.");
+TAG_FLAG(scanner_batch_size_rows, advanced);
+TAG_FLAG(scanner_batch_size_rows, runtime);
 
 METRIC_DEFINE_entity(tablet);
 METRIC_DEFINE_gauge_size(tablet, memrowset_size, "MemRowSet Memory Usage",
@@ -259,6 +282,14 @@ METRIC_DEFINE_gauge_uint64(tablet, last_write_elapsed_time, "Seconds Since Last 
                            "tablet, or since this Tablet object was created on current tserver if "
                            "it hasn't been written to since then.",
                            kudu::MetricLevel::kDebug);
+METRIC_DEFINE_gauge_int64(tablet, batch_num_rows_upper_limit,
+                          "Scan Batch Size Upper Limit",
+                          kudu::MetricUnit::kRows,
+                          "The per-tablet upper limit on the scan batch size, "
+                          "in rows, set by automatic batch sizing for tables "
+                          "that allow huge cells. 0 when unset, in which case "
+                          "scans use the defaults.",
+                          kudu::MetricLevel::kDebug);
 
 using kudu::MaintenanceManager;
 using kudu::clock::HybridClock;
@@ -391,6 +422,15 @@ Tablet::Tablet(scoped_refptr<TabletMetadata> metadata,
     METRIC_last_write_elapsed_time.InstantiateFunctionGauge(
         metric_entity_, [this]() { return this->LastWriteElapsedSeconds(); },
         MergeType::kMin)
+        ->AutoDetach(&metric_detacher_);
+    // Exposes the per-tablet scan batch size upper limit (0 if unset) so it can
+    // be observed out-of-process (e.g. by integration tests) via the metrics
+    // endpoint; it is otherwise only readable in-process.
+    METRIC_batch_num_rows_upper_limit.InstantiateFunctionGauge(
+        metric_entity_,
+        [this]() {
+          return this->metadata()->batch_num_rows_upper_limit().value_or(0);
+        })
         ->AutoDetach(&metric_detacher_);
   }
 
@@ -671,11 +711,20 @@ Status Tablet::DecodeWriteOperations(const Schema* client_schema,
   vector<DecodedRowOperation> ops;
 
   SchemaPtr schema_ptr = schema();
+  // Tables with an 'override_cell_limit_bytes' raise the per-cell size limit.
+  // The std::min guards against --max_huge_cell_size_bytes having been lowered
+  // at runtime after the override was stored.
+  const auto override_cell_limit_bytes = metadata_->override_cell_limit_bytes();
+  const int64_t max_cell_size = override_cell_limit_bytes
+      ? std::min<int64_t>(*override_cell_limit_bytes,
+                          FLAGS_max_huge_cell_size_bytes)
+      : FLAGS_max_cell_size_bytes;
   // Decode the ops
   RowOperationsPBDecoder dec(&op_state->request()->row_operations(),
                              client_schema,
                              schema_ptr.get(),
-                             op_state->arena());
+                             op_state->arena(),
+                             max_cell_size);
   RETURN_NOT_OK(dec.DecodeOperations<DecoderMode::WRITE_OPS>(&ops, &auto_incrementing_counter_));
   TRACE_COUNTER_INCREMENT(TC_NUM_OPS, ops.size());
 
@@ -1426,6 +1475,70 @@ Status Tablet::ApplyRowOperations(WriteOpState* op_state) {
     metrics_->AddProbeStats(op_state->mutable_op_stats(0), num_ops, op_state->arena());
   }
   return Status::OK();
+}
+
+void Tablet::MaybeUpdateAutoBatchSizeUpperLimit(const WriteOpState* op_state) {
+  if (!metadata_->auto_batch_size()) {
+    return;
+  }
+  const Schema* schema = op_state->schema_at_decode_time();
+  const int64_t base_row_size = ContiguousRowHelper::row_size(*schema);
+  int64_t max_row_size_bytes = 1;
+  for (const RowOp* row_op : op_state->row_ops()) {
+    // Skip ops that failed (e.g. a cell exceeding --max_huge_cell_size_bytes,
+    // rejected at decode time): their row_data is still populated, but the row
+    // was never written, so it must not influence the batch size.
+    if (row_op->failed) {
+      continue;
+    }
+    const DecodedRowOperation& decoded = row_op->decoded_op;
+    if (decoded.row_data == nullptr) {
+      continue;
+    }
+    // Only inserts/upserts carry a full row (and thus potentially huge cells);
+    // TODO(zmartonka): add updates too.
+    switch (decoded.type) {
+      case RowOperationsPB::INSERT:
+      case RowOperationsPB::INSERT_IGNORE:
+      case RowOperationsPB::UPSERT:
+      case RowOperationsPB::UPSERT_IGNORE:
+        break;
+      default:
+        continue;
+    }
+    int64_t row_size = base_row_size;
+    ConstContiguousRow row(schema, decoded.row_data);
+    for (size_t i = 0; i < schema->num_columns(); i++) {
+      const ColumnSchema& col = schema->column(i);
+      if (col.type_info()->physical_type() != BINARY) {
+        continue;
+      }
+      if (col.is_nullable() && row.is_null(i)) {
+        continue;
+      }
+      const Slice* s = reinterpret_cast<const Slice*>(row.cell_ptr(i));
+      row_size += s->size();
+    }
+    max_row_size_bytes = std::max(max_row_size_bytes, row_size);
+  }
+
+  // The largest power of two whose rows of 'max_row_size_bytes' still fit
+  // within --max_scan_batch_approx_size_bytes, floored at 8. This is a pure
+  // upper limit: it is not clamped to the normal batch size, so for small rows
+  // it can be very large. It is applied via std::min against the normal batch
+  // size and the merge buffer size at scan time.
+  const int64_t desired_batch_size = 1LL << Bits::Log2FloorNonZero64(
+      std::max<int64_t>(
+          FLAGS_max_scan_batch_approx_size_bytes / max_row_size_bytes, 8));
+
+  // Flushing synchronously here (e.g. in ApplyRowOperations)
+  // would run TabletMetadata::Flush()'s pre-flush callback
+  // (WaitForInflightsAndFlushLog -> WaitForApplyingOpsToApply()) while this
+  // write op is still APPLYING, deadlocking the op against itself.
+  //
+  // We also replay this at bootstrap time, so we wont lose the value if the
+  // tablet crashes.
+  metadata_->MaybeLowerBatchSizeUpperLimit(desired_batch_size);
 }
 
 Status Tablet::ApplyRowOperation(const IOContext* io_context,
@@ -3422,13 +3535,34 @@ Status Tablet::Iterator::Init(ScanSpec *spec) {
 
   RETURN_NOT_OK(tablet_->GetMappedReadProjection(projection_, &projection_));
 
+  // Whenever a tablet has a batch_num_rows_upper_limit set (by automatic batch
+  // sizing), pass it to the merge iterator as an upper bound on its read
+  // buffer; the iterator caps the actual buffer at min(limit, its default).
+  // The limit keeps applying regardless of the current 'batch_sizing' setting,
+  // so it continues to protect scans over huge rows written earlier until it is
+  // cleared by hand. This must be stored in 'opts_' before capturing iterators
+  // below, since a DuplicatingRowSet runs its own ordered sub-merge and takes
+  // the buffer size from the options it's handed.
+  if (opts_.order == ORDERED) {
+    const auto batch_num_rows_upper_limit =
+        tablet_->metadata()->batch_num_rows_upper_limit();
+    if (batch_num_rows_upper_limit) {
+      opts_.merge_row_buffer_size = static_cast<int>(
+          std::min<int64_t>(*batch_num_rows_upper_limit,
+                            std::numeric_limits<int>::max()));
+    }
+  }
+
   vector<IterWithBounds> iters;
   RETURN_NOT_OK(tablet_->CaptureConsistentIterators(opts_, spec, &iters));
   TRACE_COUNTER_INCREMENT(TC_ROWSET_ITERATORS, iters.size());
 
   switch (opts_.order) {
     case ORDERED:
-      iter_ = NewMergeIterator(MergeIteratorOptions(opts_.include_deleted_rows), std::move(iters));
+      iter_ = NewMergeIterator(
+          MergeIteratorOptions(opts_.include_deleted_rows,
+                               opts_.merge_row_buffer_size),
+          std::move(iters));
       break;
     case UNORDERED:
     default:

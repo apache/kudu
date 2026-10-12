@@ -122,6 +122,9 @@ class LocalTabletWriter {
     op_state_->mutable_op_id()->CopyFrom(consensus::MaximumOpId());
     RETURN_NOT_OK(tablet_->ApplyRowOperations(op_state_.get()));
 
+    // This is a no-op for tables that do not use automatic batch sizing.
+    tablet_->MaybeUpdateAutoBatchSizeUpperLimit(op_state_.get());
+
     result_ = google::protobuf::Arena::CreateMessage<TxResultPB>(
         op_state_->pb_arena());
     op_state_->ReleaseTxResultPB(result_);

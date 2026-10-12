@@ -115,10 +115,15 @@ enum DecoderMode {
 
 class RowOperationsPBDecoder {
  public:
+  // If 'max_cell_size' is negative, the current value of the
+  // --max_cell_size_bytes flag is used as the per-cell size limit. Otherwise,
+  // 'max_cell_size' overrides that limit (e.g. for tables that allow huge
+  // cells).
   RowOperationsPBDecoder(const RowOperationsPB* pb,
                          const Schema* client_schema,
                          const Schema* tablet_schema,
-                         Arena* dst_arena);
+                         Arena* dst_arena,
+                         int64_t max_cell_size = -1);
   ~RowOperationsPBDecoder();
 
   template <DecoderMode mode>
@@ -180,6 +185,9 @@ class RowOperationsPBDecoder {
 
   const size_t bm_size_;
   const size_t tablet_row_size_;
+  // Per-cell size limit, in bytes. Tables that allow huge cells will have a
+  // larger limit.
+  const int64_t max_cell_size_;
   Slice src_;
 
   DISALLOW_COPY_AND_ASSIGN(RowOperationsPBDecoder);

@@ -114,6 +114,12 @@ struct RowIteratorOptions {
   //
   // Defaults to OBSERVABLE_ONLY.
   RowVisibility row_visibility;
+
+  // For ordered (merge) scans, the per-sub-iterator read buffer size in rows.
+  // If <= 0, the merge iterator's built-in default is used. Defaults to
+  // MergeIteratorOptions::kUseDefaultRowBufferSize. Set by tables that allow
+  // dynamic batch sizing.
+  int merge_row_buffer_size;
 };
 
 class RowSet {

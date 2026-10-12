@@ -32,7 +32,7 @@
 #include <utility>
 #include <vector>
 
-#include <gflags/gflags_declare.h>
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -92,6 +92,8 @@ DECLARE_int32(flush_threshold_secs);
 DECLARE_int32(heartbeat_interval_ms);
 DECLARE_int32(log_inject_latency_ms_mean);
 DECLARE_int32(log_segment_size_mb);
+DECLARE_int32(max_cell_size_bytes);
+DECLARE_int32(max_huge_cell_size_bytes);
 DECLARE_int32(tablet_copy_download_file_inject_latency_ms);
 
 using kudu::client::CountTableRows;
@@ -537,7 +539,8 @@ TEST_F(AlterTableTest, TestAddNullableColumnWithoutDefault) {
   ASSERT_OK(tablet_replica_->tablet()->Flush());
 
   {
-    unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    unique_ptr<KuduTableAlterer> table_alterer(
+        client_->NewTableAlterer(kTableName));
     table_alterer->AddColumn("new")->Type(KuduColumnSchema::INT32);
     ASSERT_OK(table_alterer->Alter());
   }
@@ -557,7 +560,8 @@ TEST_F(AlterTableTest, TestRenamePrimaryKeyColumn) {
   ASSERT_OK(tablet_replica_->tablet()->Flush());
 
   {
-    unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    unique_ptr<KuduTableAlterer> table_alterer(
+        client_->NewTableAlterer(kTableName));
     table_alterer->AlterColumn("c0")->RenameTo("primaryKeyRenamed");
     table_alterer->AlterColumn("c1")->RenameTo("secondColumn");
     ASSERT_OK(table_alterer->Alter());
@@ -572,7 +576,8 @@ TEST_F(AlterTableTest, TestRenamePrimaryKeyColumn) {
   EXPECT_EQ("(int32 primaryKeyRenamed=16777216, int32 secondColumn=1)", rows[1]);
 
   {
-    unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    unique_ptr<KuduTableAlterer> table_alterer(
+        client_->NewTableAlterer(kTableName));
     table_alterer->AlterColumn("primaryKeyRenamed")->RenameTo("pk");
     table_alterer->AlterColumn("secondColumn")->RenameTo("sc");
     ASSERT_OK(table_alterer->Alter());
@@ -592,7 +597,8 @@ TEST_F(AlterTableTest, TestRenamePrimaryKeyColumn) {
 // remove a default value.
 TEST_F(AlterTableTest, TestAddChangeRemoveColumnDefaultValue) {
   {
-    unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    unique_ptr<KuduTableAlterer> table_alterer(
+        client_->NewTableAlterer(kTableName));
     table_alterer->AddColumn("newInt32")->Type(KuduColumnSchema::INT32);
     table_alterer->AddColumn("newString")->Type(KuduColumnSchema::STRING);
     ASSERT_OK(table_alterer->Alter());
@@ -602,7 +608,8 @@ TEST_F(AlterTableTest, TestAddChangeRemoveColumnDefaultValue) {
   ASSERT_OK(tablet_replica_->tablet()->Flush());
 
   {
-    unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    unique_ptr<KuduTableAlterer> table_alterer(
+        client_->NewTableAlterer(kTableName));
     table_alterer->AlterColumn("newInt32")->Default(KuduValue::FromInt(12345));
     table_alterer->AlterColumn("newString")->Default(KuduValue::CopyString("taco"));
     ASSERT_OK(table_alterer->Alter());
@@ -619,7 +626,8 @@ TEST_F(AlterTableTest, TestAddChangeRemoveColumnDefaultValue) {
             rows[1]);
 
   {
-    unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    unique_ptr<KuduTableAlterer> table_alterer(
+        client_->NewTableAlterer(kTableName));
     table_alterer->AlterColumn("newInt32")->Default(KuduValue::FromInt(54321));
     table_alterer->AlterColumn("newString")->Default(KuduValue::CopyString("ocat"));
     ASSERT_OK(table_alterer->Alter());
@@ -637,7 +645,8 @@ TEST_F(AlterTableTest, TestAddChangeRemoveColumnDefaultValue) {
             rows[2]);
 
   {
-    unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    unique_ptr<KuduTableAlterer> table_alterer(
+        client_->NewTableAlterer(kTableName));
     table_alterer->AlterColumn("newInt32")->RemoveDefault();
     table_alterer->AlterColumn("newString")->RemoveDefault();
     // Add an extra rename step
@@ -659,7 +668,8 @@ TEST_F(AlterTableTest, TestAddChangeRemoveColumnDefaultValue) {
             rows[3]);
 
   {
-    unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    unique_ptr<KuduTableAlterer> table_alterer(
+        client_->NewTableAlterer(kTableName));
     table_alterer->DropColumn("newInt32");
     table_alterer->DropColumn("newNewString");
     ASSERT_OK(table_alterer->Alter());
@@ -671,7 +681,8 @@ TEST_F(AlterTableTest, TestAddChangeRemoveColumnDefaultValue) {
 TEST_F(AlterTableTest, TestAlterEmptyRLEBlock) {
   // Add an RLE-encoded column
   {
-    unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    unique_ptr<KuduTableAlterer> table_alterer(
+        client_->NewTableAlterer(kTableName));
     table_alterer->AddColumn("rle")->Type(KuduColumnSchema::INT32)
         ->Encoding(client::KuduColumnStorageAttributes::RLE);
     ASSERT_OK(table_alterer->Alter());
@@ -682,7 +693,8 @@ TEST_F(AlterTableTest, TestAlterEmptyRLEBlock) {
 
   // Now alter the column
   {
-    unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    unique_ptr<KuduTableAlterer> table_alterer(
+        client_->NewTableAlterer(kTableName));
     table_alterer->AlterColumn("rle")->RenameTo("new_rle");
     ASSERT_OK(table_alterer->Alter());
   }
@@ -2767,6 +2779,147 @@ TEST_F(AlterTableTest, DisableCompactionAlter) {
   }
 }
 
+TEST_F(AlterTableTest, BatchSizingAlter) {
+  const auto* tablet = tablet_replica_->tablet();
+  ASSERT_NE(nullptr, tablet);
+
+  // Check the default settings for the two properties.
+  ASSERT_FALSE(tablet->metadata()->auto_batch_size());
+  ASSERT_FALSE(tablet->metadata()->override_cell_limit_bytes().has_value());
+
+  unique_ptr<KuduTableAlterer> table_alterer(
+      client_->NewTableAlterer(kTableName));
+
+  // Try setting batch_sizing to an invalid value, including the reserved but
+  // not-yet-implemented 'manual'. These are rejected while batch sizing is off.
+  for (const auto& val : {"bogus", "manual", "auto_batch_size", "1", "true"}) {
+    SCOPED_TRACE(Substitute("trying to set value: $0", val));
+    const auto s =
+        table_alterer->AlterExtraConfig({{kTableBatchSizing, val}})->Alter();
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    // The prior setting should still be effective.
+    ASSERT_FALSE(tablet->metadata()->auto_batch_size());
+  }
+
+  // An override up to --max_cell_size_bytes is allowed without batch sizing.
+  ASSERT_OK(table_alterer->AlterExtraConfig(
+      {{kTableOverrideCellLimitBytes,
+        std::to_string(FLAGS_max_cell_size_bytes)}})->Alter());
+  ASSERT_EQ(FLAGS_max_cell_size_bytes,
+            tablet->metadata()->override_cell_limit_bytes());
+
+  const string kHighLimit = std::to_string(FLAGS_max_cell_size_bytes + 1);
+
+  // An override above --max_cell_size_bytes is rejected while batch sizing is
+  // off.
+  {
+    const auto s = table_alterer->AlterExtraConfig(
+        {{kTableOverrideCellLimitBytes, kHighLimit}})->Alter();
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_EQ(FLAGS_max_cell_size_bytes,
+              tablet->metadata()->override_cell_limit_bytes());
+  }
+
+  // Raising the override above --max_cell_size_bytes together with
+  // batch_sizing=auto is accepted ('auto' is matched case-insensitively).
+  ASSERT_OK(table_alterer->AlterExtraConfig(
+      {{kTableBatchSizing, "AUTO"},
+       {kTableOverrideCellLimitBytes, kHighLimit}})->Alter());
+  ASSERT_TRUE(tablet->metadata()->auto_batch_size());
+  ASSERT_EQ(FLAGS_max_cell_size_bytes + 1,
+            tablet->metadata()->override_cell_limit_bytes());
+
+  // The override is one-way: it may be raised further...
+  ASSERT_OK(table_alterer->AlterExtraConfig(
+      {{kTableOverrideCellLimitBytes,
+        std::to_string(FLAGS_max_cell_size_bytes + 2)}})->Alter());
+  ASSERT_EQ(FLAGS_max_cell_size_bytes + 2,
+            tablet->metadata()->override_cell_limit_bytes());
+
+  // ...but it cannot be lowered (lowering it can brick tablets on WAL replay).
+  {
+    const auto s = table_alterer->AlterExtraConfig(
+        {{kTableOverrideCellLimitBytes, kHighLimit}})->Alter();
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_EQ(FLAGS_max_cell_size_bytes + 2,
+              tablet->metadata()->override_cell_limit_bytes());
+  }
+
+  // ...nor cleared.
+  {
+    const auto s = table_alterer->AlterExtraConfig(
+        {{kTableOverrideCellLimitBytes, ""}})->Alter();
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_EQ(FLAGS_max_cell_size_bytes + 2,
+              tablet->metadata()->override_cell_limit_bytes());
+  }
+
+  // batch_sizing is also one-way: once 'auto' it cannot revert to 'none'.
+  {
+    const auto s =
+        table_alterer->AlterExtraConfig({{kTableBatchSizing, ""}})->Alter();
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_TRUE(tablet->metadata()->auto_batch_size());
+  }
+
+  // Re-asserting batch_sizing=auto is a no-op and still accepted.
+  ASSERT_OK(table_alterer->AlterExtraConfig(
+      {{kTableBatchSizing, "auto"}})->Alter());
+  ASSERT_TRUE(tablet->metadata()->auto_batch_size());
+}
+
+// A table with a valid, stored override_cell_limit_bytes must stay alterable
+// even after --max_huge_cell_size_bytes is lowered below that override (e.g. a
+// master restarted with a smaller ceiling): alters that don't touch the cell
+// limit or batch sizing are grandfathered and must not be re-rejected.
+TEST_F(AlterTableTest, OverrideCellLimitGrandfatheredOnUnrelatedAlter) {
+  const auto* tablet = tablet_replica_->tablet();
+  ASSERT_NE(nullptr, tablet);
+
+  // Store an override above --max_cell_size_bytes (requires batch_sizing), well
+  // within the current --max_huge_cell_size_bytes ceiling.
+  const int32_t kOverride = FLAGS_max_cell_size_bytes + 1;
+  ASSERT_LT(kOverride, FLAGS_max_huge_cell_size_bytes);
+  {
+    unique_ptr<KuduTableAlterer> table_alterer(
+        client_->NewTableAlterer(kTableName));
+    ASSERT_OK(table_alterer->AlterExtraConfig(
+        {{kTableBatchSizing, "auto"},
+         {kTableOverrideCellLimitBytes, std::to_string(kOverride)}})->Alter());
+    ASSERT_EQ(kOverride, tablet->metadata()->override_cell_limit_bytes());
+  }
+
+  // Simulate the master coming back up with a lower ceiling: the stored
+  // override now exceeds --max_huge_cell_size_bytes. FlagSaver restores it on
+  // scope exit.
+  google::FlagSaver flag_saver;
+  FLAGS_max_huge_cell_size_bytes = FLAGS_max_cell_size_bytes;
+  ASSERT_GT(kOverride, FLAGS_max_huge_cell_size_bytes);
+
+  // An alter that touches an unrelated property must succeed -- the stored
+  // over-ceiling override is grandfathered and not re-validated.
+  {
+    unique_ptr<KuduTableAlterer> table_alterer(
+        client_->NewTableAlterer(kTableName));
+    ASSERT_OK(table_alterer->AlterExtraConfig(
+        {{"kudu.table.history_max_age_sec", "3600"}})->Alter());
+    ASSERT_EQ(kOverride, tablet->metadata()->override_cell_limit_bytes());
+  }
+
+  // But an alter that actually changes the cell limit is still validated
+  // against the (now lower) ceiling and rejected.
+  {
+    unique_ptr<KuduTableAlterer> table_alterer(
+        client_->NewTableAlterer(kTableName));
+    const auto s = table_alterer->AlterExtraConfig(
+        {{kTableOverrideCellLimitBytes,
+          std::to_string(kOverride + 1)}})->Alter();
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "--max_huge_cell_size_bytes");
+    ASSERT_EQ(kOverride, tablet->metadata()->override_cell_limit_bytes());
+  }
+}
+
 TEST_F(AlterTableTest, AddAndRemoveImmutableAttribute) {
   InsertRows(0, 1);
   ASSERT_OK(tablet_replica_->tablet()->Flush());
@@ -2778,7 +2931,8 @@ TEST_F(AlterTableTest, AddAndRemoveImmutableAttribute) {
 
   {
     // Add immutable attribute to a column.
-    unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    unique_ptr<KuduTableAlterer> table_alterer(
+        client_->NewTableAlterer(kTableName));
     table_alterer->AlterColumn("c1")->Immutable();
     ASSERT_OK(table_alterer->Alter());
   }
@@ -2801,7 +2955,8 @@ TEST_F(AlterTableTest, AddAndRemoveImmutableAttribute) {
 
   {
     // Remove immutable attribute from a column.
-    unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    unique_ptr<KuduTableAlterer> table_alterer(
+        client_->NewTableAlterer(kTableName));
     table_alterer->AlterColumn("c1")->Mutable();
     ASSERT_OK(table_alterer->Alter());
   }
@@ -2821,7 +2976,8 @@ TEST_F(AlterTableTest, AddAndRemoveImmutableAttribute) {
 
   {
     // Add a column with immutable attribute.
-    unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    unique_ptr<KuduTableAlterer> table_alterer(
+        client_->NewTableAlterer(kTableName));
     table_alterer->AddColumn("c2")->Type(KuduColumnSchema::INT32)->Immutable();
     ASSERT_OK(table_alterer->Alter());
   }

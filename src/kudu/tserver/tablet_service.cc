@@ -131,12 +131,7 @@ DEFINE_int32(scanner_max_batch_size_bytes, 8 * 1024 * 1024,
 TAG_FLAG(scanner_max_batch_size_bytes, advanced);
 TAG_FLAG(scanner_max_batch_size_bytes, runtime);
 
-// The default value is sized to a power of 2 to improve BitmapCopy performance
-// when copying a RowBlock (in ORDERED scans).
-DEFINE_int32(scanner_batch_size_rows, 128,
-             "The number of rows to batch for servicing scan requests.");
-TAG_FLAG(scanner_batch_size_rows, advanced);
-TAG_FLAG(scanner_batch_size_rows, runtime);
+DECLARE_int32(scanner_batch_size_rows);
 
 DEFINE_bool(scanner_allow_snapshot_scans_with_logical_timestamps, false,
             "If set, the server will support snapshot scans with logical timestamps.");
@@ -3168,8 +3163,22 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
   // TODO(todd): could size the RowBlock based on the user's requested batch size?
   // If people had really large indirect objects, we would currently overshoot
   // their requested batch size by a lot.
+  //
+  // Cap the batch size at the tablet's batch_num_rows_upper_limit (if set) via
+  // std::min. The upper limit only ever decreases, so re-reading it on each
+  // batch simply picks up the latest value. It stays in effect whenever set
+  // (regardless of the table's batch_sizing policy) so that scans over
+  // previously-written huge rows remain safe.
+  int64_t batch_size_rows = FLAGS_scanner_batch_size_rows;
+  const auto& tablet_metadata = scanner->tablet_replica()->tablet_metadata();
+  const auto batch_num_rows_upper_limit =
+      tablet_metadata->batch_num_rows_upper_limit();
+  if (batch_num_rows_upper_limit) {
+    batch_size_rows =
+        std::min<int64_t>(batch_size_rows, *batch_num_rows_upper_limit);
+  }
   RowBlockMemory mem(32 * 1024);
-  RowBlock block(&iter->schema(), FLAGS_scanner_batch_size_rows, &mem);
+  RowBlock block(&iter->schema(), static_cast<size_t>(batch_size_rows), &mem);
 
   // TODO(todd): in the future, use the client timeout to set a budget. For now,
   // just use a half second, which should be plenty to amortize call overhead.

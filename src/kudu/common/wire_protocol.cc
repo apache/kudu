@@ -29,6 +29,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <google/protobuf/map.h>
 
@@ -69,6 +70,11 @@ using std::string;
 using std::unordered_set;
 using std::vector;
 using strings::Substitute;
+
+// Defined in common/row_operations.cc (same library). Used to validate the
+// 'override_cell_limit_bytes' extra configuration property.
+DECLARE_int32(max_cell_size_bytes);
+DECLARE_int32(max_huge_cell_size_bytes);
 
 namespace kudu {
 
@@ -747,10 +753,44 @@ Status ParseBoolConfig(const string& name, const string& value, bool* result) {
   return Status::OK();
 }
 
+// A batch_sizing value counts as "off" when it is explicitly NONE or left
+// unset.
+bool IsBatchSizingOff(TableExtraConfigPB::BatchSizing value) {
+  return value == TableExtraConfigPB::NONE ||
+         value == TableExtraConfigPB::UNKNOWN_BATCH_SIZING;
+}
+
+Status ParseBatchSizingConfig(const string& name, const string& value,
+                              TableExtraConfigPB::BatchSizing* result) {
+  CHECK(result);
+  if (iequals(value, "none")) {
+    *result = TableExtraConfigPB::NONE;
+  } else if (iequals(value, "auto")) {
+    *result = TableExtraConfigPB::AUTO;
+  } else {
+    return Status::InvalidArgument(
+        Substitute("unable to parse $0 (expected 'none' or 'auto')", name),
+        value);
+  }
+  return Status::OK();
+}
+
+const char* BatchSizingConfigToString(TableExtraConfigPB::BatchSizing value) {
+  switch (value) {
+    case TableExtraConfigPB::AUTO:
+      return "auto";
+    default:
+      return "";
+  }
+}
+
 Status ExtraConfigPBFromPBMap(const Map<string, string>& configs, TableExtraConfigPB* pb) {
-  static const unordered_set<string> kSupportedConfigs({kTableHistoryMaxAgeSec,
-                                                        kTableMaintenancePriority,
-                                                        kTableDisableCompaction});
+  static const unordered_set<string> kSupportedConfigs({
+      kTableHistoryMaxAgeSec,
+      kTableMaintenancePriority,
+      kTableDisableCompaction,
+      kTableBatchSizing,
+      kTableOverrideCellLimitBytes});
   TableExtraConfigPB result;
   for (const auto& config : configs) {
     const string& name = config.first;
@@ -778,11 +818,76 @@ Status ExtraConfigPBFromPBMap(const Map<string, string>& configs, TableExtraConf
         RETURN_NOT_OK(ParseBoolConfig(name, value, &disable_compaction));
         result.set_disable_compaction(disable_compaction);
       }
+    } else if (name == kTableBatchSizing) {
+      if (!value.empty()) {
+        TableExtraConfigPB::BatchSizing batch_sizing;
+        RETURN_NOT_OK(ParseBatchSizingConfig(name, value, &batch_sizing));
+        result.set_batch_sizing(batch_sizing);
+      }
+    } else if (name == kTableOverrideCellLimitBytes) {
+      if (!value.empty()) {
+        int32_t override_cell_limit_bytes;
+        RETURN_NOT_OK(
+            ParseInt32Config(name, value, &override_cell_limit_bytes));
+        result.set_override_cell_limit_bytes(override_cell_limit_bytes);
+      }
     } else {
       LOG(FATAL) << "Unknown extra configuration property: " << name;
     }
   }
   *pb = std::move(result);
+  return Status::OK();
+}
+
+Status ValidateBatchAndCellSizing(const TableExtraConfigPB& old_config,
+                                  const TableExtraConfigPB& new_config) {
+  // Cross-field and flag constraints on the override. An unset 'batch_sizing'
+  // reads back as UNKNOWN_BATCH_SIZING, which IsBatchSizingOff() treats as off,
+  // the intended default here.
+  if (new_config.has_override_cell_limit_bytes()) {
+    const int32_t override_cell_limit_bytes =
+        new_config.override_cell_limit_bytes();
+    if (override_cell_limit_bytes <= 0) {
+      return Status::InvalidArgument(
+          Substitute("$0 must be positive", kTableOverrideCellLimitBytes),
+          std::to_string(override_cell_limit_bytes));
+    }
+    if (override_cell_limit_bytes > FLAGS_max_huge_cell_size_bytes) {
+      return Status::InvalidArgument(
+          Substitute("$0 ($1) must not exceed --max_huge_cell_size_bytes ($2)",
+                     kTableOverrideCellLimitBytes, override_cell_limit_bytes,
+                     FLAGS_max_huge_cell_size_bytes));
+    }
+    if (override_cell_limit_bytes > FLAGS_max_cell_size_bytes &&
+        IsBatchSizingOff(new_config.batch_sizing())) {
+      return Status::InvalidArgument(
+          Substitute("$0 ($1) above --max_cell_size_bytes ($2) requires $3 "
+                     "to be set to a value other than 'none'",
+                     kTableOverrideCellLimitBytes, override_cell_limit_bytes,
+                     FLAGS_max_cell_size_bytes, kTableBatchSizing));
+    }
+  }
+
+  // override_cell_limit_bytes is one-way: it may be enabled or raised, but
+  // never lowered or cleared. Lowering it would let bootstrap replay re-reject
+  // cells that were already committed, failing the tablet on every replica.
+  if (old_config.has_override_cell_limit_bytes() &&
+      (!new_config.has_override_cell_limit_bytes() ||
+       new_config.override_cell_limit_bytes() <
+           old_config.override_cell_limit_bytes())) {
+    return Status::InvalidArgument(Substitute(
+        "$0 ($1) cannot be lowered or cleared; raise it instead",
+        kTableOverrideCellLimitBytes, old_config.override_cell_limit_bytes()));
+  }
+
+  // batch_sizing is one-way: once AUTO it cannot revert to NONE. A cleared or
+  // unset new value reads back as UNKNOWN_BATCH_SIZING (not AUTO), so clearing
+  // it is rejected too.
+  if (old_config.batch_sizing() == TableExtraConfigPB::AUTO &&
+      new_config.batch_sizing() != TableExtraConfigPB::AUTO) {
+    return Status::InvalidArgument(Substitute(
+        "$0 cannot be reset to 'none' once set to 'auto'", kTableBatchSizing));
+  }
   return Status::OK();
 }
 
@@ -796,6 +901,13 @@ Status ExtraConfigPBToPBMap(const TableExtraConfigPB& pb, Map<string, string>* c
   }
   if (pb.has_disable_compaction()) {
     result[kTableDisableCompaction] = std::to_string(pb.disable_compaction());
+  }
+  if (pb.has_batch_sizing() && !IsBatchSizingOff(pb.batch_sizing())) {
+    result[kTableBatchSizing] = BatchSizingConfigToString(pb.batch_sizing());
+  }
+  if (pb.has_override_cell_limit_bytes()) {
+    result[kTableOverrideCellLimitBytes] =
+        std::to_string(pb.override_cell_limit_bytes());
   }
   *configs = std::move(result);
   return Status::OK();

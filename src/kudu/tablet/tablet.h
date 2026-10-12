@@ -210,6 +210,11 @@ class Tablet {
   // Apply all of the row operations associated with this op.
   Status ApplyRowOperations(WriteOpState* op_state);
 
+  // If automatic batch sizing is enabled, inspect the rows written by
+  // 'op_state' and lower the in-memory batch_num_rows_upper_limit if the
+  // observed row sizes warrant it.
+  void MaybeUpdateAutoBatchSizeUpperLimit(const WriteOpState* op_state);
+
   // Apply a single row operation, which must already be prepared.
   // The result is set back into row_op->result.
   Status ApplyRowOperation(const fs::IOContext* io_context,

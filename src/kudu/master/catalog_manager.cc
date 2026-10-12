@@ -2132,9 +2132,12 @@ Status CatalogManager::CreateTableHelper(const CreateTableRequestPB* orig_req,
                                        resp, ValidateType::kCreateTable,
                                        partitions.size(), num_replicas));
 
-  // Verify the table's extra configuration properties.
+  // Verify the table's extra configuration properties. On create there is no
+  // stored config, so pass an empty one: the one-way constraints are no-ops and
+  // only the cell-size/batch-sizing invariants are enforced on the new config.
   TableExtraConfigPB extra_config_pb;
   RETURN_NOT_OK(ExtraConfigPBFromPBMap(req.extra_configs(), &extra_config_pb));
+  RETURN_NOT_OK(ValidateBatchAndCellSizing({}, extra_config_pb));
 
   scoped_refptr<TableInfo> table;
   {
@@ -3883,15 +3886,28 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
   // 9. Alter table's extra configuration properties.
   if (!req.new_extra_configs().empty()) {
     TRACE("Apply alter extra-config");
+    // Capture the stored config before overwriting it, so one-way constraints
+    // can be enforced against the change.
+    const TableExtraConfigPB old_extra_config = l.data().pb.extra_config();
     Map<string, string> new_extra_configs;
-    RETURN_NOT_OK(ExtraConfigPBToPBMap(l.data().pb.extra_config(),
-                                       &new_extra_configs));
+    RETURN_NOT_OK(ExtraConfigPBToPBMap(old_extra_config, &new_extra_configs));
     // Merge table's extra configuration properties.
     for (const auto& config : req.new_extra_configs()) {
       new_extra_configs[config.first] = config.second;
     }
-    RETURN_NOT_OK(ExtraConfigPBFromPBMap(new_extra_configs,
-                                         l.mutable_data()->pb.mutable_extra_config()));
+    TableExtraConfigPB new_extra_config;
+    RETURN_NOT_OK(ExtraConfigPBFromPBMap(new_extra_configs, &new_extra_config));
+    // Validate the batch-sizing / cell-limit constraints only when this alter
+    // actually changes one of them. Otherwise a previously-valid stored
+    // override would be re-rejected against the master's current flags on every
+    // unrelated alter -- including the internal soft-delete/recall alters that
+    // set only kudu.table.disable_compaction.
+    if (ContainsKey(req.new_extra_configs(), kTableOverrideCellLimitBytes) ||
+        ContainsKey(req.new_extra_configs(), kTableBatchSizing)) {
+      RETURN_NOT_OK(
+          ValidateBatchAndCellSizing(old_extra_config, new_extra_config));
+    }
+    *l.mutable_data()->pb.mutable_extra_config() = std::move(new_extra_config);
   }
 
   // Set to true if columns are altered, added or dropped.

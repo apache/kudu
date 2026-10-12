@@ -54,6 +54,17 @@ DEFINE_int32(max_cell_size_bytes, 64 * 1024,
              "in errors.");
 TAG_FLAG(max_cell_size_bytes, unsafe);
 
+DEFINE_int32(max_huge_cell_size_bytes, 1 * 1024 * 1024,
+             "The upper bound for a table's override_cell_limit_bytes "
+             "property, which sets the maximum size of any individual "
+             "cell in that table. The override is clamped to this flag and, "
+             "when set, takes the place of --max_cell_size_bytes for that "
+             "table.");
+// Lowering this (live or across a restart) can reject cells that were already
+// committed, failing WAL replay and the tablet on bootstrap -- the same hazard
+// that makes --max_cell_size_bytes unsafe. Keep it off the runtime path.
+TAG_FLAG(max_huge_cell_size_bytes, unsafe);
+
 DEFINE_uint32(array_cell_max_elem_num, 1024,
               "The maximum number of elements in any individual cell of array "
               "type column in a table. Attempting to store arrays of a length "
@@ -233,13 +244,16 @@ size_t RowOperationsPBEncoder::GetRowsFieldSizeEstimate(
 RowOperationsPBDecoder::RowOperationsPBDecoder(const RowOperationsPB* pb,
                                                const Schema* client_schema,
                                                const Schema* tablet_schema,
-                                               Arena* dst_arena)
+                                               Arena* dst_arena,
+                                               int64_t max_cell_size)
   : pb_(pb),
     client_schema_(client_schema),
     tablet_schema_(tablet_schema),
     dst_arena_(dst_arena),
     bm_size_(BitmapSize(client_schema_->num_columns())),
     tablet_row_size_(ContiguousRowHelper::row_size(*tablet_schema_)),
+    max_cell_size_(max_cell_size < 0 ? FLAGS_max_cell_size_bytes
+                                     : max_cell_size),
     src_(pb->rows().data(), pb->rows().size()) {
 }
 
@@ -301,10 +315,11 @@ Status RowOperationsPBDecoder::GetColumnSlice(const ColumnSchema& col,
     }
 
     // Check that no individual cell is larger than the specified max.
-    if (PREDICT_FALSE(row_status && ptr_slice->size() > FLAGS_max_cell_size_bytes)) {
+    if (PREDICT_FALSE(row_status &&
+                      static_cast<int64_t>(ptr_slice->size()) > max_cell_size_)) {
       *row_status = Status::InvalidArgument(Substitute(
           "value too large for column '$0' ($1 bytes, maximum is $2 bytes)",
-          col.name(), ptr_slice->size(), FLAGS_max_cell_size_bytes));
+          col.name(), ptr_slice->size(), max_cell_size_));
       // After one row's column size has been found to exceed the limit and has been recorded
       // in 'row_status', we will consider it OK and continue to consume data in order to properly
       // validate subsequent columns and rows.

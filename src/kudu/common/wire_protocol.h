@@ -61,6 +61,9 @@ class TableExtraConfigPB;
 static const std::string kTableHistoryMaxAgeSec = "kudu.table.history_max_age_sec";
 static const std::string kTableMaintenancePriority = "kudu.table.maintenance_priority";
 static const std::string kTableDisableCompaction = "kudu.table.disable_compaction";
+static const std::string kTableBatchSizing = "kudu.table.batch_sizing";
+static const std::string kTableOverrideCellLimitBytes =
+    "kudu.table.override_cell_limit_bytes";
 
 // Convert the given C++ Status object into the equivalent Protobuf.
 void StatusToPB(const Status& status, AppStatusPB* pb);
@@ -153,6 +156,19 @@ Status ExtraConfigPBToMap(const TableExtraConfigPB& pb,
 // Convert the table's extra configuration protobuf::map to protobuf.
 Status ExtraConfigPBFromPBMap(const google::protobuf::Map<std::string, std::string>& configs,
                               TableExtraConfigPB* pb);
+
+// Validates the batch_sizing and override_cell_limit_bytes extra-config
+// properties, both against the server's cell-size flags and against their
+// previously-stored values. 'old_config' is the currently-stored config (empty
+// on create); 'new_config' is the config that would be applied. It enforces:
+//  - override_cell_limit_bytes is positive, does not exceed
+//    --max_huge_cell_size_bytes, and above --max_cell_size_bytes requires
+//    batch_sizing other than 'none';
+//  - override_cell_limit_bytes may only be raised, never lowered or cleared
+//    (lowering it can brick tablets on WAL replay)
+//  - batch_sizing may not revert from AUTO back to NONE.
+Status ValidateBatchAndCellSizing(const TableExtraConfigPB& old_config,
+                                  const TableExtraConfigPB& new_config);
 
 // Parse int32_t type value from 'value', and store in 'result' when succeed.
 Status ParseInt32Config(const std::string& name, const std::string& value, int32_t* result);

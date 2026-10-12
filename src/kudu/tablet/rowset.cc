@@ -48,7 +48,8 @@ RowIteratorOptions::RowIteratorOptions()
       snap_to_include(MvccSnapshot::CreateSnapshotIncludingAllOps()),
       order(OrderMode::UNORDERED),
       include_deleted_rows(false),
-      row_visibility(OBSERVABLE_ONLY) {}
+      row_visibility(OBSERVABLE_ONLY),
+      merge_row_buffer_size(MergeIteratorOptions::kUseDefaultRowBufferSize) {}
 
 Status RowSet::DebugDump(std::vector<std::string>* lines) {
   return DebugDumpImpl(nullptr /* rows_left */, lines);
@@ -129,7 +130,10 @@ Status DuplicatingRowSet::NewRowIterator(const RowIteratorOptions& opts,
 
   switch (opts.order) {
     case ORDERED:
-      *out = NewMergeIterator(MergeIteratorOptions(opts.include_deleted_rows), std::move(iters));
+      *out = NewMergeIterator(
+          MergeIteratorOptions(opts.include_deleted_rows,
+                               opts.merge_row_buffer_size),
+          std::move(iters));
       break;
     case UNORDERED:
       *out = NewUnionIterator(std::move(iters));

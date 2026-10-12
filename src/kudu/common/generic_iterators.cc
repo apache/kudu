@@ -118,9 +118,13 @@ static const int kMergeRowBuffer = 1024;
 // MergeIterState wraps a RowwiseIterator for use by the MergeIterator.
 class MergeIterState : public boost::intrusive::list_base_hook<> {
  public:
-  explicit MergeIterState(IterWithBounds iwb)
+  explicit MergeIterState(IterWithBounds iwb,
+                          int row_buffer_size = kMergeRowBuffer)
       : iwb_(std::move(iwb)),
         memory_(1024),
+        row_buffer_size_(row_buffer_size > 0
+                             ? std::min(row_buffer_size, kMergeRowBuffer)
+                             : kMergeRowBuffer),
         next_row_idx_(0)
   {}
 
@@ -230,6 +234,9 @@ class MergeIterState : public boost::intrusive::list_base_hook<> {
   // Allocates memory for read_block_.
   RowBlockMemory memory_;
 
+  // Capacity (in number of rows) of read_block_.
+  const int row_buffer_size_;
+
   // Optional rowset bounds, decoded during Init().
   struct DecodedBounds {
     // 'block' must be constructed immediately; the bounds themselves can be
@@ -290,7 +297,7 @@ Status MergeIterState::PullNextBlock() {
       << "should not pull next block until current block is exhausted";
 
   if (!read_block_) {
-    read_block_.reset(new RowBlock(&schema(), kMergeRowBuffer, &memory_));
+    read_block_.reset(new RowBlock(&schema(), row_buffer_size_, &memory_));
   }
   while (iwb_.iter->HasNext()) {
     RETURN_NOT_OK(iwb_.iter->NextBlock(read_block_.get()));
@@ -661,7 +668,8 @@ Status MergeIterator::InitSubIterators(ScanSpec *spec) {
   for (auto& i : orig_iters_) {
     ScanSpec *spec_copy = spec != nullptr ? scan_spec_copies_.Construct(*spec) : nullptr;
     RETURN_NOT_OK(InitAndMaybeWrap(&i.iter, spec_copy));
-    unique_ptr<MergeIterState> state(new MergeIterState(std::move(i)));
+    unique_ptr<MergeIterState> state(
+        new MergeIterState(std::move(i), opts_.row_buffer_size));
     RETURN_NOT_OK(state->Init(&decoded_bounds_memory_));
     states_.push_back(*state.release());
   }

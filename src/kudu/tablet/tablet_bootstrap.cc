@@ -1664,6 +1664,9 @@ Status TabletBootstrap::PlayRowOperations(const IOContext* io_context,
 
   RETURN_NOT_OK(ApplyOperations(io_context, op_state, orig_result, new_result));
 
+  // Batch size is not flushed to disk, so we need to replay it here too.
+  tablet_->MaybeUpdateAutoBatchSizeUpperLimit(op_state);
+
   return Status::OK();
 }
 

@@ -533,6 +533,26 @@ message TableExtraConfigPB {
 
   // If set true, the table's data on disk is not compacted.
   optional bool disable_compaction = 3;
+
+  // How per-tablet scan batch sizing is managed for this table. Tables that
+  // store "huge" cells (see 'override_cell_limit_bytes' below) use this to keep
+  // scans from running out of memory.
+  enum BatchSizing {
+    UNKNOWN_BATCH_SIZING = 0;
+    NONE = 1;
+    // Automatically set batch_num_rows_upper_limit at write time based on
+    // observed row sizes.
+    AUTO = 2;
+    // TODO(zmartonka): add support for manual batch size.
+    //   MANUAL = 3;
+  }
+  optional BatchSizing batch_sizing = 4;
+
+  // A table-level override for the maximum size of any individual
+  // string/binary cell written to this table. When set, it replaces
+  // --max_cell_size_bytes. It may only exceed --max_cell_size_bytes while
+  // 'batch_sizing' is enabled (set to a value other than NONE).
+  optional int32 override_cell_limit_bytes = 5;
 }
 
 // The type of a given table. This is useful in determining whether a

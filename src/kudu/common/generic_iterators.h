@@ -41,13 +41,26 @@ struct IterWithBounds {
 
 // Options struct for the MergeIterator.
 struct MergeIteratorOptions {
-  explicit MergeIteratorOptions(bool include_deleted_rows)
-      : include_deleted_rows(include_deleted_rows) {}
+  static constexpr int kUseDefaultRowBufferSize = 0;
+
+  // 'row_buffer_size' is an upper bound (in number of rows) on the
+  // per-sub-iterator read buffer. If <= 0, the merge iterator uses its
+  // built-in default size.
+  // Otherwise the buffer is capped at min('row_buffer_size', default); tables
+  // that allow huge cells pass a smaller bound here to tune ordered scans.
+  explicit MergeIteratorOptions(bool include_deleted_rows,
+                                int row_buffer_size = kUseDefaultRowBufferSize)
+      : include_deleted_rows(include_deleted_rows),
+        row_buffer_size(row_buffer_size) {}
 
   // Whether to include and de-duplicate ghost (deleted) rows. If true, the
   // sub-iterator schemas must also contain an IS_DELETED column or an error
   // will be returned during MergeIterator initialization.
   const bool include_deleted_rows;
+
+  // Upper bound on the per-sub-iterator read buffer size, in rows. See
+  // constructor comment.
+  const int row_buffer_size;
 };
 
 // Constructs a MergeIterator of the given iterators.

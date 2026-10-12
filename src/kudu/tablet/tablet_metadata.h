@@ -156,6 +156,22 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
 
   void SetExtraConfig(TableExtraConfigPB extra_config);
 
+  // Reads a cached value without taking 'data_lock_'.
+  // Returns if big writes should automatically size down batch size.
+  bool auto_batch_size() const;
+
+  // Reads a cached value without taking 'data_lock_'. Returns the per-cell size
+  // limit override (in bytes) for this table, if set. When unset, writes use
+  // the --max_cell_size_bytes default.
+  std::optional<int32_t> override_cell_limit_bytes() const;
+
+  // Returns the per-tablet upper limit on the scan batch size, if set.
+  std::optional<int64_t> batch_num_rows_upper_limit() const;
+
+  // Lowers the per-tablet scan batch size upper limit to 'candidate' if the
+  // current limit is strictly larger than 'candidate' or not set yet.
+  void MaybeLowerBatchSizeUpperLimit(int64_t candidate);
+
   // Return a scoped_refptr to the current schema.
   // This pointer will be valid until the TabletMetadata is destructed,
   // even if the schema is changed.
@@ -414,6 +430,11 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   // Requires 'data_lock_'.
   void AddOrphanedBlocksUnlocked(const BlockIdContainer& block_ids);
 
+  // Refreshes the cached, lock-free copies of the extra-config-derived values
+  // ('batch_sizing_' and 'override_cell_limit_bytes_') from 'extra_config_'.
+  // Requires 'data_lock_'.
+  void UpdateCachedExtraConfigUnlocked();
+
   // Deletes the provided 'blocks' on disk.
   //
   // All blocks that are successfully deleted are removed from the
@@ -478,6 +499,16 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
 
   // Tablet's dimension label.
   std::optional<std::string> dimension_label_;
+
+  // Cached here so that the hot paths consulting them (write decoding, scan
+  // batch sizing) need not acquire 'data_lock_'. Kept in sync with
+  // 'extra_config_' by UpdateCachedExtraConfigUnlocked().
+  std::atomic<TableExtraConfigPB::BatchSizing> batch_sizing_;
+  // Per-cell size limit override in bytes; 0 means unset.
+  std::atomic<int32_t> override_cell_limit_bytes_;
+
+  // Per-tablet upper limit on the scan batch size (in number of rows).
+  std::atomic<int64_t> batch_num_rows_upper_limit_;
 
   // The table type of the table this tablet belongs to.
   std::optional<TableTypePB> table_type_;

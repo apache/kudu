@@ -18,9 +18,12 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <limits>
+#include <map>
 #include <memory>
 #include <ostream>
 #include <random>
@@ -30,7 +33,6 @@
 #include <utility>
 #include <vector>
 
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -40,6 +42,7 @@
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/client/write_op.h"
 #include "kudu/common/partial_row.h"
+#include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
@@ -55,6 +58,7 @@
 #include "kudu/util/test_util.h"
 
 using kudu::client::KuduColumnSchema;
+using kudu::client::KuduDelete;
 using kudu::client::KuduError;
 using kudu::client::KuduScanBatch;
 using kudu::client::KuduScanner;
@@ -62,6 +66,7 @@ using kudu::client::KuduSchema;
 using kudu::client::KuduSchemaBuilder;
 using kudu::client::KuduSession;
 using kudu::client::KuduTable;
+using kudu::client::KuduTableAlterer;
 using kudu::client::KuduTableCreator;
 using kudu::client::KuduUpsert;
 using kudu::client::sp::shared_ptr;
@@ -70,6 +75,7 @@ using kudu::cluster::ExternalTabletServer;
 using kudu::itest::GetTsCounterValue;
 using std::atomic;
 using std::max;
+using std::min;
 using std::memory_order_acquire;
 using std::memory_order_release;
 using std::mt19937_64;
@@ -83,16 +89,28 @@ using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
+METRIC_DECLARE_entity(tablet);
 METRIC_DECLARE_gauge_uint64(generic_current_allocated_bytes);
-DECLARE_int64(rpc_max_message_size);
+METRIC_DECLARE_gauge_int64(batch_num_rows_upper_limit);
 
 namespace kudu {
 
 namespace {
 
 constexpr const char* const kTableName = "OrderedScanLargeCellsTestTable";
+// These are the default values, we just want to make the test
+// robust by setting them, so changes in default values wont
+// ruin the test:
 constexpr int kPlannedMaxCellSizeBytes = 1 << 20;  // 1 MiB.
 constexpr int64_t kMemoryLimitHardBytes = 8LL << 30;  // 8 GiB.
+constexpr int kMaxHugeCellSizeBytes = kPlannedMaxCellSizeBytes;
+constexpr int64_t kMaxScanBatchSizeApprox = 16LL << 20;  // 16 MiB.
+constexpr int kScannerBatchSizeRows = 128;
+// Rows of this size alone would yield a batch size upper limit way above
+// kScannerBatchSizeRows.
+constexpr size_t kSmallCellSizeBytes = 1 << 10;  // 1 KiB.
+// Burned in constant, not a flag:
+constexpr int kMergeRowBufferDefault = 1024;
 
 // Periodically polls the external tablet server's tcmalloc memory usage metric.
 class TserverMemoryPeakTracker {
@@ -143,12 +161,10 @@ class TserverMemoryPeakTracker {
 };
 
 void FillBlobUncompressible(vector<uint8_t>* blob) {
-  ASSERT_EQ(0, blob->size() % 8);
   static mt19937_64 rng(random_device {}());
-
   for (size_t i = 0; i < blob->size(); i += sizeof(uint64_t)) {
     uint64_t v = rng();
-    memcpy(blob->data() + i, &v, sizeof(v));
+    memcpy(blob->data() + i, &v, min(sizeof(v), blob->size() - i));
   }
 }
 
@@ -176,6 +192,73 @@ class OrderedScanLargeCellsITest : public ExternalMiniClusterITestBase {
     ASSERT_OK(client_->OpenTable(kTableName, &table_));
   }
 
+  // Creates a MANUAL_FLUSH session with a mutation buffer comfortably larger
+  // than one batch of 1 MiB cells.
+  shared_ptr<KuduSession> NewManualFlushSession() {
+    shared_ptr<KuduSession> session = client_->NewSession();
+    CHECK_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+    CHECK_OK(session->SetMutationBufferSpace(64 << 20));
+    return session;
+  }
+
+  // Applies (without flushing) a single UPSERT of 's1' = 'value' at pk1 = 'pk'.
+  void ApplyUpsertRow(KuduSession* session, int64_t pk, const Slice& value) {
+    unique_ptr<KuduUpsert> upsert(table_->NewUpsert());
+    KuduPartialRow* row = upsert->mutable_row();
+    CHECK_OK(row->SetInt64("pk1", pk));
+    CHECK_OK(row->SetBinaryCopy("s1", value));
+    CHECK_OK(session->Apply(upsert.release()));
+  }
+
+  // Upserts one row per (pk, cell_size) pair in a single flushed batch; each
+  // row's 's1' blob is cell_size bytes of fresh uncompressible random data.
+  // If session is null, it creates a temporary session.
+  // Sets '*errors' to a per-row status indexed by position (Status::OK() where
+  // the row succeeded).
+  void UpsertAndFlush(
+      shared_ptr<KuduSession> session,
+      const vector<pair<int64_t, size_t>>& rows,
+      vector<Status>* errors) {
+    if (session == nullptr) {
+      session = NewManualFlushSession();
+    }
+    // A single reused buffer is safe because ApplyUpsertRow copies the blob.
+    vector<uint8_t> blob;
+    for (const auto& [pk, size] : rows) {
+      blob.resize(size);
+      FillBlobUncompressible(&blob);
+      ApplyUpsertRow(session.get(), pk, Slice(blob.data(), blob.size()));
+    }
+    const Status s = session->Flush();
+
+    *errors = vector<Status>(rows.size(), Status::OK());
+    if (s.ok()) {
+      return;
+    }
+    // Flush() only signals that some op failed; map each pending per-row error
+    // back to its position via the row's pk1.
+    std::map<int64_t, size_t> pk_to_idx;
+    for (size_t i = 0; i < rows.size(); i++) {
+      pk_to_idx[rows[i].first] = i;
+    }
+    vector<KuduError*> pending;
+    bool overflowed = false;
+    session->GetPendingErrors(&pending, &overflowed);
+    ASSERT_FALSE(overflowed);
+    auto cleanup = MakeScopedCleanup([&]() { STLDeleteElements(&pending); });
+    ASSERT_FALSE(pending.empty())
+        << "Flush failed with no per-row error: " << s.ToString();
+    for (const auto* e : pending) {
+      int64_t pk = 0;
+      ASSERT_OK(e->failed_op().row().GetInt64("pk1", &pk));
+
+      const auto it = pk_to_idx.find(pk);
+      ASSERT_TRUE(it != pk_to_idx.end())
+          << "pending error for unexpected pk1 " << pk;
+      (*errors)[it->second] = e->status();
+    }
+  }
+
   // UPSERT rows with random INT64 PKs and 1 MiB uncompressible blobs.
   // If 'tolerate_persistent_pressure' is true, stops without failing when a
   // write is rejected due to memory pressure; otherwise such a rejection fails
@@ -188,50 +271,115 @@ class OrderedScanLargeCellsITest : public ExternalMiniClusterITestBase {
         numeric_limits<int64_t>::min(),
         numeric_limits<int64_t>::max());
 
-    shared_ptr<KuduSession> session = client_->NewSession();
-    ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
-    // Comfortably larger than one batch of 1 MiB cells.
-    ASSERT_OK(session->SetMutationBufferSpace(64 << 20));
+    shared_ptr<KuduSession> session = NewManualFlushSession();
 
     ASSERT_EQ(0, num_rows % batch_rows)
         << "num_rows must be divisible by batch_rows";
     for (int batch_idx = 0; batch_idx < num_rows; batch_idx += batch_rows) {
-      for (int in_batch = 0; in_batch < batch_rows; in_batch++) {
-        unique_ptr<KuduUpsert> upsert(table_->NewUpsert());
-        KuduPartialRow* row = upsert->mutable_row();
-        ASSERT_OK(row->SetInt64("pk1", pk_dist(rng)));
-        static vector<uint8_t> blob(kPlannedMaxCellSizeBytes);
-        NO_FATALS(FillBlobUncompressible(&blob));
-        ASSERT_OK(row->SetBinaryCopy("s1", Slice(blob.data(), blob.size())));
-        ASSERT_OK(session->Apply(upsert.release()));
+      // Every row gets a fresh 1 MiB uncompressible blob (generated inside
+      // UpsertAndFlush) at a random PK.
+      vector<pair<int64_t, size_t>> rows(batch_rows);
+      for (int i = 0; i < batch_rows; i++) {
+        rows[i] = {pk_dist(rng), kPlannedMaxCellSizeBytes};
       }
-      const Status s = session->Flush();
-      if (!s.ok()) {
-        // Flush() only signals that some op failed; the real per-row status is
-        // in the pending errors. Fetch it to classify the failure.
-        vector<KuduError*> errors;
-        bool overflowed = false;
-        session->GetPendingErrors(&errors, &overflowed);
-        ASSERT_FALSE(errors.empty())
-            << "Flush failed with no per-row error: " << s.ToString();
-        const Status row_status = errors[0]->status();
-        const string row_msg = row_status.ToString();
-        STLDeleteElements(&errors);
-        // A memory-pressure rejection surfaces as ServiceUnavailable
-        // (tablet_service.cc / op_tracker.cc). The client retries that code
-        // transparently, so once retries exhaust the deadline it instead
-        // surfaces as TimedOut with the original "...memory..." text embedded.
+      vector<Status> errors;
+      NO_FATALS(UpsertAndFlush(session, rows, &errors));
+
+      auto real_error = [&](const Status& s) {
+        const string error_msg = s.ToString();
         const bool memory_pressure =
-            (row_status.IsServiceUnavailable() || row_status.IsTimedOut()) &&
-            row_msg.find("memory") != string::npos;
-        ASSERT_TRUE(memory_pressure)
-            << "Write failed with a non-memory-pressure error: " << row_msg;
-        ASSERT_TRUE(tolerate_persistent_pressure)
-            << "Write rejected by memory pressure in first phase: " << row_msg;
-        break;
+            (s.IsServiceUnavailable() || s.IsTimedOut()) &&
+            error_msg.find("memory") != string::npos;
+        return !memory_pressure;
+      };
+
+      bool there_is_an_error =
+          std::any_of(errors.begin(), errors.end(),
+                      [](const Status& s) { return !s.ok(); });
+
+      if (there_is_an_error) {
+        for (const auto& s : errors) {
+          if (s.ok()) {
+            *rows_written += 1;
+            continue;
+          }
+          ASSERT_TRUE(tolerate_persistent_pressure && !real_error(s))
+              << "Error in batch: " << s.ToString();
+        }
+        return;
       }
+
       *rows_written += batch_rows;
     }
+  }
+
+  // Starts a single-tserver cluster configured for huge cells, creates the test
+  // table, and enables huge cells on it (batch_sizing=auto plus an
+  // override_cell_limit_bytes at the huge-cell limit). 'extra_flags' are
+  // appended to the tserver flags.
+  void StartHugeCellClusterAndTable(const vector<string>& extra_flags = {}) {
+    ExternalMiniClusterOptions opts;
+    opts.num_tablet_servers = 1;
+    opts.extra_tserver_flags = {
+        Substitute("--max_huge_cell_size_bytes=$0", kMaxHugeCellSizeBytes),
+        Substitute("--max_scan_batch_approx_size_bytes=$0",
+                   kMaxScanBatchSizeApprox),
+        Substitute("--scanner_batch_size_rows=$0", kScannerBatchSizeRows),
+    };
+    opts.extra_tserver_flags.insert(opts.extra_tserver_flags.end(),
+                                    extra_flags.begin(), extra_flags.end());
+    NO_FATALS(StartClusterWithOpts(opts));
+    NO_FATALS(CreateTable());
+    NO_FATALS(EnableHugeCells());
+  }
+
+  // Enables huge cells on the test table by setting 'batch_sizing=auto' and an
+  // 'override_cell_limit_bytes' at the huge-cell limit in a single alter.
+  // Alter() returns only once the change is applied. These properties are
+  // one-way, so there is no corresponding disable helper.
+  void EnableHugeCells() {
+    unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(kTableName));
+    ASSERT_OK(alterer->AlterExtraConfig(
+        {{kTableBatchSizing, "auto"},
+         {kTableOverrideCellLimitBytes,
+          std::to_string(kMaxHugeCellSizeBytes)}})->Alter());
+  }
+
+  // Reads the single tablet's 'batch_num_rows_upper_limit' metric from
+  // tserver 0. The metric reports 0 when the upper limit is unset.
+  Status GetBatchSizeUpperLimit(int64_t* value) {
+    return itest::GetInt64Metric(
+        cluster_->tablet_server(0)->bound_http_hostport(),
+        &METRIC_ENTITY_tablet, /*entity_id=*/nullptr,
+        &METRIC_batch_num_rows_upper_limit, "value", value);
+  }
+
+  Status UpsertSingleRow(int64_t pk, size_t cell_size) {
+    vector<Status> errors;
+    UpsertAndFlush(shared_ptr<KuduSession>(), {{pk, cell_size}}, &errors);
+    return errors[0];
+  }
+
+  void UpsertConsequentRows(int64_t first_pk, int num_rows, size_t cell_size) {
+    vector<pair<int64_t, size_t>> rows;
+    for (int i = 0; i < num_rows; i++) {
+      rows.emplace_back(first_pk + i, cell_size);
+    }
+    vector<Status> errors;
+    NO_FATALS(UpsertAndFlush(shared_ptr<KuduSession>(), rows, &errors));
+    for (const auto& e : errors) {
+      ASSERT_OK(e);
+    }
+  }
+
+  Status DeleteConsequenRows(int64_t first_pk, int num_rows) {
+    shared_ptr<KuduSession> session = NewManualFlushSession();
+    for (int i = 0; i < num_rows; i++) {
+      unique_ptr<KuduDelete> del(table_->NewDelete());
+      RETURN_NOT_OK(del->mutable_row()->SetInt64("pk1", first_pk + i));
+      RETURN_NOT_OK(session->Apply(del.release()));
+    }
+    return session->Flush();
   }
 
   shared_ptr<KuduTable> table_;
@@ -264,14 +412,19 @@ class OrderedScanLargeCellsITest : public ExternalMiniClusterITestBase {
 //   Which means we can theoretically crash kudu-tserver on proper server
 //   hardware too (e.g. 64 GB memory), not just on the bare minimum recommended
 //   hardware.
-// When dynamic batch sizing is implemented, this test will measure:
+// With dynamic batch sizing in place (KUDU-2874), this test measures:
 //   + Scans can't significantly increase actual memory usage over the
 //     configured hard limit.
-//   + We can read data with large cells with default options (no custom limit
-//     on maximum RPC size).
-// TODO(martonka): Remove "DISABLED_" when dynamic batching is ready.
-TEST_F(OrderedScanLargeCellsITest, DISABLED_TestRandomUpsertOrderedScan) {
+//   + We can read data with large cells with default RPC options: the table has
+//     'batch_sizing=auto', so the tserver auto-sizes scan batches, so as long
+//     as rpc_max_message_size>=scanner_max_batch_size_bytes +
+TEST_F(OrderedScanLargeCellsITest, TestRandomUpsertOrderedScan) {
   SKIP_IF_SLOW_NOT_ALLOWED();
+
+#ifndef TCMALLOC_ENABLED
+  GTEST_SKIP() << "requires tcmalloc to measure memory usage "
+                  "(disabled under ASAN/TSAN)";
+#endif
 
 #if defined(NDEBUG)
   // Release builds can handle the full row count.
@@ -285,34 +438,14 @@ TEST_F(OrderedScanLargeCellsITest, DISABLED_TestRandomUpsertOrderedScan) {
   constexpr int kRowsPerWriteBatch = 4;
   constexpr int kScanReadsNumber = 10;
   constexpr int kScannerTimeoutMilliseconds = 120 * 1000;
-  // TODO(martonka): remove this once the batch sizing works properly.
-  // Currently scan requests for ordered reads might take up this much.
-  // Data size + 1 MB extra for remaining proto parts.
-  constexpr int64_t kRpcLimit =
-      1024LLU * kPlannedMaxCellSizeBytes + (1LLU << 20);
-  constexpr int64_t kMiB = 1024LL * 1024;
-  // Round up.
-  constexpr int64_t kTransactionMemoryLimitMb = (kRpcLimit + kMiB - 1) / kMiB;
   // The tablet server must never exceed this much memory during the test.
   constexpr int64_t kMemoryCapBytes = 12LL << 30;  // 12 GiB.
 
-  // TODO(martonka): remove this once the batch sizing works properly.
-  // Client-side limit (for receiving large scan responses); the tserver gets
-  // its own copy via extra_tserver_flags below.
-  FLAGS_rpc_max_message_size = kRpcLimit;
-
-  // Start a real 1-master + 1-tserver cluster. Server-side flags that the
-  // in-process version set via FLAGS_* are now passed to the tserver process.
-  ExternalMiniClusterOptions opts;
-  opts.num_tablet_servers = 1;
-  opts.extra_tserver_flags = {
-      Substitute("--max_cell_size_bytes=$0", kPlannedMaxCellSizeBytes),
-      // TODO(martonka): remove this once the batch sizing works properly.
-      Substitute("--rpc_max_message_size=$0", kRpcLimit),
-      // Not used by reads; only relevant due to the flag validator
-      // ValidateOpMemoryAndRpcSize.
-      Substitute("--tablet_transaction_memory_limit_mb=$0",
-                 kTransactionMemoryLimitMb),
+  // Start a real 1-master + 1-tserver cluster configured for huge cells, with
+  // the table's huge-cell extra config enabled. The extra flags on top of
+  // the shared setup pin the memory limit and disable compactions for this
+  // test.
+  NO_FATALS(StartHugeCellClusterAndTable({
       // Minimum recommended memory limit for a tserver.
       Substitute("--memory_limit_hard_bytes=$0", kMemoryLimitHardBytes),
       // Keep flushes running so the ordered scan spans multiple rowsets, but
@@ -320,10 +453,7 @@ TEST_F(OrderedScanLargeCellsITest, DISABLED_TestRandomUpsertOrderedScan) {
       "--enable_rowset_compaction=false",
       "--enable_major_delta_compaction=false",
       "--enable_minor_delta_compaction=false",
-  };
-  NO_FATALS(StartClusterWithOpts(opts));
-
-  NO_FATALS(CreateTable());
+  }));
 
   // Track the peak tserver memory across the whole test. The regression is in
   // the ordered-scan path, but the writes must stay under the cap too, so
@@ -424,11 +554,153 @@ TEST_F(OrderedScanLargeCellsITest, DISABLED_TestRandomUpsertOrderedScan) {
 
   const auto [sampling_status, peak] = memory_peak_tracker.GetPeakAndStop();
   ASSERT_OK(sampling_status);
-  // This assertion fails currently (hence DISABLED_): the ordered-scan path
-  // pushes peak memory well over the cap. It will pass once dynamic batch
-  // sizing is implemented.
-  // TODO(martonka): Remove comment when fixed
+  // With dynamic batch sizing (KUDU-2874) the ordered-scan path keeps peak
+  // memory under the cap.
+  LOG(INFO) << "Peak tracker: " << peak;
   ASSERT_LE(peak, kMemoryCapBytes);
+}
+
+// Check that --max_huge_cell_size_bytes applies once a table allows huge cells,
+// and that the huge-cell properties cannot be turned back off (they are
+// one-way).
+TEST_F(OrderedScanLargeCellsITest, TestHugeCellSizeLimits) {
+  NO_FATALS(StartHugeCellClusterAndTable());
+
+  const auto too_large_msg = [](size_t cell_size, int limit) {
+    return Substitute(
+        "value too large for column 's1' ($0 bytes, maximum is $1 bytes)",
+        cell_size, limit);
+  };
+
+  // StartHugeCellClusterAndTable() set an override_cell_limit_bytes at the
+  // huge-cell limit, so the higher limit applies.
+  const size_t huge_limit = kMaxHugeCellSizeBytes;
+  ASSERT_OK(UpsertSingleRow(1, huge_limit));
+  auto err = UpsertSingleRow(2, huge_limit + 1);
+  ASSERT_FALSE(err.ok());
+  ASSERT_STR_CONTAINS(err.ToString(),
+                      too_large_msg(huge_limit + 1, kMaxHugeCellSizeBytes));
+
+  // Huge cells cannot be turned back off: clearing the override (and/or batch
+  // sizing) is rejected, because lowering the limit could brick the tablet on a
+  // later WAL replay.
+  {
+    unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(kTableName));
+    const auto s = alterer->AlterExtraConfig(
+        {{kTableOverrideCellLimitBytes, ""}, {kTableBatchSizing, ""}})->Alter();
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  }
+
+  // The huge-cell limit therefore still applies: a huge cell is still accepted.
+  ASSERT_OK(UpsertSingleRow(3, huge_limit));
+}
+
+// Test that a refused (too-large) cell does not lower the auto batch size: the
+// override must be sized from the accepted cell only.
+TEST_F(OrderedScanLargeCellsITest, TestRefusedCellDoesNotLowerBatchSize) {
+  constexpr size_t kAcceptedCellSize = 512 * (1 << 10);  // 0.5 MiB.
+  constexpr size_t kRefusedCellSize = 5 * (1 << 20);     // 5 MiB.
+  static_assert(kAcceptedCellSize < static_cast<size_t>(kMaxHugeCellSizeBytes),
+                "accepted cell must be within the huge-cell limit");
+  static_assert(kRefusedCellSize > static_cast<size_t>(kMaxHugeCellSizeBytes),
+                "refused cell must exceed the huge-cell limit");
+
+  NO_FATALS(StartHugeCellClusterAndTable());
+
+  int64_t upper_limit = 0;
+  ASSERT_OK(GetBatchSizeUpperLimit(&upper_limit));
+  ASSERT_EQ(0, upper_limit);
+
+  // Write a 0.5 MiB and a 5 MiB row together in one batch. The 5 MiB cell is
+  // refused while the 0.5 MiB one is written.
+  vector<Status> errors;
+  NO_FATALS(UpsertAndFlush(
+      shared_ptr<KuduSession>(),
+      {{2, kAcceptedCellSize}, {3, kRefusedCellSize}}, &errors));
+  ASSERT_EQ(2, errors.size());
+  ASSERT_OK(errors[0]);
+  ASSERT_FALSE(errors[1].ok());
+  ASSERT_STR_CONTAINS(
+      errors[1].ToString(),
+      Substitute(
+          "value too large for column 's1' ($0 bytes, maximum is $1 bytes)",
+          kRefusedCellSize, kMaxHugeCellSizeBytes));
+
+  // The write op sets the upper limit after Apply; it is visible via the metric
+  // by the time Flush() returns, but poll to avoid any propagation race.
+  ASSERT_EVENTUALLY([&]() {
+    int64_t ul = 0;
+    ASSERT_OK(GetBatchSizeUpperLimit(&ul));
+    ASSERT_GT(ul, 0);
+  });
+
+  // Validate the value on what we expect, not by copying the exact formula.
+  // Expecting the largest power of 2 still not exceeding the desired limit.
+  ASSERT_OK(GetBatchSizeUpperLimit(&upper_limit));
+  ASSERT_EQ(0, upper_limit & (upper_limit - 1))
+      << "not a power of 2: " << upper_limit;
+  ASSERT_LE(static_cast<int64_t>(kAcceptedCellSize) * upper_limit,
+            kMaxScanBatchSizeApprox);
+  ASSERT_LE(kMaxScanBatchSizeApprox,
+            static_cast<int64_t>(kAcceptedCellSize) * upper_limit * 2);
+}
+
+// Test that the auto batch size upper limit survives a tserver restart, even
+// when the tablet metadata was not flushed (so it is restored by WAL replay).
+// Writing rows with much smaller cells after the restart must not raise it:
+// the limit has to stay low enough for the mix of huge and small rows.
+TEST_F(OrderedScanLargeCellsITest, TestAutoBatchSizeUpperLimitSurvivesRestart) {
+  // Keep the written rows in the MRS so the restart replays them through the
+  // bootstrap path rather than loading them from a flushed rowset.
+  NO_FATALS(StartHugeCellClusterAndTable({"--enable_flush_memrowset=false"}));
+
+  int64_t before = 0;
+  ASSERT_OK(GetBatchSizeUpperLimit(&before));
+  ASSERT_EQ(0, before);
+
+  // Write a few huge-cell rows to trigger the auto batch sizing.
+  NO_FATALS(UpsertConsequentRows(1, 4, kPlannedMaxCellSizeBytes));
+
+  ASSERT_OK(GetBatchSizeUpperLimit(&before));
+  ASSERT_GT(before, 0);
+  ASSERT_LT(before, kScannerBatchSizeRows);
+
+  // Restart the tserver; the upper limit must be rebuilt by replaying the
+  // writes.
+  ExternalTabletServer* ts = cluster_->tablet_server(0);
+  ts->Shutdown();
+  ASSERT_OK(ts->Restart());
+
+  int64_t after = 0;
+  ASSERT_EVENTUALLY([&]() {
+    // The metric entity reappears only once the tablet is bootstrapped.
+    ASSERT_OK(GetBatchSizeUpperLimit(&after));
+    ASSERT_GT(after, 0);
+  });
+  ASSERT_EQ(before, after);
+
+  // Small rows should not change buffer size.
+  NO_FATALS(UpsertConsequentRows(5, 4, kSmallCellSizeBytes));
+  ASSERT_OK(GetBatchSizeUpperLimit(&after));
+  ASSERT_EQ(before, after);
+}
+
+// Test that deleting all the huge-cell rows does not reset the auto batch size.
+TEST_F(OrderedScanLargeCellsITest, TestAutoBatchSizeUpperLimitStaysLowAfterDelete) {
+  NO_FATALS(StartHugeCellClusterAndTable());
+
+  NO_FATALS(UpsertConsequentRows(1, 4, kPlannedMaxCellSizeBytes));
+  int64_t before = 0;
+  ASSERT_OK(GetBatchSizeUpperLimit(&before));
+  ASSERT_GT(before, 0);
+  ASSERT_LT(before, kScannerBatchSizeRows);
+
+  ASSERT_OK(DeleteConsequenRows(1, 4));
+  NO_FATALS(UpsertConsequentRows(5, 4, kSmallCellSizeBytes));
+
+  int64_t after = 0;
+  ASSERT_OK(GetBatchSizeUpperLimit(&after));
+  ASSERT_EQ(before, after);
 }
 
 }  // namespace kudu

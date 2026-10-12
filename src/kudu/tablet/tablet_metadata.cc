@@ -333,6 +333,9 @@ TabletMetadata::TabletMetadata(FsManager* fs_manager, string tablet_id,
       tombstone_last_logged_opid_(std::move(tombstone_last_logged_opid)),
       extra_config_(std::move(extra_config)),
       dimension_label_(std::move(dimension_label)),
+      batch_sizing_(TableExtraConfigPB::UNKNOWN_BATCH_SIZING),
+      override_cell_limit_bytes_(0),
+      batch_num_rows_upper_limit_(0),
       table_type_(std::move(table_type)),
       num_flush_pins_(0),
       needs_flush_(false),
@@ -341,6 +344,7 @@ TabletMetadata::TabletMetadata(FsManager* fs_manager, string tablet_id,
       supports_live_row_count_(supports_live_row_count) {
   CHECK(schema_->has_column_ids());
   CHECK_GT(schema_->num_key_columns(), 0);
+  UpdateCachedExtraConfigUnlocked();
 }
 
 TabletMetadata::~TabletMetadata() {
@@ -351,6 +355,9 @@ TabletMetadata::TabletMetadata(FsManager* fs_manager, string tablet_id)
       tablet_id_(std::move(tablet_id)),
       fs_manager_(fs_manager),
       next_rowset_idx_(0),
+      batch_sizing_(TableExtraConfigPB::UNKNOWN_BATCH_SIZING),
+      override_cell_limit_bytes_(0),
+      batch_num_rows_upper_limit_(0),
       num_flush_pins_(0),
       needs_flush_(false),
       flush_count_for_tests_(0),
@@ -502,11 +509,19 @@ Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) 
     } else {
       extra_config_.reset();
     }
+    UpdateCachedExtraConfigUnlocked();
 
     if (superblock.has_dimension_label()) {
       dimension_label_ = superblock.dimension_label();
     } else {
       dimension_label_.reset();
+    }
+
+    if (superblock.has_batch_num_rows_upper_limit()) {
+      batch_num_rows_upper_limit_.store(superblock.batch_num_rows_upper_limit(),
+                                    std::memory_order_release);
+    } else {
+      batch_num_rows_upper_limit_.store(0, std::memory_order_release);
     }
 
     if (superblock.has_table_type() && superblock.table_type() != TableTypePB::DEFAULT_TABLE) {
@@ -823,6 +838,11 @@ Status TabletMetadata::ToSuperBlockUnlocked(TabletSuperBlockPB* super_block,
     pb.set_dimension_label(*dimension_label_);
   }
 
+  // We hold the lock, so relaxed is sufficient.
+  if (auto limit = batch_num_rows_upper_limit_.load(std::memory_order_relaxed); limit > 0) {
+    pb.set_batch_num_rows_upper_limit(limit);
+  }
+
   if (table_type_) {
     DCHECK_NE(TableTypePB::DEFAULT_TABLE, *table_type_);
     pb.set_table_type(*table_type_);
@@ -1024,11 +1044,59 @@ TabletDataState TabletMetadata::tablet_data_state() const {
 void TabletMetadata::SetExtraConfig(TableExtraConfigPB extra_config) {
   std::lock_guard l(data_lock_);
   extra_config_ = std::move(extra_config);
+  UpdateCachedExtraConfigUnlocked();
 }
 
 optional<TableExtraConfigPB> TabletMetadata::extra_config() const {
   std::lock_guard l(data_lock_);
   return extra_config_;
+}
+
+void TabletMetadata::UpdateCachedExtraConfigUnlocked() {
+  batch_sizing_.store(extra_config_ ? extra_config_->batch_sizing()
+                                    : TableExtraConfigPB::UNKNOWN_BATCH_SIZING,
+                      std::memory_order_release);
+  override_cell_limit_bytes_.store(
+      extra_config_ && extra_config_->has_override_cell_limit_bytes()
+          ? extra_config_->override_cell_limit_bytes() : 0,
+      std::memory_order_release);
+}
+
+bool TabletMetadata::auto_batch_size() const {
+  return batch_sizing_.load(std::memory_order_acquire) ==
+      TableExtraConfigPB::AUTO;
+}
+
+optional<int32_t> TabletMetadata::override_cell_limit_bytes() const {
+  const auto override_cell_limit_bytes =
+      override_cell_limit_bytes_.load(std::memory_order_acquire);
+  return override_cell_limit_bytes > 0
+             ? std::optional<int32_t>(override_cell_limit_bytes)
+             : std::nullopt;
+}
+
+optional<int64_t> TabletMetadata::batch_num_rows_upper_limit() const {
+  const auto batch_num_rows_upper_limit =
+      batch_num_rows_upper_limit_.load(std::memory_order_acquire);
+  return batch_num_rows_upper_limit > 0
+             ? std::optional<int64_t>(batch_num_rows_upper_limit)
+             : std::nullopt;
+}
+
+void TabletMetadata::MaybeLowerBatchSizeUpperLimit(int64_t candidate) {
+  DCHECK_GE(candidate, 1);
+  const auto cur = batch_num_rows_upper_limit_.load(std::memory_order_relaxed);
+  if (cur > 0 && candidate >= cur) {
+    return;
+  }
+  // We need to acquire the lock, because there might be a flush in progress.
+  // so compare_exchange_weak trick is not sufficient.
+  std::lock_guard l(data_lock_);
+  const auto cur_locked =
+      batch_num_rows_upper_limit_.load(std::memory_order_relaxed);
+  if (cur_locked == 0 || candidate < cur_locked) {
+    batch_num_rows_upper_limit_.store(candidate, std::memory_order_release);
+  }
 }
 
 optional<string> TabletMetadata::dimension_label() const {

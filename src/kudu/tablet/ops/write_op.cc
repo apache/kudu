@@ -311,6 +311,11 @@ Status WriteOp::Apply(CommitMsg** commit_msg) {
   RETURN_NOT_OK(tablet->ApplyRowOperations(state()));
   TRACE("APPLY: finished");
 
+  // For tables that allow huge cells with automatic batch sizing, adjust this
+  // tablet's in-memory batch_num_rows_upper_limit based on the rows just
+  // written (it is persisted lazily by the next tablet-metadata flush).
+  tablet->MaybeUpdateAutoBatchSizeUpperLimit(state());
+
   UpdatePerRowMetricsAndErrors();
 
   // Create the Commit message

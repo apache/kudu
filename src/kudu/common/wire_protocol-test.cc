@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <initializer_list>
 #include <list>
 #include <numeric>
 #include <optional>
@@ -30,7 +31,9 @@
 #include <type_traits>
 #include <vector>
 
+#include <gflags/gflags.h>
 #include <glog/logging.h>
+#include <google/protobuf/map.h>
 #include <gtest/gtest.h>
 
 #include "kudu/common/column_predicate.h"
@@ -59,11 +62,15 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+using google::protobuf::Map;
 using std::optional;
 using std::string;
 using std::tuple;
 using std::vector;
 using strings::Substitute;
+
+DECLARE_int32(max_cell_size_bytes);
+DECLARE_int32(max_huge_cell_size_bytes);
 
 namespace kudu {
 
@@ -162,6 +169,227 @@ TEST_F(WireProtocolTest, TestBadStatusWithPosixCode) {
   EXPECT_TRUE(s2.IsNotFound());
   EXPECT_EQ(1234, s2.posix_code());
   EXPECT_EQ(s.ToString(), s2.ToString());
+}
+
+namespace {
+// google::protobuf::Map has no initializer-list constructor
+Map<string, string> ConfigMap(const string& key, const string& value) {
+  Map<string, string> ret;
+  ret[key] = value;
+  return ret;
+}
+} // anonymous namespace
+
+TEST_F(WireProtocolTest, TestExtraConfigBatchSizing) {
+  // "auto" is accepted, matched case-insensitively.
+  for (const auto* val : {"auto", "AUTO", "Auto"}) {
+    SCOPED_TRACE(Substitute("setting value to: $0", val));
+    TableExtraConfigPB pb;
+    ASSERT_OK(ExtraConfigPBFromPBMap(ConfigMap(kTableBatchSizing, val), &pb));
+    ASSERT_TRUE(pb.has_batch_sizing());
+    EXPECT_EQ(TableExtraConfigPB::AUTO, pb.batch_sizing());
+  }
+
+  // "none" is accepted (case-insensitively) and is equivalent to the default.
+  for (const auto* val : {"none", "NONE", "None"}) {
+    SCOPED_TRACE(Substitute("setting value to: $0", val));
+    TableExtraConfigPB pb;
+    ASSERT_OK(ExtraConfigPBFromPBMap(ConfigMap(kTableBatchSizing, val), &pb));
+    EXPECT_EQ(TableExtraConfigPB::NONE, pb.batch_sizing());
+  }
+
+  // An empty value resets the property to its default.
+  {
+    TableExtraConfigPB pb;
+    ASSERT_OK(ExtraConfigPBFromPBMap(ConfigMap(kTableBatchSizing, ""), &pb));
+    EXPECT_FALSE(pb.has_batch_sizing());
+  }
+
+  // Anything else is rejected -- including "manual", which is reserved but not
+  // yet implemented.
+  for (const auto* val : {"bogus", "manual", "auto_batch_size", "1", "true"}) {
+    SCOPED_TRACE(Substitute("trying to set value: $0", val));
+    TableExtraConfigPB pb;
+    const auto s =
+        ExtraConfigPBFromPBMap(ConfigMap(kTableBatchSizing, val), &pb);
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(),
+                        Substitute("unable to parse $0", kTableBatchSizing));
+    EXPECT_FALSE(pb.has_batch_sizing());
+  }
+
+  // In the other direction, AUTO maps back to its string form.
+  {
+    TableExtraConfigPB pb;
+    pb.set_batch_sizing(TableExtraConfigPB::AUTO);
+    Map<string, string> configs;
+    ASSERT_OK(ExtraConfigPBToPBMap(pb, &configs));
+    ASSERT_EQ(1, configs.count(kTableBatchSizing));
+    EXPECT_EQ("auto", configs[kTableBatchSizing]);
+  }
+
+  // An unset property is omitted, and so is an explicit NONE: the two mean the
+  // same thing, so ExtraConfigPBToPBMap() deliberately does not distinguish
+  // them. As a result the PB -> map -> PB trip isn't bit-exact for an
+  // explicitly set NONE; it comes back unset, which is semantically equivalent.
+  for (bool set_none : {false, true}) {
+    SCOPED_TRACE(Substitute("explicitly set NONE: $0", set_none));
+    TableExtraConfigPB pb;
+    if (set_none) {
+      pb.set_batch_sizing(TableExtraConfigPB::NONE);
+    }
+    Map<string, string> configs;
+    ASSERT_OK(ExtraConfigPBToPBMap(pb, &configs));
+    EXPECT_EQ(0, configs.count(kTableBatchSizing));
+
+    TableExtraConfigPB round_tripped;
+    ASSERT_OK(ExtraConfigPBFromPBMap(configs, &round_tripped));
+    EXPECT_FALSE(round_tripped.has_batch_sizing());
+  }
+}
+
+TEST_F(WireProtocolTest, TestExtraConfigOverrideCellLimit) {
+  // A valid value is parsed through. Cross-field constraints (positivity,
+  // cell-size limits) are enforced by ValidateBatchAndCellSizing(), not here.
+  {
+    TableExtraConfigPB pb;
+    ASSERT_OK(ExtraConfigPBFromPBMap(
+        ConfigMap(kTableOverrideCellLimitBytes,
+                  std::to_string(FLAGS_max_cell_size_bytes)),
+        &pb));
+    ASSERT_TRUE(pb.has_override_cell_limit_bytes());
+    EXPECT_EQ(FLAGS_max_cell_size_bytes, pb.override_cell_limit_bytes());
+  }
+
+  // An empty value resets the property to its default.
+  {
+    TableExtraConfigPB pb;
+    ASSERT_OK(ExtraConfigPBFromPBMap(
+        ConfigMap(kTableOverrideCellLimitBytes, ""), &pb));
+    EXPECT_FALSE(pb.has_override_cell_limit_bytes());
+  }
+
+  // Non-integer values are rejected while parsing.
+  for (const auto* val : {"bogus", "1.5"}) {
+    SCOPED_TRACE(Substitute("trying to set value: $0", val));
+    TableExtraConfigPB pb;
+    const auto s = ExtraConfigPBFromPBMap(
+        ConfigMap(kTableOverrideCellLimitBytes, val), &pb);
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(
+        s.ToString(),
+        Substitute("unable to parse $0", kTableOverrideCellLimitBytes));
+  }
+
+  // Round-trip through PB -> map -> PB.
+  {
+    TableExtraConfigPB pb;
+    pb.set_override_cell_limit_bytes(12345);
+    Map<string, string> configs;
+    ASSERT_OK(ExtraConfigPBToPBMap(pb, &configs));
+    ASSERT_EQ(1, configs.count(kTableOverrideCellLimitBytes));
+    EXPECT_EQ("12345", configs[kTableOverrideCellLimitBytes]);
+  }
+}
+
+TEST_F(WireProtocolTest, TestValidateBatchAndCellSizing) {
+  const auto with_override = [](int32_t v) {
+    TableExtraConfigPB pb;
+    pb.set_override_cell_limit_bytes(v);
+    return pb;
+  };
+  const auto with_batch = [](TableExtraConfigPB::BatchSizing v) {
+    TableExtraConfigPB pb;
+    pb.set_batch_sizing(v);
+    return pb;
+  };
+  const TableExtraConfigPB kEmpty;
+
+  // --- Cross-field / flag constraints (stored config empty, as on create) ---
+
+  // A value in (0, --max_cell_size_bytes] is accepted regardless of batch
+  // sizing.
+  ASSERT_OK(ValidateBatchAndCellSizing(
+      kEmpty, with_override(FLAGS_max_cell_size_bytes)));
+
+  // Non-positive values are rejected.
+  for (int32_t v : {0, -1}) {
+    SCOPED_TRACE(Substitute("override: $0", v));
+    const auto s = ValidateBatchAndCellSizing(kEmpty, with_override(v));
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "must be positive");
+  }
+
+  // Exceeding --max_huge_cell_size_bytes is always rejected, even with batch
+  // sizing enabled.
+  {
+    TableExtraConfigPB pb = with_override(FLAGS_max_huge_cell_size_bytes + 1);
+    pb.set_batch_sizing(TableExtraConfigPB::AUTO);
+    const auto s = ValidateBatchAndCellSizing(kEmpty, pb);
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "--max_huge_cell_size_bytes");
+  }
+
+  // Exceeding --max_cell_size_bytes requires batch_sizing != none...
+  {
+    const auto s = ValidateBatchAndCellSizing(
+        kEmpty, with_override(FLAGS_max_cell_size_bytes + 1));
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), kTableBatchSizing);
+  }
+  // ... and is accepted once batch sizing is enabled.
+  {
+    TableExtraConfigPB pb = with_override(FLAGS_max_cell_size_bytes + 1);
+    pb.set_batch_sizing(TableExtraConfigPB::AUTO);
+    ASSERT_OK(ValidateBatchAndCellSizing(kEmpty, pb));
+  }
+
+  // --- One-way constraints vs. the stored config ---
+
+  // Enabling the override from unset, and raising or keeping it, are allowed.
+  ASSERT_OK(ValidateBatchAndCellSizing(kEmpty, with_override(1024)));
+  ASSERT_OK(
+      ValidateBatchAndCellSizing(with_override(1024), with_override(2048)));
+  ASSERT_OK(
+      ValidateBatchAndCellSizing(with_override(1024), with_override(1024)));
+
+  // Lowering the override is rejected.
+  {
+    const auto s =
+        ValidateBatchAndCellSizing(with_override(2048), with_override(1024));
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), kTableOverrideCellLimitBytes);
+  }
+  // Clearing the override is rejected.
+  {
+    const auto s = ValidateBatchAndCellSizing(with_override(2048), kEmpty);
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), kTableOverrideCellLimitBytes);
+  }
+
+  // batch_sizing: enabling NONE -> AUTO is allowed; reverting AUTO -> NONE
+  // (explicit or cleared) is rejected.
+  ASSERT_OK(ValidateBatchAndCellSizing(with_batch(TableExtraConfigPB::NONE),
+                                       with_batch(TableExtraConfigPB::AUTO)));
+  ASSERT_OK(ValidateBatchAndCellSizing(with_batch(TableExtraConfigPB::AUTO),
+                                       with_batch(TableExtraConfigPB::AUTO)));
+  for (const auto& reverted :
+       {with_batch(TableExtraConfigPB::NONE), TableExtraConfigPB()}) {
+    const auto s = ValidateBatchAndCellSizing(
+        with_batch(TableExtraConfigPB::AUTO), reverted);
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), kTableBatchSizing);
+  }
+
+  // An alter that touches neither property leaves both one-way fields unchanged
+  // and is accepted.
+  {
+    TableExtraConfigPB old_config = with_override(2048);
+    old_config.set_batch_sizing(TableExtraConfigPB::AUTO);
+    TableExtraConfigPB new_config = old_config;
+    new_config.set_history_max_age_sec(3600);
+    ASSERT_OK(ValidateBatchAndCellSizing(old_config, new_config));
+  }
 }
 
 TEST_F(WireProtocolTest, TestSchemaRoundTrip) {

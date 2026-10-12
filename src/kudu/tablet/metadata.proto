@@ -191,6 +191,12 @@ message TabletSuperBlockPB {
   // participant ops should be anchored to replay the updates upon restarting.
   // TODO(awong): consider storing these separately from the superblock.
   map<int64, TxnMetadataPB> txn_metadata = 20;
+
+  // Per-tablet upper limit on the scan batch size (in number of rows). Set at
+  // write time by the auto batch-size tuning logic for tables that allow huge
+  // cells, and applied via std::min against the normal batch size and merge
+  // buffer size. When unset, scans use the defaults.
+  optional int64 batch_num_rows_upper_limit = 21;
 }
 
 // Tablet states represent stages of a TabletReplica's object lifecycle and are
