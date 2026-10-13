@@ -212,6 +212,10 @@ RaftConsensus::RaftConsensus(
 Status RaftConsensus::Init() {
   std::lock_guard l(lock_);
   DCHECK_EQ(kNew, state_) << State_Name(state_);
+  // Raft consensus cmeta flush token is used by tombstoned replicas as well,
+  // so this token is created here during Init(), not during Start().
+  cmeta_flush_pool_token_ = server_ctx_.raft_pool->NewToken(
+      ThreadPool::ExecutionMode::SERIAL);
   RETURN_NOT_OK(cmeta_manager_->Load(options_.tablet_id, &cmeta_));
   SetStateUnlocked(kInitialized);
   return Status::OK();
@@ -333,9 +337,11 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info,
       MinimumElectionTimeout(),
       opts);
 
+  FlushContext flush_ctx(cmeta_flush_pool_token_.get(), cmeta_.get());
   {
     ThreadRestrictions::AssertWaitAllowed();
     std::lock_guard l(lock_);
+    CommittingCmetaFlushCtxScope committing_cmeta_flush_scope(this, &flush_ctx);
     CHECK_EQ(kInitialized, state_) << LogPrefixUnlocked() << "Illegal state for Start(): "
                                    << State_Name(state_);
 
@@ -395,6 +401,7 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info,
 
     SetStateUnlocked(kRunning);
   }
+  CHECK_OK(WaitForScheduledCmetaFlush(flush_ctx));
 
   if (IsSingleVoterConfig() && FLAGS_enable_leader_failure_detection) {
     LOG_WITH_PREFIX(INFO) << "Only one voter in the Raft config. Triggering election immediately";
@@ -418,6 +425,7 @@ Status RaftConsensus::EmulateElectionForTests() {
                "tablet", options_.tablet_id);
 
   ThreadRestrictions::AssertWaitAllowed();
+  FlushContext flush_ctx(cmeta_flush_pool_token_.get(), cmeta_.get());
   {
     std::lock_guard l(lock_);
     RETURN_NOT_OK(CheckRunningUnlocked());
@@ -425,10 +433,13 @@ Status RaftConsensus::EmulateElectionForTests() {
     LOG_WITH_PREFIX_UNLOCKED(INFO) << "Emulating election...";
 
     // Assume leadership of new term.
-    RETURN_NOT_OK(HandleTermAdvanceUnlocked(CurrentTermUnlocked() + 1));
+    RETURN_NOT_OK(HandleTermAdvanceUnlocked(CurrentTermUnlocked() + 1, &flush_ctx));
     SetLeaderUuidUnlocked(peer_uuid());
     RETURN_NOT_OK(BecomeLeaderUnlocked());
-  } // Release lock before signaling request.
+  }
+  CHECK_OK(WaitForScheduledCmetaFlush(flush_ctx));
+
+  // Release lock before signaling request.
   peer_manager_->SignalRequest();
   return Status::OK();
 }
@@ -459,7 +470,30 @@ string ReasonString(RaftConsensus::ElectionReason reason, StringPiece leader_uui
   }
   __builtin_unreachable(); // silence gcc warnings
 }
+
 } // anonymous namespace
+
+RaftConsensus::CommittingCmetaFlushCtxScope::CommittingCmetaFlushCtxScope(
+    RaftConsensus* consensus, FlushContext* flush_ctx)
+    : consensus_(consensus),
+      prev_(consensus->committing_cmeta_flush_ctx_) {
+  DCHECK_NE(nullptr, flush_ctx);
+  DCHECK_NE(nullptr, consensus);
+
+  // Swapping flush context is allowed only when lock_ is held.
+  DCHECK(consensus_->lock_.is_locked());
+  // Flush contexts cannot be embedded or interleaved.
+  DCHECK_EQ(nullptr, prev_);
+  consensus_->committing_cmeta_flush_ctx_ = flush_ctx;
+}
+
+RaftConsensus::CommittingCmetaFlushCtxScope::~CommittingCmetaFlushCtxScope() {
+  // Swapping flush context is allowed only when lock_ is held.
+  DCHECK(consensus_->lock_.is_locked());
+  // Flush contexts cannot be embedded or interleaved.
+  DCHECK_EQ(nullptr, prev_);
+  consensus_->committing_cmeta_flush_ctx_ = prev_;
+}
 
 Status RaftConsensus::StartElection(ElectionMode mode, ElectionReason reason) {
   if (PREDICT_TRUE(server_ctx_.quiescing) &&
@@ -471,6 +505,7 @@ Status RaftConsensus::StartElection(ElectionMode mode, ElectionReason reason) {
   TRACE_EVENT2("consensus", "RaftConsensus::StartElection",
                "peer", LogPrefixThreadSafe(),
                "mode", mode_str);
+  FlushContext flush_ctx(cmeta_flush_pool_token_.get(), cmeta_.get());
   scoped_refptr<LeaderElection> election;
   {
     ThreadRestrictions::AssertWaitAllowed();
@@ -512,9 +547,9 @@ Status RaftConsensus::StartElection(ElectionMode mode, ElectionReason reason) {
 
       // We skip flushing the term to disk because setting the vote just below also
       // flushes to disk, and the double fsync doesn't buy us anything.
-      RETURN_NOT_OK(HandleTermAdvanceUnlocked(CurrentTermUnlocked() + 1,
-                                              SKIP_FLUSH_TO_DISK));
-      RETURN_NOT_OK(SetVotedForCurrentTermUnlocked(peer_uuid()));
+      RETURN_NOT_OK(HandleTermAdvanceUnlocked(
+          CurrentTermUnlocked() + 1, &flush_ctx, SKIP_FLUSH_TO_DISK));
+      RETURN_NOT_OK(SetVotedForCurrentTermUnlocked(peer_uuid(), &flush_ctx));
     }
 
     RaftConfigPB active_config = cmeta_->ActiveConfig();
@@ -559,6 +594,9 @@ Status RaftConsensus::StartElection(ElectionMode mode, ElectionReason reason) {
           self->ElectionCallback(reason, result);
         }));
   }
+  DCHECK((mode == PRE_ELECTION && !flush_ctx.flush_scheduled()) ||
+         (mode != PRE_ELECTION && flush_ctx.flush_scheduled()));
+  CHECK_OK(WaitForScheduledCmetaFlush(flush_ctx));
 
   // Start the election outside the lock.
   election->Run();
@@ -596,6 +634,7 @@ Status RaftConsensus::StepDown(LeaderStepDownResponsePB* resp) {
   }
   LOG_WITH_PREFIX_UNLOCKED(INFO) << "Received request to step down";
   RETURN_NOT_OK(HandleTermAdvanceUnlocked(CurrentTermUnlocked() + 1,
+                                          nullptr,
                                           SKIP_FLUSH_TO_DISK));
   // Snooze the failure detector for an extra leader failure timeout.
   // This should ensure that a different replica is elected leader after this one steps down.
@@ -907,7 +946,8 @@ void RaftConsensus::NotifyCommitIndex(int64_t commit_index) {
                "tablet", options_.tablet_id,
                "commit_index", commit_index);
 
-  bool need_signaling = false;
+  FlushContext flush_ctx(cmeta_flush_pool_token_.get(), cmeta_.get());
+  bool need_signal_request = false;
   {
     ThreadRestrictions::AssertWaitAllowed();
     std::lock_guard l(lock_);
@@ -922,10 +962,14 @@ void RaftConsensus::NotifyCommitIndex(int64_t commit_index) {
       return;
     }
 
+    CommittingCmetaFlushCtxScope committing_cmeta_flush_scope(this, &flush_ctx);
     CHECK_OK(pending_->AdvanceCommittedIndex(commit_index));
-    need_signaling = (cmeta_->active_role() == RaftPeerPB::LEADER);
-  } // Release lock before signaling request.
-  if (need_signaling) {
+    if (cmeta_->active_role() == RaftPeerPB::LEADER) {
+      need_signal_request = true;
+    }
+  }
+  CHECK_OK(WaitForScheduledCmetaFlush(flush_ctx));
+  if (need_signal_request) {
     peer_manager_->SignalRequest(false);
   }
 }
@@ -935,15 +979,19 @@ void RaftConsensus::NotifyTermChange(int64_t term) {
                "tablet", options_.tablet_id,
                "term", term);
 
-  ThreadRestrictions::AssertWaitAllowed();
-  std::lock_guard l(lock_);
-  Status s = CheckRunningUnlocked();
-  if (PREDICT_FALSE(!s.ok())) {
-    LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Unable to handle notification of new term "
-                                      << "(" << term << "): " << s.ToString();
-    return;
+  FlushContext flush_ctx(cmeta_flush_pool_token_.get(), cmeta_.get());
+  {
+    ThreadRestrictions::AssertWaitAllowed();
+    std::lock_guard l(lock_);
+    Status s = CheckRunningUnlocked();
+    if (PREDICT_FALSE(!s.ok())) {
+      LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Unable to handle notification of new term "
+                                        << "(" << term << "): " << s.ToString();
+      return;
+    }
+    WARN_NOT_OK(HandleTermAdvanceUnlocked(term, &flush_ctx), "couldn't advance consensus term");
   }
-  WARN_NOT_OK(HandleTermAdvanceUnlocked(term), "Couldn't advance consensus term.");
+  CHECK_OK(WaitForScheduledCmetaFlush(flush_ctx));
 }
 
 void RaftConsensus::NotifyFailedFollower(const string& uuid,
@@ -1107,16 +1155,20 @@ Status RaftConsensus::Update(const ConsensusRequestPB* request,
 
   VLOG_WITH_PREFIX(2) << "Replica received request: " << SecureShortDebugString(*request);
 
-  // see var declaration
-  std::lock_guard lock(update_lock_);
-  Status s = UpdateReplica(request, response);
-  if (PREDICT_FALSE(VLOG_IS_ON(1))) {
-    if (request->ops().empty()) {
-      VLOG_WITH_PREFIX(1)
-          << Substitute("Replica replied to status only request. Replica: $0. Response: $1",
-                        ToString(), SecureShortDebugString(*response));
+  FlushContext flush_ctx(cmeta_flush_pool_token_.get(), cmeta_.get());
+  Status s;
+  {
+    std::lock_guard lock(update_lock_);
+    s = UpdateReplica(request, response, &flush_ctx);
+    if (PREDICT_FALSE(VLOG_IS_ON(1))) {
+      if (request->ops().empty()) {
+        VLOG_WITH_PREFIX(1)
+            << Substitute("Replica replied to status only request. Replica: $0. Response: $1",
+                          ToString(), SecureShortDebugString(*response));
+      }
     }
   }
+  CHECK_OK(WaitForScheduledCmetaFlush(flush_ctx));
   return s;
 }
 
@@ -1233,7 +1285,8 @@ void RaftConsensus::DeduplicateLeaderRequestUnlocked(const ConsensusRequestPB* r
 }
 
 Status RaftConsensus::HandleLeaderRequestTermUnlocked(const ConsensusRequestPB* request,
-                                                      ConsensusResponsePB* response) {
+                                                      ConsensusResponsePB* response,
+                                                      FlushContext* flush_ctx) {
   DCHECK(lock_.is_locked());
   // Do term checks first:
   if (PREDICT_FALSE(request->caller_term() != CurrentTermUnlocked())) {
@@ -1253,7 +1306,7 @@ Status RaftConsensus::HandleLeaderRequestTermUnlocked(const ConsensusRequestPB* 
                                  Status::IllegalState(msg));
       return Status::OK();
     }
-    RETURN_NOT_OK(HandleTermAdvanceUnlocked(request->caller_term()));
+    RETURN_NOT_OK(HandleTermAdvanceUnlocked(request->caller_term(), flush_ctx));
   }
   return Status::OK();
 }
@@ -1311,7 +1364,8 @@ void RaftConsensus::TruncateAndAbortOpsAfterUnlocked(int64_t truncate_after_inde
 
 Status RaftConsensus::CheckLeaderRequestUnlocked(const ConsensusRequestPB* request,
                                                  ConsensusResponsePB* response,
-                                                 LeaderRequest* deduped_req) {
+                                                 LeaderRequest* deduped_req,
+                                                 FlushContext* flush_ctx) {
   DCHECK(lock_.is_locked());
 
   if (PREDICT_FALSE(request->has_deprecated_committed_index() ||
@@ -1341,7 +1395,7 @@ Status RaftConsensus::CheckLeaderRequestUnlocked(const ConsensusRequestPB* reque
     prev = &message->get()->id();
   }
 
-  RETURN_NOT_OK(HandleLeaderRequestTermUnlocked(request, response));
+  RETURN_NOT_OK(HandleLeaderRequestTermUnlocked(request, response, flush_ctx));
 
   if (response->status().has_error()) {
     return Status::OK();
@@ -1385,7 +1439,8 @@ Status RaftConsensus::CheckLeaderRequestUnlocked(const ConsensusRequestPB* reque
 }
 
 Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
-                                    ConsensusResponsePB* response) {
+                                    ConsensusResponsePB* response,
+                                    FlushContext* flush_ctx) {
   TRACE_EVENT2("consensus", "RaftConsensus::UpdateReplica",
                "peer", peer_uuid(),
                "tablet", options_.tablet_id);
@@ -1485,7 +1540,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
   auto& messages = deduped_req.messages;
   {
     ThreadRestrictions::AssertWaitAllowed();
-    std::lock_guard l(lock_);
+    std::lock_guard<simple_spinlock> lock(lock_);
     RETURN_NOT_OK(CheckRunningUnlocked());
     if (!cmeta_->IsMemberInConfig(peer_uuid(), ACTIVE_CONFIG)) {
       LOG_WITH_PREFIX_UNLOCKED(INFO) << "Allowing update even though not a member of the config";
@@ -1493,7 +1548,9 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
 
     deduped_req.leader_uuid = request->caller_uuid();
 
-    RETURN_NOT_OK(CheckLeaderRequestUnlocked(request, response, &deduped_req));
+    CommittingCmetaFlushCtxScope committing_cmeta_flush_scope(this, flush_ctx);
+    RETURN_NOT_OK(CheckLeaderRequestUnlocked(
+        request, response, &deduped_req, flush_ctx));
     if (response->status().has_error()) {
       // We had an error, like an invalid term, we still fill the response.
       FillConsensusResponseOKUnlocked(response);
@@ -1730,6 +1787,31 @@ void RaftConsensus::FillConsensusResponseError(ConsensusResponsePB* response,
 Status RaftConsensus::RequestVote(const VoteRequestPB* request,
                                   TabletVotingState tablet_voting_state,
                                   VoteResponsePB* response) {
+  optional<Synchronizer> same_vote_sync;
+  const auto s = RequestVoteImpl(
+      request, tablet_voting_state, response, &same_vote_sync);
+  if (!s.ok()) {
+    DCHECK(!same_vote_sync.has_value());
+    return s;
+  }
+  if (same_vote_sync.has_value()) {
+    // Wait for the no-op cmeta flush sequencing task to complete
+    // before returning from this method.
+    [[maybe_unused]] const auto s = same_vote_sync->Wait();
+    // The callback is hard-coded to return Status::OK().
+    DCHECK(s.ok());
+  }
+  return Status::OK();
+}
+
+Status RaftConsensus::RequestVoteImpl(
+    const VoteRequestPB* request,
+    TabletVotingState tablet_voting_state,
+    VoteResponsePB* response,
+    std::optional<Synchronizer>* same_vote_sync) {
+  DCHECK(same_vote_sync);
+  DCHECK(!same_vote_sync->has_value());
+
   TRACE_EVENT2("consensus", "RaftConsensus::RequestVote",
                "peer", peer_uuid(),
                "tablet", options_.tablet_id);
@@ -1783,9 +1865,11 @@ Status RaftConsensus::RequestVote(const VoteRequestPB* request,
   }
   DCHECK(update_guard.owns_lock());
 
+  FlushContext flush_ctx(cmeta_flush_pool_token_.get(), cmeta_.get());
+
   // Acquire the replica state lock so we can read / modify the consensus state.
   ThreadRestrictions::AssertWaitAllowed();
-  std::lock_guard l(lock_);
+  std::unique_lock<simple_spinlock> lock(lock_);
 
   // Ensure our lifecycle state is compatible with voting.
   // If RaftConsensus is running, we use the latest OpId from the WAL to vote.
@@ -1807,7 +1891,7 @@ Status RaftConsensus::RequestVote(const VoteRequestPB* request,
       if (!tablet_voting_state.tombstone_last_logged_opid_) {
         return Status::IllegalState("must be running to vote when last-logged opid is not known");
       }
-      if (!FLAGS_raft_enable_tombstoned_voting) {
+      if (PREDICT_FALSE(!FLAGS_raft_enable_tombstoned_voting)) {
         return Status::IllegalState("must be running to vote when tombstoned voting is disabled");
       }
       local_last_logged_opid = *(tablet_voting_state.tombstone_last_logged_opid_);
@@ -1853,10 +1937,64 @@ Status RaftConsensus::RequestVote(const VoteRequestPB* request,
 
     // Already voted for the same candidate in the current term.
     if (GetVotedForCurrentTermUnlocked() == request->candidate_uuid()) {
-      return RequestVoteRespondVoteAlreadyGranted(request, response);
+      // To guarantee consistency in the presence of network partitions and
+      // temporary node unavailability (e.g., due to a crash), it's necessary
+      // to persist the information on the granted 'yes' vote before responding
+      // to the candidate to whom the 'yes' vote was granted to. This is to
+      // guarantee the Election Safety invariant: a 'yes' vote must be granted
+      // to no more than one candidate in the same term to avoid the risk
+      // of split-brain conditions for the Raft cluster. The 'same_vote_sync'
+      // out parameter provides a means to wait for all prior scheduled flushes
+      // to complete, if any.
+      if (cmeta_->persisted_term() < CurrentTermUnlocked()) {
+        // This is the case when cmeta flush/sync may be still in-flight.
+        // Schedule a no-op task on 'cmeta_flush_pool_token_' to wait for all
+        // preceeding tasks, if any, to complete. Simply comparing the current
+        // runtime term with the term persisted in the cmeta file is a bit
+        // broader than a single cmeta flush with voted-for-this-term-peer-UUID
+        // if there are other tasks scheduled on the pool token already, but
+        //  1) re-requesting vote for the same term from a peer is rare
+        //  2) this cmeta-flush-still-in-flight time window is usually short
+        //  3) there can be only a few extra tasks on the same pool token
+        //     in this short time window anyway
+        optional<Synchronizer> sync(std::in_place);
+        StatusCallback cb = sync->AsStatusCallback();
+        const auto submit_status = cmeta_flush_pool_token_->Submit(
+            [cb = std::move(cb)]() mutable {
+              // A simple no-op task: this is to wait for completion of
+              // all the prior tasks scheduled on cmeta_flush_pool_token_.
+              cb(Status::OK());
+            });
+        if (PREDICT_FALSE(!submit_status.ok())) {
+          cb(submit_status);
+          response->mutable_consensus_error()->set_code(
+              ConsensusErrorPB::CONSENSUS_BUSY);
+          auto msg = Substitute(
+              "$0: not re-sending 'yes' vote for term $1 to peer '$2' already "
+              "granted in prior request because of unexpected error '$3'",
+              GetRequestVoteLogPrefixThreadSafe(*request),
+              request->candidate_term(),
+              request->candidate_uuid(),
+              submit_status.ToString());
+          const auto s = submit_status.CloneAndAppend(msg);
+          StatusToPB(s, response->mutable_consensus_error()->mutable_status());
+          LOG(WARNING) << msg;
+          return s;
+        }
+        CHECK_NOTNULL(same_vote_sync)->swap(sync);
+      }
+      // Optimistically, fill in the response: this should be sent upstream by
+      // the caller only after waiting on 'same_vote_sync' returns Status::OK().
+      RequestVoteRespondVoteAlreadyGranted(request, response);
+      return Status::OK();
     }
 
-    // Voted for someone else in current term.
+    // Voted for someone else in current term. It's safe to respond with 'no'
+    // vote without waiting to persist whom the actual 'yes' vote has been
+    // granted to. This couldn't violate the Election Safety invariant even if
+    // the information on the 'yes' vote hadn't been persisted and response was
+    // not sent to the winning peer (e.g., if the node crashed before flushing
+    // cmeta on disk or there was an I/O error when writing cmeta file).
     return RequestVoteRespondAlreadyVotedForOther(request, response);
   }
 
@@ -1871,21 +2009,62 @@ Status RaftConsensus::RequestVote(const VoteRequestPB* request,
   // bumping our term here would disrupt it.
   if (!request->is_pre_election() &&
       request->candidate_term() > CurrentTermUnlocked()) {
-    // If we are going to vote for this peer, then we will flush the consensus metadata
-    // to disk below when we record the vote, and we can skip flushing the term advancement
-    // to disk here.
-    auto flush = vote_yes ? SKIP_FLUSH_TO_DISK : FLUSH_TO_DISK;
-    RETURN_NOT_OK_PREPEND(HandleTermAdvanceUnlocked(request->candidate_term(), flush),
+    // If we are going to grant 'yes' vote to this peer, then we will schedule
+    // flushing the consensus metadata to disk below when we record the vote,
+    // and we can skip scheduling it in the term advancement to disk here.
+    const auto flush_mode = vote_yes ? SKIP_FLUSH_TO_DISK : FLUSH_TO_DISK;
+    RETURN_NOT_OK_PREPEND(
+        HandleTermAdvanceUnlocked(request->candidate_term(),
+                                  &flush_ctx,
+                                  flush_mode),
         Substitute("Could not step down in RequestVote. Current term: $0, candidate term: $1",
                    CurrentTermUnlocked(), request->candidate_term()));
   }
 
+  const auto& log_prefix = GetRequestVoteLogPrefixUnlocked(*request);
   if (!vote_yes) {
-    return RequestVoteRespondLastOpIdTooOld(local_last_logged_opid, request, response);
+    // Respond to VoteRequest that the candidate's last-logged OpId is too old.
+    FillVoteResponseVoteDenied(ConsensusErrorPB::LAST_OPID_TOO_OLD, response);
+
+    // At this point there isn't a need to hold the locks. Logging and flushing
+    // cmeta to disk is done outside of the lock-guarded section.
+    lock.unlock();
+    update_guard.unlock();
+
+    const string& msg = Substitute(
+        "$0: denying vote to candidate $1 for term $2 because replica has "
+        "last-logged OpId of $3, which is greater than candidate's $4",
+        log_prefix,
+        request->candidate_uuid(),
+        request->candidate_term(),
+        SecureShortDebugString(local_last_logged_opid),
+        SecureShortDebugString(request->candidate_status().last_received()));
+    StatusToPB(Status::InvalidArgument(msg),
+              response->mutable_consensus_error()->mutable_status());
+    LOG(INFO) << msg;
+
+    // Wait for the update in the consensus metadata to be persisted.
+    CHECK_OK(WaitForScheduledCmetaFlush(flush_ctx));
+    return Status::OK();
   }
 
   // Passed all our checks. Vote granted.
-  return RequestVoteRespondVoteGranted(request, response);
+  RETURN_NOT_OK(RequestVoteRespondVoteGranted(request, response, &flush_ctx));
+
+  // Capture current term for logging below outside of the lock-guarded section.
+  const auto current_term = CurrentTermUnlocked();
+  // Wait for metadata to be flushed outside of the lock-guarded section.
+  DCHECK((request->is_pre_election() && !flush_ctx.flush_scheduled()) ||
+         (!request->is_pre_election() && flush_ctx.flush_scheduled()));
+  lock.unlock();
+  update_guard.unlock();
+
+  LOG(INFO) << Substitute("$0: granting yes vote for candidate $1 in term $2",
+                          log_prefix,
+                          request->candidate_uuid(),
+                          current_term);
+  CHECK_OK(WaitForScheduledCmetaFlush(flush_ctx));
+  return Status::OK();
 }
 
 Status RaftConsensus::ChangeConfig(const ChangeConfigRequestPB& req,
@@ -2300,8 +2479,20 @@ void RaftConsensus::Stop() {
 
 
   // Shut down things that might acquire locks during destruction.
-  if (raft_pool_token_) raft_pool_token_->Shutdown();
-  if (failure_detector_) DisableFailureDetector();
+  //
+  // The raft_pool_token_ is created in RaftConsensus::Start() and shut down
+  // here in RaftConsensus::Stop().
+  //
+  // The cmeta_flush_pool_token_ isn't shut down here: it's needed to persist
+  // the voting history of tombstoned tablet replicas. So, the
+  // cmeta_flush_pool_token_ token is created in RaftConsensus::Init() and shut
+  // down in Shutdown().
+  if (raft_pool_token_) {
+    raft_pool_token_->Shutdown();
+  }
+  if (failure_detector_) {
+    DisableFailureDetector();
+  }
 }
 
 void RaftConsensus::Shutdown() {
@@ -2314,10 +2505,28 @@ void RaftConsensus::Shutdown() {
   }
 
   Stop();
+
   {
     std::lock_guard l(lock_);
     SetStateUnlocked(kShutdown);
   }
+
+  // The cmeta_flush_pool_token_ is created in RaftConsensus::Init() and shut
+  // down here in RaftConsensus::Shutdown(). The pool token is shut down after
+  // changing state into kShutdown: this is to avoid races of accepting vote
+  // requests in RaftConsensus::RequestVote() for tombstoned tablet replicas
+  // when the pool token is already closed.
+  if (cmeta_flush_pool_token_) {
+    // Let the scheduled tasks on cmeta_flush_pool_token_ to complete by
+    // calling Close() and then Wait() before shutting down the token. Flushing
+    // accumulated updates into the consensus metadata files is important to
+    // preserve consistency of Raft configuration across the cluster.
+    ThreadRestrictions::AssertWaitAllowed();
+    cmeta_flush_pool_token_->Close();
+    cmeta_flush_pool_token_->Wait();
+    cmeta_flush_pool_token_->Shutdown();
+  }
+
   shutdown_ = true;
 }
 
@@ -2343,10 +2552,15 @@ Status RaftConsensus::StartConsensusOnlyRoundUnlocked(const ReplicateRefPtr& msg
 }
 
 Status RaftConsensus::AdvanceTermForTests(int64_t new_term) {
+  FlushContext flush_ctx(cmeta_flush_pool_token_.get(), cmeta_.get());
   ThreadRestrictions::AssertWaitAllowed();
-  std::lock_guard l(lock_);
-  CHECK_OK(CheckRunningUnlocked());
-  return HandleTermAdvanceUnlocked(new_term);
+  {
+    std::lock_guard l(lock_);
+    CHECK_OK(CheckRunningUnlocked());
+    RETURN_NOT_OK(HandleTermAdvanceUnlocked(new_term, &flush_ctx));
+  }
+  CHECK_OK(WaitForScheduledCmetaFlush(flush_ctx));
+  return Status::OK();
 }
 
 string RaftConsensus::GetRequestVoteLogPrefixThreadSafe(const VoteRequestPB& request) const {
@@ -2381,7 +2595,7 @@ void RaftConsensus::FillVoteResponseVoteDenied(
 Status RaftConsensus::RequestVoteRespondInvalidTerm(const VoteRequestPB* request,
                                                     VoteResponsePB* response) {
   FillVoteResponseVoteDenied(ConsensusErrorPB::INVALID_TERM, response);
-  string msg = Substitute("$0: Denying vote to candidate $1 for earlier term $2. "
+  string msg = Substitute("$0: denying vote to candidate $1 for earlier term $2. "
                           "Current term is $3.",
                           GetRequestVoteLogPrefixUnlocked(*request),
                           request->candidate_uuid(),
@@ -2392,15 +2606,14 @@ Status RaftConsensus::RequestVoteRespondInvalidTerm(const VoteRequestPB* request
   return Status::OK();
 }
 
-Status RaftConsensus::RequestVoteRespondVoteAlreadyGranted(const VoteRequestPB* request,
-                                                           VoteResponsePB* response) {
+void RaftConsensus::RequestVoteRespondVoteAlreadyGranted(const VoteRequestPB* request,
+                                                         VoteResponsePB* response) {
   FillVoteResponseVoteGranted(response);
-  LOG(INFO) << Substitute("$0: Already granted yes vote for candidate $1 in term $2. "
-                          "Re-sending same reply.",
+  LOG(INFO) << Substitute("$0: already granted 'yes' vote to $1 in term $2; "
+                          "re-sending same reply",
                           GetRequestVoteLogPrefixUnlocked(*request),
                           request->candidate_uuid(),
                           request->candidate_term());
-  return Status::OK();
 }
 
 Status RaftConsensus::RequestVoteRespondAlreadyVotedForOther(const VoteRequestPB* request,
@@ -2412,23 +2625,6 @@ Status RaftConsensus::RequestVoteRespondAlreadyVotedForOther(const VoteRequestPB
                           request->candidate_uuid(),
                           CurrentTermUnlocked(),
                           GetVotedForCurrentTermUnlocked());
-  LOG(INFO) << msg;
-  StatusToPB(Status::InvalidArgument(msg), response->mutable_consensus_error()->mutable_status());
-  return Status::OK();
-}
-
-Status RaftConsensus::RequestVoteRespondLastOpIdTooOld(const OpId& local_last_logged_opid,
-                                                       const VoteRequestPB* request,
-                                                       VoteResponsePB* response) {
-  FillVoteResponseVoteDenied(ConsensusErrorPB::LAST_OPID_TOO_OLD, response);
-  string msg = Substitute("$0: Denying vote to candidate $1 for term $2 because "
-                          "replica has last-logged OpId of $3, which is greater than that of the "
-                          "candidate, which has last-logged OpId of $4.",
-                          GetRequestVoteLogPrefixUnlocked(*request),
-                          request->candidate_uuid(),
-                          request->candidate_term(),
-                          SecureShortDebugString(local_last_logged_opid),
-                          SecureShortDebugString(request->candidate_status().last_received()));
   LOG(INFO) << msg;
   StatusToPB(Status::InvalidArgument(msg), response->mutable_consensus_error()->mutable_status());
   return Status::OK();
@@ -2468,8 +2664,10 @@ Status RaftConsensus::RequestVoteRespondIsBusy(
   return Status::OK();
 }
 
-Status RaftConsensus::RequestVoteRespondVoteGranted(const VoteRequestPB* request,
-                                                    VoteResponsePB* response) {
+Status RaftConsensus::RequestVoteRespondVoteGranted(
+    const VoteRequestPB* request,
+    VoteResponsePB* response,
+    FlushContext* flush_ctx) {
   // We know our vote will be "yes", so avoid triggering an election while we
   // persist our vote to disk. We use an exponential backoff to avoid too much
   // split-vote contention when nodes display high latencies.
@@ -2477,8 +2675,8 @@ Status RaftConsensus::RequestVoteRespondVoteGranted(const VoteRequestPB* request
   SnoozeFailureDetector(string("vote granted"), backoff);
 
   if (!request->is_pre_election()) {
-    // Persist our vote to disk.
-    RETURN_NOT_OK(SetVotedForCurrentTermUnlocked(request->candidate_uuid()));
+    // If it's not a pre-election, the vote information must be persisted.
+    RETURN_NOT_OK(SetVotedForCurrentTermUnlocked(request->candidate_uuid(), flush_ctx));
   }
 
   FillVoteResponseVoteGranted(response);
@@ -2487,10 +2685,6 @@ Status RaftConsensus::RequestVoteRespondVoteGranted(const VoteRequestPB* request
   // vote. When disk latency is high, this should help reduce churn.
   SnoozeFailureDetector(/*reason_for_log=*/nullopt, backoff);
 
-  LOG(INFO) << Substitute("$0: Granting yes vote for candidate $1 in term $2.",
-                          GetRequestVoteLogPrefixUnlocked(*request),
-                          request->candidate_uuid(),
-                          CurrentTermUnlocked());
   return Status::OK();
 }
 
@@ -2753,6 +2947,7 @@ void RaftConsensus::DoElectionCallback(ElectionReason reason, const ElectionResu
     failed_elections_since_stable_leader_++;
     num_failed_elections_metric_->set_value(failed_elections_since_stable_leader_);
 
+    FlushContext flush_ctx(cmeta_flush_pool_token_.get(), cmeta_.get());
     // If we called an election and one of the voters had a higher term than we did,
     // we should bump our term before we potentially try again. This is particularly
     // important with pre-elections to avoid getting "stuck" in a case like:
@@ -2764,7 +2959,7 @@ void RaftConsensus::DoElectionCallback(ElectionReason reason, const ElectionResu
     // will bump to term 2 when it gets the vote rejection, such that its
     // next pre-election (for term 3) would succeed.
     if (result.highest_voter_term > CurrentTermUnlocked()) {
-      WARN_NOT_OK(HandleTermAdvanceUnlocked(result.highest_voter_term),
+      WARN_NOT_OK(HandleTermAdvanceUnlocked(result.highest_voter_term, &flush_ctx),
                   "error while handling term advanced beyond the current one");
     }
 
@@ -2772,6 +2967,9 @@ void RaftConsensus::DoElectionCallback(ElectionReason reason, const ElectionResu
         << "Leader " << election_type << " lost for term " << election_term
         << ". Reason: "
         << (!result.message.empty() ? result.message : "None given");
+    l.unlock();
+
+    CHECK_OK(WaitForScheduledCmetaFlush(flush_ctx));
     return;
   }
 
@@ -2906,7 +3104,7 @@ void RaftConsensus::NonTxRoundReplicationFinished(ConsensusRound* round,
   CHECK(IsConsensusOnlyOperation(op_type)) << "Unexpected op type: " << op_type_str;
 
   if (op_type == CHANGE_CONFIG_OP) {
-    CompleteConfigChangeRoundUnlocked(round, status);
+    CompleteConfigChangeRoundUnlocked(round, status, committing_cmeta_flush_ctx_);
     // Fall through to the generic handling.
   }
 
@@ -2934,7 +3132,9 @@ void RaftConsensus::NonTxRoundReplicationFinished(ConsensusRound* round,
   client_cb(status);
 }
 
-void RaftConsensus::CompleteConfigChangeRoundUnlocked(ConsensusRound* round, const Status& status) {
+void RaftConsensus::CompleteConfigChangeRoundUnlocked(ConsensusRound* round,
+                                                      const Status& status,
+                                                      FlushContext* flush_ctx) {
   DCHECK(lock_.is_locked());
   const OpId& op_id = round->replicate_msg()->id();
 
@@ -2985,7 +3185,7 @@ void RaftConsensus::CompleteConfigChangeRoundUnlocked(ConsensusRound* round, con
         << op_id << ": "
         << DiffRaftConfigs(old_config, new_config)
         << ". New config: { " << SecureShortDebugString(new_config) << " }";
-    CHECK_OK(SetCommittedConfigUnlocked(new_config));
+    CHECK_OK(SetCommittedConfigUnlocked(new_config, flush_ctx));
   } else {
     LOG_WITH_PREFIX_UNLOCKED(INFO)
         << "Ignoring commit of config change with OpId "
@@ -3080,8 +3280,8 @@ MonoDelta RaftConsensus::LeaderElectionExpBackoffDeltaUnlocked() {
   return MonoDelta::FromMilliseconds(timeout);
 }
 
-Status RaftConsensus::HandleTermAdvanceUnlocked(ConsensusTerm new_term,
-                                                FlushToDisk flush) {
+Status RaftConsensus::HandleTermAdvanceUnlocked(
+    ConsensusTerm new_term, FlushContext* flush_ctx, FlushToDisk flush) {
   DCHECK(lock_.is_locked());
   if (new_term <= CurrentTermUnlocked()) {
     return Status::IllegalState(Substitute("Can't advance term to: $0 current term: $1 is higher.",
@@ -3094,7 +3294,7 @@ Status RaftConsensus::HandleTermAdvanceUnlocked(ConsensusTerm new_term,
   }
 
   LOG_WITH_PREFIX_UNLOCKED(INFO) << "Advancing to term " << new_term;
-  RETURN_NOT_OK(SetCurrentTermUnlocked(new_term, flush));
+  RETURN_NOT_OK(SetCurrentTermUnlocked(new_term, flush_ctx, flush));
   if (term_metric_) {
     term_metric_->set_value(new_term);
   }
@@ -3177,7 +3377,8 @@ Status RaftConsensus::SetPendingConfigUnlocked(const RaftConfigPB& new_config) {
   return Status::OK();
 }
 
-Status RaftConsensus::SetCommittedConfigUnlocked(const RaftConfigPB& config_to_commit) {
+Status RaftConsensus::SetCommittedConfigUnlocked(
+    const RaftConfigPB& config_to_commit, FlushContext* flush_ctx) {
   TRACE_EVENT0("consensus", "RaftConsensus::SetCommittedConfigUnlocked");
   DCHECK(lock_.is_locked());
   DCHECK(config_to_commit.IsInitialized());
@@ -3204,12 +3405,12 @@ Status RaftConsensus::SetCommittedConfigUnlocked(const RaftConfigPB& config_to_c
   }
   cmeta_->set_committed_config(config_to_commit);
   cmeta_->clear_pending_config();
-  CHECK_OK(cmeta_->Flush());
-  return Status::OK();
+  return DCHECK_NOTNULL(flush_ctx)->ScheduleFlush();
 }
 
 Status RaftConsensus::SetCurrentTermUnlocked(int64_t new_term,
-                                            FlushToDisk flush) {
+                                             FlushContext* flush_ctx,
+                                             FlushToDisk flush) {
   TRACE_EVENT1("consensus", "RaftConsensus::SetCurrentTermUnlocked",
                "term", new_term);
   DCHECK(lock_.is_locked());
@@ -3221,7 +3422,7 @@ Status RaftConsensus::SetCurrentTermUnlocked(int64_t new_term,
   cmeta_->set_current_term(new_term);
   cmeta_->clear_voted_for();
   if (flush == FLUSH_TO_DISK) {
-    CHECK_OK(cmeta_->Flush());
+    RETURN_NOT_OK(DCHECK_NOTNULL(flush_ctx)->ScheduleFlush());
   }
   ClearLeaderUnlocked();
   return Status::OK();
@@ -3253,13 +3454,55 @@ bool RaftConsensus::HasVotedCurrentTermUnlocked() const {
   return cmeta_->has_voted_for();
 }
 
-Status RaftConsensus::SetVotedForCurrentTermUnlocked(const string& uuid) {
+Status RaftConsensus::SetVotedForCurrentTermUnlocked(
+    const string& uuid, FlushContext* flush_ctx) {
   TRACE_EVENT1("consensus", "RaftConsensus::SetVotedForCurrentTermUnlocked",
                "uuid", uuid);
   DCHECK(lock_.is_locked());
   cmeta_->set_voted_for(uuid);
-  CHECK_OK(cmeta_->Flush());
+  return DCHECK_NOTNULL(flush_ctx)->ScheduleFlush();
+}
+
+Status RaftConsensus::WaitForScheduledCmetaFlush(const FlushContext& flush_ctx) {
+  // Locks shouldn't be held while waiting for the flushing to complete.
+  if (!flush_ctx.flush_scheduled()) {
+    return Status::OK();
+  }
+  return flush_ctx.Wait();
+}
+
+Status RaftConsensus::FlushContext::ScheduleFlush() {
+  ConsensusMetadata::Snapshot cmeta_snapshot = cmeta_->CreateSnapshot();
+  synchronizers_.emplace_back();
+  StatusCallback cb = synchronizers_.back().AsStatusCallback();
+  auto submit_status = pool_token_->Submit(
+      [cmeta_snapshot = std::move(cmeta_snapshot),
+          cb = std::move(cb), cmeta = cmeta_]() mutable {
+        auto flush_status = cmeta_snapshot.Flush();
+        if (flush_status.ok()) {
+          flush_status = cmeta->RecordSuccessfulFlush(cmeta_snapshot.term());
+        }
+        cb(flush_status);
+      });
+  if (PREDICT_FALSE(!submit_status.ok())) {
+    cb(submit_status);
+    return submit_status;
+  }
   return Status::OK();
+}
+
+Status RaftConsensus::FlushContext::Wait() const {
+  Status result = Status::OK();
+  for (const auto& sync : synchronizers_) {
+    if (const auto& s = sync.Wait(); !s.ok()) {
+      if (result.ok()) {
+        result = s;
+      } else {
+        result = result.CloneAndAppend(s.ToString());
+      }
+    }
+  }
+  return result;
 }
 
 const string& RaftConsensus::GetVotedForCurrentTermUnlocked() const {

@@ -38,6 +38,9 @@ ConsensusMetadataManager::ConsensusMetadataManager(FsManager* fs_manager)
     : fs_manager_(DCHECK_NOTNULL(fs_manager)) {
 }
 
+ConsensusMetadataManager::~ConsensusMetadataManager() {
+}
+
 Status ConsensusMetadataManager::Create(const string& tablet_id,
                                         const RaftConfigPB& config,
                                         int64_t initial_term,

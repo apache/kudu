@@ -16,6 +16,7 @@
 // under the License.
 
 #include <algorithm>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -23,6 +24,7 @@
 #include <optional>
 #include <ostream>
 #include <string>
+#include <thread>
 #include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
@@ -63,11 +65,13 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/util/async_util.h"
+#include "kudu/util/countdown_latch.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status_callback.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -83,10 +87,12 @@ using kudu::log::LogEntryPB;
 using kudu::log::LogOptions;
 using kudu::log::LogReader;
 using kudu::pb_util::SecureShortDebugString;
+using std::atomic;
 using std::nullopt;
 using std::optional;
 using std::shared_ptr;
 using std::string;
+using std::thread;
 using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
@@ -1225,6 +1231,514 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
   ASSERT_TRUE(res.status().has_error());
   ASSERT_EQ(ConsensusErrorPB::INVALID_TERM, res.status().error().code());
   LOG(INFO) << "Follower rejected old heartbeat, as expected: " << SecureShortDebugString(res);
+}
+
+// Verify that a duplicate RequestVote from the same candidate in the same term
+// (with 'yes' vote already granted), arriving while cmeta flush is pending,
+// does not complete until information on the first vote request is persisted
+// on disk.
+TEST_F(RaftConsensusQuorumTest, DuplicateRequestVoteWhileCmetaFlushPending) {
+  constexpr int kNumReplicas = 3;
+  ASSERT_OK(BuildAndStartConfig(kNumReplicas));
+
+  OpId last_op_id;
+  shared_ptr<Synchronizer> last_commit_sync;
+  vector<scoped_refptr<ConsensusRound>> rounds;
+  NO_FATALS(ReplicateSequenceOfMessages(
+      5, 2, WAIT_FOR_ALL_REPLICAS, COMMIT_ONE_BY_ONE,
+      &last_op_id, &rounds, &last_commit_sync));
+  ASSERT_OK(last_commit_sync->Wait());
+  WaitForCommitIfNotAlreadyPresent(last_op_id.index(), 0, 2);
+  WaitForCommitIfNotAlreadyPresent(last_op_id.index(), 1, 2);
+
+  constexpr int kPeerIndex = 1;
+  shared_ptr<RaftConsensus> peer;
+  ASSERT_OK(peers_->GetPeerByIdx(kPeerIndex, &peer));
+
+  const auto flush_count = [&]() {
+    return peer->consensus_metadata_for_tests()->flush_count_for_tests();
+  };
+
+  CountDownLatch allow_blocker_to_finish(1);
+  atomic<bool> blocker_has_run(false);
+  // Inject a blocking task onto the serial cmeta flush pool token. This
+  // simulates a flush that has been scheduled on the token but has not yet
+  // completed. Because the token is serial, any task submitted after this
+  // blocker must wait until the blocker finishes.
+  ASSERT_OK(peer->cmeta_flush_pool_token_->Submit(
+      [&allow_blocker_to_finish, &blocker_has_run]() {
+        allow_blocker_to_finish.Wait(); // block
+        blocker_has_run = true;
+      }
+  ));
+
+  const auto next_term = last_op_id.term() + 1;
+  VoteRequestPB request;
+  request.set_tablet_id(kTestTablet);
+  request.mutable_candidate_status()->mutable_last_received()->CopyFrom(last_op_id);
+  request.set_candidate_uuid(fs_managers_[0]->uuid());
+  request.set_candidate_term(next_term);
+  request.set_ignore_live_leader(true);
+
+  const int64_t flush_count_before = flush_count();
+
+  VoteResponsePB first_vote_response;
+  Status first_vote_result = Status::IllegalState("");
+  optional<Synchronizer> first_vote_sync;
+  thread initial_vote_thread([&] {
+    // Send vote request for next term: RequestVote() synchronously waits
+    // for the flush before returning, so this thread is stuck waiting
+    // on the blocker task scheduled on the serial pool token.
+    first_vote_result = peer->RequestVoteImpl(
+        &request,
+        TabletVotingState(nullopt, tablet::TABLET_DATA_READY),
+        &first_vote_response,
+        &first_vote_sync);
+  });
+  auto vote_thread_cleanup = MakeScopedCleanup([&]{
+    allow_blocker_to_finish.CountDown();
+    initial_vote_thread.join();
+  });
+
+  // Let the first vote request to be sent in a separate thread above, and
+  // make sure it has been processed up to the point where the new term
+  // is established in the Raft consensus runtime. Setup a deadline to bail out
+  // if something goes wrong.
+  const auto deadline = MonoTime::Now() + MonoDelta::FromSeconds(60);
+  while (peer->CurrentTerm() < next_term) {
+    SleepFor(MonoDelta::FromMilliseconds(10));
+    ASSERT_LT(MonoTime::Now(), deadline)
+        << "timed out waiting for first vote request start processing";
+  }
+
+  // No progress on the vote request is expected at this time.
+  ASSERT_EQ(flush_count_before, flush_count());
+  ASSERT_FALSE(blocker_has_run);
+
+  // Send the same request again. It shouldn't block and should return
+  // Status::OK() right away, but waiting on 'same_vote_sync' should block
+  // since the original cmeta flush task isn't run yet because of the
+  // blocking task scheduler earlier.
+  {
+    VoteResponsePB response;
+    optional<Synchronizer> same_vote_sync;
+    ASSERT_OK(peer->RequestVoteImpl(
+        &request,
+        TabletVotingState(nullopt, tablet::TABLET_DATA_READY),
+        &response,
+        &same_vote_sync));
+    ASSERT_TRUE(response.vote_granted());
+    ASSERT_TRUE(same_vote_sync.has_value());
+    ASSERT_TRUE(same_vote_sync->WaitFor(
+        MonoDelta::FromMilliseconds(100)).IsTimedOut());
+
+    // Release the blocker. The pool thread finishes the blocking task,
+    // setting 'blocker_has_run', allowing flushing cmeta for the very first
+    // vote request, unblocking it. Right after that, the second request's
+    // same_vote_sync should be notified, so wait on same_vote_sync below
+    // succeeds.
+    allow_blocker_to_finish.CountDown();
+
+    // Now the synchronizer must complete successfully. A time-bounded wait
+    // (i.e. WaitFor()) is used to assert on non-timeout condition. Its time
+    // interval provides good enough margin to allow for progress of other
+    // threads, and the assertion triggers in 60 seconds if something goes
+    // wrong, instead of hanging indefinitely.
+    ASSERT_OK(same_vote_sync->WaitFor(MonoDelta::FromSeconds(60)));
+  }
+
+  // There should be one extra flush on persisting information
+  // on the granted 'yes' vote.
+  ASSERT_TRUE(blocker_has_run);
+  const auto flush_count_after_vote = flush_count();
+  ASSERT_EQ(flush_count_before + 1, flush_count_after_vote);
+
+  // Check the results of the very first RequestVote() call:
+  //   1) it should succeed with 'yes' vote granted
+  //   2) it shouldn't fill in the synchronizer
+  vote_thread_cleanup.run();
+  ASSERT_OK(first_vote_result);
+  ASSERT_TRUE(first_vote_response.vote_granted());
+  ASSERT_FALSE(first_vote_sync.has_value());
+
+  NO_FATALS(AssertDurableTermAndVote(
+      kPeerIndex, next_term, fs_managers_[0]->uuid()));
+
+  // Send a duplicate RequestVote() request for the same candidate and term
+  // once again. This should return immediately since there isn't a pending
+  // vote request for the same term from the same peer. No synchronizer
+  // should be provided with the 'same_vote_sync' out parameter.
+  {
+    VoteResponsePB response;
+    optional<Synchronizer> same_vote_sync;
+    ASSERT_OK(peer->RequestVoteImpl(
+        &request,
+        TabletVotingState(nullopt, tablet::TABLET_DATA_READY),
+        &response,
+        &same_vote_sync));
+    ASSERT_TRUE(response.vote_granted());
+    ASSERT_FALSE(same_vote_sync.has_value());
+  }
+
+  // No extra flush should have been scheduled for another duplicate vote.
+  ASSERT_EQ(flush_count_after_vote, flush_count());
+}
+
+// Verify that voting information is persisted to disk when
+// RaftConsensus::Shutdown() is called with a cmeta flush still pending on a
+// tombstoned/stopped replica.
+//
+// When a tombstoned replica processes RequestVote(), it schedules a cmeta
+// flush on the serial cmeta_flush_pool_token_. If Shutdown() is called before
+// that flush completes, Shutdown() must wait for all tasks on the pool token to
+// drain (including the pending vote flush) so that the voting information is
+// safely persisted to disk. This guarantees the Election Safety invariant even
+// after an unexpected shutdown during tombstoned voting.
+TEST_F(RaftConsensusQuorumTest, TombstonedVotePersistsOnShutdown) {
+  constexpr int kNumReplicas = 3;
+  ASSERT_OK(BuildAndStartConfig(kNumReplicas));
+
+  // Replicate some messages so peers have a non-trivial last-logged OpId.
+  OpId last_op_id;
+  shared_ptr<Synchronizer> last_commit_sync;
+  vector<scoped_refptr<ConsensusRound>> rounds;
+  NO_FATALS(ReplicateSequenceOfMessages(
+      5, 2, WAIT_FOR_ALL_REPLICAS, COMMIT_ONE_BY_ONE,
+      &last_op_id, &rounds, &last_commit_sync));
+  ASSERT_OK(last_commit_sync->Wait());
+  WaitForCommitIfNotAlreadyPresent(last_op_id.index(), 0, 2);
+  WaitForCommitIfNotAlreadyPresent(last_op_id.index(), 1, 2);
+
+  constexpr int kVoterIdx = 0;
+  shared_ptr<RaftConsensus> peer;
+  ASSERT_OK(peers_->GetPeerByIdx(kVoterIdx, &peer));
+
+  // Stop the peer, simulating a tombstoned replica state: the cmeta flush pool
+  // token stays active (it is shut down only in Shutdown()), which allows
+  // tombstoned voting to continue working after Stop() is called.
+  peer->Stop();
+
+  const auto flush_count = [&]() {
+    return peer->consensus_metadata_for_tests()->flush_count_for_tests();
+  };
+  const int64_t flush_count_before = flush_count();
+
+  // Inject a blocking task onto the serial cmeta flush pool token to simulate
+  // a pending flush. Because the token is serial, any task submitted after
+  // this blocker (including the actual cmeta flush for the vote) will be
+  // queued and run only after the blocker is released.
+  CountDownLatch allow_blocker_to_finish(1);
+  atomic<bool> blocker_has_run(false);
+  ASSERT_OK(peer->cmeta_flush_pool_token_->Submit(
+      [&allow_blocker_to_finish, &blocker_has_run]() {
+        allow_blocker_to_finish.Wait();
+        blocker_has_run = true;
+      }
+  ));
+
+  // Prepare a vote request for the stopped/tombstoned peer. Peer 2 (the
+  // current leader) is the candidate for the next Raft term.
+  const auto next_term = last_op_id.term() + 1;
+  VoteRequestPB request;
+  request.set_tablet_id(kTestTablet);
+  request.mutable_candidate_status()->mutable_last_received()->CopyFrom(last_op_id);
+  request.set_candidate_uuid(fs_managers_[2]->uuid());
+  request.set_candidate_term(next_term);
+  request.set_ignore_live_leader(true);
+
+  // Send the vote request to the tombstoned peer in a background thread.
+  // The peer accepts the vote and schedules a cmeta flush (behind the blocker
+  // on the serial pool token), then blocks in WaitForScheduledCmetaFlush()
+  // until the flush completes.
+  VoteResponsePB response;
+  Status vote_status = Status::IllegalState("");
+  atomic<bool> vote_request_completed(false);
+  thread vote_thread([&] {
+    vote_status = peer->RequestVote(
+        &request,
+        TabletVotingState(last_op_id, tablet::TABLET_DATA_TOMBSTONED),
+        &response);
+    vote_request_completed = true;
+  });
+  auto vote_thread_cleanup = MakeScopedCleanup([&]{
+    allow_blocker_to_finish.CountDown();
+    vote_thread.join();
+  });
+
+  // Wait until the vote request has been partially processed: the term advanced
+  // and cmeta flush task scheduled on the cmeta flush pool token.
+  // Because both the term advance and the flush scheduling happen under lock_,
+  // observing CurrentTerm() >= next_term guarantees the flush was submitted.
+  const auto deadline = MonoTime::Now() + MonoDelta::FromSeconds(60);
+  while (peer->CurrentTerm() < next_term) {
+    SleepFor(MonoDelta::FromMilliseconds(10));
+    ASSERT_LT(MonoTime::Now(), deadline)
+        << "timed out waiting for vote to be processed in-memory";
+  }
+
+  // The flush must not have happened yet: the blocker is still holding the
+  // pool token and the vote's flush task is queued behind it.
+  ASSERT_FALSE(blocker_has_run);
+  ASSERT_FALSE(vote_request_completed);
+  ASSERT_EQ(flush_count_before, flush_count());
+
+  // Call Shutdown() while the cmeta flush for the vote is still pending.
+  // Shutdown() internally calls Close() and Wait() on cmeta_flush_pool_token_,
+  // awaiting for scheduled tasks' completion.
+  thread release_thread([&allow_blocker_to_finish] {
+    SleepFor(MonoDelta::FromMilliseconds(100));
+    allow_blocker_to_finish.CountDown();
+  });
+  SCOPED_CLEANUP({ release_thread.join(); });
+
+  peer->Shutdown();
+  ASSERT_TRUE(blocker_has_run);
+
+  // The vote request should have completed successfully since Shutdown()
+  // waits for all the pending cmeta flush operations to complete.
+  vote_thread_cleanup.run();
+  ASSERT_OK(vote_status);
+  ASSERT_TRUE(response.vote_granted());
+
+  // Exactly one flush should have been scheduled and completed for the vote.
+  ASSERT_EQ(flush_count_before + 1, flush_count());
+
+  // The voting information must be persisted in the cmeta file on disk even
+  // though Shutdown() was called with the flush still pending.
+  NO_FATALS(AssertDurableTermAndVote(
+      kVoterIdx, next_term, fs_managers_[2]->uuid()));
+}
+
+// Verify that voting information is persisted to disk when
+// RaftConsensus::Shutdown() is called with a cmeta flush still pending.
+//
+// This is similar to the TombstonedVotePersistsOnShutdown scenario above,
+// but there isn't intermediate RaftConsensus::Stop() call.
+TEST_F(RaftConsensusQuorumTest, PendingVoteInfoPersistedOnShutdown) {
+  constexpr int kNumReplicas = 3;
+  ASSERT_OK(BuildAndStartConfig(kNumReplicas));
+
+  // Replicate some messages so peers have a non-trivial last-logged OpId.
+  OpId last_op_id;
+  shared_ptr<Synchronizer> last_commit_sync;
+  vector<scoped_refptr<ConsensusRound>> rounds;
+  NO_FATALS(ReplicateSequenceOfMessages(
+      5, 2, WAIT_FOR_ALL_REPLICAS, COMMIT_ONE_BY_ONE,
+      &last_op_id, &rounds, &last_commit_sync));
+  ASSERT_OK(last_commit_sync->Wait());
+  WaitForCommitIfNotAlreadyPresent(last_op_id.index(), 0, 2);
+  WaitForCommitIfNotAlreadyPresent(last_op_id.index(), 1, 2);
+
+  constexpr int kVoterIdx = 0;
+  shared_ptr<RaftConsensus> peer;
+  ASSERT_OK(peers_->GetPeerByIdx(kVoterIdx, &peer));
+
+  const auto flush_count = [&]() {
+    return peer->consensus_metadata_for_tests()->flush_count_for_tests();
+  };
+  const int64_t flush_count_before = flush_count();
+
+  // Inject a blocking task onto the serial cmeta flush pool token to simulate
+  // a pending flush.
+  CountDownLatch allow_blocker_to_finish(1);
+  atomic<bool> blocker_has_run(false);
+  ASSERT_OK(peer->cmeta_flush_pool_token_->Submit(
+      [&allow_blocker_to_finish, &blocker_has_run]() {
+        allow_blocker_to_finish.Wait();
+        blocker_has_run = true;
+      }
+  ));
+
+  // Prepare a vote request for the stopped/tombstoned peer. Peer 2 (the
+  // current leader) is the candidate for the next Raft term.
+  const auto next_term = last_op_id.term() + 1;
+  VoteRequestPB request;
+  request.set_tablet_id(kTestTablet);
+  request.mutable_candidate_status()->mutable_last_received()->CopyFrom(last_op_id);
+  request.set_candidate_uuid(fs_managers_[2]->uuid());
+  request.set_candidate_term(next_term);
+  request.set_ignore_live_leader(true);
+
+  // Send the vote request to the tombstoned peer in a background thread.
+  // The peer accepts the vote and schedules a cmeta flush (behind the blocker
+  // on the serial pool token), then blocks in WaitForScheduledCmetaFlush()
+  // until the flush completes.
+  VoteResponsePB response;
+  Status vote_status = Status::IllegalState("");
+  atomic<bool> vote_request_completed(false);
+  thread vote_thread([&] {
+    vote_status = peer->RequestVote(
+        &request,
+        TabletVotingState(last_op_id, tablet::TABLET_DATA_TOMBSTONED),
+        &response);
+    vote_request_completed = true;
+  });
+  auto vote_thread_cleanup = MakeScopedCleanup([&]{
+    allow_blocker_to_finish.CountDown();
+    vote_thread.join();
+  });
+
+  // Wait until the vote request has been partially processed: the term advanced
+  // and cmeta flush task scheduled on the cmeta flush pool token.
+  // Because both the term advance and the flush scheduling happen under lock_,
+  // observing CurrentTerm() >= next_term guarantees the flush was submitted.
+  const auto deadline = MonoTime::Now() + MonoDelta::FromSeconds(60);
+  while (peer->CurrentTerm() < next_term) {
+    SleepFor(MonoDelta::FromMilliseconds(10));
+    ASSERT_LT(MonoTime::Now(), deadline)
+        << "timed out waiting for vote to be processed in-memory";
+  }
+
+  // The flush must not have happened yet: the blocker is still holding the
+  // pool token and the vote's flush task is queued behind it.
+  ASSERT_FALSE(vote_request_completed);
+  ASSERT_FALSE(blocker_has_run);
+  ASSERT_EQ(flush_count_before, flush_count());
+
+  // Call Shutdown() while the cmeta flush for the vote is still pending.
+  // Shutdown() internally calls Close() and Wait() on cmeta_flush_pool_token_,
+  // awaiting for scheduled tasks' completion.
+  thread release_thread([&allow_blocker_to_finish] {
+    SleepFor(MonoDelta::FromMilliseconds(100));
+    allow_blocker_to_finish.CountDown();
+  });
+  SCOPED_CLEANUP({ release_thread.join(); });
+
+  peer->Shutdown();
+  ASSERT_TRUE(blocker_has_run);
+
+  // The vote request should have completed successfully, since Shutdown()
+  // already waited for the flush to complete.
+  vote_thread_cleanup.run();
+
+  ASSERT_OK(vote_status);
+  ASSERT_TRUE(response.vote_granted());
+
+  // Exactly one flush should have been scheduled and completed for the vote.
+  ASSERT_EQ(flush_count_before + 1, flush_count());
+
+  // The voting information must be persisted in the cmeta file on disk even
+  // though Shutdown() was called with the flush still pending.
+  NO_FATALS(AssertDurableTermAndVote(
+      kVoterIdx, next_term, fs_managers_[2]->uuid()));
+
+  // Once shutdown, a peer doesn't accept vote requests.
+  {
+    VoteResponsePB response;
+    const auto s = peer->RequestVote(
+        &request,
+        TabletVotingState(last_op_id, tablet::TABLET_DATA_TOMBSTONED),
+        &response);
+    ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "cannot vote while shut down");
+  }
+}
+
+// Verify that a follower peer correctly flushes Raft consensus metadata
+// exactly once per distinct new term encountered while processing
+// UpdateConsensus() RPCs.
+//
+// This is a targeted regression test for the async cmeta-flushing introduced
+// by [1]. With the async scheme, the cmeta snapshot is captured inside
+// lock_ / update_lock_ and the actual I/O happens on a separate pool thread.
+// This test scenario verifies that:
+//   (a) each term advance in RaftConsensus::Update() schedules exactly
+//       one cmeta flush
+//   (b) repeated Update() calls within the same term do not trigger
+//       additional flushes
+//
+// The companion integration test scenario FollowerCrashBeforeCmetaFlushRecovers
+// in raft_consensus-itest.cc covers what happens when a crash occurs in the
+// window between WAL sync and cmeta flush completion.
+//
+// [1] https://gerrit.cloudera.org/#/c/25160/
+TEST_F(RaftConsensusQuorumTest, FollowerCmetaFlushedExactlyOncePerTermAdvance) {
+  constexpr int kNumReplicas = 3;
+  ASSERT_OK(BuildAndStartConfig(kNumReplicas));
+
+  // Wait for the initial leader to replicate the configuration round.
+  constexpr int kFollowerIdx = 0;
+  constexpr int kLeaderIdx = 2;
+
+  // Replicate a couple of messages so all peers have a non-trivial log.
+  OpId last_op_id;
+  vector<scoped_refptr<ConsensusRound>> rounds;
+  NO_FATALS(ReplicateSequenceOfMessages(
+      /*seq_size=*/3, kLeaderIdx, WAIT_FOR_ALL_REPLICAS, COMMIT_ONE_BY_ONE,
+      &last_op_id, &rounds));
+
+  shared_ptr<RaftConsensus> follower;
+  ASSERT_OK(peers_->GetPeerByIdx(kFollowerIdx, &follower));
+  shared_ptr<RaftConsensus> leader;
+  ASSERT_OK(peers_->GetPeerByIdx(kLeaderIdx, &leader));
+
+  const auto flush_count = [&]() {
+    return follower->consensus_metadata_for_tests()->flush_count_for_tests();
+  };
+
+  // Baseline: record the flush count after all existing operations have been
+  // processed. At this point the follower is at term T, the same as the the
+  // leader's term.
+  const int64_t flush_cnt_start = flush_count();
+
+  // Send an update at a higher term (T +1) to trigger a term advance at the
+  // follower. This should schedule exactly one cmeta flush.
+  ConsensusRequestPB req;
+  ConsensusResponsePB resp;
+  req.set_tablet_id(kTestTablet);
+  req.set_dest_uuid(follower->peer_uuid());
+  req.set_caller_uuid(leader->peer_uuid());
+  req.set_caller_term(last_op_id.term() + 1); // term (T + 1)
+  req.mutable_preceding_id()->CopyFrom(last_op_id);
+  req.set_committed_index(last_op_id.index());
+  req.set_all_replicated_index(0);
+  // last_idx_appended_to_leader equals preceding_id when no new ops are sent
+  req.set_last_idx_appended_to_leader(last_op_id.index());
+
+  ASSERT_OK(follower->Update(&req, &resp));
+  // The follower should have accepted the heartbeat and advanced its term.
+  ASSERT_FALSE(resp.status().has_error()) << SecureShortDebugString(resp);
+  ASSERT_EQ(last_op_id.term() + 1, resp.responder_term());
+
+  // Exactly one flush should have been scheduled and completed for the term
+  // advance T --> (T + 1).
+  ASSERT_EQ(flush_cnt_start + 1, flush_count())
+      << "expected exactly one cmeta flush on term advance";
+
+  // Verify the on-disk (and in-memory) term matches the new term.
+  {
+    scoped_refptr<ConsensusMetadata> cmeta =
+        ReadConsensusMetadataFromDisk(kFollowerIdx);
+    ASSERT_EQ(last_op_id.term() + 1, cmeta->current_term())
+        << "on-disk cmeta term must match the advanced term after flush";
+  }
+
+  // Send another Update() at the same term (T + 1). No new term advance,
+  // so there should be no additional cmeta flush.
+  resp.Clear();
+  req.set_caller_term(last_op_id.term() + 1); // still term (T + 1)
+  ASSERT_OK(follower->Update(&req, &resp));
+  ASSERT_FALSE(resp.status().has_error()) << SecureShortDebugString(resp);
+
+  ASSERT_EQ(flush_cnt_start + 1, flush_count())
+      << "same-term Update() must not trigger an additional cmeta flush";
+
+  // Advancing to term (T + 2): one more flush should occur.
+  resp.Clear();
+  req.set_caller_term(last_op_id.term() + 2);   // next term (T + 2)
+  ASSERT_OK(follower->Update(&req, &resp));
+  ASSERT_FALSE(resp.status().has_error()) << SecureShortDebugString(resp);
+  ASSERT_EQ(last_op_id.term() + 2, resp.responder_term());
+
+  ASSERT_EQ(flush_cnt_start + 2, flush_count())
+      << "expected exactly one additional cmeta flush on the next term advance";
+
+  {
+    scoped_refptr<ConsensusMetadata> cmeta =
+        ReadConsensusMetadataFromDisk(kFollowerIdx);
+    ASSERT_EQ(last_op_id.term() + 2, cmeta->current_term())
+        << "on-disk cmeta term must match the last seen one after cmeta flush";
+  }
 }
 
 }  // namespace consensus

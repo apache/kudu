@@ -1916,10 +1916,10 @@ void ConsensusServiceImpl::RequestConsensusVote(const VoteRequestPB* req,
   shared_ptr<RaftConsensus> consensus;
   if (!GetConsensusOrRespond(replica, resp, context, &consensus)) return;
 
-  Status s = consensus->RequestVote(req,
-                                    consensus::TabletVotingState(std::move(last_logged_opid),
-                                                                 data_state),
-                                    resp);
+  const auto s = consensus->RequestVote(
+      req,
+      consensus::TabletVotingState(std::move(last_logged_opid), data_state),
+      resp);
   if (PREDICT_FALSE(!s.ok())) {
     SetupErrorAndRespond(resp->mutable_error(), s,
                          TabletServerErrorPB::UNKNOWN_ERROR,

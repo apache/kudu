@@ -82,6 +82,9 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
   int64_t current_term() const;
   void set_current_term(int64_t term);
 
+  // Accessor for persisted term.
+  int64_t persisted_term() const;
+
   // Accessors for voted_for.
   bool has_voted_for() const;
   const std::string& voted_for() const;
@@ -154,6 +157,32 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
   // Persist current state of the protobuf to disk.
   Status Flush(FlushMode flush_mode = OVERWRITE);
 
+  // A point-in-time snapshot of the durable consensus metadata state that can be
+  // flushed to disk without holding the lock on the live ConsensusMetadata object.
+  class Snapshot {
+   public:
+    Status Flush(FlushMode flush_mode = OVERWRITE) const;
+
+    int64_t term() const {
+      return pb_.current_term();
+    }
+
+   private:
+    friend class ConsensusMetadata;
+
+    Snapshot(FsManager* fs_manager,
+             std::string tablet_id,
+             ConsensusMetadataPB pb);
+
+    FsManager* const fs_manager_;
+    const std::string tablet_id_;
+    const ConsensusMetadataPB pb_;
+  };
+
+  // Capture the current durable state for flushing outside of the lock that
+  // protects this ConsensusMetadata object.
+  Snapshot CreateSnapshot() const;
+
   // The on-disk size of the consensus metadata, as of the last call to
   // Load() or Flush(). This method is thread-safe.
   int64_t on_disk_size() const {
@@ -164,9 +193,14 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
   RoleAndTerm GetRoleAndTerm() const;
 
  private:
+  friend class RaftConsensus;
   friend class RaftConsensusQuorumTest;
   friend class RefCountedThreadSafe<ConsensusMetadata>;
   friend class ConsensusMetadataManager;
+
+  // Updates bookkeeping after a successful flush to disk. May be called without
+  // holding the external lock that synchronizes access to this object.
+  Status RecordSuccessfulFlush(int64_t term);
 
   FRIEND_TEST(ConsensusMetadataTest, TestCreateLoad);
   FRIEND_TEST(ConsensusMetadataTest, TestDeferredCreateLoad);
@@ -177,8 +211,12 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
   FRIEND_TEST(ConsensusMetadataTest, TestToConsensusStatePB);
   FRIEND_TEST(ConsensusMetadataTest, TestMergeCommittedConsensusStatePB);
 
+  FRIEND_TEST(RaftConsensusQuorumTest, FollowerCmetaFlushedExactlyOncePerTermAdvance);
+  FRIEND_TEST(RaftConsensusQuorumTest, DuplicateRequestVoteWhileCmetaFlushPending);
+  FRIEND_TEST(RaftConsensusQuorumTest, PendingVoteInfoPersistedOnShutdown);
   FRIEND_TEST(RaftConsensusQuorumTest, TestLeaderElectionWithQuiescedQuorum);
   FRIEND_TEST(RaftConsensusQuorumTest, TestRequestVote);
+  FRIEND_TEST(RaftConsensusQuorumTest, TombstonedVotePersistsOnShutdown);
 
   ConsensusMetadata(FsManager* fs_manager, std::string tablet_id,
                     std::string peer_uuid);
@@ -241,9 +279,6 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
   // RaftConfig used by the peers when there is a pending config change operation.
   RaftConfigPB pending_config_;
 
-  // The number of times the metadata has been flushed to disk.
-  std::atomic<int64_t> flush_count_for_tests_;
-
   // Durable fields.
   ConsensusMetadataPB pb_;
 
@@ -258,12 +293,19 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
   // but it's totally fine for the intended use.
   std::atomic<uint64_t> role_and_term_cache_;
 
+  // The last term for which the metadata has already been persisted/synced
+  // to disk.
+  std::atomic<int64_t> persisted_term_;
+
   // The on-disk size of the consensus metadata, as of the last call to
   // Load() or Flush().
   // The type is int64_t for consistency with other on-disk size metrics,
   // as opposed to uint64_t, which is the return type of the underlying function
   // used to populate this value.
   std::atomic<int64_t> on_disk_size_;
+
+  // The number of times the metadata has been flushed to disk.
+  std::atomic<int64_t> flush_count_for_tests_;
 
   DISALLOW_COPY_AND_ASSIGN(ConsensusMetadata);
 };

@@ -45,9 +45,10 @@ class RaftConfigPB;
 // This class is ONLY thread-safe across different tablets. Concurrent access
 // to Create(), Load(), or Delete() for the same tablet id is thread-hostile
 // and must be externally synchronized. Failure to do so may result in a crash.
-class ConsensusMetadataManager : public RefCountedThreadSafe<ConsensusMetadataManager> {
+class ConsensusMetadataManager final : public RefCountedThreadSafe<ConsensusMetadataManager> {
  public:
   explicit ConsensusMetadataManager(FsManager* fs_manager);
+  ~ConsensusMetadataManager();
 
   // Create a ConsensusMetadata instance keyed by 'tablet_id'.
   // Returns an error if a ConsensusMetadata instance with that key already exists.

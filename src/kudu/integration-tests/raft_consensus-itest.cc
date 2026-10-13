@@ -22,6 +22,7 @@
 #include <ostream>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <type_traits>
 #include <unordered_map>
 #include <utility>
@@ -2785,6 +2786,177 @@ TEST_F(RaftConsensusITest, TestCorruptReplicaMetadata) {
                                    tablet_id_,
                                    tablet::RUNNING,
                                    kTimeout));
+}
+
+// Test that a follower tablet replica can correctly recover after a simulated
+// crash that results in a stale on-disk consensus metadata (a.k.a. cmeta):
+// the WAL contains entries at the new Raft term T, but the cmeta on disk still
+// records term (T - 1) because the asynchronous cmeta flush didn't complete
+// before crash.
+//
+// This models a corner case introduced by the async cmeta-flushing in
+// RaftConsensus [1]. After RaftConsensus::Update() releases lock_ and
+// update_lock_, a window exists where a crash leaves the WAL and cmeta
+// in an inconsistent state: WAL is synced at the new term, but the
+// asynchronous cmeta flush running on the cmeta_flush_pool_token_ hasn't
+// persisted the new term yet.
+//
+// Expected behavior on restart: RaftConsensus::Start() detects the condition of
+//   info.last_id.term() [from WAL] > cmeta.current_term [from disk]
+// and returns Status::Corruption(), so the tablet enters FAILED state.
+// The cluster then recovers by tombstoning the failed replica and spawning
+// a fresh one to a spare server via tablet copy. Throughout this process,
+// no split-brain should occur: the remaining majority keeps electing a single
+// Raft leader and serving writes.
+//
+// [1] https://gerrit.cloudera.org/#/c/25160/
+TEST_F(RaftConsensusITest, FollowerCrashBeforeCmetaFlushRecovers) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+  static const MonoDelta kTimeout = MonoDelta::FromSeconds(60);
+  static const vector<string> kMasterFlags = {
+    // The master should tombstone the evicted failed replica and trigger
+    // re-replication to the spare server.
+    "--master_tombstone_evicted_tablet_replicas=true",
+    // Speed up master's reaction to the failed replica.
+    "--follower_unavailable_considered_failed_sec=10",
+  };
+  static const vector<string> kTsFlags = {
+    // Tighten the consensus RPC timeout so the leader detects the follower
+    // failure faster.
+    "--consensus_rpc_timeout_ms=5000",
+  };
+
+  // Add one extra tablet server so there is always a spare to receive a fresh
+  // replica copy after the corrupted tablet is tombstoned, making recovery easy
+  // to verify.
+  FLAGS_num_tablet_servers = FLAGS_num_replicas + 1;
+
+  NO_FATALS(BuildAndStart(kTsFlags, kMasterFlags));
+
+  // Build the set of servers actually hosting the tablet under test (some
+  // of the FLAGS_num_tablet_servers may not host this tablet initially).
+  TabletServerMap replica_servers;
+  for (const auto& [tablet_id, ts] : tablet_replicas_) {
+    if (tablet_id == tablet_id_) {
+      replica_servers.emplace(ts->uuid(), ts);
+    }
+  }
+  ASSERT_EQ(FLAGS_num_replicas, replica_servers.size());
+
+  // Wait for the initial configuration round to replicate everywhere.
+  ASSERT_OK(WaitForServersToAgree(kTimeout, replica_servers, tablet_id_, 1));
+
+  // Find the initial leader.
+  TServerDetails* leader_ts = nullptr;
+  ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &leader_ts));
+
+  // Pick the follower that will be the target of the stale-cmeta scenario.
+  TServerDetails* target_ts = nullptr;
+  TServerDetails* new_leader_ts = nullptr;
+  for (const auto& [_, ts] : replica_servers) {
+    if (ts == leader_ts) {
+      continue;
+    }
+    if (!target_ts) {
+      target_ts = ts;
+    } else if (!new_leader_ts) {
+      new_leader_ts = ts;
+    }
+  }
+  ASSERT_NE(nullptr, target_ts);
+  ASSERT_NE(nullptr, new_leader_ts);
+
+  // Write an initial row so there is some data present before the scenario.
+  ASSERT_OK(WriteSimpleTestRow(leader_ts, tablet_id_, RowOperationsPB::INSERT,
+                               1, 1, "initial_row", kTimeout));
+
+  // Force a leader election on a third replica to bump the Raft term.  After
+  // the new leader is established at term (T + 1) it immediately replicates a
+  // NO-OP entry at the new term, which propagates to all replicas -- including
+  // the target one. Once all replicas have processed the NO-OP, the target
+  // tablet replica has:
+  //   * at least the NO-OP WAL entry at term (T + 1)
+  //   * cmeta is flushed, persisting the snapshot at term (T + 1)
+  ASSERT_OK(StartElection(new_leader_ts, tablet_id_, kTimeout));
+  ASSERT_OK(WaitUntilLeader(new_leader_ts, tablet_id_, kTimeout));
+
+  // Wait until the initial row (index 1) and the new-leader NO-OP (index 2)
+  // have been committed and replicated on all tablet servers hosting replicas
+  // of the tablet, ensuring cmeta on the target replica is now at term (T + 1).
+  ASSERT_OK(WaitForServersToAgree(kTimeout, replica_servers, tablet_id_, 2));
+
+  // Shut down the target tablet server so we can safely edit its cmeta file.
+  auto* target_ets = cluster_->tablet_server_by_uuid(target_ts->uuid());
+  const int target_ts_idx =
+      cluster_->tablet_server_index_by_uuid(target_ets->uuid());
+  target_ets->Shutdown();
+
+  // Read the target replicas's on-disk consensus metadata. After the forced
+  // election the term should be (T + 1), which with hard-coded test setup
+  // should be >= 2.
+  consensus::ConsensusMetadataPB cmeta_pb;
+  ASSERT_OK(inspect_->ReadConsensusMetadataOnTS(
+      target_ts_idx, tablet_id_, &cmeta_pb));
+  const int64_t current_term = cmeta_pb.current_term();
+  ASSERT_GT(current_term, 1)
+      << "need current term > 1 to simulate the stale-cmeta scenario";
+
+  // Simulate the state left by a crash in the async cmeta-flush window:
+  //   * WAL already has entries at term 'current_term'
+  //   * cmeta was not flushed; it still records 'current_term - 1'
+  // This is precisely what can happen when the tablet server crashes after
+  // RaftConsensus::Update() releases lock_ and update_lock_ if the WAL has
+  // been already synced, but before the cmeta_flush_pool_token_ task completes.
+  cmeta_pb.set_current_term(current_term - 1);
+  cmeta_pb.clear_voted_for(); // the stale on-disk state would not have this
+  ASSERT_OK(inspect_->WriteConsensusMetadataOnTS(
+      target_ts_idx, tablet_id_, cmeta_pb));
+
+  // Restart the victim.  During bootstrap, RaftConsensus::Start() will
+  // compare the last WAL op id's term with the cmeta's current_term and
+  // detect the mismatch:
+  //   info.last_id.term() [= current_term, from WAL]
+  //     > cmeta.current_term [= current_term - 1, from stale on-disk state]
+  // This yields Status::Corruption and the tablet enters FAILED state.
+  ASSERT_OK(target_ets->Restart());
+
+  // Verify the tablet on the target tablet server enters FAILED state due to
+  // the detected WAL-cmeta term mismatch. This is exactly the behavior to have:
+  // rather than starting with inconsistent state and risking various unexpected
+  // consequences, the replica is marked as FAILED. The system catalog takes
+  // care of re-replicating it elsewhere using the majority of healthy replicas.
+  ASSERT_OK(WaitUntilTabletInState(
+      target_ts, tablet_id_, tablet::FAILED, kTimeout));
+
+  // The two healthy replicas still form a majority and must continue to serve
+  // write requests without interruption -- no split-brain, no data loss.
+  TServerDetails* active_leader_ts = nullptr;
+  ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &active_leader_ts));
+  ASSERT_OK(WriteSimpleTestRow(
+      active_leader_ts,
+      tablet_id_,
+      RowOperationsPB::INSERT,
+      2,
+      2,
+      "row_after_target_replica_crashed",
+      kTimeout));
+
+  // Once the system catalog detects the failed replica and evicts it from the
+  // Raft config, it will replicate the tablet to the spare server. Wait for the
+  // spare server's replica to become RUNNING.
+  const auto uuids_no_replica = GetServersWithoutReplica(tablet_id_);
+  ASSERT_EQ(1, uuids_no_replica.size());
+  ASSERT_OK(WaitUntilTabletInState(tablet_servers_[uuids_no_replica.front()],
+                                   tablet_id_,
+                                   tablet::RUNNING,
+                                   kTimeout));
+
+  // Ensure that the replicas converge, the table is properly replicated,
+  // and all the written rows are there.
+  ClusterVerifier v(cluster_.get());
+  NO_FATALS(v.CheckCluster());
+  NO_FATALS(v.CheckRowCount(kTableId, ClusterVerifier::EXACTLY, 2));
 }
 
 int64_t GetFailedElectionsSinceStableLeader(const ExternalTabletServer* ets,

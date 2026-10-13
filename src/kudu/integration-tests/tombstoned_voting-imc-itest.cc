@@ -232,7 +232,7 @@ TEST_F(TombstonedVotingIMCITest, TestVotingLogic) {
     s = RequestVote(ts1_ets, tablet_id, "B", current_term - 1, last_logged_opid,
                     /*ignore_live_leader=*/ true, /*is_pre_election=*/ false, kTimeout);
     ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
-    ASSERT_STR_MATCHES(s.ToString(), "Denying vote to candidate B for earlier term");
+    ASSERT_STR_MATCHES(s.ToString(), "denying vote to candidate B for earlier term");
 
     // Increment term.
     current_term++;
@@ -243,7 +243,7 @@ TEST_F(TombstonedVotingIMCITest, TestVotingLogic) {
                     /*ignore_live_leader=*/ true, /*is_pre_election=*/ false, kTimeout);
     ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_MATCHES(s.ToString(),
-                      "Denying vote to candidate B.*greater than that of the candidate");
+                       "denying vote to candidate B.*greater than candidate's");
 
     // Ask for a successful vote for candidate B.
     ASSERT_OK(RequestVote(ts1_ets, tablet_id, "B", current_term, last_logged_opid,

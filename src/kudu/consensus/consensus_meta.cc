@@ -136,6 +136,10 @@ void ConsensusMetadata::set_current_term(int64_t term) {
   UpdateRoleAndTermCache();
 }
 
+int64_t ConsensusMetadata::persisted_term() const {
+  return persisted_term_.load(std::memory_order_acquire);
+}
+
 bool ConsensusMetadata::has_voted_for() const {
   DFAKE_SCOPED_RECURSIVE_LOCK(fake_lock_);
   return pb_.has_voted_for();
@@ -282,12 +286,16 @@ void ConsensusMetadata::MergeCommittedConsensusStatePB(const ConsensusStatePB& c
   clear_pending_config();
 }
 
-Status ConsensusMetadata::Flush(FlushMode flush_mode) {
+ConsensusMetadata::Snapshot ConsensusMetadata::CreateSnapshot() const {
   DFAKE_SCOPED_RECURSIVE_LOCK(fake_lock_);
-  MAYBE_FAULT(FLAGS_fault_crash_before_cmeta_flush);
-  SCOPED_LOG_SLOW_EXECUTION_PREFIX(WARNING, 500, LogPrefix(), "flushing consensus metadata");
+  return Snapshot(fs_manager_, tablet_id_, pb_);
+}
 
-  flush_count_for_tests_.fetch_add(1, std::memory_order_relaxed);
+Status ConsensusMetadata::Snapshot::Flush(
+    ConsensusMetadata::FlushMode flush_mode) const {
+  MAYBE_FAULT(FLAGS_fault_crash_before_cmeta_flush);
+  SCOPED_LOG_SLOW_EXECUTION_PREFIX(WARNING, 500, Substitute("T $0", tablet_id_),
+                                   "flushing consensus metadata");
   // Sanity test to ensure we never write out a bad configuration.
   RETURN_NOT_OK_PREPEND(VerifyRaftConfig(pb_.committed_config()),
                         "Invalid config in ConsensusMetadata, cannot flush to disk");
@@ -324,12 +332,34 @@ Status ConsensusMetadata::Flush(FlushMode flush_mode) {
       pb_util::SENSITIVE),
           Substitute("Unable to write consensus meta file for tablet $0 to path $1",
                      tablet_id_, meta_file_path));
+  return Status::OK();
+}
+
+Status ConsensusMetadata::Flush(FlushMode flush_mode) {
+  DFAKE_SCOPED_RECURSIVE_LOCK(fake_lock_);
+  SCOPED_LOG_SLOW_EXECUTION_PREFIX(WARNING, 500, LogPrefix(), "flushing consensus metadata");
+  const auto snapshot = CreateSnapshot();
+  RETURN_NOT_OK(snapshot.Flush(flush_mode));
+  return RecordSuccessfulFlush(snapshot.term());
+}
+
+Status ConsensusMetadata::RecordSuccessfulFlush(int64_t term) {
+  persisted_term_.store(term, std::memory_order_release);
+  flush_count_for_tests_.fetch_add(1, std::memory_order_relaxed);
   return UpdateOnDiskSize();
+}
+
+ConsensusMetadata::Snapshot::Snapshot(FsManager* fs_manager,
+                                        string tablet_id,
+                                        ConsensusMetadataPB pb)
+    : fs_manager_(fs_manager),
+      tablet_id_(std::move(tablet_id)),
+      pb_(std::move(pb)) {
 }
 
 ConsensusMetadata::RoleAndTerm ConsensusMetadata::GetRoleAndTerm() const {
   // Read the cached role and term atomically to unpack them consistently.
-  const uint64_t val = role_and_term_cache_.load(memory_order::memory_order_acquire);
+  const uint64_t val = role_and_term_cache_.load(std::memory_order_acquire);
   return std::make_pair(UnpackRole(val), UnpackTerm(val));
 }
 
@@ -340,9 +370,10 @@ ConsensusMetadata::ConsensusMetadata(FsManager* fs_manager,
       tablet_id_(std::move(tablet_id)),
       peer_uuid_(std::move(peer_uuid)),
       has_pending_config_(false),
-      flush_count_for_tests_(0),
       active_role_(RaftPeerPB::UNKNOWN_ROLE),
-      on_disk_size_(0) {
+      persisted_term_(kMinimumTerm),
+      on_disk_size_(0),
+      flush_count_for_tests_(0) {
   UpdateRoleAndTermCache();
 }
 

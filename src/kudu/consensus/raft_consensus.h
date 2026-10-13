@@ -18,6 +18,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <iosfwd>
 #include <memory>
@@ -41,6 +42,7 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tserver/tserver.pb.h"
+#include "kudu/util/async_util.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/make_shared.h"
 #include "kudu/util/metrics.h"
@@ -417,11 +419,15 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
 
  private:
   friend class RaftConsensusQuorumTest;
+  FRIEND_TEST(RaftConsensusQuorumTest, FollowerCmetaFlushedExactlyOncePerTermAdvance);
+  FRIEND_TEST(RaftConsensusQuorumTest, DuplicateRequestVoteWhileCmetaFlushPending);
+  FRIEND_TEST(RaftConsensusQuorumTest, PendingVoteInfoPersistedOnShutdown);
   FRIEND_TEST(RaftConsensusQuorumTest, TestConsensusContinuesIfAMinorityFallsBehind);
   FRIEND_TEST(RaftConsensusQuorumTest, TestConsensusStopsIfAMajorityFallsBehind);
   FRIEND_TEST(RaftConsensusQuorumTest, TestLeaderElectionWithQuiescedQuorum);
   FRIEND_TEST(RaftConsensusQuorumTest, TestReplicasEnforceTheLogMatchingProperty);
   FRIEND_TEST(RaftConsensusQuorumTest, TestRequestVote);
+  FRIEND_TEST(RaftConsensusQuorumTest, TombstonedVotePersistsOnShutdown);
 
   // RaftConsensus lifecycle states.
   //
@@ -463,6 +469,26 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   enum FlushToDisk {
     SKIP_FLUSH_TO_DISK,
     FLUSH_TO_DISK,
+  };
+  class FlushContext final {
+   public:
+    FlushContext(ThreadPoolToken* pool_token, ConsensusMetadata* cmeta)
+        : pool_token_(pool_token), cmeta_(cmeta) {
+    }
+    ~FlushContext() = default;
+
+    Status ScheduleFlush();
+
+    bool flush_scheduled() const {
+      return !synchronizers_.empty();
+    }
+
+    Status Wait() const;
+
+   private:
+    ThreadPoolToken* pool_token_;
+    ConsensusMetadata* cmeta_;
+    std::deque<Synchronizer> synchronizers_;
   };
 
   // Helper struct that contains the messages from the leader that we need to
@@ -527,7 +553,8 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // operations have been stored in the log and all Prepares() have been completed,
   // and a replica cannot accept any more Update() requests until this is done.
   Status UpdateReplica(const ConsensusRequestPB* request,
-                       ConsensusResponsePB* response);
+                       ConsensusResponsePB* response,
+                       FlushContext* flush_ctx);
 
   // Deduplicates an RPC request making sure that we get only messages that we
   // haven't appended to our log yet.
@@ -539,7 +566,8 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // Handles a request from a leader, refusing the request if the term is lower than
   // ours or stepping down if it's higher.
   Status HandleLeaderRequestTermUnlocked(const ConsensusRequestPB* request,
-                                         ConsensusResponsePB* response);
+                                         ConsensusResponsePB* response,
+                                         FlushContext* flush_ctx);
 
   // Checks that the preceding op in 'req' is locally committed or pending and sets an
   // appropriate error message in 'response' if not.
@@ -559,7 +587,8 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // the messages to add to our state machine.
   Status CheckLeaderRequestUnlocked(const ConsensusRequestPB* request,
                                     ConsensusResponsePB* response,
-                                    LeaderRequest* deduped_req);
+                                    LeaderRequest* deduped_req,
+                                    FlushContext* flush_ctx);
 
   // Abort any pending operations after the given op index,
   // and also truncate the LogCache accordingly.
@@ -610,21 +639,30 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
       VoteResponsePB* response,
       ResponderTermPolicy responder_term_policy = ResponderTermPolicy::SET);
 
+  // An internal implementation of the RequestVote() functionality. It takes
+  // care of the edge case responding to a duplicate vote request that's been
+  // granted 'yes' vote already, where the original vote request still awaits
+  // for the voting information to be persisted in the cmeta file.
+  //
+  // If Status::OK() is returned, the 'same_vote_sync' out parameter may be
+  // populated with a Synchronizer object. In such a case, it's necessary
+  // to wait on the synchronizer before sending success response upstream.
+  Status RequestVoteImpl(const VoteRequestPB* request,
+                         TabletVotingState tablet_voting_state,
+                         VoteResponsePB* response,
+                         std::optional<Synchronizer>* same_vote_sync);
+
   // Respond to VoteRequest that the candidate has an old term.
   Status RequestVoteRespondInvalidTerm(const VoteRequestPB* request, VoteResponsePB* response);
 
-  // Respond to VoteRequest that we already granted our vote to the candidate.
-  Status RequestVoteRespondVoteAlreadyGranted(const VoteRequestPB* request,
-                                              VoteResponsePB* response);
+  // Fill the 'response' to VoteRequest with the information that
+  // we have already granted our vote to the candidate.
+  void RequestVoteRespondVoteAlreadyGranted(const VoteRequestPB* request,
+                                            VoteResponsePB* response);
 
   // Respond to VoteRequest that we already granted our vote to someone else.
   Status RequestVoteRespondAlreadyVotedForOther(const VoteRequestPB* request,
                                                 VoteResponsePB* response);
-
-  // Respond to VoteRequest that the candidate's last-logged OpId is too old.
-  Status RequestVoteRespondLastOpIdTooOld(const OpId& local_last_logged_opid,
-                                          const VoteRequestPB* request,
-                                          VoteResponsePB* response);
 
   // Respond to VoteRequest that the vote was not granted because we believe
   // the leader to be alive.
@@ -638,7 +676,8 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
 
   // Respond to VoteRequest that the vote is granted for candidate.
   Status RequestVoteRespondVoteGranted(const VoteRequestPB* request,
-                                       VoteResponsePB* response);
+                                       VoteResponsePB* response,
+                                       FlushContext* flush_ctx);
 
   // Callback for leader election driver. ElectionCallback is run on the
   // reactor thread, so it simply defers its work to DoElectionCallback.
@@ -706,6 +745,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   //
   // 'flush' may be used to control whether the term change is flushed to disk.
   Status HandleTermAdvanceUnlocked(ConsensusTerm new_term,
+                                   FlushContext* flush_ctx,
                                    FlushToDisk flush = FLUSH_TO_DISK);
 
   // Asynchronously (on thread_pool_) notify the TabletReplica that the consensus configuration
@@ -749,7 +789,8 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // the replication failed, in which case the pending configuration needs
   // to be cleared such that we revert back to the old configuration.
   void CompleteConfigChangeRoundUnlocked(ConsensusRound* round,
-                                         const Status& status);
+                                         const Status& status,
+                                         FlushContext* flush_ctx);
 
   // Trigger that a no-op ConsensusRound has finished replication.
   // If the replication was successful, an status will be OK. Otherwise, it
@@ -798,7 +839,8 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // Changes the committed config for this replica. Checks that there is a
   // pending configuration and that it is equal to this one. Persists changes to disk.
   // Resets the pending configuration to null.
-  Status SetCommittedConfigUnlocked(const RaftConfigPB& config_to_commit);
+  Status SetCommittedConfigUnlocked(const RaftConfigPB& config_to_commit,
+                                    FlushContext* flush_ctx);
 
   // Checks if the term change is legal. If so, sets 'current_term'
   // to 'new_term' and sets 'has voted' to no for the current term.
@@ -806,6 +848,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // If the caller knows that it will call another method soon after
   // to flush the change to disk, it may set 'flush' to 'SKIP_FLUSH_TO_DISK'.
   Status SetCurrentTermUnlocked(int64_t new_term,
+                                FlushContext* flush_ctx,
                                 FlushToDisk flush);
 
   // Returns the term set in the last config change round.
@@ -819,9 +862,14 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // Return whether this peer has voted in the current term.
   bool HasVotedCurrentTermUnlocked() const;
 
-  // Record replica's vote for the current term, then flush the consensus
-  // metadata to disk.
-  Status SetVotedForCurrentTermUnlocked(const std::string& uuid);
+  // Record replica's vote for the current term.
+  Status SetVotedForCurrentTermUnlocked(
+      const std::string& uuid,
+      FlushContext* flush_ctx);
+
+  // Wait for flushing of a snapshot of 'cmeta_' to disk.
+  // Must be called while NOT holding 'lock_' or 'update_lock_'.
+  static Status WaitForScheduledCmetaFlush(const FlushContext& flush_ctx);
 
   // Return replica's vote for the current term.
   // The vote must be set; use HasVotedCurrentTermUnlocked() to check.
@@ -875,6 +923,26 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
 
   // Consensus metadata persistence object.
   scoped_refptr<ConsensusMetadata> cmeta_;
+
+  // This replica's serial token used to flush consensus metadata to disk.
+  std::unique_ptr<ThreadPoolToken> cmeta_flush_pool_token_;
+
+  // While committing pending consensus-only rounds, points at the FlushContext
+  // to use for any consensus metadata flushed during AdvanceCommittedIndex().
+  // Must only be set while holding lock_.
+  FlushContext* committing_cmeta_flush_ctx_ = nullptr;
+
+  class CommittingCmetaFlushCtxScope final {
+   public:
+    CommittingCmetaFlushCtxScope(RaftConsensus* consensus,
+                                 FlushContext* flush_ctx);
+    ~CommittingCmetaFlushCtxScope();
+
+   private:
+    RaftConsensus* consensus_;
+    FlushContext* prev_;
+    DISALLOW_COPY_AND_ASSIGN(CommittingCmetaFlushCtxScope);
+  };
 
   // Threadpool token for constructing requests to peers, handling RPC callbacks, etc.
   std::unique_ptr<ThreadPoolToken> raft_pool_token_;

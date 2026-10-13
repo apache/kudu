@@ -168,7 +168,7 @@ TEST_F(TombstonedVotingITest, TestTombstonedReplicaWithoutCMetaCanVote) {
                                   /*is_pre_election=*/ true,
                                   MonoDelta::FromSeconds(5));
     ASSERT_FALSE(s.ok()) << s.ToString();
-    ASSERT_STR_MATCHES(s.ToString(), "Denying vote.*greater than that of the candidate");
+    ASSERT_STR_MATCHES(s.ToString(), "denying vote.*greater than candidate's");
 
     // Should vote yes to 2.2 because it's larger than 1.0.
     s = itest::RequestVote(new_replica_ts, tablet_id, kCandidateUuid,
