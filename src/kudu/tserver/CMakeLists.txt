@@ -173,7 +173,8 @@ if (NOT NO_TESTS)
 
   add_library(tserver_test_util ${TSERVER_TEST_UTIL_SRCS})
   target_link_libraries(tserver_test_util
-    ${KUDU_MIN_TEST_LIBS}
+    ${KUDU_BASE_LIBS}
+    kudu_test_util
     tserver)
 endif()
 
