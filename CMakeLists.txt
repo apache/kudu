@@ -1000,7 +1000,7 @@ enable_testing()
 function(ADD_THIRDPARTY_LIB LIB_NAME)
   set(options)
   set(one_value_args SHARED_LIB STATIC_LIB)
-  set(multi_value_args DEPS)
+  set(multi_value_args DEPS SYSTEM_DEPS)
   cmake_parse_arguments(ARG "${options}" "${one_value_args}" "${multi_value_args}" ${ARGN})
   if(ARG_UNPARSED_ARGUMENTS)
     message(SEND_ERROR "Error: unrecognized arguments: ${ARG_UNPARSED_ARGUMENTS}")
@@ -1021,9 +1021,17 @@ function(ADD_THIRDPARTY_LIB LIB_NAME)
     message("Added shared library dependency ${LIB_NAME}: ${ARG_SHARED_LIB}")
   endif()
 
+  set(IMPORTED_EXTRA_DEPS)
   if(ARG_DEPS)
+    list(APPEND IMPORTED_EXTRA_DEPS ${ARG_DEPS})
+  endif()
+  if(ARG_SYSTEM_DEPS)
+    list(APPEND IMPORTED_EXTRA_DEPS ${ARG_SYSTEM_DEPS})
+  endif()
+  if(IMPORTED_EXTRA_DEPS)
     set_target_properties(${LIB_NAME}
-      PROPERTIES IMPORTED_LINK_INTERFACE_LIBRARIES "${ARG_DEPS}")
+      PROPERTIES IMPORTED_LINK_INTERFACE_LIBRARIES "${IMPORTED_EXTRA_DEPS}")
+    message("Added extra dependencies for ${LIB_NAME}: ${IMPORTED_EXTRA_DEPS}")
   endif()
 
   # Set up an "exported variant" for this thirdparty library (see "Visibility"
@@ -1284,10 +1292,23 @@ endif()
 if (NOT KUDU_CLIENT_ONLY)
   find_package(CURL REQUIRED)
   include_directories(SYSTEM ${CURL_INCLUDE_DIR})
+
+  set(CURL_SYSTEM_DEPS)
+  if (APPLE)
+    # Once libcurl is built with IPv6 support on macOS, the result library
+    # depends on symbols defined in the CoreFoundation and SystemConfiguration
+    # frameworks.
+    find_library(SYSTEM_CORE_FOUNDATION_LIBRARY NAMES CoreFoundation REQUIRED)
+    list(APPEND CURL_SYSTEM_DEPS ${SYSTEM_CORE_FOUNDATION_LIBRARY})
+    find_library(SYSTEM_CONFIGURATION_LIBRARY NAMES SystemConfiguration REQUIRED)
+    list(APPEND CURL_SYSTEM_DEPS ${SYSTEM_CONFIGURATION_LIBRARY})
+  endif()
+
   ADD_THIRDPARTY_LIB(curl
     STATIC_LIB "${CURL_STATIC_LIB}"
     SHARED_LIB "${CURL_SHARED_LIB}"
-    DEPS zlib)
+    DEPS zlib
+    SYSTEM_DEPS ${CURL_SYSTEM_DEPS})
 endif()
 
 ## crcutil
