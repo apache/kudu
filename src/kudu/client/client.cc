@@ -632,6 +632,21 @@ Status KuduClient::ListTabletServers(vector<KuduTabletServer*>* tablet_servers) 
   RETURN_NOT_OK(data_->ListTabletServers(this, deadline, req, &resp));
   for (int i = 0; i < resp.servers_size(); i++) {
     const ListTabletServersResponsePB_Entry& e = resp.servers(i);
+    DCHECK(e.has_registration()) << "tserver " << e.instance_id().permanent_uuid()
+                                 << " has no registration";
+    if (PREDICT_FALSE(!e.has_registration())) {
+      return Status::Corruption(Substitute(
+          "invalid response from master: tserver $0 has no registration",
+          e.instance_id().permanent_uuid()));
+    }
+    DCHECK_GT(e.registration().rpc_addresses_size(), 0)
+        << "tserver " << e.instance_id().permanent_uuid()
+        << " has no RPC addresses";
+    if (PREDICT_FALSE(e.registration().rpc_addresses_size() == 0)) {
+      return Status::Corruption(Substitute(
+          "invalid response from master: tserver $0 has no RPC addresses",
+          e.instance_id().permanent_uuid()));
+    }
     HostPort hp = HostPortFromPB(e.registration().rpc_addresses(0));
     unique_ptr<KuduTabletServer> ts(new KuduTabletServer);
     ts->data_ = new KuduTabletServer::Data(e.instance_id().permanent_uuid(), hp, e.location());
@@ -731,9 +746,9 @@ Status KuduClient::GetTablet(const string& tablet_id, KuduTablet** tablet) {
   auto add_replica_func = [](const TSInfoPB& ts_info,
                              const RaftPeerPB::Role role,
                              vector<const KuduReplica*>* replicas) {
-    if (ts_info.rpc_addresses_size() == 0) {
-      return Status::IllegalState(Substitute(
-          "No RPC addresses found for tserver $0",
+    if (PREDICT_FALSE(ts_info.rpc_addresses_size() == 0)) {
+      return Status::Corruption(Substitute(
+          "invalid response from master: tserver $0 has no RPC addresses",
           ts_info.permanent_uuid()));
     }
     HostPort hp = HostPortFromPB(ts_info.rpc_addresses(0));
@@ -756,6 +771,11 @@ Status KuduClient::GetTablet(const string& tablet_id, KuduTablet** tablet) {
   }
   // Handle interned replicas.
   for (const auto& r : t.interned_replicas()) {
+    if (r.ts_info_idx() >= static_cast<uint32_t>(resp.ts_infos_size())) {
+      return Status::Corruption(Substitute(
+          "invalid response from master: referenced ts_info idx $0 but only $1 present",
+          r.ts_info_idx(), resp.ts_infos_size()));
+    }
     RETURN_NOT_OK(add_replica_func(resp.ts_infos(r.ts_info_idx()), r.role(), &replicas));
   }
 
