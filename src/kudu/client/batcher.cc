@@ -968,6 +968,13 @@ void Batcher::ProcessWriteResponse(const WriteRpc& rpc,
                  << SecureDebugString(rpc.resp());
       continue;
     }
+    if (!rpc.ops()[err_pb.row_index()]->write_op) {
+      LOG(ERROR) << "Received a per_row_error for op index " << err_pb.row_index()
+                 << " from tablet " << rpc.tablet_id()
+                 << " but write operation is missing: "
+                 << SecureShortDebugString(err_pb);
+      continue;
+    }
     unique_ptr<KuduWriteOperation> op = std::move(rpc.ops()[err_pb.row_index()]->write_op);
     VLOG(2) << "Error on op " << op->ToString() << ": "
             << SecureShortDebugString(err_pb.error());

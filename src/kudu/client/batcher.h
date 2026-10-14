@@ -29,7 +29,6 @@
 #include "kudu/client/write_op.h"
 #include "kudu/common/txn_id.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/memory/arena.h"
