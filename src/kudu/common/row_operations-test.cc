@@ -24,6 +24,7 @@
 #include <optional>
 #include <ostream>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <vector>
 
@@ -52,6 +53,7 @@ using std::nullopt;
 using std::optional;
 using std::shared_ptr;
 using std::string;
+using std::string_view;
 using std::vector;
 using strings::Substitute;
 
@@ -1197,6 +1199,52 @@ TEST_F(RowOperationsTest, SchemasDoNotMatch) {
   ASSERT_TRUE(BitmapTest(ops[0].isset_bitmap, 0));
   ASSERT_TRUE(BitmapTest(ops[0].isset_bitmap, 1));
   ASSERT_FALSE(BitmapTest(ops[0].isset_bitmap, 2));
+}
+
+// Regression test for the out-of-bounds write with corrupted schema.
+TEST_F(RowOperationsTest, ForgedKeyColumnsDoNotMatchTablet) {
+  auto columns = vector<ColumnSchema>{ ColumnSchema("key1", INT32),
+                                 ColumnSchema("key2", INT32),
+                                 ColumnSchema("int_val", INT32)};
+  constexpr int kKeyColumnNum = 2;
+  SchemaBuilder builder;
+  for (size_t i = 0; i < columns.size(); i++) {
+    ASSERT_OK(builder.AddColumn(columns[i], /*is_key=*/ i < kKeyColumnNum));
+  }
+  Schema tablet_schema = builder.Build();
+
+  auto test_forged_schema = [&](const string_view& description,
+                                const Schema& client_schema,
+                                const string_view& expected_error) {
+    SCOPED_TRACE(description);
+
+    KuduPartialRow row(&client_schema);
+    // Values are irrelevant: the schema-level checks fire before per-op decode.
+    for (int i = 0; i < client_schema.num_key_columns(); i++) {
+      ASSERT_OK(row.SetInt32(i, 0));
+    }
+    RowOperationsPB pb;
+    RowOperationsPBEncoder(&pb).Add(RowOperationsPB::DELETE, row);
+
+    arena_.Reset();
+    RowOperationsPBDecoder decoder(
+        &pb, &client_schema, &tablet_schema, &arena_);
+    vector<DecodedRowOperation> ops;
+    const Status s = decoder.DecodeOperations<DecoderMode::WRITE_OPS>(&ops);
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), expected_error);
+  };
+
+  // Test multiple forged schemas.
+  NO_FATALS(test_forged_schema("all columns as keys", Schema(columns, 3), "key columns"));
+  NO_FATALS(test_forged_schema("zero key columns", Schema(columns, 0), "key columns"));
+  NO_FATALS(test_forged_schema("keys in different order",
+      Schema({ columns[1], columns[0], columns[2] }, kKeyColumnNum),
+      "does not match the tablet key column"));
+  NO_FATALS(test_forged_schema("key column renamed",
+      Schema({ ColumnSchema("key1_renamed", columns[0].type_info()->type()), columns[1],
+               columns[2]}, kKeyColumnNum),
+      "not present in tablet"));
 }
 
 } // namespace kudu

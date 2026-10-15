@@ -437,6 +437,35 @@ class ClientServerMapping {
     return Status::OK();
   }
 
+  // Ensure that the client schema's key columns are exactly the tablet
+  // schema's key columns, in the same order. DecodeUpdateOrDelete() allocates
+  // row-key storage sized by the tablet's key and writes each client-declared
+  // key column at its tablet-schema offset (tablet_col_idx == client_col_idx),
+  // so a client schema declaring extra, missing or reordered key columns would
+  // write client-supplied data outside that allocation (or leave it
+  // uninitialized). The 'is_key' flags come straight from the untrusted client
+  // SchemaPB, so this must be enforced at runtime, not just via DCHECK.
+  Status CheckKeyColumnsMatch() const {
+    if (PREDICT_FALSE(client_schema_->num_key_columns() !=
+                      tablet_schema_->num_key_columns())) {
+      return Status::InvalidArgument(
+          Substitute("Client schema has $0 key columns, but the tablet has $1",
+                     client_schema_->num_key_columns(),
+                     tablet_schema_->num_key_columns()));
+    }
+    for (size_t key_col_idx = 0;
+         key_col_idx < client_schema_->num_key_columns();
+         key_col_idx++) {
+      if (PREDICT_FALSE(client_to_tablet_idx(key_col_idx) != key_col_idx)) {
+        return Status::InvalidArgument(
+            Substitute("Client key column $0 does not match the tablet key "
+                       "column at the same position",
+                       client_schema_->column(key_col_idx).ToString()));
+      }
+    }
+    return Status::OK();
+  }
+
  private:
   const Schema* const client_schema_;
   const Schema* const tablet_schema_;
@@ -806,6 +835,12 @@ Status RowOperationsPBDecoder::DecodeOperations(vector<DecodedRowOperation>* ops
     RETURN_NOT_OK(client_schema_->GetProjectionMapping(*tablet_schema_, &mapping));
     DCHECK_EQ(mapping.num_mapped(), client_schema_->num_columns());
     RETURN_NOT_OK(mapping.CheckAllRequiredColumnsPresent());
+    if constexpr (mode == DecoderMode::WRITE_OPS) {
+      // The 'is_key' flags in the client schema come straight from the wire:
+      // reject any write batch whose key columns disagree with the tablet's
+      // before decoding individual operations.
+      RETURN_NOT_OK(mapping.CheckKeyColumnsMatch());
+    }
   }
 
   // Make a "prototype row" which has all the defaults filled in. We can copy
