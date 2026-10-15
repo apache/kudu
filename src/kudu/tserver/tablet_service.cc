@@ -559,17 +559,6 @@ static bool GetScanPrivilegesOrRespond(const NewScanRequestPB& scan_pb, const Sc
     }
     EmplaceIfNotPresent(&required_privileges, schema.column_id(col_idx));
   }
-  // Do the same for the DEPRECATED_range_predicates field. Even though this
-  // field is deprecated, it is still exposed as a part of our public API and
-  // thus needs to be taken into account.
-  for (int i = 0; i < scan_pb.deprecated_range_predicates_size(); i++) {
-    int col_idx = schema.find_column(scan_pb.deprecated_range_predicates(i).column().name());
-    if (col_idx == Schema::kColumnNotFound) {
-      respond_not_authorized(scan_pb.deprecated_range_predicates(i).column().name());
-      return false;
-    }
-    EmplaceIfNotPresent(&required_privileges, schema.column_id(col_idx));
-  }
   *required_column_privileges = std::move(required_privileges);
   return true;
 }
@@ -2685,38 +2674,6 @@ bool TabletServiceImpl::SupportsFeature(uint32_t feature) const {
 void TabletServiceImpl::Shutdown() {
 }
 
-// Extract a void* pointer suitable for use in a ColumnRangePredicate from the
-// user-specified protobuf field.
-// This validates that the pb_value has the correct length, copies the data into
-// 'arena', and sets *result to point to it.
-// Returns bad status if the user-specified value is the wrong length.
-static Status ExtractPredicateValue(const ColumnSchema& schema,
-                                    const string& pb_value,
-                                    Arena* arena,
-                                    const void** result) {
-  // Copy the data from the protobuf into the Arena.
-  uint8_t* data_copy = static_cast<uint8_t*>(arena->AllocateBytes(pb_value.size()));
-  memcpy(data_copy, &pb_value[0], pb_value.size());
-
-  // If the type is of variable length, then we need to return a pointer to a Slice
-  // element pointing to the string. Otherwise, just verify that the provided
-  // value was the right size.
-  if (schema.type_info()->physical_type() == BINARY) {
-    *result = arena->NewObject<Slice>(data_copy, pb_value.size());
-  } else {
-    // TODO: add test case for this invalid request
-    size_t expected_size = schema.type_info()->size();
-    if (pb_value.size() != expected_size) {
-      return Status::InvalidArgument(
-        StringPrintf("Bad predicate on %s. Expected value size %zd, got %zd",
-                     schema.ToString().c_str(), expected_size, pb_value.size()));
-    }
-    *result = data_copy;
-  }
-
-  return Status::OK();
-}
-
 static Status DecodeEncodedKeyRange(const NewScanRequestPB& scan_pb,
                                     const Schema& tablet_schema,
                                     const SharedScanner& scanner,
@@ -2764,6 +2721,15 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
                             const Schema& tablet_schema,
                             const SharedScanner& scanner,
                             ScanSpec* spec) {
+  // The DEPRECATED_range_predicates field is no longer supported. No client has
+  // populated it since before Kudu 1.0 (clients convert to ColumnPredicatePB),
+  // and it is not part of the public API.
+  if (PREDICT_FALSE(!scan_pb.deprecated_range_predicates().empty())) {
+    return Status::InvalidArgument(
+        "DEPRECATED_range_predicates is no longer supported; "
+        "use column_predicates instead");
+  }
+
   spec->set_cache_blocks(scan_pb.cache_blocks());
 
   // First the column predicates.
@@ -2771,59 +2737,6 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
     optional<ColumnPredicate> predicate;
     RETURN_NOT_OK(ColumnPredicateFromPB(tablet_schema, scanner->arena(), pred_pb, &predicate));
     spec->AddPredicate(std::move(*predicate));
-  }
-
-  // Then the column range predicates.
-  // TODO: remove this once all clients have moved to ColumnPredicatePB and
-  // backwards compatibility can be broken.
-  for (const ColumnRangePredicatePB& pred_pb : scan_pb.deprecated_range_predicates()) {
-    if (!pred_pb.has_lower_bound() && !pred_pb.has_inclusive_upper_bound()) {
-      return Status::InvalidArgument(
-        Substitute("Invalid predicate $0: has no lower or upper bound",
-                   SecureShortDebugString(pred_pb)));
-    }
-    ColumnSchemaBuilder builder;
-    RETURN_NOT_OK(ColumnSchemaBuilderFromPB(pred_pb.column(), &builder));
-    const auto client_column(builder.Build());
-
-    // Check if the client used the correct type for the column.
-    const int32_t idx = tablet_schema.find_column(client_column.name());
-    if (PREDICT_FALSE(idx == Schema::kColumnNotFound)) {
-      return Status::InvalidArgument(
-        Substitute("Invalid predicate $0: unknown column",
-                   SecureShortDebugString(pred_pb)));
-    }
-    const ColumnSchema& column_schema = tablet_schema.column(idx);
-    if (PREDICT_FALSE(client_column.type_info()->type() != column_schema.type_info()->type())) {
-      return Status::InvalidArgument(
-        Substitute("Invalid predicate $0: column '$1' has type $2, not $3",
-                   SecureShortDebugString(pred_pb),
-                   column_schema.name(),
-                   column_schema.type_info()->name(),
-                   client_column.type_info()->name()));
-    }
-
-    const void* lower_bound = nullptr;
-    const void* upper_bound = nullptr;
-    if (pred_pb.has_lower_bound()) {
-      RETURN_NOT_OK(ExtractPredicateValue(column_schema,
-                                          pred_pb.lower_bound(),
-                                          scanner->arena(),
-                                          &lower_bound));
-    }
-    if (pred_pb.has_inclusive_upper_bound()) {
-      RETURN_NOT_OK(ExtractPredicateValue(column_schema,
-                                          pred_pb.inclusive_upper_bound(),
-                                          scanner->arena(),
-                                          &upper_bound));
-    }
-
-    if (const auto pred = ColumnPredicate::InclusiveRange(
-            column_schema, lower_bound, upper_bound, scanner->arena()); pred) {
-      VLOG(3) << Substitute("Parsed predicate $0 from $1",
-                            pred->ToString(), SecureShortDebugString(scan_pb));
-      spec->AddPredicate(*pred);
-    }
   }
 
   // Then any encoded key range predicates.

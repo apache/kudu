@@ -276,9 +276,7 @@ message NewScanRequestPB {
   // after reaching this number of result rows.
   optional uint64 limit = 2;
 
-  // DEPRECATED: use column_predicates field.
-  //
-  // Any column range predicates to enforce.
+  // No longer supported (rejected): use column_predicates field.
   repeated ColumnRangePredicatePB DEPRECATED_range_predicates = 3;
 
   // Column predicates to enforce.

@@ -526,7 +526,7 @@ void CopyPredicateBoundToPB(const ColumnSchema& col, const void* bound_src, stri
   bound_dst->assign(reinterpret_cast<const char*>(src), size);
 }
 
-// Extract a void* pointer suitable for use in a ColumnRangePredicate from the
+// Extract a void* pointer suitable for use in a ColumnPredicate from the
 // string protobuf bound. This validates that the pb_value has the correct
 // length, copies the data into 'arena', and sets *result to point to it.
 // Returns bad status if the user-specified value is the wrong length.

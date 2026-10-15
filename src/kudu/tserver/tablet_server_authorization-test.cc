@@ -364,12 +364,6 @@ enum class ExpectedAuthz {
   DENIED
 };
 
-// Boolean to indicate usage of deprecated fields.
-enum class DeprecatedField {
-  USE,
-  DONT_USE
-};
-
 // Enum indicating different non-standard scenarios we need to make sure are
 // handled appropriately.
 enum class SpecialColumn {
@@ -543,7 +537,6 @@ class ScanPrivilegeAuthzTest : public AuthzTabletServerTestBase,
   // including an authz token based on 'privilege'.
   NewScanRequestPB GenerateScanRequest(const ScanDescriptor& scan,
                                        const ScanPrivileges& privilege,
-                                       DeprecatedField range_predicate,
                                        SpecialColumn special_col) const {
     NewScanRequestPB pb;
     pb.set_tablet_id(kScanTabletId);
@@ -558,28 +551,14 @@ class ScanPrivilegeAuthzTest : public AuthzTabletServerTestBase,
     // Set some arbitrary bounds; the values don't matter for authorization.
     int32_t inclusive_lower_bound = 0;
     int32_t exclusive_upper_bound = 10;
-    int32_t inclusive_upper_bound = exclusive_upper_bound - 1;
     for (const auto& col_name : scan.predicated_cols) {
-      // Also test our deprecated predicate API and our new one; the deprecated
-      // API is still available for backwards compatability and is thus fair
-      // game for authorization.
-      if (range_predicate == DeprecatedField::USE) {
-        ColumnRangePredicatePB* range = pb.add_deprecated_range_predicates();
-        int col_idx = schema_.find_column(col_name);
-        ColumnSchemaToPB(client_schema.column(col_idx), range->mutable_column());
-        range->mutable_lower_bound()->append(
-            reinterpret_cast<char*>(&inclusive_lower_bound), sizeof(inclusive_lower_bound));
-        range->mutable_inclusive_upper_bound()->append(
-            reinterpret_cast<char*>(&inclusive_upper_bound), sizeof(inclusive_upper_bound));
-      } else {
-        ColumnPredicatePB* pred = pb.add_column_predicates();
-        pred->set_column(col_name);
-        ColumnPredicatePB::Range* range = pred->mutable_range();
-        range->mutable_lower()->append(
-            reinterpret_cast<char*>(&inclusive_lower_bound), sizeof(inclusive_lower_bound));
-        range->mutable_upper()->append(
-            reinterpret_cast<char*>(&exclusive_upper_bound), sizeof(exclusive_upper_bound));
-      }
+      ColumnPredicatePB* pred = pb.add_column_predicates();
+      pred->set_column(col_name);
+      ColumnPredicatePB::Range* range = pred->mutable_range();
+      range->mutable_lower()->append(
+          reinterpret_cast<char*>(&inclusive_lower_bound), sizeof(inclusive_lower_bound));
+      range->mutable_upper()->append(
+          reinterpret_cast<char*>(&exclusive_upper_bound), sizeof(exclusive_upper_bound));
     }
     // Determine which column to sabotage if needed.
     optional<string> misnamed_col;
@@ -652,12 +631,11 @@ class ScanPrivilegeAuthzTest : public AuthzTabletServerTestBase,
 
   // Sends a scan based on 'scan' with a token described by 'privilege'.
   Status SendNewScan(const ScanDescriptor& scan, const ScanPrivileges& privilege,
-                     DeprecatedField range_predicate, SpecialColumn special_col) const {
+                     SpecialColumn special_col) const {
     ScanResponsePB resp;
     RpcController rpc;
     ScanRequestPB req;
-    *req.mutable_new_scan_request() = GenerateScanRequest(scan, privilege,
-                                                          range_predicate, special_col);
+    *req.mutable_new_scan_request() = GenerateScanRequest(scan, privilege, special_col);
     req.set_call_seq_id(0);
     RETURN_NOT_OK(proxy_->Scan(req, &resp, &rpc));
     return CheckNoErrors(resp);
@@ -666,12 +644,12 @@ class ScanPrivilegeAuthzTest : public AuthzTabletServerTestBase,
   // Sends a checksum scan based on 'scan' with a token described by
   // 'privilege'.
   Status SendChecksum(const ScanDescriptor& scan, const ScanPrivileges& privilege,
-                      DeprecatedField range_predicate, SpecialColumn special_col) const {
+                      SpecialColumn special_col) const {
     ChecksumResponsePB resp;
     RpcController rpc;
     ChecksumRequestPB req;
     NewScanRequestPB* new_scan_req = req.mutable_new_request();
-    *new_scan_req = GenerateScanRequest(scan, privilege, range_predicate, special_col);
+    *new_scan_req = GenerateScanRequest(scan, privilege, special_col);
     req.set_call_seq_id(0);
     RETURN_NOT_OK(proxy_->Checksum(req, &resp, &rpc));
     return CheckNoErrors(resp);
@@ -726,17 +704,17 @@ class ScanPrivilegeAuthzTest : public AuthzTabletServerTestBase,
 namespace {
 
 // Functors for performing scan-like requests with which to parameterize tests.
-template<DeprecatedField d, SpecialColumn c>
+template<SpecialColumn c>
 Status ScanRequestor(ScanPrivilegeAuthzTest* test, const ScanDescriptor& scan,
                      const ScanPrivileges& privileges) {
-  return test->SendNewScan(scan, privileges, d, c);
+  return test->SendNewScan(scan, privileges, c);
 }
-template<DeprecatedField d, SpecialColumn c>
+template<SpecialColumn c>
 Status ChecksumRequestor(ScanPrivilegeAuthzTest* test, const ScanDescriptor& scan,
                      const ScanPrivileges& privileges) {
-  return test->SendChecksum(scan, privileges, d, c);
+  return test->SendChecksum(scan, privileges, c);
 }
-template<DeprecatedField d, SpecialColumn c>
+template<SpecialColumn c>
 Status SplitKeyRangeRequestor(ScanPrivilegeAuthzTest* test, const ScanDescriptor& scan,
                      const ScanPrivileges& privileges) {
   return test->SendSplitKey(scan, privileges, c);
@@ -909,12 +887,9 @@ TEST_P(ScanPrivilegeAuthzTest, TestWrongTableId) {
 INSTANTIATE_TEST_SUITE_P(RequestorFuncs, ScanPrivilegeAuthzTest,
     ::testing::Combine(
         ::testing::ValuesIn(vector<ScanFunc>({
-            &ScanRequestor<DeprecatedField::DONT_USE, SpecialColumn::NONE>,
-            &ScanRequestor<DeprecatedField::USE, SpecialColumn::NONE>,
-            &ChecksumRequestor<DeprecatedField::DONT_USE, SpecialColumn::NONE>,
-            &ChecksumRequestor<DeprecatedField::USE, SpecialColumn::NONE>,
-            &SplitKeyRangeRequestor<DeprecatedField::DONT_USE, SpecialColumn::NONE>,
-            &SplitKeyRangeRequestor<DeprecatedField::USE, SpecialColumn::NONE>
+            &ScanRequestor<SpecialColumn::NONE>,
+            &ChecksumRequestor<SpecialColumn::NONE>,
+            &SplitKeyRangeRequestor<SpecialColumn::NONE>
         })),
         ::testing::Bool()));
 
@@ -951,10 +926,8 @@ TEST_P(ScanPrivilegeNoProjectionAuthzTest, TestNoProjection) {
 INSTANTIATE_TEST_SUITE_P(RequestorFuncs, ScanPrivilegeNoProjectionAuthzTest,
                          ::testing::Combine(
         ::testing::ValuesIn(vector<ScanFunc>({
-            &ScanRequestor<DeprecatedField::DONT_USE, SpecialColumn::NONE>,
-            &ScanRequestor<DeprecatedField::USE, SpecialColumn::NONE>,
-            &ChecksumRequestor<DeprecatedField::DONT_USE, SpecialColumn::NONE>,
-            &ChecksumRequestor<DeprecatedField::USE, SpecialColumn::NONE>,
+            &ScanRequestor<SpecialColumn::NONE>,
+            &ChecksumRequestor<SpecialColumn::NONE>,
         })),
         ::testing::Bool()));
 
@@ -985,10 +958,8 @@ TEST_P(ScanPrivilegeVirtualColumnsTest, TestNoProjection) {
 INSTANTIATE_TEST_SUITE_P(RequestorFuncs, ScanPrivilegeVirtualColumnsTest,
                          ::testing::Combine(
         ::testing::ValuesIn(vector<ScanFunc>({
-            &ScanRequestor<DeprecatedField::DONT_USE, SpecialColumn::VIRTUAL>,
-            &ScanRequestor<DeprecatedField::USE, SpecialColumn::VIRTUAL>,
-            &ChecksumRequestor<DeprecatedField::DONT_USE, SpecialColumn::VIRTUAL>,
-            &ChecksumRequestor<DeprecatedField::USE, SpecialColumn::VIRTUAL>,
+            &ScanRequestor<SpecialColumn::VIRTUAL>,
+            &ChecksumRequestor<SpecialColumn::VIRTUAL>,
         })),
         ::testing::Bool()));
 
@@ -1028,12 +999,9 @@ TEST_P(ScanPrivilegeWithBadNamesTest, TestColumnNotFound) {
 INSTANTIATE_TEST_SUITE_P(RequestorFuncs, ScanPrivilegeWithBadNamesTest,
     ::testing::Combine(
         ::testing::ValuesIn(vector<ScanFunc>({
-            &ScanRequestor<DeprecatedField::DONT_USE, SpecialColumn::MISNAMED>,
-            &ScanRequestor<DeprecatedField::USE, SpecialColumn::MISNAMED>,
-            &ChecksumRequestor<DeprecatedField::DONT_USE, SpecialColumn::MISNAMED>,
-            &ChecksumRequestor<DeprecatedField::USE, SpecialColumn::MISNAMED>,
-            &SplitKeyRangeRequestor<DeprecatedField::DONT_USE, SpecialColumn::MISNAMED>,
-            &SplitKeyRangeRequestor<DeprecatedField::USE, SpecialColumn::MISNAMED>
+            &ScanRequestor<SpecialColumn::MISNAMED>,
+            &ChecksumRequestor<SpecialColumn::MISNAMED>,
+            &SplitKeyRangeRequestor<SpecialColumn::MISNAMED>
         })),
         ::testing::Bool()));
 
@@ -1078,10 +1046,8 @@ TEST_P(ScanPrivilegeWithVirtualColumnsTest, TestIsDeletedColumn) {
 INSTANTIATE_TEST_SUITE_P(RequestorFuncs, ScanPrivilegeWithVirtualColumnsTest,
     ::testing::Combine(
         ::testing::ValuesIn(vector<ScanFunc>({
-            &ScanRequestor<DeprecatedField::DONT_USE, SpecialColumn::VIRTUAL>,
-            &ScanRequestor<DeprecatedField::USE, SpecialColumn::VIRTUAL>,
-            &ChecksumRequestor<DeprecatedField::DONT_USE, SpecialColumn::VIRTUAL>,
-            &ChecksumRequestor<DeprecatedField::USE, SpecialColumn::VIRTUAL>,
+            &ScanRequestor<SpecialColumn::VIRTUAL>,
+            &ChecksumRequestor<SpecialColumn::VIRTUAL>,
         })),
         ::testing::Bool()));
 

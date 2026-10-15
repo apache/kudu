@@ -3203,12 +3203,11 @@ TEST_F(ScannerScansTest, TestScanWithStringPredicates) {
   req.set_batch_size_bytes(0); // so it won't return data right away
   ASSERT_OK(SchemaToColumnPBs(schema_, scan->mutable_projected_columns()));
 
-  // Set up a range predicate: "hello 50" < string_val <= "hello 59"
-  ColumnRangePredicatePB* pred = scan->add_deprecated_range_predicates();
-  pred->mutable_column()->CopyFrom(scan->projected_columns(2));
-
-  pred->set_lower_bound("hello 50");
-  pred->set_inclusive_upper_bound("hello 59");
+  ColumnPredicatePB* pred = scan->add_column_predicates();
+  pred->set_column(schema_.column(2).name());
+  ColumnPredicatePB::Range* range = pred->mutable_range();
+  range->set_lower("hello 50");
+  range->set_upper("hello 6");
 
   // Send the call
   {
@@ -3367,56 +3366,9 @@ TEST_F(ScannerScansTest, TestRandomizedScanLimits) {
   }
 }
 
-TEST_F(ScannerScansTest, TestScanWithPredicates) {
-  int num_rows = AllowSlowTests() ? 10000 : 1000;
-  InsertTestRowsDirect(0, num_rows);
-
-  ScanRequestPB req;
-  ScanResponsePB resp;
-  RpcController rpc;
-
-  NewScanRequestPB* scan = req.mutable_new_scan_request();
-  scan->set_tablet_id(kTabletId);
-  req.set_batch_size_bytes(0); // so it won't return data right away
-  ASSERT_OK(SchemaToColumnPBs(schema_, scan->mutable_projected_columns()));
-
-  // Set up a range predicate: 51 <= key <= 100
-  ColumnRangePredicatePB* pred = scan->add_deprecated_range_predicates();
-  pred->mutable_column()->CopyFrom(scan->projected_columns(0));
-
-  int32_t lower_bound_int = 51;
-  int32_t upper_bound_int = 100;
-  pred->mutable_lower_bound()->append(reinterpret_cast<char*>(&lower_bound_int),
-                                      sizeof(lower_bound_int));
-  pred->mutable_inclusive_upper_bound()->append(reinterpret_cast<char*>(&upper_bound_int),
-                                                sizeof(upper_bound_int));
-
-  // Send the call
-  {
-    SCOPED_TRACE(SecureDebugString(req));
-    ASSERT_OK(proxy_->Scan(req, &resp, &rpc));
-    SCOPED_TRACE(SecureDebugString(resp));
-    ASSERT_FALSE(resp.has_error());
-  }
-
-  // Drain all the rows from the scanner.
-  vector<string> results;
-  NO_FATALS(
-    DrainScannerToStrings(resp.scanner_id(), schema_, &results));
-  ASSERT_EQ(50, results.size());
-}
-
-class DeprecatedPredicateTypeMismatchParamTest :
-    public ScannerScansTest,
-    public ::testing::WithParamInterface<bool> { // Use invalid column names for the predicates.
-};
-
-// Regression test for the deprecated range predicate type-mismatch crash.
-//
-// If we don't reject the request, it is easy to cause a crash.
-TEST_P(DeprecatedPredicateTypeMismatchParamTest, TestDeprecatedPredicateTypeMismatch) {
-  const bool invalid_column_name = GetParam();
-
+// The deprecated DEPRECATED_range_predicates field is no longer supported.
+// It was removed from 1.0 clients already and we no longer support 0.x clients.
+TEST_F(ScannerScansTest, TestDeprecatedPredicateRejected) {
   InsertTestRowsDirect(0, 100);
 
   ScanRequestPB req;
@@ -3425,14 +3377,15 @@ TEST_P(DeprecatedPredicateTypeMismatchParamTest, TestDeprecatedPredicateTypeMism
   req.set_batch_size_bytes(0);
   ASSERT_OK(SchemaToColumnPBs(schema_, scan->mutable_projected_columns()));
 
-  const char* const col_a_name = invalid_column_name ? "not_a_column" : "string_val";
-  int64_t random_int_value = 42;
-
-  ColumnRangePredicatePB* pred_a = scan->add_deprecated_range_predicates();
-  pred_a->mutable_column()->set_name(col_a_name);
-  pred_a->mutable_column()->set_type(INT64);
-  pred_a->mutable_lower_bound()->append(reinterpret_cast<const char*>(&random_int_value),
-                                        sizeof(random_int_value));
+  // A simple, well-formed deprecated range predicate: 51 <= key <= 100.
+  ColumnRangePredicatePB* pred = scan->add_deprecated_range_predicates();
+  pred->mutable_column()->CopyFrom(scan->projected_columns(0));
+  int32_t lower_bound_int = 51;
+  int32_t upper_bound_int = 100;
+  pred->mutable_lower_bound()->append(reinterpret_cast<char*>(&lower_bound_int),
+                                      sizeof(lower_bound_int));
+  pred->mutable_inclusive_upper_bound()->append(reinterpret_cast<char*>(&upper_bound_int),
+                                                sizeof(upper_bound_int));
 
   ScanResponsePB resp;
   RpcController rpc;
@@ -3443,9 +3396,6 @@ TEST_P(DeprecatedPredicateTypeMismatchParamTest, TestDeprecatedPredicateTypeMism
   ASSERT_EQ(TabletServerErrorPB::INVALID_SCAN_SPEC, resp.error().code());
   ASSERT_EQ(AppStatusPB::INVALID_ARGUMENT, resp.error().status().code());
 }
-
-INSTANTIATE_TEST_SUITE_P(Params, DeprecatedPredicateTypeMismatchParamTest,
-                         ::testing::Bool());
 
 TEST_F(ScannerScansTest, TestScanWithEncodedPredicates) {
   InsertTestRowsDirect(0, 100);
