@@ -96,14 +96,8 @@ class ClientNegotiation {
   }
 
   // Returns the set of RPC system features supported by the remote server.
-  // Must be called before Negotiate().
-  std::set<RpcFeatureFlag> server_features() const {
-    return server_features_;
-  }
-
-  // Returns the set of RPC system features supported by the remote server.
   // Must be called after Negotiate().
-  // Subsequent calls to this method or server_features() will return an empty set.
+  // Subsequent calls to this method will return an empty set.
   std::set<RpcFeatureFlag> take_server_features() {
     return std::move(server_features_);
   }

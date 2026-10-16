@@ -17,7 +17,6 @@
 #pragma once
 
 #include <climits>
-#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -153,9 +152,6 @@ class OutboundTransfer final : public boost::intrusive::list_base_hook<> {
 
   // Return true if the entire transfer has been sent.
   bool TransferFinished() const;
-
-  // Return the total number of bytes to be sent (including those already sent).
-  size_t TotalLength() const;
 
   std::string HexDump() const;
 

@@ -34,7 +34,6 @@
 #include "kudu/rpc/constants.h"
 #include "kudu/security/init.h"
 #include "kudu/util/mutex.h"
-#include "kudu/util/net/sockaddr.h"
 #include "kudu/util/rw_mutex.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/string_case.h"
@@ -403,15 +402,6 @@ Status SaslDecode(sasl_conn_t* conn, Slice ciphertext, Slice* plaintext) {
   }, kDesc), string(kDesc) + " failed");
   *plaintext = Slice(out, out_len);
   return Status::OK();
-}
-
-string SaslIpPortString(const Sockaddr& addr) {
-  string addr_str = addr.ToString();
-  size_t colon_pos = addr_str.find(':');
-  if (colon_pos != string::npos) {
-    addr_str[colon_pos] = ';';
-  }
-  return addr_str;
 }
 
 set<SaslMechanism::Type> SaslListAvailableMechs() {

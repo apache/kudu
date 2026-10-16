@@ -16,15 +16,14 @@
 // under the License.
 #pragma once
 
+#include <sasl/sasl.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <set>
 #include <string>
 
-#include <sasl/sasl.h>
-
-#include "kudu/gutil/port.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
@@ -36,8 +35,6 @@
 #endif // #if defined(__APPLE__)
 
 namespace kudu {
-
-class Sockaddr;
 
 namespace rpc {
 
@@ -103,9 +100,6 @@ Status DisableSaslInitialization();
 Status WrapSaslCall(sasl_conn_t* conn,
                     const std::function<int()>& call,
                     const char* description);
-
-// Return <ip>;<port> string formatted for SASL library use.
-std::string SaslIpPortString(const Sockaddr& addr);
 
 // Return available plugin mechanisms for the given connection.
 std::set<SaslMechanism::Type> SaslListAvailableMechs();

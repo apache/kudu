@@ -488,8 +488,6 @@ class Messenger final {
 
   Reactor* RemoteToReactor(const Sockaddr& remote) const;
   Status Init();
-  void RunTimeoutThread();
-  void UpdateCurTime();
 
   // Shuts down the messenger.
   //

@@ -300,13 +300,5 @@ string OutboundTransfer::HexDump() const {
   return ret;
 }
 
-size_t OutboundTransfer::TotalLength() const {
-  size_t ret = 0;
-  for (const auto& s : payload_slices_) {
-    ret += s.size();
-  }
-  return ret;
-}
-
 } // namespace rpc
 } // namespace kudu
