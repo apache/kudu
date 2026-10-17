@@ -904,22 +904,25 @@ void RaftConsensus::NotifyCommitIndex(int64_t commit_index) {
                "tablet", options_.tablet_id,
                "commit_index", commit_index);
 
-  ThreadRestrictions::AssertWaitAllowed();
-  std::lock_guard l(lock_);
-  // We will process commit notifications while shutting down because a replica
-  // which has initiated a Prepare() / Replicate() may eventually commit even if
-  // its state has changed after the initial Append() / Update().
-  const State state = state_;
-  if (PREDICT_FALSE(state != kRunning && state != kStopping)) {
-    LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Unable to update committed index: "
-                                      << "Replica not in running state: "
-                                      << State_Name(state);
-    return;
-  }
+  bool need_signaling = false;
+  {
+    ThreadRestrictions::AssertWaitAllowed();
+    std::lock_guard l(lock_);
+    // We will process commit notifications while shutting down because a replica
+    // which has initiated a Prepare() / Replicate() may eventually commit even if
+    // its state has changed after the initial Append() / Update().
+    const State state = state_;
+    if (PREDICT_FALSE(state != kRunning && state != kStopping)) {
+      LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Unable to update committed index: "
+                                        << "Replica not in running state: "
+                                        << State_Name(state);
+      return;
+    }
 
-  CHECK_OK(pending_->AdvanceCommittedIndex(commit_index));
-
-  if (cmeta_->active_role() == RaftPeerPB::LEADER) {
+    CHECK_OK(pending_->AdvanceCommittedIndex(commit_index));
+    need_signaling = (cmeta_->active_role() == RaftPeerPB::LEADER);
+  } // Release lock before signaling request.
+  if (need_signaling) {
     peer_manager_->SignalRequest(false);
   }
 }
