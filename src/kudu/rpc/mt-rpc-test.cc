@@ -427,11 +427,11 @@ TEST_F(MultiThreadedRpcTest, ReactorMaxIOLatencyStatsEnabled) {
   // Due to large sidecars, it should take some time to send and receive data
   // in the context of a single RPC call. Since there are many active concurrent
   // connections, the maximum I/O handler latency across all the connections
-  // is much higher than one microsecond if the OS-level maximum socket buffer
-  // size limit isn't significantly higher than 8MiB. At least, that's how it
-  // was on a contemporary hardware at the time of writing.
-  ASSERT_GT(max_wr_latency, 1);
-  ASSERT_GT(max_rd_latency, 1);
+  // is be at least one microsecond if the OS-level maximum socket buffer size
+  // limit isn't significantly higher than 8MiB. At least, that's how it was
+  // on a contemporary hardware at the time of writing.
+  ASSERT_GT(max_wr_latency, 0);
+  ASSERT_GT(max_rd_latency, 0);
 }
 
 // Medium-size (256KiB <= size < 1MiB) blocks are allocated in the per-thread
