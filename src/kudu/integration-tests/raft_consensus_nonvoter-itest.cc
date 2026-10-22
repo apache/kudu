@@ -2010,9 +2010,21 @@ TEST_P(IncompatibleReplicaReplacementSchemesITest, MasterAndTserverMisconfig) {
   // and the tablet server.
   ts->mutable_flags()->emplace_back(
       Substitute("--raft_prepare_replacement_before_eviction=$0", !is_3_4_3));
-  ASSERT_OK(ts->Restart());
-  if (is_incompatible_replica_management_fatal) {
-    ASSERT_OK(ts->WaitForFatal(kTimeout));
+  {
+    const auto rs = ts->Restart();
+    if (!is_incompatible_replica_management_fatal) {
+      ASSERT_OK(rs);
+    } else {
+      if (rs.ok()) {
+        ASSERT_OK(ts->WaitForFatal(kTimeout));
+      } else {
+        // ExternalTabletServer::Restart() might fail right away with
+        // incompatible replica management policy reporting process exiting
+        // on SIGABRT, so no need to invoke WaitForFatal().
+        ASSERT_TRUE(rs.IsRuntimeError()) << rs.ToString();
+        ASSERT_STR_CONTAINS(rs.ToString(), "process exited on signal 6");
+      }
+    }
   }
   SleepFor(MonoDelta::FromMilliseconds(heartbeat_interval_ms * 3));
 
@@ -2025,9 +2037,21 @@ TEST_P(IncompatibleReplicaReplacementSchemesITest, MasterAndTserverMisconfig) {
   ts->mutable_flags()->pop_back();
   ts->mutable_flags()->emplace_back("--heartbeat_inject_required_feature_flag=999");
   ts->Shutdown();
-  ASSERT_OK(ts->Restart());
-  if (is_incompatible_replica_management_fatal) {
-    ASSERT_OK(ts->WaitForFatal(kTimeout));
+  {
+    const auto rs = ts->Restart();
+    if (!is_incompatible_replica_management_fatal) {
+      ASSERT_OK(rs);
+    } else {
+      if (rs.ok()) {
+        ASSERT_OK(ts->WaitForFatal(kTimeout));
+      } else {
+        // ExternalTabletServer::Restart() might fail right away with
+        // incompatible replica management policy reporting process exiting
+        // on SIGABRT, so no need to invoke WaitForFatal().
+        ASSERT_TRUE(rs.IsRuntimeError()) << rs.ToString();
+        ASSERT_STR_CONTAINS(rs.ToString(), "process exited on signal 6");
+      }
+    }
   }
   SleepFor(MonoDelta::FromMilliseconds(heartbeat_interval_ms * 3));
 
