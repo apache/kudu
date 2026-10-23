@@ -1058,8 +1058,9 @@ TEST_P(TestRpc, TestRpcSidecarLimits) {
       ASSERT_OK(controller.AddOutboundSidecar(RpcSidecar::FromSlice(Slice(s)), &idx));
     }
 
-    ASSERT_TRUE(controller.AddOutboundSidecar(
-        RpcSidecar::FromSlice(Slice(s)), &idx).IsRuntimeError());
+    const auto result = controller.AddOutboundSidecar(
+        RpcSidecar::FromSlice(Slice(s)), &idx);
+    ASSERT_TRUE(result.IsRuntimeError()) << result.ToString();
   }
 
   // Construct a string to use as a maximal payload in following tests
@@ -1789,10 +1790,14 @@ TEST_P(TestRpc, TestCancellation) {
       case OutboundCall::READY:
       case OutboundCall::ON_OUTBOUND_QUEUE:
       case OutboundCall::SENDING:
-      case OutboundCall::SENT:
-        ASSERT_TRUE(DoTestOutgoingSidecar(&p, 0, 0).IsAborted());
-        ASSERT_TRUE(DoTestOutgoingSidecar(&p, 123, 456).IsAborted());
-        ASSERT_TRUE(DoTestOutgoingSidecar(&p, 3000 * 1024, 2000 * 1024).IsAborted());
+      case OutboundCall::SENT: {
+          const auto s0 = DoTestOutgoingSidecar(&p, 0, 0);
+          ASSERT_TRUE(s0.IsAborted()) << s0.ToString();
+          const auto s1 = DoTestOutgoingSidecar(&p, 123, 456);
+          ASSERT_TRUE(s1.IsAborted()) << s1.ToString();
+          const auto s2 = DoTestOutgoingSidecar(&p, 3000 * 1024, 2000 * 1024);
+          ASSERT_TRUE(s2.IsAborted()) << s2.ToString();
+        }
         DoTestExpectTimeout(&p, MonoDelta::FromMilliseconds(timeout_ms), true);
         break;
       case OutboundCall::NEGOTIATION_TIMED_OUT:
@@ -1882,7 +1887,8 @@ TEST_P(TestRpc, TestCancellationAsync) {
     if (i > 0) SleepFor(MonoDelta::FromMicroseconds(rand.Uniform64(i * 30)));
     controller.Cancel();
     latch.Wait();
-    ASSERT_TRUE(controller.status().IsAborted() || controller.status().ok());
+    ASSERT_TRUE(controller.status().IsAborted() || controller.status().ok())
+        << controller.status().ToString();
     controller.Reset();
   }
   client_messenger->Shutdown();
