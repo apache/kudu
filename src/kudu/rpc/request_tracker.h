@@ -22,7 +22,6 @@
 
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/locks.h"
-#include "kudu/util/status.h"
 
 namespace kudu {
 namespace rpc {
@@ -50,36 +49,36 @@ namespace rpc {
 class RequestTracker : public RefCountedThreadSafe<RequestTracker> {
  public:
   typedef int64_t SequenceNumber;
-  static const RequestTracker::SequenceNumber kNoSeqNo;
+  static constexpr RequestTracker::SequenceNumber kNoSeqNo = -1;
+
   explicit RequestTracker(std::string client_id);
 
   // Creates a new, unique, sequence number.
   // Sequence numbers are assigned in increasing integer order.
-  // Returns Status::OK() and sets 'seq_no' if it was able to generate a sequence number
-  // or returns Status::ServiceUnavailable() if too many RPCs are in-flight, in which case
-  // the caller should try again later.
-  Status NewSeqNo(SequenceNumber* seq_no);
+  SequenceNumber NewSeqNo();
 
   // Returns the sequence number of the first incomplete RPC.
   // If there is no incomplete RPC returns kNoSeqNo.
-  SequenceNumber FirstIncomplete();
+  SequenceNumber FirstIncomplete() const;
 
   // Marks the rpc with 'seq_no' as completed.
-  void RpcCompleted(const SequenceNumber& seq_no);
+  void RpcCompleted(SequenceNumber seq_no);
 
   // Returns the client id for this request tracker.
-  const std::string& client_id() { return client_id_; }
+  const std::string& client_id() const { return client_id_; }
+
  private:
   // The client id for this request tracker.
   const std::string client_id_;
 
   // Lock that protects all non-const fields.
-  simple_spinlock lock_;
+  mutable simple_spinlock lock_;
 
   // The next sequence number.
   SequenceNumber next_;
 
   // The (ordered) set of incomplete RPCs.
+  // TODO(aserbin): consider using absl::btree_set instead of std::set
   std::set<SequenceNumber> incomplete_rpcs_;
 };
 

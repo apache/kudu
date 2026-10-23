@@ -159,7 +159,7 @@ class RetriableRpc : public Rpc {
 template <class Server, class RequestPB, class ResponsePB>
 void RetriableRpc<Server, RequestPB, ResponsePB>::SendRpc()  {
   if (sequence_number_ == RequestTracker::kNoSeqNo) {
-    CHECK_OK(request_tracker_->NewSeqNo(&sequence_number_));
+    sequence_number_ = request_tracker_->NewSeqNo();
   }
   server_picker_->PickLeader(
       [this](const Status& status, Server* server) {

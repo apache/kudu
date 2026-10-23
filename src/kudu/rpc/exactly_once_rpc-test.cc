@@ -293,8 +293,7 @@ class ExactlyOnceRpcTest : public RpcTestBase {
     ExactlyOnceRequestPB req;
     req.set_value_to_add(0);
     ExactlyOnceResponsePB resp;
-    RequestTracker::SequenceNumber seq_no;
-    CHECK_OK(request_tracker_->NewSeqNo(&seq_no));
+    RequestTracker::SequenceNumber seq_no = request_tracker_->NewSeqNo();
     AddRequestId(&controller, kClientId, seq_no, 0);
     ASSERT_OK(proxy_->AddExactlyOnce(req, &resp, &controller));
     ASSERT_EQ(resp.current_val(), expected_value);
@@ -321,8 +320,7 @@ class ExactlyOnceRpcTest : public RpcTestBase {
       counter++;
     }
     ExactlyOnceResponsePB response;
-    ResultTracker::SequenceNumber sequence_number;
-    CHECK_OK(request_tracker_->NewSeqNo(&sequence_number));
+    ResultTracker::SequenceNumber sequence_number = request_tracker_->NewSeqNo();
     CHECK_OK(MakeAddCall(sequence_number, 0, &response));
     CHECK_EQ(response.current_val(), counter);
     request_tracker_->RpcCompleted(sequence_number);
@@ -598,8 +596,7 @@ TEST_F(ExactlyOnceRpcTest, TestExactlyOnceSemanticsGarbageCollectionStressTest) 
   // This thread will keep making RPCs with this sequence number while
   // the 'write_thread' will make normal requests with increasing sequence
   // numbers.
-  ResultTracker::SequenceNumber stubborn_req_seq_num;
-  CHECK_OK(request_tracker_->NewSeqNo(&stubborn_req_seq_num));
+  ResultTracker::SequenceNumber stubborn_req_seq_num = request_tracker_->NewSeqNo();
   ASSERT_EQ(stubborn_req_seq_num, 0);
 
   thread stubborn_thread([this, stubborn_req_seq_num, stubborn_run_for]() {

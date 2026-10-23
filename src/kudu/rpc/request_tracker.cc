@@ -25,27 +25,25 @@
 namespace kudu {
 namespace rpc {
 
-const RequestTracker::SequenceNumber RequestTracker::kNoSeqNo = -1;
-
 RequestTracker::RequestTracker(std::string client_id)
     : client_id_(std::move(client_id)),
       next_(0) {}
 
-Status RequestTracker::NewSeqNo(SequenceNumber* seq_no) {
+RequestTracker::SequenceNumber RequestTracker::NewSeqNo() {
   std::lock_guard l(lock_);
-  *seq_no = next_;
-  InsertOrDie(&incomplete_rpcs_, *seq_no);
-  next_++;
-  return Status::OK();
+  InsertOrDie(&incomplete_rpcs_, next_);
+  return next_++;
 }
 
-RequestTracker::SequenceNumber RequestTracker::FirstIncomplete() {
+RequestTracker::SequenceNumber RequestTracker::FirstIncomplete() const {
   std::lock_guard l(lock_);
-  if (incomplete_rpcs_.empty()) return kNoSeqNo;
+  if (incomplete_rpcs_.empty()) {
+    return kNoSeqNo;
+  }
   return *incomplete_rpcs_.begin();
 }
 
-void RequestTracker::RpcCompleted(const SequenceNumber& seq_no) {
+void RequestTracker::RpcCompleted(SequenceNumber seq_no) {
   std::lock_guard l(lock_);
   incomplete_rpcs_.erase(seq_no);
 }

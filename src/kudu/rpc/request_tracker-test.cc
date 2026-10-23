@@ -15,14 +15,14 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/rpc/request_tracker.h"
+
 #include <string>
 #include <vector>
 
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/rpc/request_tracker.h"
-#include "kudu/util/test_macros.h"
 
 using std::vector;
 
@@ -30,20 +30,18 @@ namespace kudu {
 namespace rpc {
 
 TEST(RequestTrackerTest, TestSequenceNumberGeneration) {
-  const int MAX = 10;
+  constexpr int MAX = 10;
 
   scoped_refptr<RequestTracker> tracker_(new RequestTracker("test_client"));
 
   // A new tracker should have no incomplete RPCs
-  RequestTracker::SequenceNumber seq_no = tracker_->FirstIncomplete();
-  ASSERT_EQ(seq_no, RequestTracker::kNoSeqNo);
+  ASSERT_EQ(RequestTracker::kNoSeqNo, tracker_->FirstIncomplete());
 
   vector<RequestTracker::SequenceNumber> generated_seq_nos;
 
   // Generate MAX in flight RPCs, making sure they are correctly returned.
   for (int i = 0; i < MAX; i++) {
-    ASSERT_OK(tracker_->NewSeqNo(&seq_no));
-    generated_seq_nos.push_back(seq_no);
+    generated_seq_nos.push_back(tracker_->NewSeqNo());
   }
 
   // Now we should get a first incomplete.
@@ -68,8 +66,7 @@ TEST(RequestTrackerTest, TestSequenceNumberGeneration) {
   ASSERT_EQ(generated_seq_nos[6], tracker_->FirstIncomplete());
 
   for (int i = MAX / 2; i <= MAX; i++) {
-    ASSERT_OK(tracker_->NewSeqNo(&seq_no));
-    generated_seq_nos.push_back(seq_no);
+    generated_seq_nos.push_back(tracker_->NewSeqNo());
   }
 
   // Marking them all as completed should cause RequestTracker::FirstIncomplete() to return
