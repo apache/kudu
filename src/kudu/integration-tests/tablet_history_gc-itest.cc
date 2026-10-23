@@ -46,10 +46,12 @@
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/internal_mini_cluster-itest-base.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
+#include "kudu/tablet/compaction.h"
 #include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/tablet/tablet.h"
@@ -71,6 +73,8 @@
 using kudu::client::KuduClient;
 using kudu::client::KuduInsert;
 using kudu::client::KuduScanner;
+using kudu::client::KuduScanToken;
+using kudu::client::KuduScanTokenBuilder;
 using kudu::client::KuduSession;
 using kudu::client::KuduTable;
 using kudu::client::KuduTableAlterer;
@@ -125,6 +129,13 @@ class TabletHistoryGcITest : public MiniClusterITestBase {
       RETURN_NOT_OK(session->Apply(insert.release()));
     }
     return session->Flush();
+  }
+
+  // Tablet::CountUndoDeltasForTests() is private and Tablet only befriends
+  // TabletHistoryGcITest itself, and friendship isn't inherited. This accessor
+  // lets subclasses of this fixture (and their tests) use it.
+  static int64_t CountUndoDeltas(const Tablet& tablet) {
+    return tablet.CountUndoDeltasForTests();
   }
 };
 
@@ -350,6 +361,462 @@ TEST_F(TabletHistoryGcITest, TestDeletedRowsetGc) {
   // NOTE: we could try checking this matches the before/after sizes, but
   // there's a chance the delete raced with other delta background ops.
   ASSERT_GT(tablet->metrics()->deleted_rowset_gc_bytes_deleted->value(), 0);
+}
+
+// Fixture that mimics how a distributed query engine (e.g. Apache Impala, Apache
+// Spark or Apache Hive) drives a Kudu scan through scan tokens, so that we can
+// verify what happens when ancient UNDO delta GC runs after the tokens have
+// been produced but before they are used to run the scan.
+//
+// Some engines (e.g. Apache Impala) have one process which builds and serializes the
+// scan tokens and other process which later deserializes and runs them. Where the
+// read mode and the snapshot timestamp are set differs between engines: either on
+// the token builder (so they are part of the token) or on the scanner after the
+// token has been deserialized. This fixture supports both:
+//
+//   Token producer                     Kudu client API used by this fixture
+//   ---------------------------------  ------------------------------------------
+//   Builds and serializes the tokens.  KuduScanTokenBuilder::Build() and
+//   Optionally puts the read mode and  KuduScanToken::Serialize(), using one
+//   snapshot (or diff scan range) in   client. Optionally SetReadMode() and
+//   the tokens.                        SetSnapshotMicros() / SetDiffScan() on
+//                                      the builder.
+//
+//   Token consumer                     Kudu client API used by this fixture
+//   ---------------------------------  ------------------------------------------
+//   Deserializes each token and        KuduScanToken::DeserializeIntoScanner()
+//   optionally applies the read mode   using a different client, optionally
+//   and snapshot (or diff scan range)  followed by SetReadMode() and
+//   to the scanner, then opens it.     SetSnapshotMicros() / SetDiffScan(),
+//                                      and then Open().
+//
+// The table has a single tablet and a single replica so that the history of
+// the tablet is fully controlled by the test (maintenance manager disabled,
+// mock clock).
+class ScanTokenHistoryGcITest : public TabletHistoryGcITest {
+ protected:
+  static constexpr int kHistoryMaxAgeSec = 100;
+  static constexpr int32_t kNumRows = 10;
+  static constexpr int32_t kOldVal = 1;
+  static constexpr int32_t kNewVal = 2;
+  static constexpr int kScanTimeoutMs = 60 * 1000;
+
+  // The kind of write operation WriteRows() applies to the rows.
+  enum WriteType {
+    INSERT,
+    UPDATE
+  };
+
+  // Sets up a single-replica cluster with a mock clock and creates a table
+  // with the default test workload schema (key, int_val, string_val).
+  void SetUpClusterAndTable() {
+    // We need to fully control flushes, compactions, GC and the clock.
+    FLAGS_enable_maintenance_manager = false;
+    FLAGS_time_source = "mock";
+    FLAGS_tablet_history_max_age_sec = kHistoryMaxAgeSec;
+
+    NO_FATALS(StartCluster(1));
+    MiniTabletServer* mts = cluster_->mini_tablet_server(0);
+    TabletServer* ts = mts->server();
+    clock_ = down_cast<HybridClock*>(ts->clock());
+
+    // Set the initial clock time to 1000 seconds past 0, which is enough so
+    // that the AHM will not be negative.
+    constexpr uint64_t kInitialMicroTime = 1000UL * 1000 * 1000;
+    auto* ntp = down_cast<clock::MockNtp*>(clock_->time_service());
+    ntp->SetMockClockWallTimeForTests(kInitialMicroTime);
+
+    TestWorkload workload(cluster_.get());
+    workload.set_num_replicas(1);
+    workload.Setup(); // Convenient way to create a table.
+    ASSERT_OK(client_->OpenTable(workload.table_name(), &table_));
+
+    vector<scoped_refptr<TabletReplica>> replicas;
+    ts->tablet_manager()->GetTabletReplicas(&replicas);
+    ASSERT_EQ(1, replicas.size());
+    tablet_ = replicas[0]->shared_tablet();
+
+    // The token consumer uses its own client, just like the processes which
+    // run the scans of a distributed engine don't share a client with the one
+    // which produced the tokens.
+    ASSERT_OK(cluster_->CreateClient(nullptr, &exec_client_));
+  }
+
+  void AdvanceClockSec(int seconds) {
+    AddTimeToHybridClock(clock_, MonoDelta::FromSeconds(seconds));
+  }
+
+  // Inserts (or updates) rows [0, kNumRows) setting the 'int_val' column
+  // to 'int_val'.
+  Status WriteRows(WriteType write_type, int32_t int_val) {
+    shared_ptr<KuduSession> session = client_->NewSession();
+    session->SetTimeoutMillis(kScanTimeoutMs);
+    RETURN_NOT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+    for (int32_t key = 0; key < kNumRows; key++) {
+      unique_ptr<client::KuduWriteOperation> op;
+      if (write_type == INSERT) {
+        op.reset(table_->NewInsert());
+      } else {
+        op.reset(table_->NewUpdate());
+      }
+      KuduPartialRow* row = op->mutable_row();
+      RETURN_NOT_OK(row->SetInt32(0, key));
+      RETURN_NOT_OK(row->SetInt32(1, int_val));
+      RETURN_NOT_OK(row->SetStringCopy(2, ""));
+      RETURN_NOT_OK(session->Apply(op.release()));
+    }
+    return session->Flush();
+  }
+
+  // The token producer: builds and serializes the scan tokens for the table.
+  // The optional 'customize' callback can set extra properties on the builder.
+  Status ProduceScanTokens(
+      const std::function<Status(KuduScanTokenBuilder*)>& customize,
+      vector<string>* serialized_tokens) {
+    KuduScanTokenBuilder builder(table_.get());
+    RETURN_NOT_OK(builder.SetProjectedColumnNames({ "key", "int_val" }));
+    if (customize) {
+      RETURN_NOT_OK(customize(&builder));
+    }
+    vector<KuduScanToken*> tokens;
+    ElementDeleter deleter(&tokens);
+    RETURN_NOT_OK(builder.Build(&tokens));
+    serialized_tokens->clear();
+    for (const auto* token : tokens) {
+      string buf;
+      RETURN_NOT_OK(token->Serialize(&buf));
+      serialized_tokens->emplace_back(std::move(buf));
+    }
+    return Status::OK();
+  }
+
+  // The token consumer: deserializes every serialized token into a scanner, lets
+  // the optional 'configure' callback set the read mode / snapshot / diff scan on
+  // it, then opens it and reads all the rows. On success, 'rows' maps
+  // key -> int_val. On failure, 'rows' is left empty.
+  Status ConsumeScanTokens(const vector<string>& serialized_tokens,
+                           const std::function<Status(KuduScanner*)>& configure,
+                           map<int32_t, int32_t>* rows) {
+    rows->clear();
+    map<int32_t, int32_t> result;
+    for (const auto& serialized_token : serialized_tokens) {
+      KuduScanner* raw_scanner = nullptr;
+      RETURN_NOT_OK(KuduScanToken::DeserializeIntoScanner(
+          exec_client_.get(), serialized_token, &raw_scanner));
+      unique_ptr<KuduScanner> scanner(raw_scanner);
+      RETURN_NOT_OK(scanner->SetTimeoutMillis(kScanTimeoutMs));
+      if (configure) {
+        RETURN_NOT_OK(configure(scanner.get()));
+      }
+      RETURN_NOT_OK(scanner->Open());
+      RETURN_NOT_OK(ReadAllRows(scanner.get(), &result));
+    }
+    *rows = std::move(result);
+    return Status::OK();
+  }
+
+  // Reads all the rows left in the open 'scanner' and adds them to 'rows',
+  // which maps key -> int_val. Returns IllegalState if a key is returned more
+  // than once (by this scanner or by one which already filled 'rows'): a scan
+  // returns a primary key at most once, and a repeated key is not something
+  // that the map could show.
+  static Status ReadAllRows(KuduScanner* scanner, map<int32_t, int32_t>* rows) {
+    client::KuduScanBatch batch;
+    while (scanner->HasMoreRows()) {
+      RETURN_NOT_OK(scanner->NextBatch(&batch));
+      for (const auto& row : batch) {
+        int32_t key;
+        int32_t int_val;
+        RETURN_NOT_OK(row.GetInt32("key", &key));
+        RETURN_NOT_OK(row.GetInt32("int_val", &int_val));
+        if (!rows->emplace(key, int_val).second) {
+          return Status::IllegalState(Substitute("key $0 was returned more than once", key));
+        }
+      }
+    }
+    return Status::OK();
+  }
+
+  // Token consumer variant: READ_AT_SNAPSHOT at 'snapshot_micros' is applied to
+  // the scanner built from the token.
+  static std::function<Status(KuduScanner*)> AtSnapshotMicros(uint64_t snapshot_micros) {
+    return [snapshot_micros](KuduScanner* scanner) {
+      RETURN_NOT_OK(scanner->SetReadMode(KuduScanner::READ_AT_SNAPSHOT));
+      return scanner->SetSnapshotMicros(snapshot_micros);
+    };
+  }
+
+  // Token producer variant: the read mode and the snapshot are put in the tokens.
+  static std::function<Status(KuduScanTokenBuilder*)> SnapshotMicrosInToken(
+      uint64_t snapshot_micros) {
+    return [snapshot_micros](KuduScanTokenBuilder* builder) {
+      RETURN_NOT_OK(builder->SetReadMode(KuduScanner::READ_AT_SNAPSHOT));
+      return builder->SetSnapshotMicros(snapshot_micros);
+    };
+  }
+
+  // Token producer variant: the whole (start, end] diff scan range is put in the
+  // tokens.
+  static std::function<Status(KuduScanTokenBuilder*)> DiffScanInToken(
+      Timestamp start_ts, Timestamp end_ts) {
+    return [start_ts, end_ts](KuduScanTokenBuilder* builder) {
+      return builder->SetDiffScan(start_ts.ToUint64(), end_ts.ToUint64(),
+                                  KuduScanner::OBSERVABLE_ONLY);
+    };
+  }
+
+  // Token producer variant: only the end timestamp (READ_AT_SNAPSHOT at 'end_ts')
+  // is put in the tokens. The start timestamp is not part of them.
+  static std::function<Status(KuduScanTokenBuilder*)> DiffScanEndInToken(
+      Timestamp end_ts) {
+    return [end_ts](KuduScanTokenBuilder* builder) {
+      RETURN_NOT_OK(builder->SetReadMode(KuduScanner::READ_AT_SNAPSHOT));
+      return builder->SetSnapshotRaw(end_ts.ToUint64());
+    };
+  }
+
+  // Token consumer variant: the (start, end] diff scan range is applied to the
+  // scanner built from the token.
+  static std::function<Status(KuduScanner*)> AsDiffScan(Timestamp start_ts,
+                                                        Timestamp end_ts) {
+    return [start_ts, end_ts](KuduScanner* scanner) {
+      return scanner->SetDiffScan(start_ts.ToUint64(), end_ts.ToUint64(),
+                                  KuduScanner::OBSERVABLE_ONLY);
+    };
+  }
+
+  static void AssertAllRowsHaveValue(const map<int32_t, int32_t>& rows,
+                                     int32_t expected_val) {
+    ASSERT_EQ(kNumRows, rows.size());
+    for (const auto& [key, int_val] : rows) {
+      ASSERT_EQ(expected_val, int_val) << "key=" << key;
+    }
+  }
+
+  static void AssertAncientHistoryError(
+      const Status& s, const string& which = "snapshot scan end timestamp") {
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(),
+                        which + " is earlier than the ancient history mark");
+    ASSERT_STR_CONTAINS(s.ToString(), "--tablet_history_max_age_sec");
+  }
+
+  // Creates some history: kOldVal is written at T0, 'snap_ts' is picked at
+  // T0 + 10s, the rows are updated to kNewVal at T0 + 20s, and 'end_ts' is picked
+  // at T0 + 30s. A scan at 'snap_ts' expects to see kOldVal, i.e. the data as
+  // of 'snap_ts'. After memrowset is flushed, the base data now holds kNewVal,
+  // and the previous values are kept as UNDO deltas, which is what a scan at
+  // 'snap_ts' reads.
+  void CreateHistory(Timestamp* snap_ts, Timestamp* end_ts) {
+    ASSERT_OK(WriteRows(INSERT, kOldVal));
+    AdvanceClockSec(10);
+    *snap_ts = clock_->Now();
+    AdvanceClockSec(10);
+    ASSERT_OK(WriteRows(UPDATE, kNewVal));
+    AdvanceClockSec(10);
+    *end_ts = clock_->Now();
+    ASSERT_OK(tablet_->Flush());
+    ASSERT_GT(CountUndoDeltas(*tablet_), 0);
+  }
+
+  // Ancient UNDO delta GC: moves the clock forward so that the writes, 'snap_ts'
+  // and 'end_ts' all fall behind the ancient history mark, and lets tablet history
+  // GC remove the UNDO deltas that hold the update history of the rows.
+  void AdvanceClockAndGcHistory(Timestamp snap_ts, Timestamp end_ts) {
+    AdvanceClockSec(kHistoryMaxAgeSec + 70);
+    ASSERT_TRUE(tablet_->GetHistoryGcOpts().IsAncientHistory(snap_ts));
+    ASSERT_TRUE(tablet_->GetHistoryGcOpts().IsAncientHistory(end_ts));
+    ASSERT_OK(tablet_->InitAncientUndoDeltas(
+        MonoDelta::FromMilliseconds(FLAGS_undo_delta_block_gc_init_budget_millis),
+        nullptr));
+    int64_t blocks_deleted = 0;
+    ASSERT_OK(tablet_->DeleteAncientUndoDeltas(&blocks_deleted));
+    ASSERT_GT(blocks_deleted, 0);
+    ASSERT_EQ(0, CountUndoDeltas(*tablet_));
+  }
+
+  HybridClock* clock_ = nullptr;
+  shared_ptr<KuduClient> exec_client_;
+  shared_ptr<KuduTable> table_;
+  std::shared_ptr<Tablet> tablet_;
+};
+
+// Scenario: scan tokens for a snapshot scan at timestamp 't' and for a diff scan
+// over (t, end_ts] are produced, then the history at 't' becomes ancient and is
+// garbage collected, then the tokens are used to run the scans. The scans are
+// produced in each of the ways an engine can do it: with the read mode, snapshot
+// and diff scan range either in the tokens or applied on the scanners after the
+// tokens have been deserialized.
+//
+// Expected: none of the scans can be served because tablet server no longer has
+// the history needed to reconstruct the table state at 't'. Server must fail them
+// with an InvalidArgument error instead of returning wrong data (e.g. the latest
+// values, or a partial result), and the very same tokens must keep working for
+// scans which don't need the discarded history.
+TEST_F(ScanTokenHistoryGcITest, TestScanTokensAfterHistoryGc) {
+  NO_FATALS(SetUpClusterAndTable());
+
+  // Create the history: a scan at 't' (snap_ts) will want to see kOldVal.
+  Timestamp snap_ts;
+  Timestamp end_ts;
+  NO_FATALS(CreateHistory(&snap_ts, &end_ts));
+  const uint64_t snap_micros = HybridClock::GetPhysicalValueMicros(snap_ts);
+
+  // Produce the scan tokens, one set for each way of running the scans.
+  struct ScanCase {
+    const char* name;
+    // Customizes the token builder, i.e. what is part of the tokens.
+    std::function<Status(KuduScanTokenBuilder*)> customize_token;
+    // Customizes the scanner built from a token, i.e. what is applied after
+    // the token has been deserialized.
+    std::function<Status(KuduScanner*)> customize_scanner;
+    // The value of 'int_val' the scan returns while the history is available.
+    int32_t expected_val_before_gc;
+    // The serialized tokens produced for this case.
+    vector<string> tokens;
+  };
+  vector<ScanCase> cases = {
+    // A snapshot scan at 't', with the read mode and 't' applied to the scanner.
+    { "snapshot scan, timestamp applied to the scanner",
+      nullptr, AtSnapshotMicros(snap_micros), kOldVal, {} },
+    // A snapshot scan at 't', with the read mode and 't' in the tokens.
+    { "snapshot scan, timestamp in the tokens",
+      SnapshotMicrosInToken(snap_micros), nullptr, kOldVal, {} },
+    // A diff scan over (t, end_ts]: only 'end_ts' is in the tokens, and the diff
+    // scan range is applied to the scanner.
+    { "diff scan, range applied to the scanner",
+      DiffScanEndInToken(end_ts), AsDiffScan(snap_ts, end_ts), kNewVal, {} },
+    // A diff scan over (t, end_ts], with the whole range in the tokens.
+    { "diff scan, range in the tokens",
+      DiffScanInToken(snap_ts, end_ts), nullptr, kNewVal, {} },
+  };
+  for (auto& c : cases) {
+    SCOPED_TRACE(c.name);
+    ASSERT_OK(ProduceScanTokens(c.customize_token, &c.tokens));
+    ASSERT_FALSE(c.tokens.empty());
+  }
+
+  map<int32_t, int32_t> rows;
+
+  // Control, before the GC: every set of tokens returns the data as of the
+  // requested timestamp(s). The tokens without a snapshot in them also work
+  // with the default READ_LATEST mode, which returns the new values.
+  for (const auto& c : cases) {
+    SCOPED_TRACE(c.name);
+    ASSERT_OK(ConsumeScanTokens(c.tokens, c.customize_scanner, &rows));
+    NO_FATALS(AssertAllRowsHaveValue(rows, c.expected_val_before_gc));
+  }
+
+  // Verify that setup is sound, with latest row data as scan result.
+  const vector<string>& plain_tokens = cases[0].tokens;
+  ASSERT_OK(ConsumeScanTokens(plain_tokens, nullptr, &rows));
+  NO_FATALS(AssertAllRowsHaveValue(rows, kNewVal));
+
+  // KUDU GC: the history needed by the scans at 't' is now deleted.
+  NO_FATALS(AdvanceClockAndGcHistory(snap_ts, end_ts));
+
+  // Run the very same tokens: all the scans are rejected, and no rows are
+  // returned.
+  for (const auto& c : cases) {
+    SCOPED_TRACE(c.name);
+    const Status s = ConsumeScanTokens(c.tokens, c.customize_scanner, &rows);
+    NO_FATALS(AssertAncientHistoryError(s));
+    ASSERT_TRUE(rows.empty());
+  }
+
+  // The AHM check only applies to READ_AT_SNAPSHOT and READ_YOUR_WRITES scans:
+  // the same tokens, without a these two modes, still read the latest data in
+  // the default READ_LATEST mode.
+  ASSERT_OK(ConsumeScanTokens(plain_tokens, nullptr, &rows));
+  NO_FATALS(AssertAllRowsHaveValue(rows, kNewVal));
+
+  // Scan with a recent snapshot that is still within the retained history.
+  const uint64_t fresh_snap_micros =
+      HybridClock::GetPhysicalValueMicros(clock_->Now()) - 1000 * 1000;
+  ASSERT_OK(ConsumeScanTokens(plain_tokens, AtSnapshotMicros(fresh_snap_micros), &rows));
+  NO_FATALS(AssertAllRowsHaveValue(rows, kNewVal));
+
+  // A diff scan whose end is within the retained history but whose start is
+  // not - (t, new_end_ts], where t < AHM < new_end_ts, can't be served, since the
+  // changes after 't' can't be told apart without the discarded history.
+  const Timestamp new_end_ts =
+      HybridClock::TimestampFromMicroseconds(fresh_snap_micros);
+  ASSERT_FALSE(tablet_->GetHistoryGcOpts().IsAncientHistory(new_end_ts));
+  {
+    SCOPED_TRACE("diff scan, ancient start, range applied to the scanner");
+    const Status s = ConsumeScanTokens(
+        plain_tokens, AsDiffScan(snap_ts, new_end_ts), &rows);
+    NO_FATALS(AssertAncientHistoryError(s, "snapshot scan start timestamp"));
+    ASSERT_TRUE(rows.empty());
+  }
+  {
+    SCOPED_TRACE("diff scan, ancient start, range in the tokens");
+    vector<string> tokens;
+    ASSERT_OK(ProduceScanTokens(DiffScanInToken(snap_ts, new_end_ts), &tokens));
+    const Status s = ConsumeScanTokens(tokens, nullptr, &rows);
+    NO_FATALS(AssertAncientHistoryError(s, "snapshot scan start timestamp"));
+    ASSERT_TRUE(rows.empty());
+  }
+}
+
+// Scenario: a snapshot scanner at timestamp 't' and a diff scanner over
+// (t, end_ts] are opened on the tablet server while the history is available,
+// but they don't read any rows yet. Then 't' falls behind the ancient history
+// mark and tablet server garbage collects the UNDO deltas, and only then the
+// scanners read their rows.
+//
+// Expected: the scanners were valid when they were opened, so they keep
+// returning the data as of their timestamps. Opening a scanner pins what it
+// needs: GC removes the deltas from the tablet, but it can't take them away
+// from the scanners which are already using them. The tablet server doesn't
+// check the ancient history mark again when a scan is continued.
+TEST_F(ScanTokenHistoryGcITest, TestOpenScannersAfterHistoryGc) {
+  NO_FATALS(SetUpClusterAndTable());
+
+  Timestamp snap_ts;
+  Timestamp end_ts;
+  NO_FATALS(CreateHistory(&snap_ts, &end_ts));
+  const uint64_t snap_micros = HybridClock::GetPhysicalValueMicros(snap_ts);
+
+  // Open the scanners. A batch size of 0 makes the tablet server open the scanner
+  // (initialize its iterator at the snapshot and check the ancient history mark)
+  // without returning any rows, so all the rows are read by the NextBatch() calls
+  // below, after the GC. With the default batch size, all the rows of this small
+  // table would come back in the Open() response, before the GC, and the reads
+  // after the GC would never reach the tablet server.
+  KuduScanner snapshot_scanner(table_.get());
+  ASSERT_OK(snapshot_scanner.SetProjectedColumnNames({ "key", "int_val" }));
+  ASSERT_OK(snapshot_scanner.SetTimeoutMillis(kScanTimeoutMs));
+  ASSERT_OK(snapshot_scanner.SetBatchSizeBytes(0));
+  ASSERT_OK(AtSnapshotMicros(snap_micros)(&snapshot_scanner));
+  ASSERT_OK(snapshot_scanner.Open());
+  ASSERT_TRUE(snapshot_scanner.HasMoreRows());
+
+  KuduScanner diff_scanner(table_.get());
+  ASSERT_OK(diff_scanner.SetProjectedColumnNames({ "key", "int_val" }));
+  ASSERT_OK(diff_scanner.SetTimeoutMillis(kScanTimeoutMs));
+  ASSERT_OK(diff_scanner.SetBatchSizeBytes(0));
+  ASSERT_OK(AsDiffScan(snap_ts, end_ts)(&diff_scanner));
+  ASSERT_OK(diff_scanner.Open());
+  ASSERT_TRUE(diff_scanner.HasMoreRows());
+
+  // KUDU GC: the history needed by the scans at 't' is now deleted.
+  NO_FATALS(AdvanceClockAndGcHistory(snap_ts, end_ts));
+
+  // A new scan opened now should be rejected.
+  KuduScanner late_scanner(table_.get());
+  ASSERT_OK(late_scanner.SetTimeoutMillis(kScanTimeoutMs));
+  ASSERT_OK(AtSnapshotMicros(snap_micros)(&late_scanner));
+  NO_FATALS(AssertAncientHistoryError(late_scanner.Open()));
+
+  // While the scanners which were already open still return the data as of
+  // their timestamps.
+  map<int32_t, int32_t> rows;
+  ASSERT_OK(ReadAllRows(&snapshot_scanner, &rows));
+  NO_FATALS(AssertAllRowsHaveValue(rows, kOldVal));
+  rows.clear();
+  ASSERT_OK(ReadAllRows(&diff_scanner, &rows));
+  NO_FATALS(AssertAllRowsHaveValue(rows, kNewVal));
 }
 
 // Whether a MaterializedTestRow is deleted or not.
