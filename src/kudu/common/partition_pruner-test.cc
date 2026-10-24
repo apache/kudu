@@ -978,7 +978,7 @@ class PartitionPrunerTestWithMaxInListLength : public PartitionPrunerTest,
 
 INSTANTIATE_TEST_SUITE_P(MaxInListLength,
                          PartitionPrunerTestWithMaxInListLength,
-                         ::testing::Values(1, 10, 20, 50));
+                         ::testing::Values(1, 2, 5, 10, 25));
 
 // Create a table with 200 columns including 10 key columns and
 // generate some in-list predicates for these key columns. The old algorithm
@@ -1046,10 +1046,12 @@ TEST_P(PartitionPrunerTestWithMaxInListLength, TestMultiColumnInListHashPruningM
       ASSERT_EQ(v1, v2);
     }
     // v2 algorithm is more efficient than v1 algorithm.
-    // The following logs are used to compare efficiency of the two algorithms.
-    // v2 (new algorithm) is quicker 100x than v1 (older one).
+    // The following logs report on the run time of the two algorithms when
+    // the test is run with '-v=1' extra flag.  v2 (the new algorithm) is
+    // faster many times than v1 (the legacy one), and the speed up increases
+    // dramatically with the number of elements in the in-list predicate.
     if (v2_elapsed_us != 0 && v1_elapsed_us != 0) {
-      LOG(INFO) << Substitute(
+      VLOG(1) << Substitute(
           "combination_count: $0, old algorithm "
           "cost: $1us, new algorithm cost: $2us, speedup: $3x",
           combination_count,
