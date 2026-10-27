@@ -643,7 +643,9 @@ Status RaftConsensus::TransferLeadership(const optional<string>& new_leader_uuid
 Status RaftConsensus::BeginLeaderTransferPeriodUnlocked(
     const optional<string>& successor_uuid) {
   DCHECK(lock_.is_locked());
-  if (std::atomic_exchange(&leader_transfer_in_progress_, true)) {
+  if (std::atomic_exchange_explicit(&leader_transfer_in_progress_,
+                                    true,
+                                    memory_order::memory_order_acq_rel)) {
     return Status::ServiceUnavailable(
         Substitute("leadership transfer for $0 already in progress",
                    options_.tablet_id));
@@ -656,7 +658,7 @@ Status RaftConsensus::BeginLeaderTransferPeriodUnlocked(
 void RaftConsensus::EndLeaderTransferPeriod() {
   transfer_period_timer_->Stop();
   queue_->EndWatchForSuccessor();
-  leader_transfer_in_progress_ = false;
+  leader_transfer_in_progress_.store(false, memory_order::memory_order_release);
 }
 
 scoped_refptr<ConsensusRound> RaftConsensus::NewRound(
@@ -813,7 +815,7 @@ Status RaftConsensus::CheckLeadershipAndBindTerm(const scoped_refptr<ConsensusRo
   const auto role = role_and_term.first;
   switch (role) {
     case RaftPeerPB::LEADER:
-      if (leader_transfer_in_progress_) {
+      if (leader_transfer_in_progress_.load(memory_order::memory_order_acquire)) {
         return Status::ServiceUnavailable("leader transfer in progress");
       }
       if (!leader_is_ready_.load(memory_order::memory_order_acquire)) {
@@ -3103,7 +3105,7 @@ Status RaftConsensus::CheckActiveLeaderUnlocked() const {
       // Check for the consistency of the information in the consensus metadata
       // and the state of the consensus queue.
       DCHECK(queue_->IsInLeaderMode());
-      if (leader_transfer_in_progress_) {
+      if (leader_transfer_in_progress_.load(memory_order::memory_order_acquire)) {
         return Status::ServiceUnavailable("leader transfer in progress");
       }
       return Status::OK();
