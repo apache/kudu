@@ -52,6 +52,7 @@ TAG_FLAG(cmeta_force_fsync, advanced);
 
 DECLARE_bool(cmeta_fsync_override_on_xfs);
 
+using std::memory_order;
 using std::string;
 using strings::Substitute;
 
@@ -418,7 +419,7 @@ Status ConsensusMetadata::UpdateOnDiskSize() {
   string path = fs_manager_->GetConsensusMetadataPath(tablet_id_);
   uint64_t on_disk_size;
   RETURN_NOT_OK(fs_manager_->GetEnv()->GetFileSize(path, &on_disk_size));
-  on_disk_size_ = on_disk_size;
+  on_disk_size_.store(on_disk_size, memory_order::memory_order_relaxed);
   return Status::OK();
 }
 
