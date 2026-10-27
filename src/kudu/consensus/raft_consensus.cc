@@ -174,6 +174,7 @@ using google::protobuf::util::MessageDifferencer;
 using kudu::pb_util::SecureShortDebugString;
 using kudu::rpc::PeriodicTimer;
 using kudu::tserver::TabletServerErrorPB;
+using std::memory_order;
 using std::nullopt;
 using std::optional;
 using std::shared_ptr;
@@ -733,7 +734,7 @@ Status RaftConsensus::BecomeLeaderUnlocked() {
 
   last_leader_communication_time_micros_ = 0;
   RETURN_NOT_OK(AppendNewRoundToQueueUnlocked(round));
-  leader_is_ready_ = true;
+  leader_is_ready_.store(true, memory_order::memory_order_release);
 
   return Status::OK();
 }
@@ -808,7 +809,6 @@ Status RaftConsensus::CheckLeadershipAndBindTerm(const scoped_refptr<ConsensusRo
   //  * It's unsafe to bind to a newer term if we've asserted leadership
   //    for a stale term, hence this ordering.
   const auto role_and_term = cmeta_->GetRoleAndTerm();
-  const bool leader_is_ready = leader_is_ready_;
 
   const auto role = role_and_term.first;
   switch (role) {
@@ -816,7 +816,7 @@ Status RaftConsensus::CheckLeadershipAndBindTerm(const scoped_refptr<ConsensusRo
       if (leader_transfer_in_progress_) {
         return Status::ServiceUnavailable("leader transfer in progress");
       }
-      if (!leader_is_ready) {
+      if (!leader_is_ready_.load(memory_order::memory_order_acquire)) {
         // Leader replica should not accept write operations before scheduling
         // the replication of a NO_OP to assert its leadership in the current
         // term. Otherwise there might be a race, so the very first accepted
@@ -3221,7 +3221,7 @@ bool RaftConsensus::HasLeaderUnlocked() const {
 
 void RaftConsensus::ClearLeaderUnlocked() {
   DCHECK(lock_.is_locked());
-  leader_is_ready_ = false;
+  leader_is_ready_.store(false, memory_order::memory_order_release);
   cmeta_->set_leader_uuid("");
 }
 

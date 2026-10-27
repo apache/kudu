@@ -329,7 +329,7 @@ Status ConsensusMetadata::Flush(FlushMode flush_mode) {
 
 ConsensusMetadata::RoleAndTerm ConsensusMetadata::GetRoleAndTerm() const {
   // Read the cached role and term atomically to unpack them consistently.
-  const uint64_t val = role_and_term_cache_;
+  const uint64_t val = role_and_term_cache_.load(memory_order::memory_order_acquire);
   return std::make_pair(UnpackRole(val), UnpackTerm(val));
 }
 
@@ -411,8 +411,9 @@ void ConsensusMetadata::UpdateActiveRole() {
 
 void ConsensusMetadata::UpdateRoleAndTermCache() {
   DFAKE_SCOPED_RECURSIVE_LOCK(fake_lock_);
-  role_and_term_cache_ = PackRoleAndTerm(
+  const uint64_t role_and_term = PackRoleAndTerm(
       active_role_, pb_.has_current_term() ? current_term() : -1);
+  role_and_term_cache_.store(role_and_term, memory_order::memory_order_release);
 }
 
 Status ConsensusMetadata::UpdateOnDiskSize() {
