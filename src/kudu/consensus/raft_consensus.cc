@@ -462,7 +462,8 @@ string ReasonString(RaftConsensus::ElectionReason reason, StringPiece leader_uui
 } // anonymous namespace
 
 Status RaftConsensus::StartElection(ElectionMode mode, ElectionReason reason) {
-  if (server_ctx_.quiescing && server_ctx_.quiescing->load()) {
+  if (PREDICT_TRUE(server_ctx_.quiescing) &&
+      server_ctx_.quiescing->load(memory_order::memory_order_relaxed)) {
     return Status::IllegalState("leader elections are disabled");
   }
   const char* const mode_str = ModeString(mode);
@@ -1712,7 +1713,8 @@ void RaftConsensus::FillConsensusResponseOKUnlocked(ConsensusResponsePB* respons
       last_received_cur_leader_);
   response->mutable_status()->set_last_committed_idx(
       queue_->GetCommittedIndex());
-  if (PREDICT_TRUE(server_ctx_.quiescing) && server_ctx_.quiescing->load()) {
+  if (PREDICT_TRUE(server_ctx_.quiescing) &&
+      server_ctx_.quiescing->load(memory_order::memory_order_relaxed)) {
     response->set_server_quiescing(true);
   }
 }

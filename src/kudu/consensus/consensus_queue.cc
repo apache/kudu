@@ -84,6 +84,7 @@ using kudu::log::Log;
 using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
 using std::atomic;
+using std::memory_order;
 using std::optional;
 using std::string;
 using std::unique_ptr;
@@ -1117,7 +1118,10 @@ void PeerMessageQueue::PromoteIfNeeded(const TrackedPeer& peer,
 void PeerMessageQueue::TransferLeadershipIfNeeded(const TrackedPeer& peer,
                                                   const ConsensusStatusPB& status) {
   DCHECK(queue_lock_.is_locked());
-  bool server_quiescing = server_quiescing_ && *server_quiescing_;
+  bool server_quiescing = false;
+  if (PREDICT_TRUE(server_quiescing_)) {
+    server_quiescing = server_quiescing_->load(memory_order::memory_order_relaxed);
+  }
   // Only transfer leadership if the local peer has begun looking for a
   // successor, or if the server is quiescing. Otherwise, exit early.
   if (!successor_watch_in_progress_ && !server_quiescing) {
