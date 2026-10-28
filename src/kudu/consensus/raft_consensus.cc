@@ -734,7 +734,7 @@ Status RaftConsensus::BecomeLeaderUnlocked() {
         this->NonTxRoundReplicationFinished(round_raw, &DoNothingStatusCB, s);
       });
 
-  last_leader_communication_time_micros_ = 0;
+  last_leader_communication_time_micros_.store(0, memory_order::memory_order_relaxed);
   RETURN_NOT_OK(AppendNewRoundToQueueUnlocked(round));
   leader_is_ready_.store(true, memory_order::memory_order_release);
 
@@ -1507,7 +1507,8 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     SnoozeFailureDetector();
     WithholdVotes();
 
-    last_leader_communication_time_micros_ = GetMonoTimeMicros();
+    last_leader_communication_time_micros_.store(
+        GetMonoTimeMicros(), memory_order::memory_order_relaxed);
 
     // Reset the 'failed_elections_since_stable_leader' metric now that we've
     // accepted an update from the established leader. This is done in addition
@@ -3290,8 +3291,10 @@ ConsensusMetadata* RaftConsensus::consensus_metadata_for_tests() const {
 }
 
 int64_t RaftConsensus::GetMillisSinceLastLeaderHeartbeat() const {
-    return last_leader_communication_time_micros_ == 0 ?
-        0 : (GetMonoTimeMicros() - last_leader_communication_time_micros_) / 1000;
+  const auto last_communication_time =
+      last_leader_communication_time_micros_.load(memory_order::memory_order_relaxed);
+  return last_communication_time == 0
+      ? 0 : (GetMonoTimeMicros() - last_communication_time) / 1000;
 }
 
 ////////////////////////////////////////////////////////////////////////
