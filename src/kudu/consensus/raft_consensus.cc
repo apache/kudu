@@ -708,7 +708,7 @@ Status RaftConsensus::BecomeLeaderUnlocked() {
   DisableFailureDetector();
 
   // Don't vote for anyone if we're a leader.
-  withhold_votes_until_ = MonoTime::Max();
+  withhold_votes_until_.store(MonoTime::Max(), memory_order::memory_order_release);
 
   // Leadership never starts in a transfer period.
   EndLeaderTransferPeriod();
@@ -754,7 +754,7 @@ Status RaftConsensus::BecomeReplicaUnlocked(optional<MonoDelta> fd_delta) {
   UpdateFailureDetectorState(std::move(fd_delta));
 
   // Now that we're a replica, we can allow voting for other nodes.
-  withhold_votes_until_ = MonoTime::Min();
+  withhold_votes_until_.store(MonoTime::Min(), memory_order::memory_order_release);
 
   // Deregister ourselves from the queue. We no longer need to track what gets
   // replicated since we're stepping down.
@@ -1756,9 +1756,12 @@ Status RaftConsensus::RequestVote(const VoteRequestPB* request,
   //
   // See also https://ramcloud.stanford.edu/~ongaro/thesis.pdf
   // section 4.2.3.
-  if (PREDICT_TRUE(!request->ignore_live_leader()) &&
-      MonoTime::Now() < withhold_votes_until_) {
-    return RequestVoteRespondLeaderIsAlive(request, response);
+  if (PREDICT_TRUE(!request->ignore_live_leader())) {
+    const auto withhold_until =
+        withhold_votes_until_.load(memory_order::memory_order_acquire);
+    if (MonoTime::Now() < withhold_until) {
+      return RequestVoteRespondLeaderIsAlive(request, response);
+    }
   }
 
   // We must acquire the update lock in order to ensure that this vote action
@@ -1831,9 +1834,12 @@ Status RaftConsensus::RequestVote(const VoteRequestPB* request,
   // in the very beginning of this method and before lock_ is acquired. This
   // extra check costs a little, but it helps in avoiding extra election rounds
   // and disruptive transfers of the replica leadership.
-  if (PREDICT_TRUE(!request->ignore_live_leader()) &&
-      MonoTime::Now() < withhold_votes_until_) {
-    return RequestVoteRespondLeaderIsAlive(request, response);
+  if (PREDICT_TRUE(!request->ignore_live_leader())) {
+    const auto withhold_until =
+        withhold_votes_until_.load(memory_order::memory_order_acquire);
+    if (MonoTime::Now() < withhold_until) {
+      return RequestVoteRespondLeaderIsAlive(request, response);
+    }
   }
 
   // Candidate is running behind.
@@ -2286,7 +2292,11 @@ void RaftConsensus::Stop() {
 
   // If we were the leader, stop withholding votes.
   auto max_time = MonoTime::Max();
-  withhold_votes_until_.compare_exchange_strong(max_time, MonoTime::Min());
+  withhold_votes_until_.compare_exchange_strong(
+      max_time,
+      MonoTime::Min(),
+      memory_order::memory_order_release,
+      memory_order::memory_order_relaxed);
 
 
   // Shut down things that might acquire locks during destruction.
@@ -3030,16 +3040,24 @@ void RaftConsensus::SnoozeFailureDetector(optional<string> reason_for_log,
 }
 
 void RaftConsensus::WithholdVotes() {
-  MonoTime prev = withhold_votes_until_;
-  MonoTime next = MonoTime::Now() + MinimumElectionTimeout();
+  // A spurious failure of std::atomic<T>::compare_exchange_weak() usually takes
+  // just a few CPU cycles, and if many of them happen in a row, the Raft
+  // election timeout setting provides good enough margin here. It's many orders
+  // of magnitude longer than possible delta accumulated when retrying the
+  // std::atomic::compare_exchange_weak() call below, assuming the calling
+  // thread stays active on a CPU.
+  const MonoTime next = MonoTime::Now() + MinimumElectionTimeout();
+  MonoTime prev = withhold_votes_until_.load(memory_order::memory_order_relaxed);
   do {
     if (prev == MonoTime::Max()) {
-      // Maximum withholding time already. It might be the case if replica
-      // has become a leader already.
+      // Maximum withholding time: replica might have become a leader already.
       break;
     }
-    next = MonoTime::Now() + MinimumElectionTimeout();
-  } while (!withhold_votes_until_.compare_exchange_weak(prev, next));
+  } while (!withhold_votes_until_.compare_exchange_weak(
+        prev,
+        next,
+        memory_order::memory_order_release,
+        memory_order::memory_order_relaxed));
 }
 
 MonoDelta RaftConsensus::LeaderElectionExpBackoffDeltaUnlocked() {
