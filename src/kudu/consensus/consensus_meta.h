@@ -154,10 +154,6 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
   // Persist current state of the protobuf to disk.
   Status Flush(FlushMode flush_mode = OVERWRITE);
 
-  int64_t flush_count_for_tests() const {
-    return flush_count_for_tests_;
-  }
-
   // The on-disk size of the consensus metadata, as of the last call to
   // Load() or Flush(). This method is thread-safe.
   int64_t on_disk_size() const {
@@ -180,6 +176,9 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
   FRIEND_TEST(ConsensusMetadataTest, TestActiveRole);
   FRIEND_TEST(ConsensusMetadataTest, TestToConsensusStatePB);
   FRIEND_TEST(ConsensusMetadataTest, TestMergeCommittedConsensusStatePB);
+
+  FRIEND_TEST(RaftConsensusQuorumTest, TestLeaderElectionWithQuiescedQuorum);
+  FRIEND_TEST(RaftConsensusQuorumTest, TestRequestVote);
 
   ConsensusMetadata(FsManager* fs_manager, std::string tablet_id,
                     std::string peer_uuid);
@@ -224,6 +223,10 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
   // Updates the cached on-disk size of the consensus metadata.
   Status UpdateOnDiskSize();
 
+  int64_t flush_count_for_tests() const {
+    return flush_count_for_tests_.load(std::memory_order_relaxed);
+  }
+
   FsManager* const fs_manager_;
   const std::string tablet_id_;
   const std::string peer_uuid_;
@@ -239,7 +242,7 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
   RaftConfigPB pending_config_;
 
   // The number of times the metadata has been flushed to disk.
-  int64_t flush_count_for_tests_;
+  std::atomic<int64_t> flush_count_for_tests_;
 
   // Durable fields.
   ConsensusMetadataPB pb_;

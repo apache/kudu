@@ -287,7 +287,7 @@ Status ConsensusMetadata::Flush(FlushMode flush_mode) {
   MAYBE_FAULT(FLAGS_fault_crash_before_cmeta_flush);
   SCOPED_LOG_SLOW_EXECUTION_PREFIX(WARNING, 500, LogPrefix(), "flushing consensus metadata");
 
-  flush_count_for_tests_++;
+  flush_count_for_tests_.fetch_add(1, std::memory_order_relaxed);
   // Sanity test to ensure we never write out a bad configuration.
   RETURN_NOT_OK_PREPEND(VerifyRaftConfig(pb_.committed_config()),
                         "Invalid config in ConsensusMetadata, cannot flush to disk");
