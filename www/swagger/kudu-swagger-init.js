@@ -30,6 +30,9 @@ function initializeSwaggerUI() {
         url: specUrl,
       dom_id: '#swagger-ui',
       deepLinking: true,
+      // Disable "Try it out" so the docs page can't issue requests against
+      // the cluster; the API reference is meant to be read-only.
+      supportedSubmitMethods: [],
       presets: [
         SwaggerUIBundle.presets.apis
       ],
