@@ -74,6 +74,7 @@
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
+#include "kudu/util/logging_test_util.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/dns_resolver.h"
@@ -1376,16 +1377,45 @@ TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
     scan->set_tablet_id(tablet_id_);
     scan->set_read_mode(READ_AT_SNAPSHOT);
     ASSERT_OK(SchemaToColumnPBs(schema_, scan->mutable_projected_columns()));
-
-    // Send the call. We expect to get a timeout passed back from the server side
-    // (i.e. not an RPC timeout)
     req.set_batch_size_bytes(0);
+
     SCOPED_TRACE(SecureDebugString(req));
-    ASSERT_OK(replica_ts->tserver_proxy->Scan(req, &resp, &rpc));
-    SCOPED_TRACE(SecureDebugString(resp));
-    string err_str = StatusFromPB(resp.error().status()).ToString();
-    ASSERT_STR_CONTAINS(err_str, "Timed out waiting for ts:");
-    ASSERT_STR_CONTAINS(err_str, "to be safe");
+    StringVectorSink capture_logs;
+    Status s;
+    {
+      // Send the call. We expect to get a timeout passed back from the server
+      // side (i.e. not an RPC timeout) when no scheduler anomalies happen.
+      // However, due to scheduler anomalies, it could happen that the scanner
+      // thread sleeps longer than required in ConditionVariable::WaitUntil() when
+      // invoking pthread_cond_timedwait()/pthread_cond_timedwait_relative_np(),
+      // so the extra margin in TabletServiceImpl::HandleScanAtSnapshot() doesn't
+      // cover that. In such a case, the RPC will result in Status::TimedOut()
+      // reported at the RPC level, but the expected error message should be
+      // present in the tablet server's logs.
+      ScopedRegisterSink reg(&capture_logs);
+      s = replica_ts->tserver_proxy->Scan(req, &resp, &rpc);
+    }
+    constexpr char kErrPattern0[] = "Timed out waiting for ts:";
+    constexpr char kErrPattern1[] = "to be safe";
+    if (s.ok()) {
+      SCOPED_TRACE(SecureDebugString(resp));
+      ASSERT_TRUE(resp.has_error());
+      ASSERT_TRUE(resp.error().has_status());
+      const auto& err_str = StatusFromPB(resp.error().status()).ToString();
+      ASSERT_STR_CONTAINS(err_str, kErrPattern0);
+      ASSERT_STR_CONTAINS(err_str, kErrPattern1);
+    } else {
+      ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
+      bool patterns_found = false;
+      for (const string& str : capture_logs.logged_msgs()) {
+        if (string::npos != str.find(kErrPattern0) &&
+            string::npos != str.find(kErrPattern1)) {
+          patterns_found = true;
+          break;
+        }
+      }
+      ASSERT_TRUE(patterns_found);
+    }
   }
 
   resp.Clear();
