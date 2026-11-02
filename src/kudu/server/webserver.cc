@@ -82,6 +82,7 @@ using std::stringstream;
 using std::string;
 using std::unordered_set;
 using std::vector;
+using strings::Split;
 using strings::Substitute;
 
 DEFINE_int32(webserver_max_post_length_bytes, 1024 * 1024,
@@ -92,18 +93,20 @@ TAG_FLAG(webserver_max_post_length_bytes, runtime);
 
 DEFINE_string(webserver_cache_control_options, "no-store",
               "The webserver adds 'Cache-Control' HTTP header with this value "
-              "to all responses.");
+              "to its responses.");
 TAG_FLAG(webserver_cache_control_options, advanced);
 TAG_FLAG(webserver_cache_control_options, runtime);
 
 DEFINE_string(webserver_x_frame_options, "DENY",
-              "The webserver will add an 'X-Frame-Options' HTTP header with this value "
-              "to all responses. This can help prevent clickjacking attacks.");
+              "The webserver adds 'X-Frame-Options' HTTP header with this "
+              "value to its responses. This can help prevent "
+              "clickjacking attacks.");
 TAG_FLAG(webserver_x_frame_options, advanced);
 TAG_FLAG(webserver_x_frame_options, runtime);
 
 DEFINE_bool(webserver_enable_csp, true,
-            "The webserver adds the Content-Security-Policy header to response when enabled.");
+            "The webserver adds the Content-Security-Policy header to its "
+            "responses when enabled.");
 TAG_FLAG(webserver_enable_csp, advanced);
 TAG_FLAG(webserver_enable_csp, runtime);
 
@@ -131,9 +134,50 @@ DEFINE_bool(webserver_hsts_include_sub_domains, false,
 TAG_FLAG(webserver_hsts_include_sub_domains, advanced);
 TAG_FLAG(webserver_hsts_include_sub_domains, runtime);
 
+DEFINE_string(webserver_referrer_policy, "no-referrer",
+              "The webserver adds 'Referrer-Policy' HTTP header with this "
+              "value (only when non-empty) to its responses. This controls how "
+              "much referrer information the browser includes with requests.");
+TAG_FLAG(webserver_referrer_policy, advanced);
+TAG_FLAG(webserver_referrer_policy, runtime);
+
+// Valid settings for the --webserver_referrer_policy flag; for details see
+// https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Referrer-Policy
+static const unordered_set<string> kValidReferrerPolicyTokens = {
+    "no-referrer",
+    "no-referrer-when-downgrade",
+    "origin",
+    "origin-when-cross-origin",
+    "same-origin",
+    "strict-origin",
+    "strict-origin-when-cross-origin",
+    "unsafe-url",
+};
+
+// This validator isn't very strict intentionally to allow for new settings
+// if the W3C standard ever changes in this regard.
+static bool ValidateWebserverReferrerPolicyFlag(const char* /*flagname*/,
+                                                const string& value) {
+  if (value.empty()) {
+    return true;
+  }
+  for (const StringPiece token_piece : Split(value, ",")) {
+    string token = token_piece.ToString();
+    StripWhiteSpace(&token);
+    if (token.empty() || !ContainsKey(kValidReferrerPolicyTokens, token)) {
+      LOG(WARNING) << Substitute("unrecognized value for "
+          "--webserver_referrer_policy: '$0'; expected an empty string or "
+          "a comma-separated list of standard Referrer-Policy tokens: $1",
+          value, JoinStrings(kValidReferrerPolicyTokens, ","));
+    }
+  }
+  return true;
+}
+DEFINE_validator(webserver_referrer_policy, &ValidateWebserverReferrerPolicyFlag);
+
 DEFINE_string(webserver_x_content_type_options, "nosniff",
               "The webserver adds 'X-Content-Type-Options' HTTP header with "
-              "this value to all responses.");
+              "this value (only when non-empty) to its responses.");
 TAG_FLAG(webserver_x_content_type_options, advanced);
 TAG_FLAG(webserver_x_content_type_options, runtime);
 
@@ -1045,6 +1089,10 @@ void Webserver::SendResponse(struct sq_connection* connection,
     }
     oss << "\r\n";
   }
+  const auto& referrer_policy = FLAGS_webserver_referrer_policy;
+  if (!referrer_policy.empty()) {
+    oss << Substitute("Referrer-Policy: $0\r\n", referrer_policy);
+  }
   const auto& x_content_type_options = FLAGS_webserver_x_content_type_options;
   if (!x_content_type_options.empty()) {
     oss << Substitute("X-Content-Type-Options: $0\r\n", x_content_type_options);
@@ -1055,6 +1103,7 @@ void Webserver::SendResponse(struct sq_connection* connection,
     "Content-Length",
     "Content-Security-Policy",
     "Content-Type",
+    "Referrer-Policy",
     "Strict-Transport-Security",
     "X-Content-Type-Options",
     "X-Frame-Options",

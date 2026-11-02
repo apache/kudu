@@ -36,6 +36,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/escaping.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/security/test/mini_kdc.h"
@@ -49,6 +50,7 @@
 #include "kudu/util/faststring.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/logging_test_util.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/openssl_util.h"
@@ -73,6 +75,7 @@ DECLARE_string(spnego_keytab_file);
 DECLARE_string(trusted_certificate_file);
 DECLARE_string(webserver_cache_control_options);
 DECLARE_string(webserver_interface);
+DECLARE_string(webserver_referrer_policy);
 DECLARE_string(webserver_x_content_type_options);
 DECLARE_string(webserver_x_frame_options);
 
@@ -645,6 +648,7 @@ TEST_P(WebserverTest, TestIndexPage) {
 
   // Check for the expected headers.
   ASSERT_STR_CONTAINS(buf_.ToString(), "Cache-Control: no-store");
+  ASSERT_STR_CONTAINS(buf_.ToString(), "Referrer-Policy: no-referrer");
   ASSERT_STR_CONTAINS(buf_.ToString(), "X-Frame-Options: DENY");
   ASSERT_STR_CONTAINS(buf_.ToString(), "X-Content-Type-Options: nosniff");
 
@@ -659,25 +663,29 @@ TEST_P(WebserverTest, TestIndexPage) {
   // Should have link to default path handlers (e.g memz)
   ASSERT_STR_CONTAINS(buf_.ToString(), "memz");
 
-  // Check that particular headers are generated as expected when customizing
-  // the Cache-Control and X-Content-Type-Options headers.
+  // Check that the embedded webserver produces security-related headers
+  // as expected when customizing corresponding run-time flags.
   FLAGS_webserver_cache_control_options = "no-cache";
-  FLAGS_webserver_x_frame_options = "SAMEORIGIN";
+  FLAGS_webserver_referrer_policy = "same-origin";
   FLAGS_webserver_x_content_type_options = "nosnuff";
+  FLAGS_webserver_x_frame_options = "SAMEORIGIN";
   ASSERT_OK(curl_.FetchURL(url_, &buf_));
   ASSERT_STR_CONTAINS(buf_.ToString(), "Cache-Control: no-cache");
-  ASSERT_STR_CONTAINS(buf_.ToString(), "X-Frame-Options: SAMEORIGIN");
+  ASSERT_STR_CONTAINS(buf_.ToString(), "Referrer-Policy: same-origin");
   ASSERT_STR_CONTAINS(buf_.ToString(), "X-Content-Type-Options: nosnuff");
+  ASSERT_STR_CONTAINS(buf_.ToString(), "X-Frame-Options: SAMEORIGIN");
 
   // Check that particular headers aren't added when corresponding flags
   // have empty settings.
   FLAGS_webserver_cache_control_options = "";
-  FLAGS_webserver_x_frame_options = "";
+  FLAGS_webserver_referrer_policy = "";
   FLAGS_webserver_x_content_type_options = "";
+  FLAGS_webserver_x_frame_options = "";
   ASSERT_OK(curl_.FetchURL(url_, &buf_));
   ASSERT_STR_NOT_CONTAINS(buf_.ToString(), "Cache-Control");
-  ASSERT_STR_NOT_CONTAINS(buf_.ToString(), "X-Frame-Options");
+  ASSERT_STR_NOT_CONTAINS(buf_.ToString(), "Referrer-Policy");
   ASSERT_STR_NOT_CONTAINS(buf_.ToString(), "X-Content-Type-Options");
+  ASSERT_STR_NOT_CONTAINS(buf_.ToString(), "X-Frame-Options");
 }
 
 TEST_P(WebserverTest, TestHttpCompression) {
@@ -839,6 +847,42 @@ TEST_P(WebserverTest, TestRedactFlagsDump) {
   ASSERT_OK(curl_.FetchURL(Substitute("$0/varz?raw=1", url_), &buf_));
   ASSERT_STR_CONTAINS(buf_.ToString(), Substitute("--test_sensitive_flag=$0",
                                                   kRedactionMessage));
+}
+
+TEST_P(WebserverTest, ReferrerPolicyFlagValidator) {
+  constexpr const char* const kFlagName = "webserver_referrer_policy";
+
+  // Verify that validator doesn't output any warnings and accepts a valid
+  // setting for the flag.
+  {
+    StringVectorSink capture_logs;
+    ScopedRegisterSink reg(&capture_logs);
+    ASSERT_NE("", google::SetCommandLineOption(kFlagName, "same-origin"));
+    ASSERT_NE("", google::SetCommandLineOption(kFlagName, ""));
+    ASSERT_NE("", google::SetCommandLineOption(
+        kFlagName, "no-referrer, strict-origin"));
+    ASSERT_TRUE(capture_logs.logged_msgs().empty());
+  }
+
+  // Verify that validator outputs a warning on specifying non-expected value
+  // for the flag, but still accepts it.
+  {
+    constexpr const char* const kFlagVal = "not-a-policy";
+    StringVectorSink capture_logs;
+    ScopedRegisterSink reg(&capture_logs);
+    ASSERT_NE("", google::SetCommandLineOption(kFlagName, kFlagVal));
+    ASSERT_FALSE(capture_logs.logged_msgs().empty());
+    bool pattern_found = false;
+    const auto pattern = Substitute(
+        "unrecognized value for --$0: '$1'", kFlagName, kFlagVal);
+    for (const string& str : capture_logs.logged_msgs()) {
+      if (str.find(pattern) != string::npos) {
+        pattern_found = true;
+        break;
+      }
+    }
+    ASSERT_TRUE(pattern_found) << JoinStrings(capture_logs.logged_msgs(), "\n");
+  }
 }
 
 TEST_P(WebserverTest, TestCSPHeader) {
