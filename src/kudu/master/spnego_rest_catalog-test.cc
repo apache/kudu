@@ -237,11 +237,6 @@ TEST_F(SpnegoRestCatalogTest, TestInvalidHeaders) {
   ASSERT_STR_CONTAINS(buf.ToString(), "WWW-Authenticate: Negotiate");
 }
 
-// The following tests are skipped on macOS due to inconsistent behavior of SPNEGO.
-// macOS heimdal kerberos caches the KDC port number, which can cause subsequent tests to fail.
-// For more details, refer to KUDU-3533 (https://issues.apache.org/jira/browse/KUDU-3533)
-#ifndef __APPLE__
-
 TEST_F(SpnegoRestCatalogTest, TestNoKinitGetTables) {
   EasyCurl c;
   faststring buf;
@@ -274,17 +269,28 @@ TEST_F(SpnegoRestCatalogTest, TestUnauthenticatedBadKeytab) {
   EasyCurl c;
   faststring buf;
   c.set_auth(CurlAuthType::SPNEGO);
-  Status s = c.FetchURL(
-      Substitute("http://$0/api/v1/tables", cluster_->mini_master()->bound_http_addr().ToString()),
+  const auto s = c.FetchURL(
+      Substitute("http://$0/api/v1/tables",
+                 cluster_->mini_master()->bound_http_addr().ToString()),
       &buf);
-  ASSERT_STR_CONTAINS(s.ToString(), "HTTP 401");
-  ASSERT_STR_CONTAINS(buf.ToString(),
-                      "Not authorized: Unspecified GSS failure.  Minor code may provide more "
-                      "information: Request ticket server HTTP/127.0.0.1@KRBTEST.COM kvno 3 not "
-                      "found in keytab; keytab is likely out of date");
+  // The essence here is to get HTTP 401 error status in the server's response.
+  // There might be different messages returned from webserver because of the
+  // different GSSAPI failure paths depending on libkrb5 and libcurl libraries:
+  // with the randomized keytab, the server fails with SASL step with
+  // Status::Incomplete() on macOS. On Linux, the server fails the SASL step
+  // with Status::NotAuthorized(). Instead of finding some universal way
+  // of screwing up the keytab to get the same behavior on both macOS and Linux,
+  // it's easier to rely on the fact that the required HTTP error code
+  // is received and acknowledge for various error messages.
+  EXPECT_EQ(s.ToString(), "Remote error: HTTP 401");
+  ASSERT_STR_MATCHES(buf.ToString(),
+                     "(Must authenticate with SPNEGO|"
+                     "Not authorized: Unspecified GSS failure.  Minor code "
+                     "may provide more information: Request ticket server "
+                     "HTTP/127.0.0.1@KRBTEST.COM kvno 3 not found in keytab; "
+                     "keytab is likely out of date)");
 }
 
-#endif
 
 class MultiMasterSpnegoTest : public RestCatalogTestBase {
  public:

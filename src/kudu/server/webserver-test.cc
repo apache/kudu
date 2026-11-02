@@ -348,12 +348,6 @@ TEST_P(SpnegoDedicatedKeytabWebserverTest, TestAuthenticated) {
 INSTANTIATE_TEST_SUITE_P(Parameters, SpnegoWebserverTest,
                          testing::Values(IPMode::IPV4, IPMode::IPV6, IPMode::DUAL));
 
-// Tests that execute DoSpnegoCurl() are ignored in MacOS (except the first test case)
-// MacOS heimdal kerberos caches kdc port number somewhere so that all the test cases
-// executing DoSpnegoCurl() use same kdc port number and it is test defect.
-// Please refer to KUDU-3533(https://issues.apache.org/jira/browse/KUDU-3533)
-#ifndef __APPLE__
-
 TEST_P(SpnegoWebserverTest, TestAuthenticated) {
   ASSERT_OK(kdc_->Kinit("alice"));
   ASSERT_OK(DoSpnegoCurl());
@@ -394,8 +388,6 @@ TEST_P(SpnegoWebserverTest, TestUnauthenticatedNoClientAuth) {
   EXPECT_EQ("Must authenticate with SPNEGO.", buf_.ToString());
   EXPECT_EQ(kNotAuthn, last_authenticated_spn_);
 }
-
-#endif
 
 // Test some malformed authorization headers.
 TEST_P(SpnegoWebserverTest, TestInvalidHeaders) {
@@ -1071,11 +1063,6 @@ TEST_P(NoAuthnWebserverTest, TestUnauthenticatedUser) {
 INSTANTIATE_TEST_SUITE_P(Parameters, AuthnWebserverTest,
                          testing::Values(IPMode::IPV4, IPMode::IPV6, IPMode::DUAL));
 
-// The following tests are skipped on macOS due to inconsistent behavior of SPNEGO.
-// macOS heimdal kerberos caches the KDC port number, which can cause subsequent tests to fail.
-// For more details, refer to KUDU-3533 (https://issues.apache.org/jira/browse/KUDU-3533)
-#ifndef __APPLE__
-
 TEST_P(AuthnWebserverTest, TestAuthenticatedUserPassedToHandler) {
   ASSERT_OK(kdc_->Kinit("alice"));
   curl_.set_auth(CurlAuthType::SPNEGO);
@@ -1103,8 +1090,6 @@ TEST_P(AuthnWebserverTest, TestUnauthenticatedRequestWithoutClientAuth) {
   EXPECT_EQ("Remote error: HTTP 401", curl_status.ToString());
   EXPECT_EQ("Must authenticate with SPNEGO.", buf_.ToString());
 }
-
-#endif
 
 namespace {
 
