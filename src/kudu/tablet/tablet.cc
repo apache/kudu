@@ -2580,6 +2580,14 @@ void Tablet::UpdateCompactionStats(MaintenanceOpStats* stats) {
   // all the rowsets picked for this rowset compaction.
   int64_t ancient_undos_total_size = 0;
 
+  // Read the ancient history mark once for the whole pass rather than once per
+  // picked rowset: each read goes to the time source (an adjtimex() system call
+  // with the default time source). A slightly older mark doesn't change the
+  // outcome here. Skip the read if nothing was picked.
+  Timestamp ancient_history_mark;
+  const bool has_ancient_history_mark =
+      !picked.empty() && Tablet::GetTabletAncientHistoryMark(&ancient_history_mark);
+
   for (const auto* rs : picked) {
     const auto* drs = down_cast<const DiskRowSet*>(rs);
     const auto& dt = drs->delta_tracker();
@@ -2591,13 +2599,10 @@ void Tablet::UpdateCompactionStats(MaintenanceOpStats* stats) {
     // contain mostly recent deltas until they indeed become ancient and GC-ed
     // by the UNDO delta GC maintenance task.
     int64_t size = 0;
-    {
-      Timestamp ancient_history_mark;
-      if (Tablet::GetTabletAncientHistoryMark(&ancient_history_mark)) {
-        WARN_NOT_OK(dt.EstimateBytesInPotentiallyAncientUndoDeltas(
-            ancient_history_mark, RowSet::UNDERESTIMATE, &size),
-            "could not estimate size of ancient UNDO deltas");
-      }
+    if (has_ancient_history_mark) {
+      WARN_NOT_OK(dt.EstimateBytesInPotentiallyAncientUndoDeltas(
+          ancient_history_mark, RowSet::UNDERESTIMATE, &size),
+          "could not estimate size of ancient UNDO deltas");
     }
     ancient_undos_total_size += size;
     undos_total_size += dt.UndoDeltaOnDiskSize();
