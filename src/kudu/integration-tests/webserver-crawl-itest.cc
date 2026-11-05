@@ -215,6 +215,12 @@ TEST_P(WebserverCrawlITest, TestAllWebPages) {
       // An anchor without a path doesn't need to be crawled.
       return;
     }
+    if (HasPrefixString(link, "javascript:")) {
+      // A script pseudo-URL can't be crawled. bootstrap-table's pagination
+      // templates use href="javascript:void(0)", and the HTML parser picks
+      // them out of the minified JS when the script itself is crawled.
+      return;
+    }
 
     // Verify that the link's scheme matches how we've configured the web UI.
     ASSERT_FALSE(HasPrefixString(link, use_ssl ? kHttpScheme : kHttpsScheme));
@@ -316,7 +322,7 @@ TEST_P(WebserverCrawlITest, TestAllWebPages) {
     // e.g. <a href="/rpcz">RPCs</a>
     NO_FATALS(process_page(host, &page, "a", "href"));
 
-    // e.g. <script src='/bootstrap/js/bootstrap.min.js' defer></script>
+    // e.g. <script src='/bootstrap/js/bootstrap.bundle.min.js' defer></script>
     NO_FATALS(process_page(host, &page, "script", "src"));
   }
 

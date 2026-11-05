@@ -24,10 +24,6 @@ body {
   padding-right: 20px;
 }
 
-.navbar-inverse .nav>li>a {
-  color: #eee;
-}
-
 /* Sticky footer styles
 -------------------------------------------------- */
 html {
@@ -46,20 +42,31 @@ body {
   height: 60px;
   background-color: #f5f5f5;
 }
+/* Bootstrap 5 renders <pre> as bare text; keep the boxed look the pages
+   were laid out with under Bootstrap 3. */
+pre {
+  padding: 9.5px;
+  font-size: 13px;
+  color: #333;
+  background-color: #f5f5f5;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
 .footer pre {
   border: none;
 }
 
-.glyphicon-hide {
-  color: transparent;
+/* Inline SVG icons: align with the surrounding text baseline. */
+.kudu-icon {
+  vertical-align: -0.125em;
 }
 
-.navbar-brand {
-  padding-top: 5px;
-}
-
-tr.startup-header {
+/* Bootstrap 5 paints table cells (not rows), so a row background is hidden
+   behind them; color the header cells and drop the striping overlay. */
+tr.startup-header > th,
+tr.startup-header > td {
   background-color: #eee !important;
+  box-shadow: none !important;
 }
 
 td.startup-indented {
