@@ -1160,7 +1160,7 @@ static const char* const kMainTemplate = R"(
     <link href='{{base_url}}/bootstrap/css/bootstrap.min.css' rel='stylesheet' media='screen'/>
     <link href='{{base_url}}/bootstrap/css/bootstrap-table.min.css' rel='stylesheet' media='screen'/>
     <script src='{{base_url}}/jquery-3.5.1.min.js' defer></script>
-    <script src='{{base_url}}/bootstrap/js/bootstrap.min.js' defer></script>
+    <script src='{{base_url}}/bootstrap/js/bootstrap.bundle.min.js' defer></script>
     <script src='{{base_url}}/bootstrap/js/bootstrap-table.min.js' defer></script>
     <script src='{{base_url}}/kudu.js' defer></script>
     <link href='{{base_url}}/kudu.css' rel='stylesheet'/>
@@ -1168,17 +1168,15 @@ static const char* const kMainTemplate = R"(
   </head>
   <body>
 
-    <nav class="navbar navbar-default">
+    <nav class="navbar navbar-expand-md bg-body-tertiary border rounded mb-3">
       <div class="container-fluid">
-        <div class="navbar-header">
-          <a class="navbar-brand" href="{{base_url}}/">
-            <img src="{{base_url}}/logo.png" width='61' height='45' alt="Kudu"/>
-          </a>
-        </div>
+        <a class="navbar-brand" href="{{base_url}}/">
+          <img src="{{base_url}}/logo.png" width='61' height='45' alt="Kudu"/>
+        </a>
         <div id="navbar" class="navbar-collapse collapse">
-          <ul class="nav navbar-nav">
+          <ul class="navbar-nav flex-wrap">
            {{#path_handlers}}
-            <li><a class="nav-link" href="{{base_url}}{{path}}">{{alias}}</a></li>
+            <li class="nav-item"><a class="nav-link" href="{{base_url}}{{path}}">{{alias}}</a></li>
            {{/path_handlers}}
           </ul>
         </div><!--/.nav-collapse -->

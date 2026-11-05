@@ -19,32 +19,38 @@ under the License.
 
 <h2>Configuration</h2>
 
-<div class="panel panel-default">
-  <div class="panel-heading">
-    <h3 class="panel-title">Security</h3>
+<div class="card mb-3">
+  <div class="card-header">
+    <h3 class="card-title fs-6 mb-0">Security</h3>
   </div>
-  <ul class="list-group">
+  <ul class="list-group list-group-flush">
    {{#security_configs}}
     <li class="list-group-item">
-      <span class="glyphicon glyphicon-lock text-success
-          {{^secure}}glyphicon-hide{{/secure}}"></span>
+      {{! Padlock icon (shackle + body; the inner subpath cuts out the
+          shackle hole), replacing Bootstrap 3's glyphicon-lock. Hidden but
+          still taking up space for insecure settings to keep names aligned. }}
+      <svg class="kudu-icon text-success{{^secure}} invisible{{/secure}}"
+          width="1em" height="1em" viewBox="0 0 16 16" fill="currentColor"
+          fill-rule="evenodd" aria-hidden="true">
+        <path d="M8 1a3 3 0 0 0-3 3v3H4a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1h-1V4a3 3 0 0 0-3-3zM6 7V4a2 2 0 1 1 4 0v3z"/>
+      </svg>
       {{name}}: {{value}}
-      <small>(<a href="#{{id}}" data-toggle="collapse">?</a>)</small>
+      <small>(<a href="#{{id}}" data-bs-toggle="collapse">?</a>)</small>
       <div id="{{id}}" class="collapse text-muted">{{comment}}</div>
     </li>
    {{/security_configs}}
   </ul>
 </div>
 
-<div class="panel panel-default">
-  <div class="panel-heading">
-    <h3 class="panel-title">Time Source</h3>
+<div class="card mb-3">
+  <div class="card-header">
+    <h3 class="card-title fs-6 mb-0">Time Source</h3>
   </div>
-  <ul class="list-group">
+  <ul class="list-group list-group-flush">
    {{#time_source_configs}}
     <li class="list-group-item">
       {{name}}: {{value}}
-      <small>(<a href="#{{id}}" data-toggle="collapse">?</a>)</small>
+      <small>(<a href="#{{id}}" data-bs-toggle="collapse">?</a>)</small>
       <div id="{{id}}" class="collapse text-muted">{{comment}}</div>
     </li>
    {{/time_source_configs}}

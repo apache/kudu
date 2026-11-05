@@ -179,12 +179,11 @@ src/kudu/util/testdata/char_truncate_ascii.txt
 src/kudu/util/testdata/char_truncate_utf8.txt
 thirdparty/patches/*.patch
 www/bootstrap/css/bootstrap-table.min.css
-www/bootstrap/css/bootstrap-theme.min.css
-www/bootstrap/css/bootstrap-theme.min.css.map
 www/bootstrap/css/bootstrap.min.css
 www/bootstrap/css/bootstrap.min.css.map
 www/bootstrap/js/bootstrap-table.min.js
-www/bootstrap/js/bootstrap.min.js
+www/bootstrap/js/bootstrap.bundle.min.js
+www/bootstrap/js/bootstrap.bundle.min.js.map
 www/d3.v2.js
 www/epoch.0.5.2.min.css
 www/epoch.0.5.2.min.js
