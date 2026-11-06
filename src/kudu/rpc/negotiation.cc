@@ -331,7 +331,7 @@ void Negotiation::RunNegotiation(const scoped_refptr<Connection>& conn,
 
   if ((is_bad || FLAGS_rpc_trace_negotiation) &&
       PREDICT_TRUE(!FLAGS_rpc_suppress_negotiation_trace)) {
-    DCHECK_NE(nullptr, Trace::CurrentTrace());
+    DCHECK(Trace::CurrentTrace());
     if (is_bad) {
       LOG(WARNING) << "Failed RPC negotiation. Trace:\n"
           << Trace::CurrentTrace();
