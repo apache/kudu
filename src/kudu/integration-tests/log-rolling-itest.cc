@@ -61,10 +61,19 @@ TEST_F(LogRollingITest, TestLogCleanupOnStartup) {
                   "which may cause asan error.";
   GTEST_SKIP();
 #endif
+  // A note on this test-specific configuration: disable asynchronous logging
+  // because the scenario assumes a clear boundary when log files are being
+  // created. The default file naming scheme is of one second precision,
+  // and it's necessary to provide strict boundaries on when writes are flushed
+  // into the log files: that should not happen between Shutdown() and Restart()
+  // for the cluster's kudu-master process in the 'for()' cycle below. Otherwise
+  // the glog library would end up with 'COULD NOT CREATE A LOGGINGFILE' silent
+  // error from src/logging.cc, and the scenario would fail finding a log file
+  // that's supposed to be present.
   ExternalMiniClusterOptions opts;
   opts.num_masters = 1;
   opts.num_tablet_servers = 0;
-  opts.extra_master_flags = { "--max_log_files=3", };
+  opts.extra_master_flags = { "--max_log_files=3", "--log_async=false", };
   opts.logtostderr = false;
   ExternalMiniCluster cluster(std::move(opts));
   ASSERT_OK(cluster.Start());
