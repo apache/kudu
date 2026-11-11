@@ -47,6 +47,12 @@ _TP_PREBUILT_TOOLCHAIN=
 
 _ETC_OS_RELEASE=/etc/os-release
 
+# Enable parallel xz/liblzma compress/decompress, when applicable: 5.2.0 and
+# newer for compress; 5.4.0 and newer for decompress. Since the GNU tar is used
+# on Linux and on macOS as well when available (see init_tar_cmd() in
+# fetch-utils.sh), it propagates these options to the compressor/decompressor.
+export XZ_OPT=${XZ_OPT:-"-T0"}
+
 # Detect the host OS distribution name.
 detect_prebuilt_os_name() {
   if [[ "$OSTYPE" == darwin* ]]; then
