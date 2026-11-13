@@ -391,6 +391,8 @@ Note: You can upload to the test PyPi by adding
 
 WARNING: The site *MUST NOT* be built on Mac. See the
 <<README.adoc#building-docs,documentation building instructions>> for details.
+On Mac, use the <<README.adoc#updating-the-site-docker,Docker-based build>>
+instead.
 
 +
 . Update the `index.md` file in the `releases` directory. Add a line about

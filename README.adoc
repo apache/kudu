@@ -347,6 +347,60 @@ when you want to deploy those changes to the live web site.
 WARNING: The site *MUST NOT* be built on Mac for publishing purposes, only for
 verification. See the warning in <<building-docs>> for details.
 
+[[updating-the-site-docker]]
+==== Building the web site documentation with Docker
+
+On a non-Linux host such as macOS, the web site documentation can be built in a
+Linux Docker container by running the following command instead of
+`make_site.sh`. It accepts the same arguments.
+
+[source,bash]
+----
+$ ./docs/support/scripts/make_site_docker.sh
+----
+
+The script builds an image with all the required tools (see
+_docs/support/docker/Dockerfile_), checks out the committed revision specified
+by `KUDU_REF` (`HEAD` by default) into a workspace kept in a Docker volume, and
+runs `make_site.sh` there. Uncommitted changes are not included. Thirdparty
+dependencies and build artifacts are kept in the volume, so only the first run
+takes a long time.
+
+The generated site is written to _build/docker-site_ (or the directory specified
+by `KUDU_SITE_OUT`). To view it at http://localhost:4000/, run the site's
+`site_tool` in the same Docker image using the following command:
+
+[source,bash]
+----
+$ ./docs/support/scripts/site_tool_docker.sh build/docker-site jekyll serve
+----
+
+To publish the documentation, copy the new release directory and the updated
+top-level symbolic links into a checkout of the `gh-pages` branch, then commit
+the changes from there:
+
+[source,bash]
+----
+$ rsync -a --delete build/docker-site/releases/1.x.y/ <gh-pages>/releases/1.x.y/
+$ rsync -a build/docker-site/{docs,apidocs,cpp-client-api} <gh-pages>/
+----
+
+`site_tool_docker.sh` works with a `gh-pages` checkout as well, which makes it
+possible to run `site_tool proof` and `site_tool publish` (see below) without
+installing a compatible Ruby version on the host:
+
+[source,bash]
+----
+$ ./docs/support/scripts/site_tool_docker.sh <gh-pages> proof
+$ ./docs/support/scripts/site_tool_docker.sh <gh-pages> publish
+----
+
+The container uses the platform of the Docker host by default. Set
+`DOCKER_PLATFORM` (e.g. `DOCKER_PLATFORM=linux/amd64`) to build for a
+different one, at the cost of a much slower emulated build. Make sure Docker
+has enough memory available (at least 16GB is recommended) since the build runs
+with a parallelism matching the number of available CPUs.
+
 === Deploying changes to the Apache Kudu web site
 
 When the documentation is updated on the `gh-pages` branch, or when other web
