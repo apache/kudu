@@ -56,6 +56,10 @@ EXPAND_ONLY_PREDEF     = YES
 # Below is the list of macros to be expanded by a custom way by doxygen.
 PREDEFINED             = ATTRIBUTE_DEPRECATED(x):=
 
+# Internal helper macros which aren't a part of the public API and shouldn't
+# be documented.
+EXCLUDE_SYMBOLS        = KUDU_ATTR_NODISCARD
+
 # We add information about the Kudu version the documentation is generated for.
 # NOTE: this tag requires GENERATE_HTML enabled.
 HTML_FOOTER            = @DOXY_CLIENT_API_FOOTER@
