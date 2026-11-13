@@ -1,0 +1,26 @@
+digraph "include/kudu/util/status.h"
+{
+ // LATEX_PDF_SIZE
+  edge [fontname="Helvetica",fontsize="10",labelfontname="Helvetica",labelfontsize="10"];
+  node [fontname="Helvetica",fontsize="10",shape=record];
+  Node1 [label="include/kudu/util/status.h",height=0.2,width=0.4,color="black", fillcolor="grey75", style="filled", fontcolor="black",tooltip=" "];
+  Node1 -> Node2 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node2 [label="include/kudu/client\l/client.h",height=0.2,width=0.4,color="black", fillcolor="white", style="filled",URL="$client_8h_source.html",tooltip=" "];
+  Node1 -> Node3 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node3 [label="include/kudu/client\l/columnar_scan_batch.h",height=0.2,width=0.4,color="black", fillcolor="white", style="filled",URL="$columnar__scan__batch_8h_source.html",tooltip=" "];
+  Node1 -> Node4 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node4 [label="include/kudu/client\l/scan_batch.h",height=0.2,width=0.4,color="black", fillcolor="white", style="filled",URL="$scan__batch_8h_source.html",tooltip=" "];
+  Node4 -> Node5 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node5 [label="include/kudu/client\l/row_result.h",height=0.2,width=0.4,color="black", fillcolor="white", style="filled",URL="$row__result_8h_source.html",tooltip=" "];
+  Node5 -> Node2 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node1 -> Node6 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node6 [label="include/kudu/client\l/scan_predicate.h",height=0.2,width=0.4,color="black", fillcolor="white", style="filled",URL="$scan__predicate_8h_source.html",tooltip=" "];
+  Node6 -> Node2 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node1 -> Node7 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node7 [label="include/kudu/client\l/schema.h",height=0.2,width=0.4,color="black", fillcolor="white", style="filled",URL="$schema_8h_source.html",tooltip=" "];
+  Node7 -> Node2 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node1 -> Node8 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node8 [label="include/kudu/common\l/partial_row.h",height=0.2,width=0.4,color="black", fillcolor="white", style="filled",URL="$partial__row_8h_source.html",tooltip=" "];
+  Node8 -> Node9 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node9 [label="include/kudu/client\l/write_op.h",height=0.2,width=0.4,color="black", fillcolor="white", style="filled",URL="$write__op_8h_source.html",tooltip=" "];
+}
