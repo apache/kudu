@@ -341,7 +341,10 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
     // they are looking at. Instead, we show a link users can click to go to the leader master.
     // We track redirects to prevent a redirect loop.
     int redirects = ExtractRedirectsFromRequest(req);
-    SetupLeaderMasterRedirect(Substitute("table?id=$0", table_id), redirects, output);
+    // The 'id' parameter comes from the request as is: it must be URL-encoded
+    // before embedding it into the link to the leader master's web UI.
+    SetupLeaderMasterRedirect(Substitute("table?id=$0", UrlEncodeToString(table_id)),
+                              redirects, output);
     return;
   }
 

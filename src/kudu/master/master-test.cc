@@ -72,6 +72,7 @@
 #include "kudu/master/sys_catalog.h"
 #include "kudu/master/table_metrics.h"
 #include "kudu/master/ts_manager.h"
+#include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/security/tls_context.h"
@@ -98,6 +99,7 @@
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
+#include "kudu/util/url-coding.h"
 #include "kudu/util/version_info.h"
 
 namespace kudu {
@@ -106,6 +108,8 @@ class TSDescriptor;
 }  // namespace master
 }  // namespace kudu
 
+using kudu::cluster::InternalMiniCluster;
+using kudu::cluster::InternalMiniClusterOptions;
 using kudu::consensus::ReplicaManagementInfoPB;
 using kudu::itest::GetClusterId;
 using kudu::pb_util::SecureDebugString;
@@ -3904,5 +3908,69 @@ TEST_F(MasterTest, PrometheusMetricsLevelFiltering) {
   }
 }
 
+class MultiMasterWebUITest : public KuduTest {
+ public:
+  void SetUp() override {
+    KuduTest::SetUp();
+
+    // Render the pages using the actual mustache templates.
+    FLAGS_webserver_doc_root = JoinPathSegments(GetTestExecutableDirectory(), "testdata/www");
+
+    InternalMiniClusterOptions opts;
+    opts.num_masters = 3;
+    cluster_.reset(new InternalMiniCluster(env_, opts));
+    ASSERT_OK(cluster_->Start());
+  }
+
+  void TearDown() override {
+    if (cluster_) {
+      cluster_->Shutdown();
+    }
+    KuduTest::TearDown();
+  }
+
+ protected:
+  unique_ptr<InternalMiniCluster> cluster_;
+};
+
+// Make sure follower masters properly encode the 'id' query parameter of the
+// /table page when rendering the link to the leader master's web UI.
+TEST_F(MultiMasterWebUITest, TableRedirectFromFollowerEscapesId) {
+  int leader_idx = -1;
+  ASSERT_OK(cluster_->GetLeaderMasterIndex(&leader_idx));
+  const int follower_idx = (leader_idx + 1) % cluster_->num_masters();
+  const string follower_addr =
+      cluster_->mini_master(follower_idx)->bound_http_addr().ToString();
+
+  EasyCurl c;
+  faststring buf;
+  const auto fetch_table_page = [&](const string& id, string* body) {
+    ASSERT_EVENTUALLY([&] {
+      ASSERT_OK(c.FetchURL(Substitute("http://$0/table?id=$1",
+                                      follower_addr, UrlEncodeToString(id)),
+                           &buf));
+      *body = buf.ToString();
+      // The follower renders the link only once it knows the leader master.
+      ASSERT_STR_CONTAINS(*body, "leader master's web UI");
+    });
+  };
+
+  // An ID with special characters is URL-encoded in the link.
+  {
+    const string kTableId = "a\"b&c<d>e";
+    string body;
+    NO_FATALS(fetch_table_page(kTableId, &body));
+    ASSERT_STR_NOT_CONTAINS(body, kTableId);
+    ASSERT_STR_CONTAINS(body, "/table?id=a%22b%26c%3Cd%3Ee&amp;redirects=1\"");
+  }
+
+  // A regular table ID still produces a working link.
+  {
+    const string kTableId = "0123456789abcdef0123456789abcdef";
+    string body;
+    NO_FATALS(fetch_table_page(kTableId, &body));
+    ASSERT_STR_CONTAINS(body, Substitute("/table?id=$0&amp;redirects=1\"", kTableId));
+  }
+}
 } // namespace master
 } // namespace kudu
