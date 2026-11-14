@@ -143,7 +143,8 @@ ADD_KUDU_TEST(location_cache-test DATA_FILES ../scripts/first_argument.sh)
 ADD_KUDU_TEST(master_options-test)
 ADD_KUDU_TEST(master-test RESOURCE_LOCK "master-web-port"
                           DATA_FILES ../scripts/first_argument.sh
-                          DATA_FILES ../scripts/assign-location.py)
+                          DATA_FILES ../scripts/assign-location.py
+                          DATA_FILES ../../../www)
 ADD_KUDU_TEST(mini_master-test RESOURCE_LOCK "master-web-port")
 ADD_KUDU_TEST(placement_policy-test)
 ADD_KUDU_TEST(rest_catalog-test DATA_FILES ../../../www)
