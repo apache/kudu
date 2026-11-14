@@ -23,10 +23,6 @@ gem 'kramdown'
 
 gem 'jekyll'
 
-# Jekyll requires a Javascript runtime:
-# https://github.com/jekyll/jekyll/issues/2327
-gem 'therubyracer' # V8 runtime installer for Jekyll
-
 # Produce /feed.xml for the Jekyll blog.
 gem 'jekyll-feed'
 
