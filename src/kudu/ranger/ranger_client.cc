@@ -365,6 +365,15 @@ Status BuildArgv(const string& fifo_path, const string& log_properties_path,
   return Status::OK();
 }
 
+Status CheckResponseCount(int expected, int actual) {
+  if (PREDICT_FALSE(expected != actual)) {
+    return Status::Corruption(Substitute(
+        "unexpected number of responses from the Ranger authorization "
+        "plugin: $0 requests, $1 responses", expected, actual));
+  }
+  return Status::OK();
+}
+
 } // anonymous namespace
 
 bool ValidateRangerConfiguration() {
@@ -461,7 +470,7 @@ Status RangerClient::AuthorizeAction(const string& user_name, const ActionPB& ac
 
   RETURN_NOT_OK(subprocess_->Execute(req_list, &resp_list));
 
-  CHECK_EQ(1, resp_list.responses_size());
+  RETURN_NOT_OK(CheckResponseCount(1, resp_list.responses_size()));
   *authorized = resp_list.responses().begin()->allowed();
   return Status::OK();
 }
@@ -488,7 +497,7 @@ Status RangerClient::AuthorizeActionMultipleColumns(const string& user_name, con
 
   RETURN_NOT_OK(subprocess_->Execute(req_list, &resp_list));
 
-  DCHECK_EQ(column_names->size(), resp_list.responses_size());
+  RETURN_NOT_OK(CheckResponseCount(req_list.requests_size(), resp_list.responses_size()));
 
   unordered_set<string> allowed_columns;
   for (auto i = 0; i < req_list.requests_size(); ++i) {
@@ -512,27 +521,27 @@ Status RangerClient::AuthorizeActionMultipleTables(const string& user_name, cons
 
   vector<pair<string, bool>> orig_table_names;
 
-  for (const auto& table : *tables) {
+  for (const auto& [table_name, is_owner] : *tables) {
     string db;
     Slice tbl;
 
-    auto s = ParseRangerTableIdentifier(table.first, &db, &tbl);
+    auto s = ParseRangerTableIdentifier(table_name, &db, &tbl);
     if (PREDICT_TRUE(s.ok())) {
-      orig_table_names.emplace_back(table);
+      orig_table_names.emplace_back(table_name, is_owner);
 
       auto req = req_list.add_requests();
       req->set_action(action);
       req->set_database(db);
       req->set_table(tbl.ToString());
-      req->set_is_owner(table.second);
+      req->set_is_owner(is_owner);
     } else {
-      LOG(WARNING) << Substitute(kDenyNonRangerTableTemplate, table.first);
+      LOG(WARNING) << Substitute(kDenyNonRangerTableTemplate, table_name);
     }
   }
 
   RETURN_NOT_OK(subprocess_->Execute(req_list, &resp_list));
 
-  DCHECK_EQ(orig_table_names.size(), resp_list.responses_size());
+  RETURN_NOT_OK(CheckResponseCount(req_list.requests_size(), resp_list.responses_size()));
 
   unordered_map<string, bool> allowed_tables;
   for (auto i = 0; i < orig_table_names.size(); ++i) {
@@ -569,7 +578,7 @@ Status RangerClient::AuthorizeActions(const string& user_name, const string& dat
 
   RETURN_NOT_OK(subprocess_->Execute(req_list, &resp_list));
 
-  DCHECK_EQ(actions->size(), resp_list.responses_size());
+  RETURN_NOT_OK(CheckResponseCount(req_list.requests_size(), resp_list.responses_size()));
 
   unordered_set<ActionPB, ActionHash> allowed_actions;
   for (auto i = 0; i < req_list.requests_size(); ++i) {

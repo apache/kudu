@@ -18,6 +18,7 @@
 #include "kudu/ranger/ranger_client.h"
 
 #include <cstddef>
+#include <initializer_list>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -338,6 +339,93 @@ TEST_F(RangerClientTest, TestAuthorizeActionsAllAuthorized) {
   actions.emplace(ActionPB::INSERT);
   ASSERT_OK(client_.AuthorizeActions("jdoe", "default", "foobar", /*is_owner=*/false, &actions));
   ASSERT_EQ(3, actions.size());
+}
+
+// Buggy Ranger that breaks the one-response-per-request rule.
+class FixedResponseCountMockSubprocessServer : public MockSubprocessServer {
+ public:
+  explicit FixedResponseCountMockSubprocessServer(int num_responses)
+      : num_responses_(num_responses) {}
+
+  Status Execute(SubprocessRequestPB* /*req*/,
+                 SubprocessResponsePB* resp) override {
+    RangerResponseListPB resp_list;
+    for (int i = 0; i < num_responses_; ++i) {
+      resp_list.add_responses()->set_allowed(true);
+    }
+    resp->mutable_response()->PackFrom(resp_list);
+    return Status::OK();
+  }
+
+ private:
+  const int num_responses_;
+};
+
+class RangerClientMismatchedResponseTest : public KuduTest {
+ public:
+  RangerClientMismatchedResponseTest()
+      : client_(env_, METRIC_ENTITY_server.Instantiate(
+            &metric_registry_, "ranger_client-test")) {}
+
+ protected:
+  void SetNumResponses(int num_responses) {
+    client_.ReplaceServerForTests(std::unique_ptr<SubprocessServer>(
+        new FixedResponseCountMockSubprocessServer(num_responses)));
+  }
+
+  MetricRegistry metric_registry_;
+  RangerClient client_;
+};
+
+// The Ranger subprocess must return exactly one response per request. Any
+// other number of responses must be rejected with an error.
+TEST_F(RangerClientMismatchedResponseTest, TestMismatchedResponseCount) {
+  constexpr const char* const kErrMsg =
+      "unexpected number of responses from the Ranger authorization";
+
+  auto check_error = [&](const bool should_work, const Status& s) {
+    if (should_work) {
+      ASSERT_OK(s);
+    } else {
+      ASSERT_TRUE(s.IsCorruption()) << s.ToString();
+      ASSERT_STR_CONTAINS(s.ToString(), kErrMsg);
+    }
+  };
+  // AuthorizeAction() always sends a single request.
+  for (int num_responses : {0, 1, 2}) {
+    SCOPED_TRACE(Substitute("$0 responses", num_responses));
+    SetNumResponses(num_responses);
+    bool authorized = false;
+    Status s = client_.AuthorizeAction("jdoe", ActionPB::CREATE, "foo", "bar", /*is_owner=*/false,
+                                       /*requires_delegate_admin=*/false, &authorized);
+    NO_FATALS(check_error(num_responses == 1, s));
+
+  }
+
+  // Send in 2 requests.
+  for (int num_responses : {0, 1, 2, 3}) {
+    SCOPED_TRACE(Substitute("$0 responses", num_responses));
+    SetNumResponses(num_responses);
+
+    unordered_map<string, bool> tables;
+    tables.emplace("default.foobar", false);
+    tables.emplace("default.barbaz", false);
+    Status s = client_.AuthorizeActionMultipleTables("jdoe", ActionPB::METADATA, &tables);
+    NO_FATALS(check_error(num_responses == 2, s));
+
+    unordered_set<ActionPB, ActionHash> actions;
+    actions.emplace(ActionPB::SELECT);
+    actions.emplace(ActionPB::INSERT);
+    s = client_.AuthorizeActions("jdoe", "default", "foobar", /*is_owner=*/false, &actions);
+    NO_FATALS(check_error(num_responses == 2, s));
+
+    unordered_set<string> columns;
+    columns.emplace("col1");
+    columns.emplace("col2");
+    s = client_.AuthorizeActionMultipleColumns(
+        "jdoe", ActionPB::SELECT, "default", "foobar", /*is_owner=*/false, &columns);
+    NO_FATALS(check_error(num_responses == 2, s));
+  }
 }
 
 TEST_F(RangerClientTest, TestInvalidJARFails) {
