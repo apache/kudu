@@ -31,6 +31,7 @@
 #include "kudu/common/table_util.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -586,15 +587,13 @@ Status RangerClient::RefreshPolicies() {
   DCHECK(subprocess_);
 
   RangerRequestListPB req_list;
-  RangerResponseListPB resp_list;
-
   req_list.mutable_control_request()->set_refresh_policies(true);
 
+  RangerResponseListPB resp_list;
   RETURN_NOT_OK(subprocess_->Execute(req_list, &resp_list));
 
-  if (PREDICT_TRUE(!resp_list.control_response().success())) {
-    string err = resp_list.control_response().error();
-    return Status::RemoteError(err);
+  if (!resp_list.control_response().success()) {
+    return Status::RemoteError(resp_list.control_response().error());
   }
 
   return Status::OK();

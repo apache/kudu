@@ -23,7 +23,6 @@
 #include <unordered_set>
 #include <utility>
 
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/ranger/ranger.pb.h"
 #include "kudu/subprocess/server.h"
