@@ -1734,6 +1734,29 @@ class PosixEnv : public Env {
 
     int fd = 0;
     RETURN_NOT_OK(DoOpen(fname, opts.mode, &fd));
+#if defined(__linux__)
+    if (opts.random_access) {
+      // Advice only: a failure costs readahead, not correctness. posix_fadvise()
+      // returns the error number instead of setting errno.
+      //
+      // The access pattern is a property of the open file rather than of a byte
+      // range: Linux ignores the range for POSIX_FADV_RANDOM and disables
+      // readahead for every read through this file descriptor. Offset 0 and
+      // length 0 (meaning "up to the end of the file") state that intent.
+      const int err = posix_fadvise(fd, 0, 0, POSIX_FADV_RANDOM);
+      if (PREDICT_FALSE(err != 0)) {
+        KLOG_EVERY_N_SECS(WARNING, 60) << Substitute(
+            "posix_fadvise(POSIX_FADV_RANDOM) failed for $0: $1",
+            fname, ErrnoToString(err)) << THROTTLE_MSG;
+      }
+    }
+#else
+    if (opts.random_access) {
+      KLOG_FIRST_N(WARNING, 1)
+          << "RWFileOptions::random_access is not supported on this platform "
+             "and is ignored";
+    }
+#endif
     EncryptionHeader eh;
     if (encrypt) {
       auto cleanup = MakeScopedCleanup([&]() {

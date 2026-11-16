@@ -644,8 +644,17 @@ struct RWFileOptions {
   // encrypted if encryption is enabled.
   bool is_sensitive;
 
+  // Whether the file is read at random offsets. If true, the kernel is advised
+  // (POSIX_FADV_RANDOM) not to read ahead when the file is read. Writes are not
+  // affected. Only has an effect on Linux; elsewhere it's ignored with a
+  // warning.
+  bool random_access;
+
   RWFileOptions()
-      : sync_on_close(false), mode(Env::CREATE_OR_OPEN_WITH_TRUNCATE), is_sensitive(false) {}
+      : sync_on_close(false),
+        mode(Env::CREATE_OR_OPEN_WITH_TRUNCATE),
+        is_sensitive(false),
+        random_access(false) {}
 };
 
 // A file abstraction for both reading and writing. No notion of a built-in

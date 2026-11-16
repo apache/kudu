@@ -981,6 +981,48 @@ TEST_F(TestEnv, TestRWFile) {
   ASSERT_EQ(kTestData.length(), sz);
 }
 
+// Opening an RWFile for random access only changes the kernel's readahead
+// behavior: writes, reads and reopening work as without it.
+TEST_F(TestEnv, TestRWFileRandomAccess) {
+  const string kPath = GetTestPath("random_access");
+  // Two writes of different lengths and contents, so that reads at the wrong
+  // offset or in the wrong order are detected.
+  const string kFirst = "abcd";
+  const string kSecond = "efghij";
+  RWFileOptions opts;
+  opts.random_access = true;
+  unique_ptr<RWFile> file;
+  ASSERT_OK(env_->NewRWFile(opts, kPath, &file));
+  ASSERT_OK(file->Write(0, kFirst));
+  ASSERT_OK(file->Write(kFirst.length(), kSecond));
+  ASSERT_OK(file->Sync());
+
+  uint8_t scratch[kSecond.length()];
+  Slice result(scratch, kSecond.length());
+  ASSERT_OK(file->Read(kFirst.length(), result));
+  ASSERT_EQ(kSecond, result);
+  ASSERT_OK(file->Close());
+
+  opts.mode = Env::MUST_EXIST;
+  ASSERT_OK(env_->NewRWFile(opts, kPath, &file));
+  uint64_t sz;
+  ASSERT_OK(file->Size(&sz));
+  ASSERT_EQ(kFirst.length() + kSecond.length(), sz);
+  result = Slice(scratch, kFirst.length());
+  ASSERT_OK(file->Read(0, result));
+  ASSERT_EQ(kFirst, result);
+
+  // Vectored read at a non-zero offset into slices of different sizes,
+  // spanning the boundary between the two writes.
+  uint8_t scratch1[2];
+  uint8_t scratch2[5];
+  Slice results[] = { Slice(scratch1, sizeof(scratch1)),
+                      Slice(scratch2, sizeof(scratch2)) };
+  ASSERT_OK(file->ReadV(1, results));
+  ASSERT_EQ("bc", results[0]);
+  ASSERT_EQ("defgh", results[1]);
+}
+
 TEST_F(TestEnv, TestCanonicalize) {
   vector<string> synonyms = { GetTestPath("."), GetTestPath("./."), GetTestPath(".//./") };
   for (const string& synonym : synonyms) {
