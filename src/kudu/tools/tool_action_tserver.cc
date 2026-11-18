@@ -864,6 +864,7 @@ unique_ptr<Mode> BuildLocationQuiesceMode() {
       ClusterActionBuilder("status", &LocationQuiescingStatus)
       .Description("Output information about the quiescing state of every Tablet "
                    "Server in a location.")
+      .McpDisposition(Disposition::SURFACE)
       .AddRequiredParameter({ kLocationArg, kLocationDesc })
       .Build();
   unique_ptr<Action> start_quiescing =
@@ -879,6 +880,7 @@ unique_ptr<Mode> BuildLocationQuiesceMode() {
                         "here. To wait for the location to drain, re-run with "
                         "--error_if_not_fully_quiesced until it succeeds, or watch "
                         "'kudu cluster location quiesce status'.")
+      .McpDisposition(Disposition::GATED)
       .AddRequiredParameter({ kLocationArg, kLocationDesc })
       .AddOptionalParameter("error_if_not_fully_quiesced")
       .AddOptionalParameter("dry_run")
@@ -886,6 +888,7 @@ unique_ptr<Mode> BuildLocationQuiesceMode() {
   unique_ptr<Action> stop_quiescing =
       ClusterActionBuilder("stop", &LocationStopQuiescing)
       .Description("Stop quiescing every Tablet Server in a location.")
+      .McpDisposition(Disposition::GATED)
       .AddRequiredParameter({ kLocationArg, kLocationDesc })
       .AddOptionalParameter("dry_run")
       .Build();
@@ -909,12 +912,14 @@ unique_ptr<Mode> BuildLocationStateMode() {
                         "offline; run 'kudu cluster location check' for that. If it "
                         "fails for any Tablet Server in the location, re-run it "
                         "until it succeeds for all of them.")
+      .McpDisposition(Disposition::GATED)
       .AddRequiredParameter({ kLocationArg, kLocationDesc })
       .AddOptionalParameter("dry_run")
       .Build();
   unique_ptr<Action> exit_maintenance =
       ClusterActionBuilder("exit_maintenance", &LocationExitMaintenance)
       .Description("End maintenance of every Tablet Server in a location.")
+      .McpDisposition(Disposition::GATED)
       .AddRequiredParameter({ kLocationArg, kLocationDesc })
       .AddOptionalParameter("dry_run")
       .Build();
