@@ -16,7 +16,7 @@
 // under the License.
 
 [[release_notes]]
-= Apache Kudu 1.18.2 Release Notes
+= Apache Kudu 1.18.3 Release Notes
 
 :author: Kudu Team
 :imagesdir: ./images
@@ -28,7 +28,33 @@
 :sectlinks:
 :experimental:
 
+[[rn_1.18.3]]
+Apache Kudu 1.18.3 is a maintenance release which fixes several bugs and security issues seen in
+Kudu 1.18.2.
+
+[[rn_1.18.3_upgrade_notes]]
+== Upgrade Notes
+
+* Kudu's embedded webserver now adds the `Referrer-Policy: no-referrer` HTTP header to its
+  responses by default. The value of the header is controlled by the newly introduced
+  `--webserver_referrer_policy` flag; set it to an empty string to omit the header
+  (see https://issues.apache.org/jira/browse/KUDU-3824[KUDU-3824]).
+
+[[rn_1.18.3_fixed_issues]]
+== Fixed Issues
+
+* Fixed the link to the leader master on the `/table` page of the embedded webserver of
+  non-leader Kudu masters when the table ID contains special characters.
+
+[[rn_1.18.3_improvements]]
+== Optimizations and improvements
+
+* Upgraded Bootstrap, used by Kudu's embedded webserver, to 5.3.8 and bootstrap-table to 1.27.3
+  to address CVE-2024-6485, CVE-2025-1647, CVE-2022-1726, and CVE-2021-23472.
+
 [[rn_1.18.2]]
+= Apache Kudu 1.18.2 Release Notes
+
 Apache Kudu 1.18.2 is a maintenance release which fixes several bugs, security issues, and build
 issues seen in Kudu 1.18.1.
 
